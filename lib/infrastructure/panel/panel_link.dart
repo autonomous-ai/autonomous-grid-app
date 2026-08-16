@@ -71,6 +71,16 @@ class PanelLink {
   /// Send one JSON control message, built by [PanelOutbound].
   void send(String json) => _transport.send(encodePanelJson(json));
 
+  /// Send one slice of a firmware image, in order from offset 0.
+  ///
+  /// Its own frame type rather than base64 inside a control message: the image
+  /// is a megabyte, base64 would make it a third more of one, and the device
+  /// writes these straight into flash instead of holding the whole thing.
+  /// [encodePanelFrame] refuses a slice over the payload cap, so a caller that
+  /// cuts the image wrong fails here rather than as noise on the other end.
+  void sendFirmware(List<int> slice) =>
+      _transport.send(encodePanelFrame(PanelFrameType.firmware, slice));
+
   void _onBytes(List<int> chunk) {
     for (final frame in _decoder.feed(chunk)) {
       switch (frame.type) {
@@ -78,6 +88,11 @@ class PanelLink {
           _messages.add(PanelInbound.parse(frame.text));
         case PanelFrameType.pcm:
           _audio.add(frame.payload);
+        case PanelFrameType.firmware:
+          // Firmware frames travel app -> device only. One arriving the other way
+          // is a peer doing something this build has no meaning for, which is the
+          // same situation as an unknown type and gets the same counter.
+          _unknownFrames++;
         case null:
           // A frame that decoded cleanly but names a type this build predates.
           // Counted rather than dropped silently: it means the firmware is

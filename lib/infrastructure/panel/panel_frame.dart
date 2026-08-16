@@ -63,7 +63,15 @@ enum PanelFrameType {
   json(0x01),
 
   /// Raw 16-bit mono PCM, one chunk of a voice capture.
-  pcm(0x02);
+  pcm(0x02),
+
+  /// One slice of a firmware image on its way to the device.
+  ///
+  /// A frame type rather than a JSON field because base64 in a control message
+  /// would cost a third more bytes on a link that is already sending megabytes,
+  /// and because the receiver writes these straight into flash without ever
+  /// holding the whole image.
+  firmware(0x03);
 
   const PanelFrameType(this.code);
 

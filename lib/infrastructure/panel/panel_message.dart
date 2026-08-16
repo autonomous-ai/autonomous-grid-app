@@ -58,6 +58,21 @@ sealed class PanelInbound {
       'turn.stop' => PanelStopRequested(
         projectId: _str(decoded['projectId']) ?? '',
       ),
+      'voice.begin' => PanelVoiceBegin(
+        projectId: _str(decoded['projectId']),
+        command: PanelVoiceCommand.of(_str(decoded['cmd'])),
+      ),
+      'voice.end' => const PanelVoiceEnd(),
+      'voice.confirm' => PanelVoiceConfirm(
+        routeId: _str(decoded['routeId']) ?? '',
+        projectId: _str(decoded['projectId']) ?? '',
+      ),
+      'fw.accept' => const PanelFirmwareAccepted(),
+      'fw.progress' => PanelFirmwareProgress(
+        written: _int(decoded['written']) ?? 0,
+      ),
+      'fw.done' => const PanelFirmwareDone(),
+      'fw.error' => PanelFirmwareFailed(_str(decoded['message']) ?? ''),
       _ => PanelUnknown(type, decoded),
     };
   }
@@ -109,6 +124,95 @@ class PanelStopRequested extends PanelInbound {
   const PanelStopRequested({required this.projectId});
 
   final String projectId;
+}
+
+/// Which pill on the panel's action bar started this voice turn.
+///
+/// The panel draws three — Voice, Goal, Loop — and the two modifiers say what
+/// *kind* of thing the next sentence is, not where it goes. They travel as a
+/// prefix on the transcript rather than as a flag, because that is the only
+/// place this app has to put them: a turn is a message, and `/goal` is a
+/// message that begins with `/goal`.
+///
+/// **TODO(BE): the grid CLI has no `/goal` or `/loop`.** Searched across `lib/`
+/// on 2026-08-16 and neither string appears anywhere. So a turn started from
+/// those two pills most likely reaches the agent with a literal `/goal ` in
+/// front of it and is read as words. The pills are drawn from the reference
+/// device's design and were kept deliberately; this is the note that says what
+/// pressing one currently does, so the next person does not have to find out by
+/// pressing it.
+enum PanelVoiceCommand {
+  none(''),
+  goal('/goal '),
+  loop('/loop ');
+
+  const PanelVoiceCommand(this.prefix);
+
+  /// What goes in front of the transcript. Empty for [none].
+  final String prefix;
+
+  /// Read a wire value. Anything unrecognised — including an absent key, which
+  /// arrives here as an empty string — is [none]: a newer panel offering a
+  /// modifier this build does not know should still get its words through.
+  static PanelVoiceCommand of(String? wire) => switch (wire) {
+    'goal' => goal,
+    'loop' => loop,
+    _ => none,
+  };
+}
+
+/// The user started speaking. PCM frames follow until [PanelVoiceEnd].
+///
+/// [projectId] is the tile they were looking at, or null from a screen that is
+/// not a project — which is what makes routing the transcript a real question
+/// rather than a lookup.
+class PanelVoiceBegin extends PanelInbound {
+  const PanelVoiceBegin({
+    this.projectId,
+    this.command = PanelVoiceCommand.none,
+  });
+
+  final String? projectId;
+
+  /// The modifier pill that started it, if any.
+  final PanelVoiceCommand command;
+}
+
+/// The user stopped speaking; every chunk has been sent.
+class PanelVoiceEnd extends PanelInbound {
+  const PanelVoiceEnd();
+}
+
+/// The user picked which project a transcript belonged to.
+class PanelVoiceConfirm extends PanelInbound {
+  const PanelVoiceConfirm({required this.routeId, required this.projectId});
+
+  final String routeId;
+  final String projectId;
+}
+
+/// The panel is ready to be written to. Firmware frames follow.
+class PanelFirmwareAccepted extends PanelInbound {
+  const PanelFirmwareAccepted();
+}
+
+/// How much of the image has reached flash.
+class PanelFirmwareProgress extends PanelInbound {
+  const PanelFirmwareProgress({required this.written});
+
+  final int written;
+}
+
+/// The image is written and verified. The panel reboots into it.
+class PanelFirmwareDone extends PanelInbound {
+  const PanelFirmwareDone();
+}
+
+/// The update failed. The panel keeps running what it had.
+class PanelFirmwareFailed extends PanelInbound {
+  const PanelFirmwareFailed(this.message);
+
+  final String message;
 }
 
 /// A well-formed message this build has no case for.
@@ -246,6 +350,44 @@ abstract final class PanelOutbound {
 
   static String turnDone({required String projectId, required String recap}) =>
       jsonEncode({'t': 'turn.done', 'projectId': projectId, 'recap': recap});
+
+  /// What the app heard, and which project it thinks it belongs to.
+  ///
+  /// [needsConfirm] is the honest half: the app guesses when the user spoke from
+  /// a screen that names no project, and a guess that dispatches itself into a
+  /// real repository is worse than one extra tap.
+  static String voiceTranscript({
+    required String routeId,
+    required String text,
+    String? projectId,
+    required bool needsConfirm,
+  }) => jsonEncode({
+    't': 'voice.transcript',
+    'routeId': routeId,
+    'text': text,
+    'projectId': ?projectId,
+    'needsConfirm': needsConfirm,
+  });
+
+  /// Transcription failed, in words a person can act on.
+  static String voiceError(String message) =>
+      jsonEncode({'t': 'voice.error', 'message': message});
+
+  /// Offer the panel the firmware this build carries.
+  ///
+  /// Sent when `hello` reports a version that is not the one bundled here. The
+  /// panel answers `fw.accept`, and only then do the image frames start — an
+  /// update must never begin in the middle of a turn the user is watching.
+  static String firmwareOffer({
+    required String version,
+    required int size,
+    required String sha256,
+  }) => jsonEncode({
+    't': 'fw.offer',
+    'version': version,
+    'size': size,
+    'sha256': sha256,
+  });
 
   static String turnError({
     required String projectId,

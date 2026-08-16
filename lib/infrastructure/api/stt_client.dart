@@ -1,7 +1,30 @@
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../cli/grid_cli_service.dart';
 import '../providers.dart';
+
+/// What to say when [sttClientProvider] is null — `grid` couldn't be resolved
+/// on this machine.
+///
+/// One sentence for one cause, shared by everything that can hit it: the mic
+/// button in the composer and the panel over USB ask the same question, and two
+/// wordings for it would read as two different problems.
+const String kSttUnavailableMessage =
+    "The grid tool isn't available on this computer.";
+
+/// 'vi' when the OS locale is Vietnamese, 'en' otherwise.
+///
+/// The STT endpoint has no auto-detect, so something has to pick, and the
+/// system locale is the only signal available without asking. Shared for the
+/// same reason as [kSttUnavailableMessage]: a panel that transcribed in a
+/// different language from the composer on the same machine would be a bug
+/// nobody could explain.
+String preferredSttLang() =>
+    PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'vi'
+    ? 'vi'
+    : 'en';
 
 /// Outcome of a speech-to-text transcription.
 sealed class SttResult {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +17,7 @@ import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/features/panel/logic/panel_controller.dart';
+import 'package:grid_app/features/panel/logic/panel_firmware_updater.dart';
 import 'package:grid_app/features/panel/logic/panel_turn_mirror.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
@@ -24,14 +26,20 @@ import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/features/projects/logic/project.dart';
 import 'package:grid_app/features/provider_node/logic/provider_run_controller.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
+import 'package:grid_app/infrastructure/api/stt_client.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
+import 'package:grid_app/infrastructure/panel/panel_audio.dart';
+import 'package:grid_app/infrastructure/panel/panel_firmware.dart';
+import 'package:grid_app/infrastructure/panel/panel_firmware_provider.dart';
 import 'package:grid_app/infrastructure/panel/panel_frame.dart';
 import 'package:grid_app/infrastructure/panel/panel_link.dart';
 import 'package:grid_app/infrastructure/panel/panel_link_provider.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 import 'package:grid_app/shared/app_info.dart';
+
+import 'panel_firmware_test.dart' show espAppImage;
 
 /// A transport backed by two lists instead of a cable — the same fake
 /// `panel_link_test.dart` drives the framing with, so the controller is
@@ -52,14 +60,50 @@ class _FakeTransport implements PanelTransport {
   /// Deliver bytes as if the driver had just returned them.
   void deliver(String json) => _in.add(encodePanelJson(json));
 
+  /// Deliver one chunk of a voice capture, on the frame type audio travels on.
+  void deliverAudio(List<int> pcm) =>
+      _in.add(encodePanelFrame(PanelFrameType.pcm, pcm));
+
   /// Everything the app has said, decoded back through the real framing.
-  List<Map<String, Object?>> get replies {
+  List<PanelFrame> get frames {
     final decoder = PanelFrameDecoder();
-    return [
-      for (final chunk in sent)
-        for (final frame in decoder.feed(chunk))
-          jsonDecode(frame.text) as Map<String, Object?>,
-    ];
+    return [for (final chunk in sent) ...decoder.feed(chunk)];
+  }
+
+  /// The control messages only — a firmware image on the same wire is bytes,
+  /// not JSON, and decoding it as JSON would fail on the first slice.
+  List<Map<String, Object?>> get replies => [
+    for (final frame in frames)
+      if (frame.type == PanelFrameType.json)
+        jsonDecode(frame.text) as Map<String, Object?>,
+  ];
+
+  /// The firmware slices, in the order they went out.
+  List<Uint8List> get imageFrames => [
+    for (final frame in frames)
+      if (frame.type == PanelFrameType.firmware) frame.payload,
+  ];
+}
+
+/// An [SttClient] that answers with whatever the test says, and keeps the clip
+/// it was handed — the file itself is deleted the moment the call returns.
+class _FakeStt implements SttClient {
+  _FakeStt(this._result);
+
+  final SttResult _result;
+
+  /// The WAV the panel's audio was written into.
+  Uint8List? clip;
+  String? lang;
+
+  @override
+  Future<SttResult> transcribe({
+    required String audioPath,
+    required String lang,
+  }) async {
+    clip = File(audioPath).readAsBytesSync();
+    this.lang = lang;
+    return _result;
   }
 }
 
@@ -539,6 +583,8 @@ void main() {
       NetworkCredential? grid,
       ChatSender? agent,
       List<String> models = const [],
+      SttClient? stt,
+      PanelFirmwareImage? firmware,
     }) {
       final container = ProviderContainer(
         overrides: [
@@ -586,6 +632,12 @@ void main() {
           ),
           nodeNameProvider.overrideWithValue('this-mac'),
           appVersionProvider.overrideWith((ref) async => '0.9.1'),
+          // Both pinned absent by default: a test that says nothing about
+          // voice must not reach the tester's `grid` binary, and one that says
+          // nothing about firmware must not offer an update built from
+          // whatever image happens to be in this checkout.
+          sttClientProvider.overrideWithValue(stt),
+          panelFirmwareProvider.overrideWith((ref) async => firmware),
         ],
       );
       addTearDown(container.dispose);
@@ -858,7 +910,7 @@ void main() {
         final transport = _FakeTransport();
         harness(transport);
 
-        transport.deliver('{"t":"voice.begin","projectId":"p-1"}');
+        transport.deliver('{"t":"screen.brightness","level":40}');
         transport.deliver('{"t":"hello","fw":"0.1.0","proto":1,"mac":"AA"}');
         await pumpEventQueue();
 
@@ -879,5 +931,349 @@ void main() {
         expect(transport.replies, isEmpty);
       },
     );
+
+    /// 100 ms of the sort of thing a microphone produces.
+    final pcm = [for (var i = 0; i < 3200; i++) i % 256];
+
+    test(
+      'a sentence spoken at a project tile is transcribed and dispatched '
+      'there — no confirmation, because the panel named the project',
+      () async {
+        final agent = _HeldTurn();
+        final stt = _FakeStt(const SttSuccess('run the tests'));
+        final transport = _FakeTransport();
+        final container = harness(
+          transport,
+          grid: _credential(),
+          agent: agent,
+          models: const ['qwen'],
+          stt: stt,
+        );
+        await container.read(chatSessionsProvider.notifier).restored;
+        final project = container
+            .read(projectsProvider.notifier)
+            .create(path: '${tmp.path}/api', name: 'api');
+
+        transport.deliver('{"t":"voice.begin","projectId":"${project.id}"}');
+        transport.deliverAudio(pcm);
+        transport.deliver('{"t":"voice.end"}');
+        await pumpEventQueue();
+
+        final transcript = transport.replies.firstWhere(
+          (r) => r['t'] == 'voice.transcript',
+        );
+        expect(transcript['text'], 'run the tests');
+        expect(transcript['projectId'], project.id);
+        expect(transcript['needsConfirm'], false);
+        // The turn goes through the same path `turn.send` uses, so the panel
+        // watches it exactly as it watches a typed one.
+        expect(agent.history!.last.text, 'run the tests');
+        expect(transport.replies.last['t'], 'turn.started');
+        // And what was transcribed is the audio the panel actually sent, in a
+        // container the CLI can read.
+        expect(String.fromCharCodes(stt.clip!.sublist(0, 4)), 'RIFF');
+        expect(stt.clip!.sublist(kWavHeaderBytes), pcm);
+        expect(stt.lang, anyOf('en', 'vi'));
+      },
+    );
+
+    test(
+      'the Goal pill puts /goal in front of what was heard, so the panel\'s '
+      'modifier reaches the agent as part of the sentence',
+      () async {
+        final agent = _HeldTurn();
+        final transport = _FakeTransport();
+        final container = harness(
+          transport,
+          grid: _credential(),
+          agent: agent,
+          models: const ['qwen'],
+          stt: _FakeStt(const SttSuccess('ship the release')),
+        );
+        await container.read(chatSessionsProvider.notifier).restored;
+        final project = container
+            .read(projectsProvider.notifier)
+            .create(path: '${tmp.path}/api', name: 'api');
+
+        transport.deliver(
+          '{"t":"voice.begin","projectId":"${project.id}","cmd":"goal"}',
+        );
+        transport.deliverAudio(pcm);
+        transport.deliver('{"t":"voice.end"}');
+        await pumpEventQueue();
+
+        // Prefixed once, in one place: the transcript the panel is shown and
+        // the message the agent receives are the same string.
+        final transcript = transport.replies.firstWhere(
+          (r) => r['t'] == 'voice.transcript',
+        );
+        expect(transcript['text'], '/goal ship the release');
+        expect(agent.history!.last.text, '/goal ship the release');
+      },
+    );
+
+    test(
+      'a modifier this build has never heard of is dropped rather than pasted '
+      'in front of the words',
+      () async {
+        // A newer panel offering a pill this app does not know must still get
+        // its sentence through — mangled words are worse than a lost modifier.
+        final agent = _HeldTurn();
+        final transport = _FakeTransport();
+        final container = harness(
+          transport,
+          grid: _credential(),
+          agent: agent,
+          models: const ['qwen'],
+          stt: _FakeStt(const SttSuccess('ship it')),
+        );
+        await container.read(chatSessionsProvider.notifier).restored;
+        final project = container
+            .read(projectsProvider.notifier)
+            .create(path: '${tmp.path}/api', name: 'api');
+
+        transport.deliver(
+          '{"t":"voice.begin","projectId":"${project.id}","cmd":"lasso"}',
+        );
+        transport.deliverAudio(pcm);
+        transport.deliver('{"t":"voice.end"}');
+        await pumpEventQueue();
+
+        expect(agent.history!.last.text, 'ship it');
+      },
+    );
+
+    test('a sentence spoken from a screen that names no project is guessed at '
+        'and asked about, never dispatched on the guess', () async {
+      // A guess that dispatches itself into a real repository is worse than
+      // one extra tap.
+      final agent = _HeldTurn();
+      final transport = _FakeTransport();
+      final container = harness(
+        transport,
+        grid: _credential(),
+        agent: agent,
+        models: const ['qwen'],
+        stt: _FakeStt(const SttSuccess('deploy it')),
+      );
+      await container.read(chatSessionsProvider.notifier).restored;
+      final project = container
+          .read(projectsProvider.notifier)
+          .create(path: '${tmp.path}/api', name: 'api');
+
+      transport.deliver('{"t":"voice.begin"}');
+      transport.deliverAudio(pcm);
+      transport.deliver('{"t":"voice.end"}');
+      await pumpEventQueue();
+
+      final transcript = transport.replies.single;
+      expect(transcript['t'], 'voice.transcript');
+      expect(transcript['needsConfirm'], true);
+      expect(transcript['projectId'], project.id);
+      expect(agent.history, isNull);
+
+      // Confirming is what dispatches it, and the project the user picked wins
+      // over the one the app guessed.
+      final other = container
+          .read(projectsProvider.notifier)
+          .create(path: '${tmp.path}/notes', name: 'notes');
+      transport.deliver(
+        '{"t":"voice.confirm","routeId":"${transcript['routeId']}",'
+        '"projectId":"${other.id}"}',
+      );
+      await pumpEventQueue();
+
+      expect(agent.history!.last.text, 'deploy it');
+      expect(agent.workdir, other.path);
+    });
+
+    test('a confirmation for a transcript nobody is holding is answered, not '
+        'ignored — the panel is waiting on something', () async {
+      final transport = _FakeTransport();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+
+      transport.deliver(
+        '{"t":"voice.confirm","routeId":"r-9","projectId":"p"}',
+      );
+      await pumpEventQueue();
+
+      expect(transport.replies.single['t'], 'voice.error');
+    });
+
+    test('a transcription that fails reaches the panel in the words the CLI '
+        'used, which name what to do about it', () async {
+      final transport = _FakeTransport();
+      final container = harness(
+        transport,
+        grid: _credential(),
+        stt: _FakeStt(
+          const SttFailure(
+            'Your Grid session has expired. Run `grid login` to sign in again.',
+          ),
+        ),
+      );
+      await container.read(chatSessionsProvider.notifier).restored;
+      container
+          .read(projectsProvider.notifier)
+          .create(path: '${tmp.path}/api', name: 'api');
+
+      transport.deliver('{"t":"voice.begin"}');
+      transport.deliverAudio(pcm);
+      transport.deliver('{"t":"voice.end"}');
+      await pumpEventQueue();
+
+      final reply = transport.replies.single;
+      expect(reply['t'], 'voice.error');
+      expect(reply['message'], contains('grid login'));
+    });
+
+    test('a capture with no audio in it says so rather than sending a clip '
+        'there is nothing in to transcribe', () async {
+      final stt = _FakeStt(const SttSuccess('never asked'));
+      final transport = _FakeTransport();
+      final container = harness(transport, grid: _credential(), stt: stt);
+      await container.read(chatSessionsProvider.notifier).restored;
+
+      transport.deliver('{"t":"voice.begin"}');
+      transport.deliver('{"t":"voice.end"}');
+      await pumpEventQueue();
+
+      expect(transport.replies.single['t'], 'voice.error');
+      expect(transport.replies.single['message'], contains('microphone'));
+      expect(stt.clip, isNull);
+    });
+
+    test('voice with no grid tool on this computer says which tool is missing '
+        'instead of leaving the panel listening', () async {
+      final transport = _FakeTransport();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+
+      transport.deliver('{"t":"voice.begin"}');
+      transport.deliverAudio(pcm);
+      transport.deliver('{"t":"voice.end"}');
+      await pumpEventQueue();
+
+      expect(transport.replies.single['message'], contains('grid tool'));
+    });
+
+    test('a panel running another firmware is offered the one this build '
+        'carries, with the hash the device verifies against', () async {
+      final image = PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!;
+      final transport = _FakeTransport();
+      harness(transport, firmware: image);
+
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":1,"mac":"AA"}');
+      await pumpEventQueue();
+
+      final offer = transport.replies.firstWhere((r) => r['t'] == 'fw.offer');
+      expect(offer['version'], 'v0.4.1');
+      expect(offer['size'], image.size);
+      expect(offer['sha256'], image.sha256);
+      // Nothing until the panel accepts: it decides when it is willing.
+      expect(transport.imageFrames, isEmpty);
+    });
+
+    test(
+      'a panel already running this build\'s firmware is left alone',
+      () async {
+        final transport = _FakeTransport();
+        harness(
+          transport,
+          firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
+        );
+
+        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":1,"mac":"AA"}');
+        await pumpEventQueue();
+
+        expect(transport.replies.single['t'], 'welcome');
+      },
+    );
+
+    test('no update is offered while a turn is running, because accepting one '
+        'reboots the panel out of work someone is watching', () async {
+      final agent = _HeldTurn();
+      final transport = _FakeTransport();
+      final container = harness(
+        transport,
+        grid: _credential(),
+        agent: agent,
+        models: const ['qwen'],
+        firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
+      );
+      await container.read(chatSessionsProvider.notifier).restored;
+      final project = container
+          .read(projectsProvider.notifier)
+          .create(path: '${tmp.path}/api', name: 'api');
+
+      transport.deliver(
+        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+      );
+      await pumpEventQueue();
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":1,"mac":"AA"}');
+      await pumpEventQueue();
+
+      expect(transport.replies.any((r) => r['t'] == 'fw.offer'), isFalse);
+
+      // It is offered when the machine goes idle — the panel will not say
+      // hello again until it is unplugged.
+      await agent.answer('All 1599 passed.');
+      await pumpEventQueue();
+      expect(transport.replies.any((r) => r['t'] == 'fw.offer'), isTrue);
+    });
+
+    test('a panel that accepts is sent the image, in order, on its own frame '
+        'type, as it acknowledges each slice', () async {
+      final image = PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!;
+      final transport = _FakeTransport();
+      harness(transport, firmware: image);
+
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":1,"mac":"AA"}');
+      await pumpEventQueue();
+      transport.deliver('{"t":"fw.accept"}');
+      await pumpEventQueue();
+
+      // Play the panel: acknowledge everything received so far, which is what
+      // opens the window for the next slice. Bounded so a transfer that stops
+      // moving fails the test instead of hanging it.
+      var sent = 0;
+      for (var turn = 0; turn < 100; turn++) {
+        final now = transport.imageFrames.fold<int>(0, (n, f) => n + f.length);
+        if (now == image.bytes.length) break;
+        expect(now, greaterThan(sent), reason: 'the transfer stopped moving');
+        sent = now;
+        transport.deliver('{"t":"fw.progress","written":$now}');
+        await pumpEventQueue();
+      }
+
+      expect([
+        for (final frame in transport.imageFrames) ...frame,
+      ], image.bytes);
+    });
+
+    test('never has more than the credit window unacknowledged, because the '
+        'panel drops what it cannot buffer without telling anyone', () async {
+      final image = PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!;
+      final transport = _FakeTransport();
+      harness(transport, firmware: image);
+
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":1,"mac":"AA"}');
+      await pumpEventQueue();
+      transport.deliver('{"t":"fw.accept"}');
+      await pumpEventQueue();
+
+      // Not one byte more than the window before the first acknowledgement.
+      // This is the assertion that would have caught the first real transfer:
+      // it pushed 128 KB into a device whose receive ring held 1 KB, and the
+      // ~16 ms each slice spends in flash meant almost none of it survived.
+      // There is no NAK on that peripheral, so nothing else can catch it.
+      final unacked = transport.imageFrames.fold<int>(
+        0,
+        (n, f) => n + f.length,
+      );
+      expect(unacked, lessThanOrEqualTo(kPanelFirmwareWindowBytes));
+      expect(unacked, greaterThan(0));
+    });
   });
 }

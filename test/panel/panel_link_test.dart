@@ -69,10 +69,10 @@ void main() {
 
     test('an unknown message is kept, so newer firmware is visible', () {
       final msg =
-          PanelInbound.parse('{"t":"voice.begin","projectId":"p-1"}')
+          PanelInbound.parse('{"t":"screen.brightness","level":40}')
               as PanelUnknown;
-      expect(msg.type, 'voice.begin');
-      expect(msg.payload['projectId'], 'p-1');
+      expect(msg.type, 'screen.brightness');
+      expect(msg.payload['level'], 40);
     });
 
     test(

@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/stt_client.dart';
 import '../../../infrastructure/logging/app_log.dart';
+import '../../../infrastructure/panel/panel_firmware_provider.dart';
 import '../../../infrastructure/panel/panel_link.dart';
 import '../../../infrastructure/panel/panel_link_provider.dart';
 import '../../../infrastructure/panel/panel_message.dart';
@@ -17,7 +19,9 @@ import '../../chat/logic/conversation.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
+import 'panel_firmware_updater.dart';
 import 'panel_turn_mirror.dart';
+import 'panel_voice.dart';
 
 /// The app's side of the conversation with a Grid Panel.
 ///
@@ -49,9 +53,62 @@ class PanelController {
 
   final Ref _ref;
   StreamSubscription<PanelInbound>? _sub;
+  StreamSubscription<List<int>>? _audioSub;
 
   /// What the panel has already been told about turns in flight.
   final _turns = PanelTurnMirror();
+
+  /// Audio arriving between `voice.begin` and `voice.end`, or null when nobody
+  /// is speaking.
+  PanelVoiceCapture? _voice;
+
+  /// Closes a capture the panel never closed itself.
+  Timer? _voiceOpen;
+
+  /// Transcripts the panel has been shown but not yet placed, by route id.
+  ///
+  /// A guess is not dispatched until `voice.confirm` names where it goes, so
+  /// the words have to wait somewhere, and it cannot be on the panel: it sends
+  /// back a route id, not the sentence.
+  final _guessed = <String, ({String projectId, String text})>{};
+
+  /// Route ids, unique within a session — which is all they need to be. They
+  /// correlate a `voice.confirm` with the transcript it answers, and a panel
+  /// that reboots in between has forgotten the transcript anyway.
+  int _routes = 0;
+
+  /// The panel this session is talking to, as its last `hello` described it.
+  String _mac = '';
+  String _firmwareVersion = '';
+
+  /// A firmware offer held back because the machine was busy, retried when the
+  /// last turn lands.
+  PanelHello? _deferredOffer;
+
+  /// Which firmware version each panel reported immediately before this session
+  /// finished writing an image to it.
+  ///
+  /// The guard against a reflash loop: if a panel comes back from an update
+  /// still reporting the version it had, offering again would flash it again,
+  /// forever. It also names the only cause — the device's `hello.fw` and the
+  /// version inside the image it was given disagree — in the log.
+  final _flashed = <String, String>{};
+
+  /// Image versions this session already tried to hand a panel and could not.
+  ///
+  /// Without this, a failing update retries on every `hello` — every fifteen
+  /// seconds, for as long as the cable is in. That is not a quiet retry: the
+  /// panel erases a flash slot before it answers an offer, so the loop spends
+  /// erase cycles on the user's hardware to re-attempt something that has no
+  /// reason to behave differently a second time. Nothing about the next `hello`
+  /// changes what went wrong.
+  ///
+  /// Keyed by MAC, because two panels can be plugged in and one failing says
+  /// nothing about the other. Session-scoped on purpose — replugging or
+  /// restarting the app is a deliberate act and gets a fresh attempt.
+  final _refused = <String, String>{};
+
+  PanelFirmwareUpdater? _updater;
 
   /// Start answering. Safe to call twice — the second call is a no-op rather
   /// than a second subscription answering everything twice.
@@ -62,13 +119,28 @@ class PanelController {
   /// attached a frame late would miss the handshake and the link would sit
   /// there looking connected and silent.
   void listen() {
-    _sub ??= _ref.read(panelLinkProvider).messages.listen(_answer);
+    final link = _ref.read(panelLinkProvider);
+    _sub ??= link.messages.listen(_answer);
+    // Audio arrives on its own stream and is subscribed to for the whole
+    // session rather than only between begin and end: both are broadcast
+    // streams with no buffer, so a subscription attached when `voice.begin`
+    // lands would miss whatever chunks were already in flight behind it — the
+    // first syllable of every sentence.
+    _audioSub ??= link.audio.listen(_onAudio);
   }
 
   /// Stop answering. The link and the port are released by their own providers.
   Future<void> stop() async {
     await _sub?.cancel();
     _sub = null;
+    await _audioSub?.cancel();
+    _audioSub = null;
+    _voiceOpen?.cancel();
+    _voiceOpen = null;
+    _voice = null;
+    _deferredOffer = null;
+    _updater?.reset();
+    _updater = null;
   }
 
   Future<void> _answer(PanelInbound message) async {
@@ -81,6 +153,24 @@ class PanelController {
         _stopProject(projectId);
       case PanelTurnRequested(:final projectId, :final text):
         _startTurn(projectId, text);
+      case PanelVoiceBegin(:final projectId, :final command):
+        _beginVoice(projectId, command);
+      case PanelVoiceEnd():
+        await _finishVoice();
+      case PanelVoiceConfirm(:final routeId, :final projectId):
+        _confirmVoice(routeId, projectId);
+      case PanelFirmwareAccepted():
+        _firmware.accepted();
+      case PanelFirmwareProgress(:final written):
+        _firmware.progress(written);
+      case PanelFirmwareDone():
+        // Remembered against the version the panel reported *before* this
+        // update, so a device that reboots still calling itself that is not
+        // offered the same image again.
+        if (_mac.isNotEmpty) _flashed[_mac] = _firmwareVersion;
+        _firmware.done();
+      case PanelFirmwareFailed(:final message):
+        _firmware.failed(message);
       case PanelUnknown(:final type):
         _log.warn('panel', 'Panel sent "$type", which this build cannot read');
       case PanelMalformed(:final reason):
@@ -91,6 +181,8 @@ class PanelController {
   /// Answer the panel's introduction, and say which machine it is looking at —
   /// on this link simply the computer it is plugged into.
   Future<void> _welcome(PanelHello hello) async {
+    _mac = hello.mac;
+    _firmwareVersion = hello.firmware;
     _log.info(
       'panel',
       'Panel ${hello.mac} said hello '
@@ -126,6 +218,7 @@ class PanelController {
         runs: _ref.read(agentRunsProvider),
       ),
     );
+    await _offerFirmware(hello);
   }
 
   /// Tell the panel whatever has changed about the turns in flight.
@@ -133,13 +226,22 @@ class PanelController {
   /// Called on every chat-state and run-feed change, which is often — a turn
   /// publishes a phase per streamed token. [PanelTurnMirror] is what makes that
   /// affordable: it says nothing when nothing the panel can draw has moved.
-  void mirrorTurns() => _push(
-    _turns.onChange(
-      projects: _ref.read(sortedProjectsProvider),
-      chats: _ref.read(chatSessionsProvider),
-      runs: _ref.read(agentRunsProvider),
-    ),
-  );
+  void mirrorTurns() {
+    _push(
+      _turns.onChange(
+        projects: _ref.read(sortedProjectsProvider),
+        chats: _ref.read(chatSessionsProvider),
+        runs: _ref.read(agentRunsProvider),
+      ),
+    );
+    final deferred = _deferredOffer;
+    // A panel plugged in during a turn is not offered an update then. This is
+    // the moment that changes: the machine has just gone idle, and the panel
+    // will not say `hello` again until it is unplugged.
+    if (deferred == null || _anyTurnRunning()) return;
+    _deferredOffer = null;
+    unawaited(_offerFirmware(deferred));
+  }
 
   void _push(List<String> messages) {
     if (messages.isEmpty) return;
@@ -310,6 +412,257 @@ class PanelController {
     _ref
         .read(panelLinkProvider)
         .send(PanelOutbound.turnError(projectId: projectId, message: message));
+  }
+
+  /// Start collecting what the user is saying.
+  ///
+  /// A capture already open is dropped rather than continued: a second
+  /// `voice.begin` means the first one's `voice.end` never arrived, and the
+  /// sentence being spoken now is the one somebody is waiting on.
+  void _beginVoice(String? projectId, PanelVoiceCommand command) {
+    _voiceOpen?.cancel();
+    _voice = PanelVoiceCapture(projectId: projectId, command: command);
+    _voiceOpen = Timer(kPanelVoiceOpenLimit, () => unawaited(_finishVoice()));
+  }
+
+  /// One PCM chunk. Dropped when nothing is being captured — a frame that
+  /// arrives just after a capture was closed is late, not a new sentence.
+  void _onAudio(List<int> chunk) {
+    final capture = _voice;
+    if (capture == null) return;
+    capture.add(chunk);
+    // Finished here rather than waited for: the ceiling is a minute of speech,
+    // so a capture that reaches it is one whose `voice.end` is not coming.
+    if (capture.isFull) unawaited(_finishVoice());
+  }
+
+  /// Turn the captured audio into a turn, or say why it could not be.
+  ///
+  /// Every exit answers the panel. It is showing a screen that says it is
+  /// listening, and it has no other way to learn otherwise: it runs no model,
+  /// reads no disk and cannot see this window.
+  Future<void> _finishVoice() async {
+    final capture = _voice;
+    _voice = null;
+    _voiceOpen?.cancel();
+    _voiceOpen = null;
+    // A `voice.end` with no capture behind it promised the panel nothing —
+    // answering an error would put a failure on screen for a sentence that was
+    // already delivered.
+    if (capture == null) return;
+    if (capture.length == 0) {
+      _voiceError(
+        'No sound arrived from the panel. Check its microphone and try again.',
+      );
+      return;
+    }
+    if (capture.truncated) {
+      _log.warn(
+        'panel',
+        'A voice capture filled its $kPanelVoiceMaxBytes-byte ceiling; '
+            'everything after the first minute was dropped',
+      );
+    }
+    final client = _ref.read(sttClientProvider);
+    if (client == null) {
+      _voiceError(kSttUnavailableMessage);
+      return;
+    }
+    switch (await _transcribe(client, capture)) {
+      case SttFailure(:final message):
+        _voiceError(message);
+      case SttSuccess(:final text):
+        // The modifier goes on here, not on the panel and not in the router:
+        // this is the last point where the words are still just words, and the
+        // next thing that happens to them is being sent as a message.
+        _routeTranscript(
+          capture.projectId,
+          '${capture.command.prefix}${text.trim()}',
+        );
+    }
+  }
+
+  /// Write the clip and hand it to `grid stt transcribe`.
+  ///
+  /// A file on disk because that is the interface [SttClient] already has, and
+  /// the reason it has it is worth keeping: the CLI holds the session token, so
+  /// the app never carries a cloud credential and neither does the panel.
+  Future<SttResult> _transcribe(
+    SttClient client,
+    PanelVoiceCapture capture,
+  ) async {
+    Directory? dir;
+    try {
+      dir = await Directory.systemTemp.createTemp('grid_panel_voice_');
+      final clip = File('${dir.path}/clip.wav');
+      await clip.writeAsBytes(capture.toWav(), flush: true);
+      return await client.transcribe(
+        audioPath: clip.path,
+        lang: preferredSttLang(),
+      );
+    } on Object catch (e) {
+      _log.warn('panel', 'A panel voice clip could not be transcribed: $e');
+      return const SttFailure(
+        "That couldn't be sent for transcription. Try again.",
+      );
+    } finally {
+      await _deleteClip(dir);
+    }
+  }
+
+  /// Best-effort: a leftover temp file costs nothing worth failing a turn over.
+  Future<void> _deleteClip(Directory? dir) async {
+    if (dir == null) return;
+    try {
+      await dir.delete(recursive: true);
+    } on FileSystemException {
+      return;
+    }
+  }
+
+  /// Send the transcript where it belongs — or ask, when the app is guessing.
+  void _routeTranscript(String? spokenIn, String text) {
+    if (text.isEmpty) {
+      _voiceError("I couldn't make out any words. Try again, a little closer.");
+      return;
+    }
+    final route = panelVoiceRouteFor(
+      spokenIn: spokenIn,
+      projects: _ref.read(sortedProjectsProvider),
+      chats: _ref.read(chatSessionsProvider),
+    );
+    final routeId = 'r${++_routes}';
+    switch (route) {
+      case PanelVoiceRouted(:final projectId):
+        _sendTranscript(routeId, projectId, text, needsConfirm: false);
+        _startTurn(projectId, text);
+      case PanelVoiceGuessed(:final projectId):
+        _remember(routeId, projectId, text);
+        _sendTranscript(routeId, projectId, text, needsConfirm: true);
+      case PanelVoiceUnroutable(:final message):
+        _voiceError(message);
+    }
+  }
+
+  void _sendTranscript(
+    String routeId,
+    String projectId,
+    String text, {
+    required bool needsConfirm,
+  }) {
+    // The words themselves stay out of the log: they are the user's, and the
+    // interesting fact here is where they were sent and whether the app was
+    // sure. What was said is in the chat it landed in.
+    _log.info(
+      'panel',
+      needsConfirm
+          ? 'Panel heard ${text.length} characters and guesses they belong to '
+                '$projectId — waiting for the panel to confirm'
+          : 'Panel heard ${text.length} characters for $projectId',
+    );
+    _ref
+        .read(panelLinkProvider)
+        .send(
+          PanelOutbound.voiceTranscript(
+            routeId: routeId,
+            text: text,
+            projectId: projectId,
+            needsConfirm: needsConfirm,
+          ),
+        );
+  }
+
+  /// Hold a guessed transcript until the panel says where it goes.
+  ///
+  /// Bounded, oldest first: an unconfirmed transcript is one the user walked
+  /// away from, and the panel asks about one at a time — so a handful covers
+  /// every real case and nothing can grow this without limit.
+  void _remember(String routeId, String projectId, String text) {
+    _guessed[routeId] = (projectId: projectId, text: text);
+    while (_guessed.length > kPanelVoicePendingLimit) {
+      _guessed.remove(_guessed.keys.first);
+    }
+  }
+
+  /// The user picked a project for a transcript the app had guessed at.
+  ///
+  /// [projectId] wins over the guess: the panel offers the other tiles, and the
+  /// whole point of asking is that the answer can differ.
+  void _confirmVoice(String routeId, String projectId) {
+    final pending = _guessed.remove(routeId);
+    if (pending == null) {
+      _voiceError('That one is no longer waiting to be sent. Say it again?');
+      return;
+    }
+    final target = projectId.trim();
+    _startTurn(target.isEmpty ? pending.projectId : target, pending.text);
+  }
+
+  /// Tell the panel voice went wrong, in words a person can act on.
+  void _voiceError(String message) {
+    _log.warn('panel', 'Panel voice failed: $message');
+    _ref.read(panelLinkProvider).send(PanelOutbound.voiceError(message));
+  }
+
+  /// The firmware handover for this session.
+  ///
+  /// Built on first use because it holds the link, and [panelLinkProvider] is a
+  /// plain provider whose object lives as long as this controller does.
+  PanelFirmwareUpdater get _firmware => _updater ??= PanelFirmwareUpdater(
+    link: _ref.read(panelLinkProvider),
+    log: _log,
+    onGaveUp: (version) {
+      if (_mac.isNotEmpty) _refused[_mac] = version;
+    },
+  );
+
+  /// Offer the firmware this build carries, when the panel is running another
+  /// one and this is a safe moment to say so.
+  ///
+  /// The app ships the image its own build was compiled against, so "the panel
+  /// is running something else" always means one half is behind the other.
+  Future<void> _offerFirmware(PanelHello hello) async {
+    final image = await _ref.read(panelFirmwareProvider.future);
+    if (image == null || image.version == hello.firmware) return;
+    if (_firmware.busy) return;
+    if (_anyTurnRunning()) {
+      _log.info(
+        'panel',
+        'The panel runs firmware ${hello.firmware} and this build carries '
+            '${image.version}, but a turn is running — not offering yet',
+      );
+      _deferredOffer = hello;
+      return;
+    }
+    if (_refused[hello.mac] == image.version) {
+      // Once per session, not once per hello: the log line that matters is the
+      // one the failure itself wrote, and repeating it every fifteen seconds
+      // would bury it.
+      return;
+    }
+    if (_flashed[hello.mac] == hello.firmware) {
+      // Loud, because there is only one cause and it is not fixable from here:
+      // the device reports a version string that is not the one inside the
+      // image it was just given, so every comparison will mismatch forever.
+      _log.warn(
+        'panel',
+        'The panel rebooted still reporting firmware ${hello.firmware} after '
+            'being written ${image.version} — its `hello.fw` and the image it '
+            'runs disagree, so no further update is offered this session',
+      );
+      return;
+    }
+    _firmware.offer(image);
+  }
+
+  /// Whether any project on this machine has a turn in flight.
+  ///
+  /// The gate on a firmware offer: accepting one reboots the panel into a
+  /// flash, and a tile going dark in the middle of work somebody is watching is
+  /// the one moment an update must never start.
+  bool _anyTurnRunning() {
+    final chats = _ref.read(chatSessionsProvider);
+    return chats.live.any((c) => panelTurnInFlight(chats, c.id));
   }
 
   /// This app's version, or empty when the platform channel does not answer.
