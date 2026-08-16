@@ -271,6 +271,26 @@ The device verifies `sha256` over what it actually wrote, not over what it think
 keeps running the old image if it does not match. Two OTA slots exist for exactly this
 (`partitions.csv`), so a failed update costs a reboot and nothing else.
 
+> ⚠️ **The app wins, in BOTH directions — including backwards.** "Other than the bundled one" is a
+> comparison, not an ordering: a panel reporting a version the app does not carry gets the app's
+> version, older or newer. That is what keeps the two halves from drifting, and it is also a trap
+> with a cable in it.
+>
+> **What it costs you.** `idf.py flash` a new build, then let an app whose bundle predates it see the
+> panel, and the panel is quietly flashed back to the old image within seconds. Measured on
+> 2026-08-16: the panel was flashed to 0.1.2, and a Grid.app bundle built two days earlier offered
+> 0.1.1 and took it back — twice, before anyone noticed. Nothing looks broken; the panel just shows
+> the previous UI, and `idf.py flash` said `Done`.
+>
+> **Why it is not visible.** The `.bin` the app OFFERS is the one inside its built bundle
+> (`build/macos/.../flutter_assets/assets/panel/`), not the one in the source tree. Refreshing
+> `assets/panel/grid_panel.bin` with `scripts/sync_panel_firmware.sh` changes what the NEXT app build
+> carries and nothing about the app already running.
+>
+> **So, in order, every time:** sync the asset → rebuild the app → `idf.py flash` the panel → start
+> the app. Or simply don't run the app while flashing by cable. The log line to check is
+> `This build carries panel firmware <v>` — if that is not the version you just built, stop.
+
 An offer that **fails** is not offered again for the rest of the app's session. Accepting one makes
 the panel erase a flash slot *before* it answers, so retrying on every `hello` would spend erase
 cycles on the user's hardware every fifteen seconds — and nothing about the next `hello` changes what

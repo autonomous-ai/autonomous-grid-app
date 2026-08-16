@@ -33,6 +33,11 @@ fi
 mkdir -p "$(dirname "$DST")"
 cp "$SRC" "$DST"
 
+# ⚠️ THIS FILE IS NOT WHAT A RUNNING APP OFFERS. The app reads the copy inside its BUILT BUNDLE, so
+# until `flutter build macos` runs again, an app already up still carries the previous image — and it
+# will offer it to a panel you just flashed by cable, because the version comparison has no direction
+# (device/esp32-square/docs/protocol.md, "Firmware update"). Sync, rebuild, THEN flash the panel.
+
 # Printed rather than stored: it is what the panel is offered, and seeing it
 # here is how you check the copy is the build you meant.
 python3 - "$DST" <<'PY'
