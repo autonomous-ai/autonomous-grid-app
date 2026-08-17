@@ -39,4 +39,32 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
   end
+
+  # media_kit_video's podspec writes GCC_PREPROCESSOR_DEFINITIONS with $(inherited)
+  # QUOTED ('"$(inherited)" GL_SILENCE_DEPRECATION …'), on top of the unquoted one
+  # CocoaPods already puts at the head of the line. Xcode expands the quoted copy
+  # as a SINGLE token, so the whole inherited list arrives as one -D argument —
+  # `-D'POD_CONFIGURATION_DEBUG=1 DEBUG=1'` — and every translation unit in that
+  # pod warns that POD_CONFIGURATION_DEBUG is redefined. That is dozens of lines
+  # of noise per build, and it hides the warnings worth reading.
+  #
+  # Dropping the quoted copy loses nothing: the unquoted $(inherited) ahead of it
+  # already carries the same list. Only that one setting is touched, and only
+  # inside the generated Pods xcconfigs — the real fix belongs upstream, in the
+  # podspec (media_kit_video 2.0.1 at the time of writing).
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      path = config.base_configuration_reference&.real_path
+      next unless path && File.exist?(path)
+
+      changed = false
+      lines = File.readlines(path).map do |line|
+        next line unless line.start_with?('GCC_PREPROCESSOR_DEFINITIONS')
+        fixed = line.gsub(' "$(inherited)"', '')
+        changed ||= fixed != line
+        fixed
+      end
+      File.write(path, lines.join) if changed
+    end
+  end
 end

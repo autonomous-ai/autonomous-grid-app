@@ -8,9 +8,9 @@ import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../../../shared/layouts/widgets/sidebar_show_more.dart';
 import '../../../shared/layouts/widgets/sidebar_timeline.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
-import '../../../shared/widgets/typing_dots.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/logic/project_folder_status.dart';
 import '../../projects/presentation/create_project_dialog.dart';
@@ -520,9 +520,13 @@ class _ChatRow extends ConsumerWidget {
   }
 }
 
-/// The live cue on a chat row while a reply is coming in — pulsing dots so a
+/// The live cue on a chat row while a reply is coming in — a spinning ring so a
 /// background chat reads as still working, not stalled. Sits where the archive
 /// action would, at the same 24px width, so nothing reflows when it appears.
+///
+/// The same ring every other running state in the app uses (a step's status
+/// glyph, a button mid-work), so "this is going" looks the same wherever you
+/// meet it — dots said the same thing in a dialect only this rail spoke.
 ///
 /// Kept muted rather than accented: the selected row already owns the rail's one
 /// bright mark, and a second lit element in the list would blur which chat is on
@@ -537,7 +541,7 @@ class _ChatActivityCue extends StatelessWidget {
     AppTheme.watch(context);
     return Align(
       alignment: Alignment.centerRight,
-      child: TypingDots(color: AppPalette.textFaint, dotSize: 3.5),
+      child: AppSpinner(size: SpinnerSize.small, color: AppPalette.textFaint),
     );
   }
 }

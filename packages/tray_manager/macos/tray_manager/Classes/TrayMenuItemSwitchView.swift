@@ -22,11 +22,31 @@ class TrayMenuItemSwitchView: NSView {
 
     private let titleLabel = NSTextField(labelWithString: "")
     private let toggle = NSSwitch()
-    private var isHighlighted = false
+
+    /// The hover highlight behind the row.
+    ///
+    /// A visual-effect view rather than a colour filled in `draw`:
+    /// `NSColor.selectedMenuItemColor` was deprecated in macOS 11 in favour of
+    /// the `.selection` material, which is what a real menu row wears — vibrant
+    /// over whatever the menu sits on, and following the user's accent colour,
+    /// where a flat fill could only imitate one of the two.
+    private let highlight = NSVisualEffectView()
 
     init(title: String, isOn: Bool) {
         super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 28))
         autoresizingMask = [.width]
+
+        highlight.material = .selection
+        highlight.blendingMode = .behindWindow
+        // `.selection` draws grey until the view is emphasized — that flag is
+        // the whole difference between "a highlighted row" and "a grey box".
+        highlight.isEmphasized = true
+        highlight.state = .active
+        highlight.isHidden = true
+        highlight.frame = bounds
+        highlight.autoresizingMask = [.width, .height]
+        // Added first, so the label and the switch draw over it.
+        addSubview(highlight)
 
         titleLabel.font = NSFont.menuFont(ofSize: 0)
         titleLabel.textColor = .labelColor
@@ -86,21 +106,12 @@ class TrayMenuItemSwitchView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isHighlighted = true
+        highlight.isHidden = false
         titleLabel.textColor = .selectedMenuItemTextColor
-        needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
-        isHighlighted = false
+        highlight.isHidden = true
         titleLabel.textColor = .labelColor
-        needsDisplay = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard isHighlighted else { return }
-        NSColor.selectedMenuItemColor.setFill()
-        bounds.fill()
     }
 }
