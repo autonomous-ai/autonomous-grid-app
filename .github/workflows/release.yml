@@ -53,7 +53,7 @@ env:
   # is reachable without auth (a private repo's release assets 404 for anyone
   # without repo access — including the client's Sparkle). Must be a public repo
   # with at least one commit; CI cross-publishes to it with GRID_DOWNLOADS_TOKEN.
-  DOWNLOADS_REPO: autonomous-ecm/autonomous-grid-app-downloads
+  DOWNLOADS_REPO: autonomous-ai/autonomous-grid-app-downloads
 
 jobs:
   build:
