@@ -40,6 +40,30 @@ void main() {
     });
   });
 
+  group('what picking one out of the menu should do', () {
+    test('a command that needs words is handed to the user half-typed, not '
+        'run bare — picking /goal used to ask for its status and answer '
+        '"No goal set."', () {
+      expect(ChatCommand.goal.takesArgument, isTrue);
+      expect(ChatCommand.loop.takesArgument, isTrue);
+    });
+
+    test('a command that needs nothing just runs', () {
+      expect(ChatCommand.clear.takesArgument, isFalse);
+      // `/compact` takes an optional focus, but bare is the ordinary use, so
+      // picking it does the thing rather than leaving a line to finish.
+      expect(ChatCommand.compact.takesArgument, isFalse);
+    });
+
+    test('every command that takes words says what they are for, since the '
+        'menu row is where the user reads it', () {
+      for (final command in ChatCommand.values) {
+        if (!command.takesArgument) continue;
+        expect(command.argumentHint, isNotEmpty, reason: command.name);
+      }
+    });
+  });
+
   group('what the menu shows while a command is being typed', () {
     test('a lone slash offers everything', () {
       expect(slashQuery('/'), '');
