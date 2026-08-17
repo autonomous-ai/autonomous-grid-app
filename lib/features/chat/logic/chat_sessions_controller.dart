@@ -65,6 +65,11 @@ final chatSessionsProvider =
       ChatSessionsController.new,
     );
 
+/// How long one loop iteration's turn may run before the loop abandons it and
+/// moves to the next beat. A seam over [kLoopTurnCeiling] so a test can shorten
+/// the wait instead of holding a hung turn for the full twenty minutes.
+final loopTurnCeilingProvider = Provider<Duration>((ref) => kLoopTurnCeiling);
+
 /// Everything needed to repeat a failed turn without asking the user to rebuild
 /// its text, pictures, documents, or captured context in the composer.
 class _RetryableTurn {
@@ -265,6 +270,11 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 
   /// Cancel one chat's send — [_ChatSettle].
   void _cancel(String id);
+
+  /// Stop one chat's in-flight reply, keeping any partial and settling it back
+  /// to idle — [_ChatSend]. The loop calls it to abandon a turn that has hung
+  /// past [kLoopTurnCeiling] so the next iteration is not blocked behind it.
+  void stopChat(String id);
 }
 
 class ChatSessionsController extends _ChatSessions

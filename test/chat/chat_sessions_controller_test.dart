@@ -202,6 +202,42 @@ class _PerChatSender implements ChatSender {
   }
 }
 
+/// An agent whose first turn answers and every turn after it hangs — a stand-in
+/// for a `claude -p` that returns once and then sits forever (the log showed one
+/// at 286 minutes). [hungCancelled] records that the loop's ceiling really tore
+/// the stuck turn down rather than leaving it running behind a frozen loop.
+class _HangAfterFirstSender implements ChatSender {
+  int calls = 0;
+  bool hungCancelled = false;
+
+  @override
+  Stream<ChatSendUpdate> send({
+    required NetworkCredential network,
+    required String model,
+    required List<ChatMessage> history,
+    PlaygroundModality modality = PlaygroundModality.text,
+    List<MediaAttachment> attachments = const [],
+    String? localBaseUrl,
+    String? workdir,
+    String? conversationId,
+    String? instructions,
+    bool planFirst = false,
+    AgentApprovalMode? approval,
+    AgentResumePoint? resume,
+  }) {
+    calls++;
+    if (calls == 1) {
+      return Stream.fromIterable(const [
+        ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+      ]);
+    }
+    // Never finishes: send()'s future stays pending, so only the ceiling ends it.
+    return StreamController<ChatSendUpdate>(
+      onCancel: () => hungCancelled = true,
+    ).stream;
+  }
+}
+
 /// A fixed selected grid, so approving a plan (which reads the current grid to
 /// send the execute turn) never touches the real `~/.grid`.
 class _FixedNetwork extends SelectedNetwork {
@@ -284,6 +320,7 @@ _harness(
   ChatSender? answering,
   GridOverview? overview,
   ChatTransport? grid,
+  Duration? loopTurnCeiling,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
@@ -293,6 +330,10 @@ _harness(
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
+      // Shorten the per-iteration ceiling so a test can prove a hung loop turn
+      // is abandoned without holding it for the full twenty minutes.
+      if (loopTurnCeiling != null)
+        loopTurnCeilingProvider.overrideWithValue(loopTurnCeiling),
       // [answering] stands in for whoever replies, for a test that cares about
       // the reply arriving over time rather than about who sent it.
       chatSenderProvider.overrideWithValue(answering ?? sender),
@@ -2624,6 +2665,50 @@ void main() {
         await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
       },
     );
+
+    test('a turn that hangs is abandoned at the ceiling, so the loop keeps its '
+        'cadence instead of freezing overnight on one stuck turn', () async {
+      // The bug: an agent turn hung for 4h46m and, because the next beat is only
+      // armed once the current turn returns, the whole loop sat frozen — "run
+      // all night" stopped dead after one iteration, with no log to say why.
+      final sender = _HangAfterFirstSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        answering: sender,
+        loopTurnCeiling: const Duration(milliseconds: 100),
+        updates: const [],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      // Turn one answers and creates the chat.
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await settle();
+
+      // The loop's first iteration goes out to a turn that never finishes.
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: '5m check the deploy',
+      ));
+
+      // Poll real time: the 100ms ceiling has to actually elapse.
+      for (var i = 0; i < 50 && !sender.hungCancelled; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(sender.calls, 2, reason: 'the setup turn, then the loop iteration');
+      expect(sender.hungCancelled, isTrue, reason: 'the hung turn was stopped');
+      expect(
+        h.container.read(chatSessionsProvider).sendingFor(chat.id),
+        isFalse,
+        reason: 'the chat is idle again, not stuck answering forever',
+      );
+      expect(chat.loop?.iterations, 1, reason: 'the next beat was scheduled');
+      expect(chat.loop?.isRunning, isTrue);
+
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
 
     test('/loop with nothing to run says what to type instead of starting a '
         'loop about nothing', () async {

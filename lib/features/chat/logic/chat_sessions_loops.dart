@@ -72,12 +72,18 @@ mixin _ChatLoops on _ChatSessions {
     final network = ref.read(selectedNetworkProvider);
     if (chat == null || loop == null || !loop.isRunning || _disposed) return;
     if (network == null) {
+      ref
+          .read(appLogProvider)
+          .warn('chat', 'loop in $id stopped: no grid is selected');
       _saveLoop(id, loop.copyWith(status: LoopStatus.stopped));
       return;
     }
     // Seven days is the ceiling, checked before spending a turn rather than
     // after — an expired loop must not get one last free run.
     if (loop.hasExpired(DateTime.now())) {
+      ref
+          .read(appLogProvider)
+          .info('chat', 'loop in $id expired after 7 days: ${loop.prompt}');
       _saveLoop(id, loop.copyWith(status: LoopStatus.expired));
       return;
     }
@@ -90,14 +96,34 @@ mixin _ChatLoops on _ChatSessions {
       return;
     }
 
-    await send(
-      network: network,
-      model: chat.model,
-      message: loop.prompt,
-      into: id,
-      planFirst: false,
-      continuing: true,
-    );
+    ref
+        .read(appLogProvider)
+        .info('chat', 'loop iteration ${loop.iterations + 1} in $id: '
+            '${loop.prompt}');
+    // Bound the turn. A loop runs unattended, and an agent turn can hang (a
+    // `claude -p` turn has sat for close to five hours) with nobody there to
+    // press Stop — and because the next beat is only armed once this one
+    // returns, a hung turn freezes the whole loop, silently. Past the ceiling,
+    // stop the turn (keeping any partial) and go on to the next iteration so an
+    // overnight loop keeps its cadence instead of dying on one stuck turn.
+    final ceiling = ref.read(loopTurnCeilingProvider);
+    try {
+      await send(
+        network: network,
+        model: chat.model,
+        message: loop.prompt,
+        into: id,
+        planFirst: false,
+        continuing: true,
+      ).timeout(ceiling);
+    } on TimeoutException {
+      ref.read(appLogProvider).warn(
+        'chat',
+        'loop turn in $id ran past ${loopIntervalLabel(ceiling)} '
+            'without finishing — stopping it and moving on',
+      );
+      stopChat(id);
+    }
     if (_disposed) return;
     await _scheduleNextIteration(id);
   }
