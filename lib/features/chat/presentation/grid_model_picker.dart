@@ -41,16 +41,33 @@ const _menuWidth = 340.0;
 /// off its button.
 const _menuPadding = 5.0;
 
+/// The air the panel keeps from the window edge, passed to
+/// [anchoredMenuPosition] and used to work out how tall it may draw.
+const _menuMargin = 8.0;
+
+/// The tallest this panel may draw: the window, less the margin it keeps at both
+/// edges.
+///
+/// Its own cap rather than [AppControl.menuMaxHeight]'s 240, which fit **six**
+/// rows and cut the seventh in half — a grid serving eight models read as a list
+/// that had lost two. A model list can genuinely be long, so past this the list
+/// still scrolls (and now says so, see the `Scrollbar` in [_ModelMenuState]) — it
+/// just uses the window it has first.
+double _menuMaxHeight(BuildContext context) =>
+    MediaQuery.sizeOf(context).height - _menuMargin * 2;
+
 /// What the list can grow to before it scrolls: the whole panel, less its own
 /// padding.
 ///
-/// Derived, not chosen. It used to be a flat 300 while `appMenuStyle` caps the
-/// panel at [AppControl.menuMaxHeight] (240) — so a grid serving more than six
-/// models built a 310px list inside a 240px panel, which left the menu *twice*
-/// scrollable (the panel's own scroll view over this one) and, worse, made the
-/// height this picker predicts to place itself 70px taller than what draws: the
-/// list opened hanging in the middle of the conversation instead of on the pill.
-const _menuMaxListHeight = AppControl.menuMaxHeight - _menuPadding * 2;
+/// Derived, not chosen. It used to be a flat 300 while `appMenuStyle` capped the
+/// panel at 240 — so a grid serving more than six models built a 310px list
+/// inside a 240px panel, which left the menu *twice* scrollable (the panel's own
+/// scroll view over this one) and, worse, made the height this picker predicts to
+/// place itself 70px taller than what draws: the list opened hanging in the
+/// middle of the conversation instead of on the pill. Same trap, same rule — the
+/// list's cap and the panel's must be the same number.
+double _maxListHeight(BuildContext context) =>
+    _menuMaxHeight(context) - _menuPadding * 2;
 
 /// What one option row measures, measured with `getRect` rather than derived:
 /// text at 13/1.2 rounds up to a 16px line box inside `vertical: 8`, and the
@@ -83,13 +100,13 @@ const _emptyNoteHeight = 63.0;
 /// the app this height can't be a constant: the list grows with what the grid
 /// serves, and a stale constant is exactly what floats a menu off its anchor.
 ///
-/// Capped by [_menuMaxListHeight] at exactly what the panel can draw, so a grid
+/// Capped by [_maxListHeight] at exactly what the panel can draw, so a grid
 /// serving twenty models places the same as one serving three.
-Size _menuSize(int rows) {
+Size _menuSize(BuildContext context, int rows) {
   // `rows == 0` is the empty state, which draws one [_EmptyNote] rather than no
   // rows at all — see [_emptyNoteHeight].
   final content = rows == 0 ? _emptyNoteHeight : _optionRowHeight * rows;
-  final list = (content + _listPadding * 2).clamp(0.0, _menuMaxListHeight);
+  final list = (content + _listPadding * 2).clamp(0.0, _maxListHeight(context));
   return Size(_menuWidth, _menuPadding * 2 + list);
 }
 
@@ -145,13 +162,16 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     controller.open(
       position: anchoredMenuPosition(
         context,
-        menuSize: _menuSize(_rowCount()),
-        margin: 8,
-        gap: 6,
+        menuSize: _menuSize(context, _rowCount()),
+        margin: _menuMargin,
+        gap: AppControl.menuGap,
         alignEnd: true,
         // The pill lives at the bottom of the window, so the menu opens upward;
         // `anchoredMenuPosition` drops back below on its own if it won't fit.
         preferAbove: true,
+        // The same cap the panel and its list are drawn with — three numbers that
+        // must agree, or the panel is placed for a height it never takes.
+        maxHeight: _menuMaxHeight(context),
       ),
     );
   }
@@ -190,6 +210,11 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
       style: appMenuStyle().copyWith(
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(vertical: _menuPadding),
+        ),
+        // The shared 240 cap lifted — see [_menuMaxHeight]. The list inside is
+        // held to the same number less this padding, so neither clips the other.
+        maximumSize: WidgetStatePropertyAll(
+          Size.fromHeight(_menuMaxHeight(context)),
         ),
         visualDensity: VisualDensity.compact,
       ),
@@ -346,18 +371,28 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: _menuMaxListHeight),
-            child: SingleChildScrollView(
+            constraints: BoxConstraints(maxHeight: _maxListHeight(context)),
+            // A list long enough to be cut has to say so. The menu panel draws a
+            // scrollbar for *its* scroll view, but this list is a second one
+            // inside it — and it is the one that scrolls, since the panel is now
+            // capped at exactly what this list plus the panel padding takes. So
+            // without this the models past the fold scrolled silently.
+            // Safe with the dedicated controller below: the assert this used to
+            // hit came from inheriting the ambient primary one.
+            child: Scrollbar(
               controller: _scroll,
-              primary: false,
-              padding: const EdgeInsets.symmetric(vertical: _listPadding),
-              child: settling
-                  ? const _LoadingRows()
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: _rows(catalog, currentGridId, agent),
-                    ),
+              child: SingleChildScrollView(
+                controller: _scroll,
+                primary: false,
+                padding: const EdgeInsets.symmetric(vertical: _listPadding),
+                child: settling
+                    ? const _LoadingRows()
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: _rows(catalog, currentGridId, agent),
+                      ),
+              ),
             ),
           ),
         ],
