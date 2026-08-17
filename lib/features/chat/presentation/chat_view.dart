@@ -52,7 +52,6 @@ import '../logic/composer_snippet.dart';
 import '../logic/conversation.dart';
 import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
-import 'goal_bar.dart';
 import 'queued_follow_ups.dart';
 import 'agent_handover_bar.dart';
 import 'file_mention_menu.dart';
@@ -974,7 +973,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               // turn" scope reads it (`lastTurnAgentPaths`) —
                               // so bringing the bar back is putting this one
                               // line back.
-                              const GoalBar(),
                               const RunningServicesBar(),
                               const SaveSkillBar(),
                               const QueuedFollowUps(),

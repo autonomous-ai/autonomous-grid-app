@@ -12,7 +12,6 @@ import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../skills/logic/skill_proposal.dart';
-import 'goal_dialog.dart';
 
 const _menuWidth = 208.0;
 const _rowHeight = 34.0;
@@ -29,10 +28,12 @@ const _rowGap = 1.0;
 
 /// What the menu will measure. Summed rather than guessed so
 /// [anchoredMenuPosition] lands the menu on the button instead of near it.
-/// Three rows above the divider now (rename, archive, copy), one below.
+/// Five rows above the divider (rename, skill, pin, archive, copy), one below —
+/// recounted when the goal row went, because the old sum still said four and a
+/// menu measured short is a menu placed short.
 const _menuSize = Size(
   _menuWidth,
-  _menuPadding * 2 + (_rowHeight + _rowGap * 2) * 4 + _dividerHeight,
+  _menuPadding * 2 + (_rowHeight + _rowGap * 2) * 6 + _dividerHeight,
 );
 
 /// Names the conversation you're reading: a mark, the title, and the "…" that
@@ -139,20 +140,6 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
     ref.read(chatSessionsProvider.notifier).togglePinned(_chat.id);
   }
 
-  /// Ask what the assistant should work toward on its own, then start it.
-  Future<void> _setGoal() async {
-    _menu.close();
-    final request = await showGoalDialog(context);
-    if (request == null || !mounted) return;
-    await ref
-        .read(chatSessionsProvider.notifier)
-        .startGoal(
-          objective: request.objective,
-          maxTurns: request.maxTurns,
-          maxMinutes: request.maxMinutes,
-        );
-  }
-
   /// Ask the assistant to turn this conversation into a reusable skill. The
   /// draft comes back in the transcript, where the user can read it before the
   /// bar above the composer offers to keep it.
@@ -239,8 +226,6 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
       menuChildren: [
         _ChatMenuContent(
           pinned: _chat.pinned,
-          hasGoal: _chat.goal != null,
-          onSetGoal: _setGoal,
           onMakeSkill: _makeSkill,
           onRename: _rename,
           onTogglePin: _togglePin,
@@ -264,8 +249,6 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
 class _ChatMenuContent extends StatelessWidget {
   const _ChatMenuContent({
     required this.pinned,
-    required this.hasGoal,
-    required this.onSetGoal,
     required this.onMakeSkill,
     required this.onRename,
     required this.onTogglePin,
@@ -276,12 +259,6 @@ class _ChatMenuContent extends StatelessWidget {
 
   /// Whether this chat is already pinned — the row says which way it goes.
   final bool pinned;
-
-  /// Whether it already has a goal, so the row offers to replace it rather than
-  /// pretending the one running isn't there.
-  final bool hasGoal;
-
-  final VoidCallback onSetGoal;
 
   /// Ask for a skill drafted from this conversation.
   final VoidCallback onMakeSkill;
@@ -310,11 +287,6 @@ class _ChatMenuContent extends StatelessWidget {
             icon: LucideIcons.sparkles300,
             label: 'Turn this into a skill…',
             onPressed: onMakeSkill,
-          ),
-          _ChatMenuItem(
-            icon: LucideIcons.flag300,
-            label: hasGoal ? 'Replace the goal…' : 'Set a goal…',
-            onPressed: onSetGoal,
           ),
           _ChatMenuItem(
             icon: pinned ? LucideIcons.pinOff300 : LucideIcons.pin300,

@@ -91,10 +91,10 @@ mixin _ChatSend on _ChatSessions {
         (planFirst ?? approval == AgentApprovalMode.plan) && viaAgent;
 
     // A follow-up that has to land on the **same** agent as the turn before it:
-    // approving a plan, carrying on after a turn ran out of steps, the next step
-    // of a goal. Each continues a session that agent alone holds, and each is
-    // sent by the app rather than typed, so under Auto they would be classified
-    // afresh — and a plan handed to a second agent is a plan it never wrote.
+    // approving a plan, carrying on after a turn ran out of steps. Each
+    // continues a session that agent alone holds, and each is sent by the app
+    // rather than typed, so under Auto they would be classified afresh — and a
+    // plan handed to a second agent is a plan it never wrote.
     //
     // Only under Auto: where the user has named an agent, their pick still
     // stands, because changing it is something they did on purpose and the
@@ -501,7 +501,6 @@ mixin _ChatSend on _ChatSessions {
             _retryableTurns.remove(id);
             _adoptAgentName(answered, agentSessionId);
             _announceTurn(answered, body: firstLinePreview(reply.text));
-            _lastTurn[id] = (reply: reply.text, failure: null);
           case ChatSendFailure(:final error, :final partial):
             // Keep what the assistant produced before it failed — its streamed
             // prose, the plan it laid out — instead of wiping the turn to a bare
@@ -535,7 +534,6 @@ mixin _ChatSend on _ChatSessions {
               state = state.withError(id, error);
             }
             _announceTurn(current, body: "Couldn't finish: $error");
-            _lastTurn[id] = (reply: null, failure: error);
         }
       },
       onDone: () => _finish(id),
