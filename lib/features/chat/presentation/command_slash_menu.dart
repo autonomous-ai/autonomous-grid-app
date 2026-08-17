@@ -6,18 +6,22 @@ import '../logic/commands/chat_command.dart';
 /// The `/` menu above the composer: the app's own commands, filtered by what
 /// has been typed after the slash.
 ///
-/// Picking one runs it. Nothing here inserts text into the composer — these are
-/// actions, not snippets, and a menu that filled the box with `/clear` and left
-/// the user to press Enter would be asking them to do the last step by hand.
+/// Picking one either runs it or drops it into the composer for the user to
+/// finish — [ChatCommand.takesArgument] decides which, because a command that
+/// needs words ("keep working until *what*") has nothing to do without them.
 ///
 /// Presentational: the match is [matchingChatCommands], tested on its own.
 class CommandSlashMenu extends StatelessWidget {
-  const CommandSlashMenu({super.key, required this.query, required this.onRun});
+  const CommandSlashMenu({
+    super.key,
+    required this.query,
+    required this.onPick,
+  });
 
   /// The text after the leading `/`; empty shows every command.
   final String query;
 
-  final ValueChanged<ChatCommand> onRun;
+  final ValueChanged<ChatCommand> onPick;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +45,7 @@ class CommandSlashMenu extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final command in matches)
-            _CommandRow(command: command, onTap: () => onRun(command)),
+            _CommandRow(command: command, onTap: () => onPick(command)),
         ],
       ),
     );
@@ -87,6 +91,19 @@ class _CommandRowState extends State<_CommandRow> {
                         fontWeight: AppFont.medium,
                       ),
                     ),
+                    // What it wants after the name, in the shape it will be
+                    // typed — so the row says "this one needs words from you"
+                    // before it is clicked, not after.
+                    if (command.argumentHint != null) ...[
+                      const SizedBox(width: 5),
+                      Text(
+                        '<${command.argumentHint}>',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: AppPalette.textFaint,
+                        ),
+                      ),
+                    ],
                     const SizedBox(width: 10),
                     Flexible(
                       child: Text(

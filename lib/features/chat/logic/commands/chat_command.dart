@@ -24,6 +24,7 @@ enum ChatCommand {
   /// all (which asks for the status).
   goal(
     name: 'goal',
+    argumentHint: 'what has to be true',
     summary: 'Keep working until something is true',
     detail:
         'Write the finished state — "the tests in test/auth pass". It keeps '
@@ -34,6 +35,7 @@ enum ChatCommand {
   /// by the prompt, or one of [kGoalClearWords] to stop it.
   loop(
     name: 'loop',
+    argumentHint: 'how often, and what to do',
     summary: 'Repeat something every so often',
     detail:
         'Say the gap and what to do — "/loop 5m check the deploy". Leave the '
@@ -54,10 +56,25 @@ enum ChatCommand {
     required this.name,
     required this.summary,
     required this.detail,
+    this.argumentHint,
   });
 
   /// What the user types after the slash.
   final String name;
+
+  /// What the words after the name are for, or null when the command needs
+  /// none.
+  ///
+  /// It decides what *picking the command from the menu* does, which is the
+  /// whole point of it: a command that needs words is dropped into the composer
+  /// for the user to finish, and one that doesn't just runs. Picking `/goal`
+  /// used to run it bare — which is how you ask for its status, so clicking
+  /// "Keep working until something is true" answered "No goal set."
+  final String? argumentHint;
+
+  /// Whether picking this from the menu should hand the user a half-typed line
+  /// rather than doing something.
+  bool get takesArgument => argumentHint != null;
 
   /// The one line the menu shows beside the name.
   final String summary;

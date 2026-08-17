@@ -576,6 +576,23 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _message.selection = const TextSelection.collapsed(offset: 1);
   }
 
+  /// What picking [command] out of the `/` menu does: a command that needs
+  /// words is written into the composer for the user to finish, and one that
+  /// doesn't simply runs.
+  ///
+  /// Picking `/goal` used to run it bare, which is how you *ask for its
+  /// status* — so clicking "Keep working until something is true" answered
+  /// "No goal set." and did nothing else.
+  void _pickCommand(ChatCommand command) {
+    if (!command.takesArgument) {
+      unawaited(_runCommand((command: command, argument: '')));
+      return;
+    }
+    final line = '${command.slash} ';
+    _message.text = line;
+    _message.selection = TextSelection.collapsed(offset: line.length);
+  }
+
   /// Run [call] and empty the composer — the command *was* the message.
   ///
   /// Some commands take a moment (a summary is a model call), so what they have
@@ -1013,10 +1030,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               if (slash != null)
                                 CommandSlashMenu(
                                   query: slash,
-                                  onRun: (command) => _runCommand((
-                                    command: command,
-                                    argument: '',
-                                  )),
+                                  onPick: _pickCommand,
                                 )
                               else if (mention != null)
                                 FileMentionMenu(
