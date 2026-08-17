@@ -12,6 +12,7 @@ import '../../../features/git/presentation/git_view.dart';
 import '../../../features/messaging/presentation/messages_view.dart';
 import '../../../features/network/presentation/how_to_use_view.dart';
 import '../../../features/network/presentation/networks_pane.dart';
+import '../../../features/office/presentation/office_docs_view.dart';
 import '../../../features/plugins/presentation/plugins_view.dart';
 import '../../../features/projects/presentation/projects_view.dart';
 import '../../../features/provider_node/presentation/provider_view.dart';
@@ -37,6 +38,7 @@ class SectionView extends StatelessWidget {
   Widget build(BuildContext context) {
     final screen = switch (section) {
       ShellSection.chat => const ChatPane(),
+      ShellSection.officeDocs => const OfficeDocsView(),
       ShellSection.scheduled => const ScheduledView(),
       ShellSection.agents => const AgentsView(),
       ShellSection.skills => const SkillsView(),
