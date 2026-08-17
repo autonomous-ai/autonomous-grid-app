@@ -15,6 +15,11 @@ import 'package:flutter/widgets.dart';
 /// (`maxLines > 1`) for Shift+Enter to add one. [onSend] fires only when
 /// [canSend] is true, so a blocked turn eats the Enter rather than sending
 /// nothing or leaving a stray line break.
+///
+/// Pass [focusNode] when something outside the composer has to put the cursor
+/// in it — picking a command out of the `/` menu writes half a line and then
+/// has to hand the user the caret to finish it. An external node is the
+/// caller's to dispose; the one made here is not.
 class ComposerKeys extends StatefulWidget {
   const ComposerKeys({
     super.key,
@@ -22,6 +27,7 @@ class ComposerKeys extends StatefulWidget {
     required this.onSend,
     required this.builder,
     this.onPaste,
+    this.focusNode,
   });
 
   final bool canSend;
@@ -32,6 +38,9 @@ class ComposerKeys extends StatefulWidget {
   /// Null leaves paste to the field, which is right for a plain text box.
   final VoidCallback? onPaste;
 
+  /// The node to focus the field with, when a caller needs to reach it.
+  final FocusNode? focusNode;
+
   final Widget Function(BuildContext context, FocusNode focusNode) builder;
 
   @override
@@ -39,7 +48,12 @@ class ComposerKeys extends StatefulWidget {
 }
 
 class _ComposerKeysState extends State<ComposerKeys> {
-  late final FocusNode _node = FocusNode(onKeyEvent: _onKeyEvent);
+  /// Made here only when the caller didn't bring one — and disposed only then,
+  /// for the same reason.
+  FocusNode? _own;
+
+  FocusNode get _node =>
+      widget.focusNode ?? (_own ??= FocusNode(onKeyEvent: _onKeyEvent));
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -74,8 +88,16 @@ class _ComposerKeysState extends State<ComposerKeys> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // A node handed in owns no key handler of its own, and the chords are the
+    // whole point of this widget.
+    widget.focusNode?.onKeyEvent = _onKeyEvent;
+  }
+
+  @override
   void dispose() {
-    _node.dispose();
+    _own?.dispose();
     super.dispose();
   }
 
