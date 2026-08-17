@@ -61,5 +61,6 @@ docs/*
 !docs/conventions.md
 !docs/style-guide-grid-app.md
 !docs/architecture.md
+!docs/panel-protocol.md
 !docs/git-auto-install.md
 .playwright-mcp/*

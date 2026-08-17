@@ -6,19 +6,21 @@ import 'panel_firmware.dart';
 
 /// Where the panel firmware rides along in the app bundle.
 ///
-/// Copied out of the device's build tree by `scripts/sync_panel_firmware.sh`
-/// rather than referenced there directly: `device/esp32-square/build/` is
-/// gitignored — an ESP-IDF build tree is tens of thousands of files — so an
-/// asset line pointing into it would fail the Flutter build on every machine
-/// that has not flashed a panel, which is most of them.
+/// A copy, not a reference into a device's build tree: an ESP-IDF build tree is
+/// tens of thousands of gitignored files, so an asset line pointing into one
+/// would fail the Flutter build on every machine that has not built the
+/// firmware — which is most of them.
+///
+/// No device lives in this repo today (`assets/panel/README.md` says what to
+/// drop here). The image states its own version, so nothing has to be kept in
+/// step with whatever gets built next.
 const String kPanelFirmwareAsset = 'assets/panel/grid_panel.bin';
 
 /// The firmware image this build carries, or null when it carries none.
 ///
 /// Null rather than an error, and the app simply never offers an update: a
-/// checkout with no panel firmware in it is a normal state (the asset directory
-/// ships empty until someone runs the sync script), and it must not be a reason
-/// the panel handshake fails.
+/// checkout with no panel firmware in it is the normal state — the asset
+/// directory ships empty — and it must not be a reason the handshake fails.
 ///
 /// A future, and read once per session, because it is a megabyte off disk. The
 /// bytes stay resident afterwards — the same panel usually gets plugged in

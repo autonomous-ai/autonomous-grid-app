@@ -69,11 +69,11 @@ flutter:
     - assets/agents/codex_icon.png
     - assets/agents/claude_icon.png
     - assets/agents/pi_icon.png
-    # The Grid Panel's firmware, so the app can reflash a panel over the cable
-    # it is already talking on and the two halves cannot drift. Refreshed by
-    # scripts/sync_panel_firmware.sh after an `idf.py build`; the directory form
-    # is deliberate, so a checkout with no image in it still builds and simply
-    # never offers an update.
+    # A panel's firmware, so the app can reflash it over the cable it is already
+    # talking on and the two halves cannot drift. The DIRECTORY form is
+    # deliberate and load-bearing: it ships with no image in it today, and a
+    # declared asset FILE that does not exist fails the Flutter build outright.
+    # See assets/panel/README.md.
     - assets/panel/
     # Connectors the app signs into without the gateway. Data rather than Dart
     # so the list reads as the wire shape it mirrors — and so adding one is an

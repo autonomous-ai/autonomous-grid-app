@@ -131,7 +131,8 @@ are **deliberate** — don't "fix" them back.
   back — if a change outside these areas needs proving, prove it by running the app.
   **The one thing that earns a new folder is a byte format we have to agree on with
   something outside this repo**, which is why `panel` exists (2026-08-13, the USB
-  framing shared with `device/esp32-square`). The reason §8 cuts tests is that UI
+  framing shared with whatever device is on the other end of the cable — see
+  `docs/panel-protocol.md`). The reason §8 cuts tests is that UI
   rots faster than tests catch it; a codec is the opposite — it never rots, it is
   pure, and it fails as a desync three layers away from the mistake, which running
   the app diagnoses very badly. Adding an area is still a decision to argue for

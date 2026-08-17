@@ -1,5 +1,13 @@
-# Sinh vector khung cho Grid Panel — implementation doc lap, viet tu dac ta,
-# khong chep tu ban Dart hay C.
+# Sinh vector khung cho Grid Panel — implementation doc lap, viet tu dac ta
+# (docs/panel-protocol.md §1), khong chep tu ban Dart hay bat ky ban device nao.
+#
+# Day la implementation THU BA. Ban Dart kiem chinh no bang bo vector nay, va bat
+# ky firmware nao cam vao sau cung phai kiem bang dung file do — neu hai ban cung
+# hieu sai mot cho thi no lo ra thanh bat dong, thay vi duoc ca hai chuc phuc.
+#
+#   python3 scripts/gen_panel_vectors.py
+import pathlib
+
 MAGIC = b"\xA5\x5A"
 VER = 1
 
@@ -42,8 +50,10 @@ lines = [
 for name, t, payload in cases:
     lines.append(f"{name}\t{t}\t{payload.hex()}\t{frame(t, payload).hex()}")
 
-out = "/Users/duynguyen/go/src/github.com/autonomous-ai/grid/autonomous-grid-app/device/esp32-square/test/vectors/panel_frame.txt"
-open(out, "w").write("\n".join(lines) + "\n")
+# Tuong doi so voi chinh script, khong phai duong dan tuyet doi cua mot may.
+out = pathlib.Path(__file__).resolve().parent.parent / "test" / "vectors" / "panel_frame.txt"
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text("\n".join(lines) + "\n")
 print("wrote", out)
 for name, t, payload in cases:
     f = frame(t, payload)

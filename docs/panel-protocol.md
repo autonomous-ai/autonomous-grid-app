@@ -283,12 +283,12 @@ keeps running the old image if it does not match. Two OTA slots exist for exactl
 > the previous UI, and `idf.py flash` said `Done`.
 >
 > **Why it is not visible.** The `.bin` the app OFFERS is the one inside its built bundle
-> (`build/macos/.../flutter_assets/assets/panel/`), not the one in the source tree. Refreshing
-> `assets/panel/grid_panel.bin` with `scripts/sync_panel_firmware.sh` changes what the NEXT app build
-> carries and nothing about the app already running.
+> (`build/macos/.../flutter_assets/assets/panel/`), not the one in the source tree. Copying a fresh
+> image into `assets/panel/` changes what the NEXT app build carries and nothing at all about the app
+> already running.
 >
-> **So, in order, every time:** sync the asset → rebuild the app → `idf.py flash` the panel → start
-> the app. Or simply don't run the app while flashing by cable. The log line to check is
+> **So, in order, every time:** copy the image in → rebuild the app → flash the device → start the
+> app. Or simply don't run the app while flashing by cable. The log line to check is
 > `This build carries panel firmware <v>` — if that is not the version you just built, stop.
 
 An offer that **fails** is not offered again for the rest of the app's session. Accepting one makes
