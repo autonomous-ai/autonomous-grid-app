@@ -13,7 +13,6 @@ import '../logic/feedback_controller.dart';
 import '../logic/feedback_diagnostics.dart';
 import '../logic/feedback_draft.dart';
 import '../logic/log_bundle.dart';
-import 'widgets/attach_logs_field.dart';
 
 /// Opens the feedback form.
 ///
@@ -187,11 +186,6 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
                 onChanged: (_) => setState(() => _problem = null),
               ),
               const SizedBox(height: 20),
-              // AttachLogsField(
-              //   attached: _attachLogs,
-              //   enabled: !sending,
-              //   onChanged: (value) => setState(() => _attachLogs = value),
-              // ),
               if (send is FeedbackFailed) ...[
                 const SizedBox(height: 16),
                 ErrorBox(message: _failureText(send)),
