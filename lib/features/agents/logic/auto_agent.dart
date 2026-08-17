@@ -1,4 +1,22 @@
+import '../../../core/app_environment.dart';
 import 'agent_catalog.dart';
+
+/// Whether this build offers **Auto** at all.
+///
+/// Developer-only, like the Grids and Debug screens (`ShellSection.devOnly`):
+/// picking the assistant is a choice an end user makes once and recognises
+/// afterwards — the reply's footer names who answered — while Auto makes it a
+/// different one per question, and the app then has an assistant whose name
+/// changes under them for reasons only the router knows. It also spends a
+/// round-trip to the grid's model in front of every turn before the turn starts.
+///
+/// Gating it here rather than only hiding the row is what keeps a *stored* Auto
+/// choice from going on routing in a shipped build: see
+/// `isAutoAgentChosenForProjectProvider`, which reads this, and
+/// `chatAgentForProjectProvider`, which resolves the unknown id to a real agent.
+/// The choice itself is left on disk untouched, so a developer build gives it
+/// straight back.
+bool get autoAgentIsOffered => AppEnvironment.isDeveloperMode;
 
 /// The sentinel id stored as the chat agent when the user picks **Auto** — the
 /// meta-agent that lets the grid choose, per question, which installed

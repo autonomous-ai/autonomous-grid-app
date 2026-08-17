@@ -13,12 +13,16 @@ import 'agent_model_support.dart';
 import 'auto_agent.dart';
 
 /// Whether the chats in [projectId] are set to **Auto** — the stored choice is
-/// the [kAutoAgentId] sentinel rather than a real agent id.
+/// the [kAutoAgentId] sentinel rather than a real agent id, *and* this build
+/// offers Auto ([autoAgentIsOffered]).
 ///
 /// Read at send time to decide whether to route, and by the picker to show Auto
-/// as the current choice.
+/// as the current choice. Both bars, in one place: a shipped build that hid the
+/// row but left this true would go on routing every turn through a choice the
+/// user could no longer see, let alone change.
 final isAutoAgentChosenForProjectProvider = Provider.family<bool, String?>(
   (ref, projectId) =>
+      autoAgentIsOffered &&
       isAutoAgentId(ref.watch(chatAgentChoiceProvider(projectId))),
 );
 
