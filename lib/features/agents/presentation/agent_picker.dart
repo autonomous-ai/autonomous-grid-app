@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -36,17 +38,68 @@ const _rowGutter = 8.0;
 const _rowInnerPad = 10.0;
 final _rowRadius = BorderRadius.circular(AppControl.radius);
 
-/// What one row occupies, by whether it carries a second line.
+/// The rest of a row's box, spelled out because [_menuSize] measures the text
+/// inside it: the gutter above and below a row, its own padding, the mark and the
+/// gap after it, and the tick column with the gap before it.
+const _rowOuterPadV = 3.0;
+const _rowInnerPadV = 8.0;
+const _rowTrailPad = 8.0;
+const _markSize = 20.0;
+const _markGap = 10.0;
+const _tickGap = 8.0;
+const _tickSize = 16.0;
+const _titleSubtitleGap = 1.0;
+
+/// A subtitle never runs past two lines — the row is a glance, not a paragraph.
+/// The painter is held to the same limit, or it would measure a height the row
+/// then ellipsises away.
+const _subtitleMaxLines = 2;
+
+/// The scope note's own air, above and below its one sentence.
+const _scopeNotePadTop = 6.0;
+const _scopeNotePadBottom = 4.0;
+
+/// The panel's own vertical padding — [appMenuStyle]'s `vertical: 5`, read off
+/// that style rather than guessed. Same note in `grid_model_picker`: the two
+/// drifting apart is what pushes a menu off its button.
+const _menuPadding = 5.0;
+
+/// The air the panel keeps from the window edge, passed to
+/// [anchoredMenuPosition] and used to work out how tall it may draw.
+const _menuMargin = 8.0;
+
+/// The width a row's text wraps inside — the panel, less every fixed box beside
+/// it. The tick column counts whether or not this row wears one: [_MenuRow]
+/// keeps the space either way, so picking a different agent can't reflow the
+/// list under the cursor.
+const _rowTextWidth =
+    _menuWidth -
+    _rowGutter * 2 -
+    _rowInnerPad -
+    _rowTrailPad -
+    _markSize -
+    _markGap -
+    _tickGap -
+    _tickSize;
+
+/// The width the scope note wraps inside — its own padding, not a row's.
+const _scopeNoteWidth = _menuWidth - (_rowGutter + _rowInnerPad) * 2;
+
+/// One line of the menu, as both the thing that draws and the thing that gets
+/// measured. `tool` is null for the Auto row.
+typedef _Entry = ({AgentTool? tool, String title, String subtitle, bool warn});
+
+/// The tallest this panel may draw: the window, less the margin it keeps at both
+/// edges.
 ///
-/// Measured off the drawn rows rather than added up from the source: the inner
-/// padding is 8 top and bottom, the title is a 13pt line box, and a note wraps
-/// to two 11pt lines. These only decide placement *below* the panel's cap — past
-/// [AppControl.menuMaxHeight] every estimate clamps to the same number, and this
-/// menu is over it whenever more than two agents are installed.
-const _plainRowHeight = 40.0;
-const _notedRowHeight = 64.0;
-const _autoRowHeight = 56.0;
-const _scopeNoteHeight = 44.0;
+/// Its own cap rather than [AppControl.menuMaxHeight]'s 240, because this list is
+/// not something to scroll through — it is the agents installed on this computer,
+/// four of them at most, and at 240 the panel drew two and a half of them. The
+/// half-drawn row reads as a list that lost its tail rather than one to drag, and
+/// the line naming where the pick is saved sat below the fold — the one thing in
+/// this menu a user can't work out from the rows themselves.
+double _menuMaxHeight(BuildContext context) =>
+    MediaQuery.sizeOf(context).height - _menuMargin * 2;
 
 /// What the menu will measure, so [anchoredMenuPosition] lands the panel on the
 /// pill rather than near it.
@@ -57,13 +110,97 @@ const _scopeNoteHeight = 44.0;
 /// fit the window, and where it lands is the clamp's choice, not the pill's.
 /// That is what drifted this menu ~20px left of the pill it belongs to. See the
 /// same note in `grid_model_picker`.
-Size _menuSize({required bool offerAuto, required int plain, required int noted}) {
-  final rows =
-      (offerAuto ? _autoRowHeight : 0) +
-      _plainRowHeight * plain +
-      _notedRowHeight * noted +
-      _scopeNoteHeight;
-  return Size(_menuWidth, rows.clamp(0.0, AppControl.menuMaxHeight));
+///
+/// Measured off the strings the rows are about to draw, not guessed at a flat
+/// height per row: a tagline and an "agent can't run here" note wrap to different
+/// numbers of lines, and neither is the height it is at whatever font size the OS
+/// is set to. This replaced three constants — 40 for a row, 64 for one carrying a
+/// note, 56 for Auto — that only ever agreed with the rows by luck, and were
+/// covered for by the 240 cap clamping estimate and panel to the same number.
+Size _menuSize(
+  BuildContext context, {
+  required List<_Entry> entries,
+  required String scopeNote,
+}) {
+  final theme = Theme.of(context);
+  final scaler = MediaQuery.textScalerOf(context);
+  final title = _titleStyle(theme);
+  final subtitle = _subtitleStyle(theme, warn: false);
+
+  var height =
+      _menuPadding * 2 +
+      _scopeNotePadTop +
+      _scopeNotePadBottom +
+      _textHeight(scopeNote, _scopeNoteStyle(theme), _scopeNoteWidth, scaler);
+  for (final entry in entries) {
+    final text =
+        _textHeight(entry.title, title, _rowTextWidth, scaler, maxLines: 1) +
+        _titleSubtitleGap +
+        _textHeight(
+          entry.subtitle,
+          subtitle,
+          _rowTextWidth,
+          scaler,
+          maxLines: _subtitleMaxLines,
+        );
+    height += _rowOuterPadV * 2 + _rowInnerPadV * 2 + math.max(_markSize, text);
+  }
+  return Size(_menuWidth, height);
+}
+
+/// The row's two type styles, and the scope note's, resolved off the theme so
+/// that what [_menuSize] lays out and what [_MenuRow] draws are the same string
+/// in the same font.
+///
+/// A bare `TextStyle` would *inherit* the ambient default, so the measured copy
+/// would carry a different family and tracking than the drawn copy and wrap
+/// somewhere else — a 6px error on one line in the approval menu, and this menu
+/// has five.
+TextStyle _titleStyle(ThemeData theme) => theme.textTheme.bodyMedium!.copyWith(
+  color: AppPalette.textPrimary,
+  fontSize: 13,
+  fontWeight: AppFont.medium,
+  height: 1.2,
+  letterSpacing: AppFont.trackingFor(13),
+);
+
+TextStyle _subtitleStyle(ThemeData theme, {required bool warn}) =>
+    theme.textTheme.bodySmall!.copyWith(
+      color: warn ? AppPalette.warn : AppPalette.textSecondary,
+      fontSize: 11.5,
+      height: 1.25,
+      letterSpacing: AppFont.trackingFor(11.5),
+    );
+
+TextStyle _scopeNoteStyle(ThemeData theme) =>
+    theme.textTheme.bodySmall!.copyWith(
+      color: AppPalette.textFaint,
+      fontSize: 11,
+      height: 1.3,
+      letterSpacing: AppFont.trackingFor(11),
+    );
+
+/// Where the pick will be remembered, in one sentence — shared with [_ScopeNote]
+/// so the line that places the panel is the line that draws in it.
+String scopeNoteText(String? projectName) => projectName == null
+    ? 'Saved for chats outside a project. Each project keeps its own.'
+    : 'Saved for $projectName. Your other projects keep theirs.';
+
+/// What a line box of [text] occupies at [style], laid out in [maxWidth].
+double _textHeight(
+  String text,
+  TextStyle style,
+  double maxWidth,
+  TextScaler scaler, {
+  int? maxLines,
+}) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+    textScaler: scaler,
+    maxLines: maxLines,
+  )..layout(maxWidth: maxWidth);
+  return painter.height;
 }
 
 class _AgentPickerState extends ConsumerState<AgentPicker> {
@@ -138,26 +275,51 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     // point of it — and it explains why the agent changed when they switched.
     final project = ref.watch(openChatProjectProvider);
     final notes = [for (final tool in installed) _unavailableNote(tool)];
+    // One list, read twice: the rows are built from it and the panel is measured
+    // from it. Two lists — one of widgets, one of heights — is how a menu comes to
+    // be placed for a shape it isn't drawing.
+    final entries = <_Entry>[
+      if (offerAuto)
+        (tool: null, title: 'Auto', subtitle: kAutoAgentTagline, warn: false),
+      for (final (index, tool) in installed.indexed)
+        (
+          tool: tool,
+          title: tool.name,
+          subtitle: notes[index] ?? tool.tagline,
+          warn: notes[index] != null,
+        ),
+    ];
+    final scopeNote = scopeNoteText(project?.name);
     return MenuAnchor(
       controller: _menu,
       // The shared recipe, not a hand-rolled one. This carried its own
       // `AppPalette.cardBg` at elevation 8 / radius 14: cardBg is picked to be
       // read *on the page*, so as a panel floating over the composer it had no
       // edge, and its lift disagreed with every other menu in the app.
-      style: appMenuStyle(),
+      // …with its 240 cap lifted: see [_menuMaxHeight] for why this list is
+      // shown whole rather than scrolled.
+      style: appMenuStyle().copyWith(
+        maximumSize: WidgetStatePropertyAll(
+          Size.fromHeight(_menuMaxHeight(context)),
+        ),
+      ),
       menuChildren: [
-        if (offerAuto) _AutoItem(selected: autoChosen, onTap: _selectAuto),
-        for (final (index, tool) in installed.indexed)
-          _AgentItem(
-            tool: tool,
-            // A concrete agent is ticked only when it's the *chosen* one — under
-            // Auto the choice is Auto, and ticking an agent as well would show
-            // two ticks and hide that the grid picks a fresh one per question.
-            selected: !autoChosen && tool == active,
-            unavailable: notes[index],
-            onTap: () => _select(tool),
-          ),
-        _ScopeNote(projectName: project?.name),
+        for (final entry in entries)
+          switch (entry.tool) {
+            null => _AutoItem(selected: autoChosen, onTap: _selectAuto),
+            final tool => _AgentItem(
+              tool: tool,
+              subtitle: entry.subtitle,
+              warn: entry.warn,
+              // A concrete agent is ticked only when it's the *chosen* one —
+              // under Auto the choice is Auto, and ticking an agent as well
+              // would show two ticks and hide that the grid picks a fresh one
+              // per question.
+              selected: !autoChosen && tool == active,
+              onTap: () => _select(tool),
+            ),
+          },
+        _ScopeNote(note: scopeNote),
       ],
       builder: (context, controller, _) => ComposerTrigger(
         label: autoChosen ? 'Auto' : active.name,
@@ -172,15 +334,19 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
                 position: anchoredMenuPosition(
                   context,
                   menuSize: _menuSize(
-                    offerAuto: offerAuto,
-                    plain: notes.where((n) => n == null).length,
-                    noted: notes.where((n) => n != null).length,
+                    context,
+                    entries: entries,
+                    scopeNote: scopeNote,
                   ),
-                  margin: 8,
+                  margin: _menuMargin,
                   gap: AppControl.menuGap,
                   // The pill sits at the bottom of the window, so the menu opens
                   // upward; `anchoredMenuPosition` drops back below if it won't fit.
                   preferAbove: true,
+                  // The same cap the panel is drawn with above — placement sums
+                  // the height the panel is about to take, so the two clamping to
+                  // different numbers is what lifts a menu clear of its button.
+                  maxHeight: _menuMaxHeight(context),
                 ),
               ),
       ),
@@ -195,9 +361,11 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
 /// fact that stops a per-project setting reading as an app-wide one that keeps
 /// changing itself.
 class _ScopeNote extends StatelessWidget {
-  const _ScopeNote({required this.projectName});
+  const _ScopeNote({required this.note});
 
-  final String? projectName;
+  /// The sentence itself, handed in rather than composed here: [_menuSize] lays
+  /// out this exact string to place the panel — see [scopeNoteText].
+  final String note;
 
   @override
   Widget build(BuildContext context) {
@@ -205,22 +373,13 @@ class _ScopeNote extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         _rowGutter + _rowInnerPad,
-        6,
+        _scopeNotePadTop,
         _rowGutter + _rowInnerPad,
-        4,
+        _scopeNotePadBottom,
       ),
       child: SizedBox(
-        width: _menuWidth - (_rowGutter + _rowInnerPad) * 2,
-        child: Text(
-          projectName == null
-              ? 'Saved for chats outside a project. Each project keeps its own.'
-              : 'Saved for $projectName. Your other projects keep theirs.',
-          style: TextStyle(
-            color: AppPalette.textFaint,
-            fontSize: 11,
-            height: 1.3,
-          ),
-        ),
+        width: _scopeNoteWidth,
+        child: Text(note, style: _scopeNoteStyle(Theme.of(context))),
       ),
     );
   }
@@ -259,19 +418,24 @@ class _AutoItem extends StatelessWidget {
 class _AgentItem extends StatelessWidget {
   const _AgentItem({
     required this.tool,
+    required this.subtitle,
+    required this.warn,
     required this.selected,
-    required this.unavailable,
     required this.onTap,
   });
 
   final AgentTool tool;
   final bool selected;
 
-  /// Why this agent can't answer on the open grid — shown in place of the
-  /// tagline, in the warning tone. Null whenever it can, which is the common
-  /// case. An installed agent is still offered either way: picking it borrows
-  /// the chat until a grid that can run it.
-  final String? unavailable;
+  /// The tagline, or — when this agent can't answer on the open grid — the reason
+  /// why, in the warning tone that [warn] asks for. An installed agent is offered
+  /// either way: picking it borrows the chat until a grid that can run it.
+  ///
+  /// Handed in rather than derived here, because [_menuSize] lays out this exact
+  /// string to place the panel and a row that composed its own would be measured
+  /// as some other row.
+  final String subtitle;
+  final bool warn;
 
   final VoidCallback onTap;
 
@@ -279,10 +443,10 @@ class _AgentItem extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return _MenuRow(
-      leading: AgentMark(tool: tool, size: 20),
+      leading: AgentMark(tool: tool, size: _markSize),
       title: tool.name,
-      subtitle: unavailable ?? tool.tagline,
-      warn: unavailable != null,
+      subtitle: subtitle,
+      warn: warn,
       selected: selected,
       onTap: onTap,
     );
@@ -320,6 +484,7 @@ class _MenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final theme = Theme.of(context);
     return MenuItemButton(
       onPressed: onTap,
       style: ButtonStyle(
@@ -338,7 +503,12 @@ class _MenuRow extends StatelessWidget {
         ),
         child: Container(
           width: _menuWidth - _rowGutter * 2,
-          padding: const EdgeInsets.fromLTRB(_rowInnerPad, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(
+            _rowInnerPad,
+            _rowInnerPadV,
+            _rowTrailPad,
+            _rowInnerPadV,
+          ),
           decoration: BoxDecoration(
             color: selected ? AppSurface.accentWash : Colors.transparent,
             borderRadius: _rowRadius,
@@ -346,7 +516,7 @@ class _MenuRow extends StatelessWidget {
           child: Row(
             children: [
               leading,
-              const SizedBox(width: 10),
+              const SizedBox(width: _markGap),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,32 +525,35 @@ class _MenuRow extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppPalette.textPrimary,
-                        fontSize: 13,
-                        fontWeight: AppFont.medium,
-                      ),
+                      // The same styles [_menuSize] lays out — restyling a row
+                      // here alone would move the menu off its pill.
+                      style: _titleStyle(theme),
                     ),
-                    const SizedBox(height: 1),
+                    const SizedBox(height: _titleSubtitleGap),
                     Text(
                       subtitle,
-                      maxLines: 2,
+                      maxLines: _subtitleMaxLines,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: warn
-                            ? AppPalette.warn
-                            : AppPalette.textSecondary,
-                        fontSize: 11.5,
-                        height: 1.25,
-                      ),
+                      style: _subtitleStyle(theme, warn: warn),
                     ),
                   ],
                 ),
               ),
-              if (selected) ...[
-                const SizedBox(width: 8),
-                Icon(Icons.check_rounded, size: 16, color: AppPalette.accent),
-              ],
+              // The tick's column is kept whether this row wears one or not: it
+              // used to appear only on the selected row, so every other row's
+              // text was 24px wider and picking a different agent reflowed the
+              // list under the cursor.
+              const SizedBox(width: _tickGap),
+              SizedBox(
+                width: _tickSize,
+                child: selected
+                    ? Icon(
+                        Icons.check_rounded,
+                        size: _tickSize,
+                        color: AppPalette.accent,
+                      )
+                    : null,
+              ),
             ],
           ),
         ),

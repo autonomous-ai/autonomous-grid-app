@@ -116,11 +116,12 @@ TextStyle _headingStyle(ThemeData theme) => theme.textTheme.bodySmall!.copyWith(
 /// edges.
 ///
 /// Its own cap rather than [AppControl.menuMaxHeight]'s 240, because this menu
-/// is not a list that may be scrolled past — it is four fixed choices about what
-/// the assistant may do to the computer, and at 240 the panel drew the heading
-/// and two of them. The other two, including the one that stops asking
-/// altogether, were below the fold of a panel with no visible scrollbar: a
-/// safety control that hides its safest and most dangerous options.
+/// is not a list to be scrolled through — it is four fixed choices about what the
+/// assistant may do to the computer, and at 240 the panel drew the heading and
+/// two of them. The panel's own scroll view did offer its hairline scrollbar, so
+/// the other two were reachable; they were also invisible until dragged for, and
+/// one of them is the mode that stops asking before it runs anything. A control
+/// this short shows all of itself.
 double _menuMaxHeight(BuildContext context) =>
     MediaQuery.sizeOf(context).height - _menuMargin * 2;
 
