@@ -398,38 +398,67 @@ class _PanelActions extends ConsumerWidget {
     // Nothing to offer but the numbers: this user may not serve on this grid.
     if (!canHost) return dashboard;
 
-    // Already serving — two equal ways on, neither urgent.
-    if (ref.watch(servingEnginesProvider).isNotEmpty) {
-      return Row(
-        children: [
-          Expanded(
-            child: _PanelLink(label: 'Model engines', onTap: openEngines),
-          ),
-          Expanded(child: dashboard),
-        ],
-      );
-    }
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // One shape in both states — what to do about this grid on the left, the way
+    // to look closer on the right — so the panel's foot doesn't rearrange itself
+    // depending on whether this computer happens to be serving.
+    //
+    // What changes is the weight, not the position. A computer already serving
+    // gets a link: nothing here is urgent, and a filled button would be nagging
+    // somebody who has already done the thing it asks for. A computer serving
+    // nothing gets the button, because then starting an engine genuinely is the
+    // one thing to do on this panel.
+    return Row(
       children: [
-        const SizedBox(height: 11),
-        FilledButton(
-          onPressed: openEngines,
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(34),
-            textStyle: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: AppFont.medium,
-            ),
-          ),
-          // Says which computer, because the panel above lists several and the
-          // one this button acts on is the only one that isn't in the list.
-          child: const Text('Run a model on this computer'),
+        Expanded(
+          child: ref.watch(servingEnginesProvider).isNotEmpty
+              ? _PanelLink(label: 'Model engines', onTap: openEngines)
+              : _RunHereButton(onTap: openEngines),
         ),
-        dashboard,
+        Expanded(child: dashboard),
       ],
+    );
+  }
+}
+
+/// The offer to put this computer on the grid, sized to sit beside a link.
+///
+/// It said "Run a model on this computer" while it had the panel's full width to
+/// itself. Half a width does not hold that: at 12.5px the label alone is ~175px
+/// against the ~135px this column gets, so it would have ellipsized to "Run a
+/// model on this…" — a button whose text is cut is worse than a shorter one.
+///
+/// "here" carries what the long version was for. The panel above lists other
+/// people's machines, so the one word that matters is which computer this acts
+/// on, and *here* is that word — it just costs four characters instead of
+/// nineteen.
+class _RunHereButton extends StatelessWidget {
+  const _RunHereButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      // Matches [_PanelLink]'s own top inset, so the button and the link beside
+      // it sit on one line rather than one riding above the other.
+      padding: const EdgeInsets.only(top: 9),
+      child: FilledButton(
+        onPressed: onTap,
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(30),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          textStyle: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: AppFont.medium,
+          ),
+        ),
+        child: const Text(
+          'Run a model here',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
     );
   }
 }
