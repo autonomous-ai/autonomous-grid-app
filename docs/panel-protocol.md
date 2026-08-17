@@ -1,6 +1,6 @@
 # Grid Panel — wire protocol
 
-Normative. Everything here is implemented twice with no shared code — `main/panel_frame.c` on the
+Normative. Everything here is implemented twice with no shared code — `device/esp32-circle/main/panel_frame.c` on the
 device and `lib/infrastructure/panel/panel_frame.dart` + `panel_message.dart` in the app — so this
 document is the only place the two agree by construction rather than by coincidence.
 
@@ -135,6 +135,7 @@ whole message — a peer with an extra field is not a broken peer.
 | `projects.list` | — | Send me the tiles. |
 | `turn.send` | `projectId`, `text` | The user asked for something. |
 | `turn.stop` | `projectId` | Interrupt that project's turn. The id travels because the panel can stop a project the desktop does not have open. |
+| `answer` | `projectId`, `id`, `optionId` | The user answered a `question`. `id` is echoed back verbatim — it is the app's, opaque here. |
 
 ### App → device
 
@@ -144,16 +145,25 @@ whole message — a peer with an extra field is not a broken peer.
 | `projects` | `items[]` of the project shape below |
 | `project.updated` | `item` — one project |
 | `turn.started` | `projectId` |
-| `turn.parts` | `projectId`, `parts[]` — the turn so far as one ordered timeline (below) |
+| `turn.parts` | `projectId`, `parts[]`, `todos[]` — the turn so far as one ordered timeline (below) |
 | `turn.done` | `projectId`, `recap` |
 | `turn.error` | `projectId`, `message` |
+| `summary` | `projectId`, `text` — the long form of the last `recap` (below) |
+| `question` | `projectId`, `id`, `summary`, `command?`, `options[]` (below) |
+| `question.cancel` | `projectId`, `id` |
+| `ping` | — the heartbeat (below) |
 
 #### `turn.parts`
 
 ```json
-{ "t": "turn.parts", "projectId": "p-1", "parts": [
+{ "t": "turn.parts", "projectId": "p-1",
+  "parts": [
     { "k": "t", "text": "Reading the config" },
-    { "k": "s", "label": "grep -n foo lib/", "status": "running" } ] }
+    { "k": "s", "label": "grep -n foo lib/", "status": "running",
+      "tool": "Bash", "arg": "grep -n foo lib/", "kind": "command",
+      "parent": "toolu_01ab", "t0": 4200 } ],
+  "todos": [ { "text": "Find the retry loop", "status": "done" },
+             { "text": "Write the guard", "status": "running" } ] }
 ```
 
 `k` is `"t"` for a passage the agent wrote and `"s"` for a step it ran. **The order is the
@@ -186,20 +196,74 @@ Sent **whole on every change, not as a delta** — the app's `AgentRun` is repla
 upstream and a step mutates in place as it finishes, so there is no append-only stream underneath
 to mirror.
 
-A step carries only `label` and `status`. The app also holds each step's request and result for its
-own transcript; a 480×480 tile draws a line and a spinner, and shipping the rest would spend the
-frame budget on characters this screen cannot show.
+#### What a step carries
+
+| Key | Present on | Meaning |
+|---|---|---|
+| `label` | every part | the prose (`k:"t"`), or the step's one line (`k:"s"`) |
+| `status` | steps only | the four values above |
+| `tool` | steps, when known | the tool's own name — drawn in its own colour, on line 1 |
+| `arg` | steps, when known | the raw argument, line 2, wrapping to three lines then ellipsis. Clipped to the same 200 characters as `label` |
+| `kind` | steps | one of `command` · `web` · `tool` · `thinking`. **This is what picks the colour** — the device must not infer a colour from the tool's name |
+| `parent` | steps, when nested | the id of the step that spawned this one. A step with a `parent` is a sub-agent's work and is drawn on the sub-agent band, not the main one |
+| `t0` | steps | **milliseconds from the start of this turn to the moment this step started.** See below |
+
+The step's *result* still stays behind: the app holds it for the transcript, and a 466px tile has
+nowhere to draw it.
+
+**`t0` is a fixed number, and that is the whole point.** The obvious design — send the elapsed
+seconds — changes the payload every second, which defeats the sender's "say nothing when nothing
+changed" rule (§ *Turn messages are unsolicited*) and puts ~3 KB on the wire every tick for a number
+the device could have counted itself. So the app sends **when the step started, relative to
+`turn.started`**, which does not change while the step runs. The device knows when `turn.started`
+arrived, so it can render a live clock off a payload that is standing still.
+
+> The device must **not** timestamp a step when it first sees it. `onAttach` re-sends the whole
+> timeline after a panel reboot, and every step would read as having just begun.
+
+**`todos[]` rides the message, not the parts** — it is the state of a plan, not a point in the
+story. Each entry is `{text, status}`. Absent means the agent has no plan, which is different from an
+empty plan and is drawn as nothing at all.
+
+> ⚠️ **A todo's `status` is its own three-value vocabulary, NOT a step's**, and the default runs the
+> other way:
+>
+> | | |
+> |---|---|
+> | `pending` | not started |
+> | `running` | the item the agent is on |
+> | `done` | finished |
+>
+> **An unrecognised todo status is drawn as `pending`, never as done.** This is the exact opposite of
+> the step rule above, and the reason is that the two failure modes are opposite. An unrecognised
+> *step* left spinning claims work is happening that isn't — so unknown settles to finished. An
+> unrecognised *todo* drawn as finished puts a tick against work nobody has begun — so unknown
+> settles to not-started. Sharing one word between the two would make one of them wrong; a plan has
+> no equivalent of "ran, but never reported back".
 
 ### The project shape
 
 ```json
-{ "id": "p-1", "name": "grid-app", "agent": "claude",
-  "model": "auto", "busy": true, "recap": "Ran the tests" }
+{ "id": "p-1", "name": "grid-app", "agent": "claude", "model": "auto",
+  "busy": true, "recap": "Ran the tests", "recapKind": "done" }
 ```
 
 Deliberately thin. The panel draws a name, a state and one line of recap; a project in the app also
-has instructions, memory and a workspace path, and none of that belongs on a tile. `agent`, `model`
-and `recap` are omitted rather than sent as null when absent.
+has instructions, memory and a workspace path, and none of that belongs on a tile. `agent`, `model`,
+`recap` and `recapKind` are omitted rather than sent as null when absent.
+
+`recapKind` tints the recap card — `done` · `failed` · `stopped`. It exists because a recap is one
+line of ordinary prose whether the turn succeeded or died, and the tile has no other room to say
+which. An unrecognised value must be drawn as `done`, never as an error: guessing "failed" on a
+turn that worked is the worse of the two mistakes.
+
+> `stopped` is **inferred, not recorded** — the app keeps no flag for "the user pressed stop", so it
+> is read back out of the settled transcript (a step left unaccounted for). A turn stopped *before it
+> ran anything* leaves no trace and arrives as `done`. Treat `stopped` as a hint worth tinting, not
+> as a fact worth asserting in words.
+
+**`agent` names the engine mark** the tile draws (`claude` · `codex` · `hermes` · `pi`). An agent id
+this build has no mark for is drawn with no mark rather than a placeholder — the row still reads.
 
 ### Turn messages are unsolicited
 
@@ -214,6 +278,96 @@ Two consequences worth handling rather than discovering:
   a panel reboot mid-turn, for instance. Treat it as "that project is idle now", not as an error.
 - `turn.done.recap` may be the empty string: a turn can be stopped before the assistant says
   anything. Unlike the project shape, where an absent field is omitted, this key is always present.
+
+**So are the tiles.** `projects` and `project.updated` arrive unasked too, whenever the desktop's
+own list moves — a project created, renamed, deleted, or its recap changed. `projects.list` exists
+for the panel to ask once on waking; a panel that only ever draws what it asked for will show a
+stale board for as long as it stays plugged in.
+
+The app is expected to **say nothing when nothing the panel can draw has changed**. That is what
+keeps a link idle during a long turn, and it is why the heartbeat below has to exist.
+
+### The summary, and why it arrives late
+
+`turn.done.recap` is one line — enough for a tile, not enough to read. `summary` carries the long
+form for the detail screen, and it is a **separate message on purpose**: the app writes it by asking
+a model, which takes seconds, and holding `turn.done` for it would leave a tile spinning on work
+that has already finished.
+
+So the order is always `turn.done` first, `summary` maybe. A summary may never arrive — no model
+reachable, the call failed, the turn said nothing worth summarising — and the detail screen must read
+as "nothing more to show" rather than as loading forever. It may also arrive for a project whose tile
+has since moved on; it is keyed by `projectId` and describes **the turn that just ended**, so a
+reader should overwrite rather than append.
+
+A `summary` can follow **`turn.error` as well as `turn.done`** — a turn that failed halfway may still
+have said enough to be worth reading. Key it to the project, not to the outcome.
+
+### Questions
+
+An agent can stop mid-turn and ask permission — to run a command, to write a file. The panel is a
+place the user is already looking at, so it gets the question too.
+
+```json
+{ "t": "question", "projectId": "p-1", "id": "q-7",
+  "summary": "Delete the build folder",
+  "command": "rm -rf build",
+  "options": [ { "id": "allow_once", "label": "Allow" },
+               { "id": "refuse",     "label": "Deny" } ] }
+```
+
+- **`id` is opaque.** It is the app's handle for the request; echo it back in `answer` unchanged.
+- **`options` is the set of answers the app can actually deliver** — **1, 2 or 3** of them. Draw what
+  arrives; never invent one, never assume two, never hardcode the labels. It is deliberately *not*
+  every option the agent offered: the widest grant an agent knows how to ask for is one the app
+  refuses to hand out, and a button whose only possible outcome is a refusal is worse than no button.
+- **`question.cancel` can arrive at any time**, and *will*: the desktop shows the same question, and
+  whichever surface answers first cancels the other. It also fires when the app's own timer gives up
+  (55 s today; the agent stops waiting at 60). A panel that ignores it holds a dead card forever.
+- **The cancel is sent to the panel that answered, too.** Do not special-case your own answer — clear
+  the card on `question.cancel` whatever caused it, and the two paths stay one path.
+- An `answer` for an `id` the app has already settled is **discarded silently**, not an error — the
+  two surfaces race by design.
+
+> Only some agents ask. Two of the four run with permission checks disabled and will never send a
+> `question` at all; a panel that never sees one is not necessarily broken.
+
+### Heartbeat, and how the panel knows the app is gone
+
+Over a cable there is no connection to lose: the app quitting looks exactly like the app having
+nothing to say. Both are silence. So the app sends `ping` on a fixed cadence — **every 5 seconds**
+— for as long as it is alive, and the panel reads a gap as absence:
+
+| | |
+|---|---|
+| App sends `ping` | every 5 s, regardless of activity |
+| Panel declares the app gone | after **15 s** with no message of any kind |
+| Panel while it thinks the app is gone | re-sends `hello` periodically — the app may start later, and it cannot see the panel until the panel speaks |
+
+Any inbound message counts as a sign of life, not only `ping` — a busy link needs no extra proof.
+
+**`hello` repeats, and it is not a new panel each time.** The device has no port-open event to wait
+on, so it keeps greeting on a cadence — fast (~2 s) while it believes nobody is there, slow (15 s)
+once a session is up. The slow one is load-bearing rather than noise: if the app restarts *within*
+the silence window, the panel never notices it left — the new instance's `ping` refreshes the same
+timer — so without a periodic greeting the panel would hold stale tiles forever, connected to an app
+that has never sent it a `welcome`.
+
+That puts one obligation on the app, and it is easy to get wrong:
+
+> **Answer every `hello`. Re-attach only for a panel you have not already greeted.** Attaching means
+> "this device knows nothing" — it clears what the sender believes the panel has been told and pushes
+> the whole turn, question and tile state again. Doing that on every greeting re-sends everything
+> every 15 seconds and quietly undoes the "say nothing when nothing changed" rule that keeps the link
+> idle. Compare the `mac`: a repeat from the same board is a keepalive, a different one (or the first
+> after the app started) is a session.
+>
+> Measured on hardware 2026-08-17 — a connected panel greeted the app four times a minute, and each
+> greeting re-sent the full state.
+
+> This is also what makes it safe for a firmware to prune a tile that has gone quiet. Without a
+> heartbeat, "no news for 30 seconds" and "one command that takes 30 seconds" are the same
+> observation, and a panel that guesses will clear a tile whose turn is still running.
 
 ### Voice
 
@@ -246,7 +400,14 @@ that has never heard of a modifier simply omits it.
 > string appears anywhere. A turn started from those two pills therefore most likely reaches the
 > agent with a literal `/goal ` in front of it, read as words. The pills come from the reference
 > device's design and were kept deliberately; this note records what pressing one actually does today
-> so the next person does not have to find out by pressing it.
+> so the next person does not have to find out by pressing it. **The panel's job ends at `cmd`** —
+> what the prefix comes to mean is the app's business, and it can change without reflashing anything.
+
+**The cap is 60 seconds**, and the device must draw the same number the app enforces. The app stops
+accepting audio at 60 s of PCM (`kPanelVoiceMaxBytes`) and closes a capture it has heard nothing more
+about at 75 s (`kPanelVoiceOpenLimit`) — the second is a backstop for a `voice.end` that never
+arrived, not a second cap. A device that offers longer lets someone talk into a recording that ended
+without saying so, which is the one failure a voice UI cannot recover from.
 
 ### Firmware update
 
@@ -338,7 +499,7 @@ name <TAB> type <TAB> payload-hex <TAB> frame-hex
 ```
 
 Both implementations assert against this file. It is generated by
-`scripts/gen_vectors.py`, **a third implementation written from this document** rather than
+`scripts/gen_panel_vectors.py`, **a third implementation written from this document** rather than
 transcribed from either side — so a shared misreading surfaces as a disagreement instead of being
 blessed by both halves. The generator asserts the CRC check value before emitting anything.
 
@@ -353,14 +514,16 @@ empty-payload vector disappear from the run entirely. It passed by not being the
 Regenerating (only when the format itself changes):
 
 ```bash
-python3 scripts/gen_vectors.py
+python3 scripts/gen_panel_vectors.py    # writes relative to itself; re-run must produce a byte-identical file
 ```
 
 ### Running both halves
 
+Both are run from the app repo root:
+
 ```bash
-./scripts/test_frame.sh                 # C, on the host — no ESP-IDF, no flash cycle
-cd ../.. && flutter test test/panel/    # Dart codec + message layer
+device/esp32-circle/scripts/test_frame.sh   # C, on the host — no ESP-IDF, no flash cycle
+flutter test test/panel/                    # Dart codec + message layer
 ```
 
 Behaviour the vectors cannot express is covered in both suites directly: boot noise before the
@@ -374,9 +537,14 @@ dropping a half-frame.
 
 The message layer must not know which transport carries it. Today there is one:
 
-**USB CDC**, on the board's **native** USB port (`303a:1001`), *not* the CH343 bridge — that one
-carries the console. See [`hardware.md`](hardware.md); getting this backwards gives you a link that
-opens and then only ever delivers log text.
+**USB CDC**, on the board's **native** USB port (`303a:1001`) — the ESP32-S3's own USB-Serial-JTAG
+peripheral, *not* a UART bridge. On a board that exposes both, the bridge carries the console:
+opening that one gives a link that connects, stays connected, and only ever delivers log text, which
+reads as a device that never speaks rather than as the wrong port. Match on the USB id and nothing
+else — never on the port's name, and never on "the only one there".
+
+The current device is a **Waveshare ESP32-S3-Touch-AMOLED-1.75**: 466×466 round CO5300 over QSPI,
+CST9217 touch, 8 MB PSRAM, 16 MB flash (dual OTA), ES8311 codec with microphone and speaker.
 
 `tool/panel_tap.dart` in the app repo opens a real port, runs every byte through the real decoder
 and prints frames plus counters. It needs no Flutter and no app build, which is why the Dart
