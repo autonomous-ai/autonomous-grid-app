@@ -51,7 +51,6 @@ class SyncWorkspace {
 
   Directory get syncedMediaDir => Directory('${outputsDir.path}/synced');
 
-  File get promptsFile => File('${_app.path}/prompts.json');
 
   File get projectsFile => File('${_app.path}/projects.json');
 
@@ -77,9 +76,6 @@ class SyncWorkspace {
     return out;
   }
 
-  /// The saved prompts, or an empty list when the file isn't there yet.
-  Future<List<Map<String, Object?>>> readPrompts() =>
-      _readObjectList(promptsFile);
 
   /// The project list, or an empty list when the file isn't there yet.
   Future<List<Map<String, Object?>>> readProjects() =>
@@ -141,7 +137,6 @@ class SyncWorkspace {
         }
       }
     }
-    await _addIfPresent(entries, promptsFile, syncPromptsEntry);
     await _addIfPresent(entries, projectsFile, syncProjectsEntry);
     await backupsDir.create(recursive: true);
     final file = File('${backupsDir.path}/$stamp.zip');
@@ -166,9 +161,6 @@ class SyncWorkspace {
     }
   }
 
-  /// Writes the merged prompt list.
-  Future<void> writePrompts(List<Map<String, Object?>> prompts) =>
-      _writeJson(promptsFile, prompts);
 
   /// Writes the merged project list.
   Future<void> writeProjects(List<Map<String, Object?>> projects) =>

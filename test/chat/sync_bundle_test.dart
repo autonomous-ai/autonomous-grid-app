@@ -163,7 +163,6 @@ void main() {
         device: 'MacBook-Tony',
         app: '0.2.0',
         chatCount: 42,
-        promptCount: 3,
         projectCount: 2,
         media: const [
           SyncMediaEntry(

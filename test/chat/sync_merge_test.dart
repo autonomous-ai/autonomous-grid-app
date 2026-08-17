@@ -231,7 +231,6 @@ void main() {
         device: 'Mac',
         app: '1.0.0',
         chatCount: 1,
-        promptCount: 0,
         projectCount: 0,
         media: const [
           SyncMediaEntry(

@@ -10,7 +10,6 @@ import '../../../shared/app_info.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../projects/logic/project.dart';
-import '../../prompts/logic/prompt_library_controller.dart';
 import 'sync_bundle.dart';
 import 'sync_client.dart';
 import 'sync_envelope.dart';
@@ -89,7 +88,6 @@ class SyncController extends Notifier<SyncRunState> {
     state = const SyncBusy(SyncStage.gathering);
     final workspace = ref.read(syncWorkspaceProvider);
     final chats = await workspace.readChats();
-    final prompts = await workspace.readPrompts();
     final projects = await workspace.readProjects();
 
     final candidates = await workspace.statMedia(
@@ -183,7 +181,6 @@ class SyncController extends Notifier<SyncRunState> {
       device: _deviceLabel,
       app: await _appVersion(),
       chatCount: chats.length,
-      promptCount: prompts.length,
       projectCount: projects.length,
       media: sealed,
       skipped: skipped,
@@ -195,7 +192,6 @@ class SyncController extends Notifier<SyncRunState> {
         syncManifestEntry: _json(manifest.toJson()),
         for (final entry in chats.entries)
           '$syncChatsPrefix${entry.key}.json': _json(entry.value),
-        if (prompts.isNotEmpty) syncPromptsEntry: _json(prompts),
         if (projects.isNotEmpty) syncProjectsEntry: _json(projects),
       }),
       key: key.secretKey,
@@ -207,7 +203,6 @@ class SyncController extends Notifier<SyncRunState> {
         key: blob.toJson(),
         counts: {
           'chats': chats.length,
-          'prompts': prompts.length,
           'projects': projects.length,
           'media': sealed.length,
         },
@@ -358,11 +353,10 @@ class SyncController extends Notifier<SyncRunState> {
     //
     // Chats get a targeted re-read rather than a provider rebuild: rebuilding
     // tears down anything in flight and moves the user off whatever they had
-    // open. Projects and prompts hold no such state, so a rebuild is the
-    // simplest correct thing for them.
+    // open. Projects hold no such state, so a rebuild is the simplest correct
+    // thing for them.
     await ref.read(chatSessionsProvider.notifier).reloadFromDisk();
     ref.invalidate(projectsProvider);
-    ref.invalidate(promptLibraryProvider);
     log.info(
       'sync',
       'restored backup v${version.version}: ${merged.write.length} chats written',
@@ -404,16 +398,6 @@ class SyncController extends Notifier<SyncRunState> {
     SyncWorkspace workspace,
     Map<String, Uint8List> entries,
   ) async {
-    final prompts = _listIn(entries, syncPromptsEntry);
-    if (prompts.isNotEmpty) {
-      await workspace.writePrompts(
-        mergeRecordsById(
-          local: await workspace.readPrompts(),
-          cloud: prompts,
-          preferNewer: true,
-        ),
-      );
-    }
     final projects = _listIn(entries, syncProjectsEntry);
     if (projects.isNotEmpty) {
       // Local wins a collision: a project's `path` is this machine's folder,

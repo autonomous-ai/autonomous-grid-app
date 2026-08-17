@@ -51,8 +51,7 @@ class ComposerSection extends StatelessWidget {
     required this.onRemoveFile,
     required this.onRemoveSnippets,
     required this.onRemoveTerminal,
-    required this.onOpenPrompts,
-    required this.promptsSaveInput,
+    required this.onOpenCommands,
     required this.onSend,
     required this.onStop,
   });
@@ -111,11 +110,8 @@ class ComposerSection extends StatelessWidget {
   /// position in that list is only true until a panel changes tab.
   final ValueChanged<String> onRemoveTerminal;
 
-  /// Opens the saved-prompt menu, or — when there's already text — saves it as a
-  /// new prompt. [promptsSaveInput] says which, so the button's icon and tooltip
-  /// match what tapping it will do.
-  final VoidCallback onOpenPrompts;
-  final bool promptsSaveInput;
+  /// Opens the `/` command menu.
+  final VoidCallback onOpenCommands;
   final VoidCallback onSend;
 
   /// Ends the turn that's running — Send turns into Stop while one is.
@@ -219,8 +215,7 @@ class ComposerSection extends StatelessWidget {
                 agentPicker: agentPicker,
                 modelPicker: modelPicker,
                 onAttachFile: onAttachFile,
-                onOpenPrompts: onOpenPrompts,
-                promptsSaveInput: promptsSaveInput,
+                onOpenCommands: onOpenCommands,
                 messageController: messageController,
                 onSend: onSend,
                 onStop: onStop,
