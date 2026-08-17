@@ -7,7 +7,9 @@ idf_component_register(
     SRCS
         "app_main.c"
         "audio_capture.c"
+        "buttons.c"
         "device_mac.c"
+        "device_prefs.c"
         "fw_update.c"
         "panel_client.c"
         "panel_frame.c"
@@ -66,6 +68,9 @@ idf_component_register(
         # it is in place before the first parse, not merely before the first message.
         json
         lvgl
+        # The one preference the device owns — its own screen brightness (device_prefs.c). NVS rather than
+        # a file: there is no filesystem here, and a key-value store is the whole need.
+        nvs_flash
 )
 
 # snprintf() is bounded (it truncates, never overflows), but -O2 turns on a format-truncation analysis

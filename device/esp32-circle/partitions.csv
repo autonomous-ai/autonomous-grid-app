@@ -7,9 +7,11 @@
 # that never confirms itself; this panel has no network and no recovery mode, so an image that does not
 # boot is a device that needs a person, a cable and esptool.
 #
-# The OFFSETS are byte-identical to the reference firmware's on this same board. nvs is kept even though
-# this firmware stores nothing in it: moving a partition is the one edit here that can brick a unit
-# mid-transition, and 24 KB is not worth finding that out.
+# The OFFSETS are byte-identical to the reference firmware's on this same board — moving a partition is
+# the one edit here that can brick a unit mid-transition. nvs holds what the DEVICE decides and no app
+# can tell it: its own brightness, the voice language someone picked on the Settings page, and the salted
+# hash of the screen-lock pattern (device_prefs.c). Erasing it costs those three and nothing else, which
+# is why device_prefs_init is allowed to erase it rather than refuse to boot.
 # Name,   Type, SubType, Offset,   Size
 nvs,      data, nvs,     0x9000,   0x6000
 otadata,  data, ota,     0xf000,   0x2000

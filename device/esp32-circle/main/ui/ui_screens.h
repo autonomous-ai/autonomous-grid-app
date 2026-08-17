@@ -33,6 +33,30 @@ void ui_init(void);
 // an AMOLED at a desk.
 void ui_set_brightness(uint8_t level);
 
+// PROPOSE the language voice capture is transcribed in ("en" / "vi") — grid-app's reading of the
+// machine's own locale, sent on `welcome`.
+//
+// Ignored once the Settings page's Voice row has been tapped: that choice is in NVS and wins. Without
+// that, the 15s keepalive `welcome` would undo the tap every time and the row would look like a switch
+// that springs back. Safe to call on every welcome; it refreshes the label in place rather than
+// rebuilding the list, which would reset its scroll under a reader's finger.
+void ui_set_voice_lang(const char *lang);
+
+// ── The screen lock ─────────────────────────────────────────────────────────────────────────────────
+// Wire the sleep/wake gate and, on a genuine power-on, demand the pattern before anything else. Called
+// once from ui_init. A no-op when no passcode is set.
+void ui_lock_init_gate(void);
+
+// Settings → Passcode: set a pattern when there is none, or ask for the current one to turn it off.
+void ui_lock_setup(void);
+
+// Whether the unlock overlay is up. The gesture layer asks so a swipe under it cannot move the carousel.
+bool ui_lock_active(void);
+
+// The language to transcribe in — what `voice.begin` carries. Never empty: "vi" when nothing has been
+// stored or proposed, which is the server's own default too.
+const char *ui_voice_lang(void);
+
 // --- Full-screen states ---
 // The one error screen that survived. Used for a protocol-version mismatch and for `voice.error`, both of
 // which are states a person can act on rather than faults to swallow.

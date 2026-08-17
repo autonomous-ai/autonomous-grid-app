@@ -274,7 +274,7 @@ void display_wake(void)
     esp_lcd_panel_disp_on_off(s_panel, true);
     if (s_power_cb) s_power_cb(true);   // show the pattern-unlock overlay if the lock is armed
     ESP_LOGI(TAG, "wake (panel on)");
-    // NB: no synchronous lv_refr_now / fade here — display_wake runs from the ptt (button A) and touch tasks
+    // NB: no synchronous lv_refr_now / fade here — display_wake runs from the buttons (PWR key) and touch tasks
     // too, and a foreground full-render + flush there made wake slow AND raced panel on/off with the flush
     // DMA on a rapid double-press (→ watchdog reset). Panel-on is instant; the LVGL task flushes the frame.
 }

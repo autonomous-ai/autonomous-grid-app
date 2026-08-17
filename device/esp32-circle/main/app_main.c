@@ -26,6 +26,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "buttons.h"
 #include "fw_update.h"
 #include "panel_client.h"
 #include "panel_frame.h"
@@ -35,6 +36,7 @@
 #include "ui/display.h"
 #include "ui/ui_screens.h"
 #include "audio_capture.h"   // audio_notify_init() — the speaker half of the codec
+#include "device_prefs.h"    // the remembered screen brightness
 #include "voice.h"
 
 static const char *TAG = "app";
@@ -60,15 +62,28 @@ void app_main(void)
     // port, which the person holding it may well not have plugged in.
     display_init();
 
+    // NVS, before anything reads a preference. Cheap, and it has to precede ui_init so the screen comes up
+    // at the brightness someone chose rather than at the default and then jumping.
+    device_prefs_init();
+
     // Every screen. ui_init takes the display lock itself — LVGL is not thread-safe and its handler task
     // is already running by now — so this call does not need one around it.
     ui_init();
+    // Applied AFTER ui_init because the dim it drives is an overlay ui_init builds. Before it, this would
+    // set a cached level that nothing draws, and the first frame would still be full brightness.
+    ui_set_brightness(device_prefs_brightness());
     ram_telemetry_checkpoint("ui_ready");
 
     // The PMIC. AFTER the display on purpose: it shares the I2C bus but is not in the panel's critical
     // path. Nothing here has to switch a rail on for the display, so a dark panel is never the PMIC's
     // fault — which is worth stating, because a dark panel makes it look guilty.
     power_init();
+
+    // The two physical buttons: PWR taps the screen off and on, BOOT goes back / cancels a turn. AFTER
+    // power_init because the PWR key is not a GPIO — it hangs off the AXP2101's PWRON pin and is read over
+    // I2C, and power_init is what arms the press event that makes a tap visible at all. AFTER ui_init too,
+    // since BOOT reaches into the screens.
+    buttons_start();
 
     // The 2 MB PSRAM record buffer, reserved BEFORE anything else has had a chance to fragment the
     // heap. A contiguous block that size is easy to get at boot and hard to get later even with

@@ -30,9 +30,11 @@
 #include "spinner_spokes.h"   // 12 pre-rotated spinner bars (see the .c for why they are baked)
 #include "icons_voice.h"      // Figma voice-state icons (mic/recording/tick)
 #include "icons_engine.h"     // engine product marks
+#include "esp_app_desc.h"   // esp_app_get_description — the Version row
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_attr.h"
+#include "../device_prefs.h"   // the one setting this device owns: its own brightness
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"   // vTaskDelay — ui_scroll_benchmark paces its passes
 
@@ -125,11 +127,26 @@ extern const lv_font_t geist_sem_24;  // largest display: tile agent name + over
 #define COL_ORANGE lv_color_hex(0xff8a4c)   // working-status verb row
 #define COL_CLAUDE lv_color_hex(0xcc7c5e)   // matches the shared Claude reference color
 #define COL_CARD   lv_color_hex(0x16161c)
-// Kept from the Settings tile's palette, which is gone: these three still dress the question card's option
-// pills and the reset/cancel overlays, and they are the only surface tokens on the device besides COL_CARD.
+// The Settings tile's palette. Also dresses the question card's option pills and the cancel overlays.
 #define COL_SET_BG   lv_color_hex(0x000000)   // settings tile background + icon circle (black, per new Figma)
 #define COL_SET_PILL lv_color_hex(0x1c1c1c)   // settings row pill fill (dark grey)
 #define COL_SET_BORD lv_color_hex(0x333333)   // settings pill border
+#define COL_BRIGHT   lv_color_hex(0x059600)   // brightness fill — the green the Figma track starts from
+
+// ── Settings list geometry ─────────────────────────────────────────────────────────────────────────
+// Rows are UNIFORM: one width, one height, no gap, in a scrollable column. The reference tapered them
+// (336/427/427) to squeeze four into the circle at once; a list that scrolls does not need to, and equal
+// rows are what make three of them read as a list rather than as three loose controls.
+#define SET_ROW_W    320
+#define SET_ROW_H    84
+#define SET_LIST_PAD 65    // first row starts where the design puts it
+#define SET_ROW_FONT (&geist_reg_32)
+
+// Figma "New Setting" (Brightness): a 427-wide track at y=231 with the title above it at y=151.
+#define BRIGHT_BOX_W 427
+// The fill has a 20% floor, because min brightness IS 20% (see BRIGHT_MIN) — the track bottoms out at a
+// fifth of the box and is never empty. An empty track would read as "off", and this screen cannot turn off.
+#define BRIGHT_FILL_MIN (BRIGHT_BOX_W / 5)
 #define COL_SET_BLUE lv_color_hex(0x006fff)   // the "Keep it" primary on the reset confirm (Figma)
 
 static lv_obj_t *scr_error, *scr_projects;
@@ -262,6 +279,24 @@ static void overlay_raise(lv_obj_t *o)
 }
 #define BRIGHT_MIN 0x14              // dim floor → the screen never dims to fully unreadable
 static bool s_overview_active;       // true while the leading overview tile (ring 0) is the visible page
+
+// ── Settings ───────────────────────────────────────────────────────────────────────────────────────
+static lv_obj_t *s_settings_tile;    // the trailing tile, after the last project
+static bool s_settings_active;       // true while the settings tile is the visible page
+static lv_obj_t *s_vlang_lbl;        // the Voice row's VALUE — refreshed in place when the app says so
+
+// Which language a voice capture is transcribed in — "en" or "vi".
+//
+// grid-app PROPOSES one from the machine's own locale (`welcome.voiceLang`); a tap on the Settings row
+// DECIDES. The person holding the panel may well speak something other than the laptop is set to, so the
+// app's reading is a default and not an answer. Whatever ends up here rides every `voice.begin`, which is
+// what makes the server transcribe in it.
+static char s_voice_lang[8];
+
+static lv_obj_t *s_bright_screen;    // full-screen overlay on lv_layer_top, built once then shown/hidden
+static lv_obj_t *s_bright_box;       // the track — and the drag surface, no separate catcher
+static lv_obj_t *s_bright_fill;      // the green fill, a plain rounded rect (see build_brightness_screen)
+static bool s_bright_dragging;
 // The machine's name, from `welcome.machine.name`. One machine, so it is a string and not a list.
 static char s_machine_name[64];
 
@@ -280,6 +315,11 @@ static void tile_changed(lv_event_t *e); // tileview swipe tracker (defined belo
 static void carousel_scroll(lv_event_t *e); // per-frame leading-edge cover for the 1-agent ring (defined below)
 static void rebuild_page_dots(void);     // (re)build the bottom page-indicator dots (defined below)
 static void rebuild_overview_tile(void); // refresh the overview tile's "N projects" label (defined below)
+static void rebuild_settings_tile(void); // (re)build the trailing Settings tile (defined below)
+static const char *vlang_tag(void);      // the Voice row's two-letter tag (defined below)
+static void settings_vlang_tap(lv_event_t *e); // Settings → Voice: switch the language (defined below)
+static void settings_passcode_tap(lv_event_t *e); // Settings → Passcode: set or turn off (defined below)
+static void apply_dim(uint8_t level);    // dim overlay for a brightness level (defined below)
 static void overview_actions_apply(void);// enable/disable the Overview Voice / Goal / Loop actions
 static void overview_working_apply(void);// refresh the "<N> <gerund>…" sub-line from the agents' busy_model flags
 static void overview_working_tick(lv_timer_t *t);// rotate the working verb while the row is shown
@@ -373,15 +413,16 @@ static lv_obj_t *s_carousel_spacer;
 // i+RING_LEAD. An EMPTY machine (N==0) keeps 2 positions [overview, No projects] so the carousel stays
 // swipeable.
 //
-// RING_FIXED was 2 in the reference — a Settings tile and a Machines wheel. Neither has anything to say
-// here: every Settings row wrote to a config_store this firmware does not have, and there is exactly one
-// machine, the computer holding the cable. It is 0 rather than deleted so the arithmetic below still
-// reads as "leading fixed + projects + trailing fixed".
+// RING_FIXED was 2 in the reference — a Settings tile and a Machines wheel. The Machines wheel still has
+// nothing to say here: there is exactly one machine, the computer holding the cable. Settings is back, and
+// TRAILS rather than leading as it did there, because ring 0 is the Overview on this device and the home
+// swipe goes to it.
 #define RING_LEAD  1                    // number of leading fixed tiles (the Overview) before the projects
-#define RING_FIXED 0                    // number of trailing fixed tiles — none
+#define RING_FIXED 1                    // number of trailing fixed tiles — the Settings tile
 static void resize_spacer(void) { if (s_carousel_spacer) lv_obj_set_width(s_carousel_spacer, CAROUSEL_M * carousel_w()); }
 static int ring_len(void)      { return RING_LEAD + (s_proj_count > 0 ? s_proj_count : 1) + RING_FIXED; }
 static int ring_agents_end(void) { return ring_len() - RING_FIXED; }   // first ring AFTER the projects
+static int ring_settings(void) { return ring_agents_end(); }   // the trailing Settings tile
 static int agent_of_ring(int r) { return r - RING_LEAD; }   // ring → agent index (valid RING_LEAD..ring_agents_end()-1)
 static int ring_of_agent(int i) { return i + RING_LEAD; }   // agent index → ring
 static int ring_of_col(int c) { int m = ring_len(); int r = c % m; return r < 0 ? r + m : r; }
@@ -391,11 +432,28 @@ static int col_for_ring_near(int cc, int r) {
     int fwd = (((r - ring_of_col(cc)) % m) + m) % m;   // 0..m-1 steps forward to reach ring r
     return (fwd <= m - fwd) ? (cc + fwd) : (cc - (m - fwd));
 }
+// Whether the page in front of the user is a PROJECT tile.
+//
+// Written as one predicate because "not the Overview" was standing in for it in a dozen places, and the
+// day a THIRD kind of page arrived every one of them was wrong at once. Settings was that third page:
+// `s_active_idx` only moves on a project ring, so on Settings it still named the project last looked at
+// and `!s_overview_active` was still true — which put the Goal/Voice/Loop cluster on the Settings list,
+// opened the previous project's reader on a tap meant for a settings row, and made a sentence spoken from
+// Settings read as one aimed at that project.
+//
+// The lock is in here too: a page behind the unlock overlay is not a page anyone is looking at.
+static bool on_project_page(void)
+{
+    return lv_screen_active() == scr_projects && !s_overview_active && !s_settings_active
+        && !ui_lock_active();
+}
+
 // Set active/settings state from whichever ring position is centered right now (single source of truth).
 static void apply_active_from_col(void)
 {
     int r = ring_of_col(carousel_col());
     s_overview_active = (r == 0);
+    s_settings_active = (r == ring_settings());
     if (r >= RING_LEAD && r < ring_agents_end()) s_active_idx = agent_of_ring(r);   // project ring → project index
     agent_actions_apply();   // the cluster belongs to agent tiles only — follow the swipe, not the next tick
 }
@@ -1511,6 +1569,15 @@ void ui_init(void)
     // itself is driven from touch.c's raw coordinates, independent of this.
     lv_obj_move_background(s_voice_overlay);   // behind the voice indicator on the top layer
 
+    // Built once, here, before the first `update_content_window` — which is what puts it at its column.
+    // Unlike the reference this tile does not need rebuilding when the project count changes: tiles are
+    // positioned by absolute x on this device, not by a tileview column index, so moving it is enough.
+    rebuild_settings_tile();
+
+    // The lock gate: arm on sleep, and on a genuine power-on demand the pattern before anything is drawn.
+    // After rebuild_settings_tile because turning the lock off from its overlay rebuilds that tile.
+    ui_lock_init_gate();
+
     lv_timer_create(statusbar_tick, 1000, NULL);
     lv_timer_create(busy_dots_tick, 300, NULL);   // animate the "processing" loading dots (~3Hz)
     lv_screen_load(scr_projects);
@@ -1665,6 +1732,660 @@ void ui_leave_error_screen(void)
 }
 
 // Refresh the overview tile: eyebrow = the machine's name (from `welcome`); headline = "N projects".
+// Screen lock — 3×3 pattern passcode. A full-screen overlay on the top layer captures ALL touch; the user
+// draws a path over 9 dots. Only a salted SHA-256 of the dot-index sequence is stored (device_prefs) — the
+// pattern itself is never persisted. Locks on wake-from-sleep and at boot (ui_lock_init_gate). Casual
+// security: a smudge trail on the AMOLED or a shoulder-surf can leak the shape — enough to stop a
+// passer-by poking your agents, not a determined attacker.
+enum { LK_UNLOCK, LK_SET, LK_CONFIRM, LK_DISABLE };
+#define LK_GAP        113      // dot spacing (px) — matches the "Create your pattern" Figma grid
+#define COL_LOCK_DOT   lv_color_hex(0xffffff)   // idle pattern dot (white, per Figma)
+#define COL_LOCK_GREEN lv_color_hex(0x75f958)   // selected dot + line (bright green, per Figma)
+#define LK_HIT        44       // finger hit radius around a dot (< GAP/2 so adjacent dots don't co-trigger)
+#define LK_MIN        4        // minimum dots in a valid pattern
+#define LK_MAX_FAIL   5        // wrong unlock tries → unpair (wipe token + passcode) + reboot to pairing
+#define LK_CX         233      // grid centre x
+#define LK_CY         233      // grid centre y — screen centre (flat, dots-only)
+
+static lv_obj_t *s_lk_overlay;
+static lv_obj_t *s_lk_msg;                 // single message line ABOVE the grid (instruction / error). Empty
+                                           // on an idle unlock screen — the 9 dots alone are the cue.
+static lv_obj_t *s_lk_cancel;              // "Cancel" pill (setup/disable only; hidden on the unlock gate)
+static lv_obj_t *s_lk_dots[9];             // flat dot (grey idle → green selected)
+static lv_obj_t *s_lk_seg[9];              // line between consecutive selected dots
+static lv_point_precise_t s_lk_seg_pt[9][2];
+static int32_t  s_lk_dcx[9], s_lk_dcy[9];  // dot centres (screen coords)
+static uint8_t  s_lk_seq[9];
+static int      s_lk_len;
+static bool     s_lk_sel[9];
+static int      s_lk_mode;
+static char     s_lk_first[32];            // first pattern captured during setup (to confirm against)
+static bool     s_lk_armed;                // re-lock on the next wake (set on sleep)
+static bool     s_lk_shown;                // overlay currently blocking the UI
+static int      s_lk_fails;
+
+// The single message line above the grid. Empty string → blank (idle unlock = dots only).
+static void lk_msg(const char *msg, lv_color_t col)
+{
+    if (!s_lk_msg) return;
+    lv_label_set_text(s_lk_msg, msg ? msg : "");
+    lv_obj_set_style_text_color(s_lk_msg, col, 0);
+}
+
+static void lk_clear_draw(void)
+{
+    for (int k = 0; k < 9; k++) {
+        s_lk_sel[k] = false;
+        if (s_lk_dots[k]) lv_obj_set_style_bg_color(s_lk_dots[k], COL_LOCK_DOT, 0);
+        if (s_lk_seg[k]) lv_obj_add_flag(s_lk_seg[k], LV_OBJ_FLAG_HIDDEN);
+    }
+    s_lk_len = 0;
+}
+
+static void lk_seq_str(char *out, size_t cap)
+{
+    out[0] = '\0';
+    for (int i = 0; i < s_lk_len; i++) {
+        char b[8]; snprintf(b, sizeof b, i ? ",%d" : "%d", s_lk_seq[i]);
+        strncat(out, b, cap - strlen(out) - 1);
+    }
+}
+
+static void lk_add_dot(int k)
+{
+    if (s_lk_sel[k]) return;
+    if (s_lk_len > 0) {                       // draw the segment from the previous dot to this one
+        int prev = s_lk_seq[s_lk_len - 1], seg = s_lk_len - 1;
+        int32_t x0 = s_lk_dcx[prev], y0 = s_lk_dcy[prev], x1 = s_lk_dcx[k], y1 = s_lk_dcy[k];
+        // Size the line object tightly to the segment's bounding box (+margin) so only that small area
+        // repaints — a full-screen line object would invalidate the whole panel per segment.
+        int32_t ox = LV_MIN(x0, x1) - 6, oy = LV_MIN(y0, y1) - 6;
+        lv_obj_set_pos(s_lk_seg[seg], ox, oy);
+        lv_obj_set_size(s_lk_seg[seg], LV_ABS(x1 - x0) + 12, LV_ABS(y1 - y0) + 12);
+        s_lk_seg_pt[seg][0].x = x0 - ox; s_lk_seg_pt[seg][0].y = y0 - oy;
+        s_lk_seg_pt[seg][1].x = x1 - ox; s_lk_seg_pt[seg][1].y = y1 - oy;
+        lv_line_set_points(s_lk_seg[seg], s_lk_seg_pt[seg], 2);
+        lv_obj_clear_flag(s_lk_seg[seg], LV_OBJ_FLAG_HIDDEN);
+    }
+    s_lk_sel[k] = true;
+    s_lk_seq[s_lk_len++] = (uint8_t)k;
+    lv_obj_set_style_bg_color(s_lk_dots[k], COL_LOCK_GREEN, 0);   // flat: white → green on select
+}
+
+static void lk_hide(void)
+{
+    s_lk_shown = false;
+    if (s_lk_overlay) lv_obj_add_flag(s_lk_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+// One-shot timer (armed after LK_MAX_FAIL wrong unlocks): clear the passcode and carry on.
+//
+// THE REFERENCE DID SOMETHING DESTRUCTIVE HERE — it wiped the account link and rebooted into pairing, so
+// five wrong tries cost you something real and were not a free bypass. This device has no account link to
+// cut: it holds nothing but a brightness level and this pattern.
+//
+// So the choice is between a free bypass after five visible failures, and a panel that nobody can use
+// again without a flash tool. The bypass, and the reason is the threat model the header states: this lock
+// stops a passer-by, and a passer-by does not sit through five failures. Anyone who would is holding the
+// cable, and over that cable the whole firmware can be replaced — so a lockout would protect nothing while
+// costing a forgotten pattern the entire device.
+//
+// Deferred via a timer so the message paints before the overlay goes.
+static void lk_reset_clear(lv_timer_t *t)
+{
+    (void)t;
+    device_prefs_clear_lock();
+    lk_hide();
+    rebuild_settings_tile();
+    update_content_window();
+}
+
+// Evaluate the drawn pattern on release, per mode.
+static void lk_finish(void)
+{
+    char seq[32]; lk_seq_str(seq, sizeof seq);
+    bool tooShort = s_lk_len < LK_MIN;
+
+    lv_color_t err = lv_color_hex(0xe05555);   // soft red for errors
+    switch (s_lk_mode) {
+    case LK_UNLOCK:
+        if (!tooShort && device_prefs_check_lock(seq)) { s_lk_fails = 0; s_lk_armed = false; lk_hide(); return; }
+        lk_clear_draw();
+        if (++s_lk_fails >= LK_MAX_FAIL) {
+            // Too many wrong tries → unpair + reboot to pairing (deferred so this message paints first).
+            lk_msg("Too many tries — the lock is off", err);
+            lv_timer_t *tm = lv_timer_create(lk_reset_clear, 1500, NULL);
+            lv_timer_set_repeat_count(tm, 1);
+            return;
+        }
+        { char b[40]; snprintf(b, sizeof b, "Wrong, try again (%d/%d)", s_lk_fails, LK_MAX_FAIL);
+          lk_msg(b, err); }
+        return;
+    case LK_DISABLE:
+        if (!tooShort && device_prefs_check_lock(seq)) {
+            device_prefs_clear_lock(); audio_notify_done(); lk_hide();
+            rebuild_settings_tile(); update_content_window();   // reposition the rebuilt tile → back on Settings
+            return;
+        }
+        lk_clear_draw();
+        lk_msg("Wrong pattern", err);
+        return;
+    case LK_SET:
+        if (tooShort) { lk_clear_draw(); lk_msg("Use at least 4 dots", err); return; }
+        snprintf(s_lk_first, sizeof s_lk_first, "%s", seq);
+        s_lk_mode = LK_CONFIRM;
+        lk_clear_draw();
+        lk_msg("Draw it again", COL_FG);
+        return;
+    case LK_CONFIRM:
+        if (!tooShort && strcmp(seq, s_lk_first) == 0) {
+            device_prefs_set_lock(seq); audio_notify_done(); lk_hide();
+            rebuild_settings_tile(); update_content_window();   // reposition the rebuilt tile → back on Settings
+            return;
+        }
+        s_lk_mode = LK_SET;
+        lk_clear_draw();
+        lk_msg("Didn't match", err);
+        return;
+    }
+}
+
+static void lk_pressing(lv_event_t *e)
+{
+    (void)e;
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev) return;
+    lv_point_t p; lv_indev_get_point(indev, &p);
+    for (int k = 0; k < 9; k++) {
+        if (s_lk_sel[k]) continue;
+        int32_t dx = p.x - s_lk_dcx[k], dy = p.y - s_lk_dcy[k];
+        if (dx * dx + dy * dy <= LK_HIT * LK_HIT) lk_add_dot(k);
+    }
+    // No live finger-tracking "tail" line: updating a full-screen line every pointer move forced a
+    // full-screen repaint each frame → jank on this render-bound panel. Dots light up + segments connect
+    // as the finger crosses them (cheap, occasional invalidation) — enough visual feedback.
+}
+
+static void lk_released(lv_event_t *e)
+{
+    (void)e;
+    if (s_lk_len > 0) lk_finish();
+}
+
+// Cancel (setup/disable only): back out without changing anything — just hide the overlay to reveal the
+// Settings tile underneath. Never wired on the unlock gate (the button is hidden there).
+static void lk_cancel_tap(lv_event_t *e)
+{
+    (void)e;
+    lk_hide();
+}
+
+static void lk_build(void)
+{
+    if (s_lk_overlay) return;
+    lv_obj_t *ov = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(ov);
+    lv_obj_set_size(ov, 466, 466);
+    lv_obj_set_pos(ov, 0, 0);
+    lv_obj_set_style_bg_color(ov, COL_BG, 0);   // flat black, like the original
+    lv_obj_set_style_bg_opa(ov, LV_OPA_COVER, 0);
+    lv_obj_add_flag(ov, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(ov, lk_pressing, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(ov, lk_released, LV_EVENT_RELEASED, NULL);
+    s_lk_overlay = ov;
+
+    // One message line above the grid (instruction / error). Empty on an idle unlock screen.
+    s_lk_msg = lv_label_create(ov);
+    lv_obj_set_style_text_font(s_lk_msg, &geist_reg_25, 0);
+    lv_obj_set_style_text_color(s_lk_msg, COL_FG, 0);
+    lv_obj_set_width(s_lk_msg, 340);                                  // bound to the round-safe width
+    lv_obj_set_style_text_align(s_lk_msg, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_lk_msg, LV_LABEL_LONG_WRAP);             // any long message wraps, never clips the UI
+    lv_label_set_text(s_lk_msg, "");
+    lv_obj_align(s_lk_msg, LV_ALIGN_TOP_MID, 0, 46);   // title y per the "Create your pattern" Figma
+
+    // Segment lines first (below the dots in z-order). Positioned + sized tightly per segment in lk_add_dot.
+    for (int k = 0; k < 9; k++) {
+        lv_obj_t *ln = lv_line_create(ov);
+        lv_obj_set_style_line_color(ln, COL_LOCK_GREEN, 0);
+        lv_obj_set_style_line_width(ln, 5, 0);
+        lv_obj_set_style_line_rounded(ln, true, 0);
+        lv_obj_add_flag(ln, LV_OBJ_FLAG_HIDDEN);
+        s_lk_seg[k] = ln;
+    }
+
+    // 9 flat dots (3×3), centred on the screen.
+    for (int k = 0; k < 9; k++) {
+        int r = k / 3, c = k % 3;
+        s_lk_dcx[k] = LK_CX + (c - 1) * LK_GAP;
+        s_lk_dcy[k] = LK_CY + (r - 1) * LK_GAP;
+        lv_obj_t *d = lv_obj_create(ov);
+        lv_obj_remove_style_all(d);
+        lv_obj_clear_flag(d, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(d, 16, 16);
+        lv_obj_set_style_radius(d, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_opa(d, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(d, COL_LOCK_DOT, 0);
+        lv_obj_set_pos(d, s_lk_dcx[k] - 8, s_lk_dcy[k] - 8);
+        s_lk_dots[k] = d;
+    }
+
+    // "Cancel" pill at the bottom — shown only for setup/disable (lk_show toggles it), lets the user back out.
+    s_lk_cancel = lv_button_create(ov);
+    lv_obj_set_style_bg_color(s_lk_cancel, COL_SET_PILL, 0);
+    lv_obj_set_style_bg_color(s_lk_cancel, lv_color_hex(0x2c2c2c), LV_STATE_PRESSED);
+    lv_obj_set_style_radius(s_lk_cancel, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(s_lk_cancel, 1, 0);
+    lv_obj_set_style_border_color(s_lk_cancel, COL_SET_BORD, 0);
+    lv_obj_set_style_pad_hor(s_lk_cancel, 34, 0);
+    lv_obj_set_style_pad_ver(s_lk_cancel, 16, 0);
+    lv_obj_align(s_lk_cancel, LV_ALIGN_BOTTOM_MID, 0, -26);   // lower, clear of the bottom dot row
+    lv_obj_set_ext_click_area(s_lk_cancel, 28);   // forgiving hit zone (tap drift near the edge still counts)
+    lv_obj_add_flag(s_lk_cancel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(s_lk_cancel, lk_cancel_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *cl = lv_label_create(s_lk_cancel);
+    lv_obj_set_style_text_font(cl, &geist_reg_20, 0);
+    lv_obj_set_style_text_color(cl, COL_MUTED, 0);
+    lv_label_set_text(cl, "Cancel");
+    lv_obj_center(cl);
+}
+
+static void lk_show(int mode)
+{
+    lk_build();
+    s_lk_mode = mode;
+    lk_clear_draw();
+    // UNLOCK → no text (just the 9 dots); setup/disable → an instruction.
+    lk_msg(mode == LK_SET ? "Create your pattern"
+         : mode == LK_DISABLE ? "Confirm to turn off"
+         : "Draw Pattern to Unlock", COL_FG);
+    // Cancel only for setup/disable — the unlock gate has no way out but the correct pattern (or 5 fails).
+    if (s_lk_cancel) {
+        if (mode == LK_UNLOCK) lv_obj_add_flag(s_lk_cancel, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_clear_flag(s_lk_cancel, LV_OBJ_FLAG_HIDDEN);
+    }
+    s_lk_shown = true;
+    lv_obj_clear_flag(s_lk_overlay, LV_OBJ_FLAG_HIDDEN);
+    overlay_raise(s_lk_overlay);
+    if (display_is_asleep()) display_wake();
+}
+
+// display power hook (registered in ui_lock_init_gate): arm on sleep, unlock-prompt on wake.
+static void lk_power_cb(bool on)
+{
+    if (!on) { if (device_prefs_lock_enabled()) s_lk_armed = true; return; }
+    if (device_prefs_lock_enabled() && s_lk_armed && !s_lk_shown) lk_show(LK_UNLOCK);
+}
+
+void ui_lock_init_gate(void)
+{
+    display_set_power_cb(lk_power_cb);
+    // Lock at boot ONLY on a genuine power-on / hardware reset — NOT on a firmware `esp_restart()`
+    // (ESP_RST_SW). Here that is how a cable OTA finishes, and demanding the pattern after an update the
+    // person at the desk just pushed from the app would read as the update having broken something.
+    // Wake-from-sleep still prompts (lk_power_cb) regardless.
+    if (esp_reset_reason() != ESP_RST_SW && device_prefs_lock_enabled()) {
+        s_lk_armed = true;
+        lk_show(LK_UNLOCK);
+    }
+}
+
+void ui_lock_setup(void)
+{
+    lk_show(device_prefs_lock_enabled() ? LK_DISABLE : LK_SET);
+}
+
+bool ui_lock_active(void) { return s_lk_shown; }
+
+// ── SETTINGS ────────────────────────────────────────────────────────────────────────────────────────
+//
+// Three rows: Voice · Brightness · Version. The reference had six — Wifi, Voice, Passcode, Brightness,
+// Version, Reset device — and the three that went are the three that answer a question this device does
+// not have:
+//
+//   * **Wifi** — there is no radio. The cable is the link and the authorization.
+//   * **Passcode** — a screen lock guards a device that holds something. This one holds nothing: it draws
+//     state that lives on the computer it is plugged into, and unplugging it is the lock.
+//   * **Reset device** — it wiped provisioning, pairing and WiFi credentials, none of which exist here.
+//     Left in, its confirm dialog would have led to erasing a brightness level.
+//
+// Three rows also means the list does not scroll (four fit the circle at this width), so it is a list by
+// construction rather than by luck — but it is still built as a scrolling column, because a fourth row
+// arriving should push the others rather than crowd them.
+
+// A list row: a glyph in a black circle, the label, and an optional right-aligned value.
+//
+// Carries no fill and no border. That is not only cosmetic in the design: a pill now means "this one is a
+// track you drag", which is why Brightness keeps one on its own screen and nothing in this list does.
+// Losing the pill also loses the press highlight it provided, so a faint fill goes back on the pressed
+// state alone — a tap has to be felt.
+static lv_obj_t *settings_row(lv_obj_t *parent, const lv_image_dsc_t *icon, const char *label,
+                              lv_color_t label_col, const char *trailing, const lv_font_t *trail_font,
+                              lv_color_t trail_col, lv_event_cb_t cb, lv_obj_t **out_label)
+{
+    lv_obj_t *row = lv_button_create(parent);
+    lv_obj_set_width(row, SET_ROW_W);
+    lv_obj_set_height(row, SET_ROW_H);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(row, COL_FG, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(row, LV_OPA_10, LV_STATE_PRESSED);   // the only press feedback left
+    lv_obj_set_style_radius(row, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_pad_left(row, 6, 0);
+    lv_obj_set_style_pad_right(row, 14, 0);
+    lv_obj_set_style_pad_ver(row, 6, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+    lv_obj_set_style_shadow_width(row, 0, 0);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 14, 0);
+
+    // The icon sits in a 72px circle. Black on black, so nothing of the circle shows — it is there to hold
+    // the left column, which is what keeps every label on this page aligned with every other.
+    lv_obj_t *circ = lv_obj_create(row);
+    lv_obj_remove_style_all(circ);
+    lv_obj_clear_flag(circ, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(circ, 72, 72);
+    lv_obj_set_style_radius(circ, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(circ, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(circ, COL_SET_BG, 0);
+    if (icon) {
+        lv_obj_t *ic = lv_image_create(circ);
+        lv_image_set_src(ic, icon);
+        lv_obj_center(ic);
+    }
+
+    lv_obj_t *lb = lv_label_create(row);
+    lv_obj_set_style_text_font(lb, SET_ROW_FONT, 0);
+    lv_obj_set_style_text_color(lb, label_col, 0);
+    lv_label_set_text(lb, label);
+    lv_obj_set_flex_grow(lb, 1);   // fills the middle, pushing the value to the right edge
+    lv_label_set_long_mode(lb, LV_LABEL_LONG_DOT);
+    // Pinned to ONE line. LV_LABEL_LONG_DOT only truncates at a fixed height; with a free height it WRAPS,
+    // which is how the reference's Version row became two lines and broke the list's rhythm. Truncating is
+    // the lesser failure — the row stays one tall whatever label is passed in later.
+    lv_obj_set_height(lb, lv_font_get_line_height(SET_ROW_FONT));
+
+    lv_obj_t *tr = NULL;
+    if (trailing && trailing[0]) {
+        const lv_font_t *tf = trail_font ? trail_font : SET_ROW_FONT;
+        tr = lv_label_create(row);
+        lv_obj_set_style_text_font(tr, tf, 0);
+        lv_obj_set_style_text_color(tr, trail_col, 0);
+        lv_label_set_text(tr, trailing);
+        // Align the value's BASELINE with the label's, not its box. Flex centres two labels by box, and a
+        // label draws from the top of its own box, so two fonts of different size share a centre but not a
+        // baseline — the value floated above the foot of its label, worse the bigger the size gap. Derived
+        // rather than eyeballed, so it stays right if either font is swapped:
+        //     dy = (Hlabel - Hvalue) / 2 - (base_label - base_value)
+        const lv_font_t *lf = SET_ROW_FONT;
+        int32_t dy = (lv_font_get_line_height(lf) - lv_font_get_line_height(tf)) / 2
+                   - ((int32_t)lf->base_line - (int32_t)tf->base_line);
+        if (dy) lv_obj_set_style_translate_y(tr, dy, 0);
+    }
+    if (out_label) *out_label = tr ? tr : lb;   // whichever half the caller refreshes in place
+    if (cb) lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, NULL);
+    return row;
+}
+
+// ── Brightness, on its own screen ───────────────────────────────────────────────────────────────────
+// A full-screen overlay on lv_layer_top rather than a new lv_screen, built once then shown and hidden.
+// The design keeps the pill HERE and drops it from every list row precisely because this one is dragged.
+
+static int32_t bright_w_from_level(uint8_t level)    // fill width for a level (BRIGHT_MIN→20%, 0xFF→full)
+{
+    if (level < BRIGHT_MIN) level = BRIGHT_MIN;
+    return BRIGHT_FILL_MIN
+         + (int32_t)(level - BRIGHT_MIN) * (BRIGHT_BOX_W - BRIGHT_FILL_MIN) / (0xFF - BRIGHT_MIN);
+}
+
+static void bright_box_pressing(lv_event_t *e)      // finger moved → track the value and move the fill
+{
+    (void)e;
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev || !s_bright_box) return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    lv_area_t a;
+    lv_obj_get_coords(s_bright_box, &a);
+    int32_t w = lv_area_get_width(&a);
+    int32_t lo = w / 5;                              // the 20% floor, matching BRIGHT_FILL_MIN
+    if (w <= lo) return;
+    int32_t rel = p.x - a.x1;
+    if (rel < lo) rel = lo;
+    else if (rel > w) rel = w;
+    s_brightness = (uint8_t)(BRIGHT_MIN + (int32_t)(rel - lo) * (0xFF - BRIGHT_MIN) / (w - lo));
+    // Resize only on a REAL change. This fires on every pointer move and each resize invalidates a 427x82
+    // rounded rect — the hottest redraw path in the UI. Sub-pixel jitter from a finger otherwise produced
+    // repaints that changed nothing on screen.
+    if (s_bright_fill && lv_obj_get_width(s_bright_fill) != rel) lv_obj_set_width(s_bright_fill, rel);
+}
+
+static void bright_box_press(lv_event_t *e)         // touch down → freeze the swipe, jump to the touch
+{
+    s_bright_dragging = true;
+    // Fully disable the tileview's scroll for the drag. A plain lv_obj does not "hold" the gesture the way
+    // lv_slider does, so LVGL walks up and scrolls the tileview — the drag kept flipping projects.
+    if (tileview) {
+        lv_obj_clear_flag(tileview, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scroll_dir(tileview, LV_DIR_NONE);
+    }
+    bright_box_pressing(e);
+}
+
+static void bright_box_release(lv_event_t *e)       // let go → restore the swipe, apply once, persist once
+{
+    (void)e;
+    if (!s_bright_dragging) return;
+    s_bright_dragging = false;
+    if (tileview) {
+        lv_obj_set_scroll_dir(tileview, LV_DIR_HOR);
+        lv_obj_add_flag(tileview, LV_OBJ_FLAG_SCROLLABLE);
+    }
+    // Applied on RELEASE only. Driving the panel mid-drag shares the SPI bus with the pixel flush and
+    // froze the display once already, so this is the one place that calls apply_dim().
+    apply_dim(s_brightness);
+    device_prefs_set_brightness(s_brightness);   // once, not per move: NVS is flash
+    ESP_LOGI(TAG, "brightness -> 0x%02x", s_brightness);
+}
+
+static void brightness_close(lv_event_t *e)
+{
+    (void)e;
+    if (s_bright_screen) lv_obj_add_flag(s_bright_screen, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void build_brightness_screen(void)
+{
+    if (s_bright_screen) return;
+    lv_obj_t *ov = lv_obj_create(lv_layer_top());
+    s_bright_screen = ov;
+    lv_obj_set_size(ov, lv_pct(100), lv_pct(100));
+    lv_obj_align(ov, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(ov, COL_BG, 0);
+    lv_obj_set_style_bg_opa(ov, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(ov, 0, 0);
+    lv_obj_set_style_radius(ov, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_pad_all(ov, 0, 0);
+    lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ov, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);
+    // The design draws no way out of this frame. Tapping the background closes it, the way the other
+    // overlays behave; the track sits on top and swallows its own presses, so a drag never closes it.
+    lv_obj_add_event_cb(ov, brightness_close, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *ttl = lv_label_create(ov);
+    // Medium 38, not the Figma's 48, and the reason is measured: this title was the ONLY user of
+    // geist_med_48, and pulling that face in cost **684 KB of flash** — a fifth of the whole image, for ten
+    // points on one word. The image crosses the cable on every update and OTA time scales with it, so the
+    // trade is a slightly smaller heading against a noticeably faster reflash. Medium 38 is already linked
+    // by five other screens.
+    lv_obj_set_style_text_font(ttl, &geist_med_38, 0);
+    lv_obj_set_style_text_color(ttl, COL_FG, 0);
+    lv_label_set_text(ttl, "Brightness");
+    lv_obj_align(ttl, LV_ALIGN_TOP_MID, 0, 151);   // Figma y — still clears the track at this size
+
+    lv_obj_t *box = lv_obj_create(ov);
+    s_bright_box = box;
+    lv_obj_remove_style_all(box);
+    lv_obj_set_size(box, BRIGHT_BOX_W, 84);
+    lv_obj_align(box, LV_ALIGN_TOP_MID, 0, 231);
+    lv_obj_set_style_radius(box, 42, 0);
+    lv_obj_set_style_bg_color(box, COL_SET_PILL, 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(box, 1, 0);
+    lv_obj_set_style_border_color(box, COL_SET_BORD, 0);
+    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(box, LV_OBJ_FLAG_CLICKABLE);   // it IS the drag surface — no separate catcher
+
+    // A plain rounded rect, NOT an lv_bar: a bar allocates a clip layer for a narrow indicator, and that
+    // is what froze the device.
+    s_bright_fill = lv_obj_create(box);
+    lv_obj_remove_style_all(s_bright_fill);
+    lv_obj_add_flag(s_bright_fill, LV_OBJ_FLAG_FLOATING);
+    lv_obj_clear_flag(s_bright_fill, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    // 82, not 84: the track carries a 1px border, so LVGL lays this child out in an 82px content box. At
+    // 84 the fill overflowed a pixel top and bottom and read as a bar taller than its own track.
+    lv_obj_set_height(s_bright_fill, 82);
+    lv_obj_set_width(s_bright_fill, bright_w_from_level(s_brightness));
+    lv_obj_align(s_bright_fill, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_style_radius(s_bright_fill, 41, 0);   // matches the 82px height, so the left cap stays round
+    lv_obj_set_style_bg_color(s_bright_fill, COL_BRIGHT, 0);
+    lv_obj_set_style_bg_opa(s_bright_fill, LV_OPA_COVER, 0);
+
+    lv_obj_t *circ = lv_obj_create(box);
+    lv_obj_remove_style_all(circ);
+    lv_obj_add_flag(circ, LV_OBJ_FLAG_FLOATING);
+    lv_obj_clear_flag(circ, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(circ, 72, 72);
+    lv_obj_align(circ, LV_ALIGN_LEFT_MID, 6, 0);
+    lv_obj_set_style_radius(circ, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(circ, COL_SET_BG, 0);
+    lv_obj_set_style_bg_opa(circ, LV_OPA_COVER, 0);
+    lv_obj_t *ic = lv_image_create(circ);
+    lv_image_set_src(ic, &icon_brightness);
+    lv_obj_center(ic);
+
+    lv_obj_add_event_cb(box, bright_box_press, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(box, bright_box_pressing, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(box, bright_box_release, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(box, bright_box_release, LV_EVENT_PRESS_LOST, NULL);
+}
+
+// Settings → Brightness. The fill is re-synced from the cached level because the settings tile is torn
+// down and rebuilt often while this overlay is not.
+static void settings_brightness_tap(lv_event_t *e)
+{
+    (void)e;
+    build_brightness_screen();
+    if (s_bright_fill) lv_obj_set_width(s_bright_fill, bright_w_from_level(s_brightness));
+    lv_obj_clear_flag(s_bright_screen, LV_OBJ_FLAG_HIDDEN);
+    overlay_raise(s_bright_screen);   // the preview has to be honest on THIS screen especially
+}
+
+// (Re)build the trailing Settings tile. Delete-and-recreate keeps its tileview column index correct
+// without touching LVGL internals; `update_content_window` puts it at the right column afterwards.
+// Caller holds the display lock.
+static void rebuild_settings_tile(void)
+{
+    if (!tileview) return;
+    if (s_settings_tile) {
+        lv_obj_delete(s_settings_tile);
+        s_settings_tile = NULL;
+        s_vlang_lbl = NULL;
+    }
+
+    lv_obj_t *t = lv_obj_create(tileview);
+    lv_obj_set_size(t, carousel_w(), carousel_h());
+    lv_obj_set_style_border_width(t, 0, 0);
+    lv_obj_set_style_radius(t, 0, 0);
+    lv_obj_set_style_bg_color(t, COL_SET_BG, 0);
+    s_settings_tile = t;
+    lv_obj_set_style_pad_hor(t, SCREEN_PAD, 0);
+    lv_obj_set_style_pad_top(t, SET_LIST_PAD, 0);
+    lv_obj_set_style_pad_bottom(t, SET_LIST_PAD, 0);
+    lv_obj_set_flex_flow(t, LV_FLEX_FLOW_COLUMN);
+    // START, not CENTER: centring a list that can overflow fights its own scroll. Three rows do not
+    // overflow today, and the alignment is what keeps that true when a fourth arrives.
+    lv_obj_set_flex_align(t, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(t, 0, 0);   // the design gives the rows no gap
+    lv_obj_set_scroll_dir(t, LV_DIR_VER);   // the tileview owns the horizontal swipe
+    lv_obj_set_scrollbar_mode(t, LV_SCROLLBAR_MODE_OFF);
+
+    // Voice — the one row here that CHANGES something outside this screen. Tapping it switches the
+    // language every capture is transcribed in, which is why it is worth a row of its own on a page with
+    // only three: getting it wrong does not degrade the transcript, it empties it.
+    s_vlang_lbl = NULL;
+    settings_row(t, &icon_voice, "Voice", COL_FG, vlang_tag(),
+                 &geist_reg_24, COL_FG, settings_vlang_tap, &s_vlang_lbl);
+    // Passcode — On/Off, and the VALUE is the whole control: tapping it sets a pattern when there is none
+    // and asks for the current one to turn it off. Green when on, muted when off, so the state reads at a
+    // glance from across the desk rather than needing the word.
+    settings_row(t, &icon_lock, "Passcode", COL_FG,
+                 device_prefs_lock_enabled() ? "On" : "Off", &geist_reg_24,
+                 device_prefs_lock_enabled() ? COL_GREEN : COL_MUTED,
+                 settings_passcode_tap, NULL);
+    settings_row(t, &icon_brightness, "Brightness", COL_FG, NULL, NULL, COL_FG,
+                 settings_brightness_tap, NULL);
+    // Version is an ordinary row, deliberately. In the reference it was a FLOATING label anchored to the
+    // tile's bottom, which was fine while the tile held exactly four rows and never moved; once the list
+    // scrolls, "the bottom of the content area" stops being the bottom of the screen and it landed in the
+    // middle of the list looking like a broken row. A row cannot drift.
+    const esp_app_desc_t *d = esp_app_get_description();
+    char vbuf[24];
+    snprintf(vbuf, sizeof(vbuf), "v%s", (d && d->version[0]) ? d->version : "?");
+    settings_row(t, &icon_info, "Version", COL_FG, vbuf, &geist_reg_24, COL_MUTED, NULL, NULL);
+}
+
+// The two-letter tag the row draws. Vietnamese unless English was chosen, matching the server's own
+// default (`pick_lang` returns "en" only when asked for it) so the label and the transcriber agree even
+// if the parameter were ever lost between them.
+static const char *vlang_tag(void)
+{
+    return strcmp(s_voice_lang, "en") == 0 ? "EN" : "VI";
+}
+
+// Settings → Voice: switch the language, remember it, say so.
+static void settings_vlang_tap(lv_event_t *e)
+{
+    (void)e;
+    display_lock();
+    snprintf(s_voice_lang, sizeof(s_voice_lang), "%s",
+             strcmp(s_voice_lang, "en") == 0 ? "vi" : "en");
+    device_prefs_set_voice_lang(s_voice_lang);
+    if (s_vlang_lbl) lv_label_set_text(s_vlang_lbl, vlang_tag());
+    display_unlock();
+    ESP_LOGI(TAG, "voice language -> %s", s_voice_lang);
+    audio_notify_done();   // a short beep, so the toggle is felt without looking down at it
+}
+
+static void settings_passcode_tap(lv_event_t *e)
+{
+    (void)e;
+    ESP_LOGI(TAG, "settings: passcode");
+    ui_lock_setup();
+}
+
+const char *ui_voice_lang(void)
+{
+    return s_voice_lang[0] ? s_voice_lang : "vi";
+}
+
+void ui_set_voice_lang(const char *lang)
+{
+    if (!lang || !lang[0]) return;
+    // A PROPOSAL, not an instruction. Once someone has tapped the row their choice is in NVS and stays —
+    // otherwise the 15s keepalive `welcome` would quietly undo the tap, over and over, and the row would
+    // look like a switch that springs back.
+    char stored[sizeof(s_voice_lang)];
+    if (device_prefs_voice_lang(stored, sizeof(stored))) return;
+    display_lock();
+    snprintf(s_voice_lang, sizeof(s_voice_lang), "%s", strcmp(lang, "en") == 0 ? "en" : "vi");
+    // Refreshed in place rather than by rebuilding the tile: a rebuild while someone is reading the list
+    // resets its scroll, and this arrives on every `welcome`.
+    if (s_vlang_lbl) lv_label_set_text(s_vlang_lbl, vlang_tag());
+    display_unlock();
+}
+
 static void rebuild_overview_tile(void)
 {
     if (!s_overview_count_lbl) return;
@@ -1788,7 +2509,7 @@ static void agent_loop_tap (lv_event_t *e) { (void)e; if (agent_action_ready()) 
 static void agent_actions_apply(void)
 {
     if (!s_agent_acts) return;
-    bool on = lv_screen_active() == scr_projects && !s_overview_active && !s_notif_open && !display_is_asleep()
+    bool on = on_project_page() && !s_notif_open && !display_is_asleep()
               && s_active_idx >= 0 && s_active_idx < s_proj_count
               // ...and not while this agent is WORKING: the tile then belongs to the live status row, and
               // all three actions would start a NEW turn on an agent already running one.
@@ -2467,9 +3188,10 @@ static void update_content_window(void)
     // 2. Materialize + position the right tile for each window column. A fixed tile (Overview/No-projects) can map
     //    to MULTIPLE window columns when there are few agents (tiny ring); pick the column CLOSEST to centre
     //    so it's never shoved off-screen.
-    bool noagents_shown = false, overview_shown = false;
+    bool noagents_shown = false, overview_shown = false, settings_shown = false;
     int noagents_col = cc, noagents_best = CONTENT_WINDOW + 1;
     int overview_col = cc, overview_best = CONTENT_WINDOW + 1;
+    int settings_col = cc, settings_best = CONTENT_WINDOW + 1;
     for (int dc = -CONTENT_WINDOW; dc <= CONTENT_WINDOW; dc++) {
         int col = cc + dc;
         int r = ring_of_col(col);
@@ -2477,6 +3199,11 @@ static void update_content_window(void)
         if (r == 0) {                                   // overview page (leading, ring 0)
             if (ad < overview_best) { overview_best = ad; overview_col = col; }
             overview_shown = true;
+        } else if (r == ring_settings()) {              // the trailing Settings tile
+            // Checked BEFORE the two below: its ring is neither 0 nor a project, and the project branch
+            // would read it as an index past the end.
+            if (ad < settings_best) { settings_best = ad; settings_col = col; }
+            settings_shown = true;
         } else if (s_proj_count == 0) {                 // no projects → ring RING_LEAD is the "No projects" page
             if (ad < noagents_best) { noagents_best = ad; noagents_col = col; }
             noagents_shown = true;
@@ -2502,6 +3229,13 @@ static void update_content_window(void)
         lv_obj_clear_flag(s_overview_tile, LV_OBJ_FLAG_HIDDEN);
     } else if (s_overview_tile) {
         lv_obj_add_flag(s_overview_tile, LV_OBJ_FLAG_HIDDEN);
+    }
+    // Settings tile (trailing): the same shape again.
+    if (settings_shown && s_settings_tile) {
+        lv_obj_set_x(s_settings_tile, settings_col * w);
+        lv_obj_clear_flag(s_settings_tile, LV_OBJ_FLAG_HIDDEN);
+    } else if (s_settings_tile) {
+        lv_obj_add_flag(s_settings_tile, LV_OBJ_FLAG_HIDDEN);
     }
 
 #if LAZY_MEM_DEBUG
@@ -2841,8 +3575,9 @@ bool ui_reader_is_open(void)
 // pull-to-open is easy to land.
 int ui_notif_pull_zone_px(void)
 {
-    bool project_tile = lv_screen_active() == scr_projects && !s_overview_active;
-    return project_tile ? 44 : 90;
+    // 44 on a project tile so the chip row above it still gets taps; the wider 90 everywhere else,
+    // including Settings, whose top holds nothing to protect.
+    return on_project_page() ? 44 : 90;
 }
 
 void ui_focus_project(const char *project_id)
@@ -2894,9 +3629,16 @@ void ui_voice_routed(bool auto_sent, bool need_new, const char *route_id, const 
     // Switch the carousel to the project so the user sees it working.
     ui_focus_project(project_id);
     // `needsConfirm` was set: grid-app GUESSED the project and is holding the transcript until this panel
-    // agrees. docs/panel-protocol.md is explicit that this is the only guard between a guess and a turn
-    // dispatched into a real repository — so the confirmation names the project the panel is now showing,
-    // which is the one the user can see.
+    // agrees. It agrees IMMEDIATELY, and that is worth saying plainly rather than dressing up: nobody is
+    // asked. The carousel has just been moved to the guessed project, so the user does see where their
+    // sentence went — one beat before it runs, not before it is decided.
+    //
+    // TODO(BE): the confirm step is therefore inert. docs/panel-protocol.md calls it the only guard between
+    // a guess and a turn dispatched into a real repository, and on 2026-08-17 that guard let a question
+    // about crypto prices open a turn in a sports project — the app logged "waiting for the panel to
+    // confirm" and the turn started in the same second. Making it real means a card here with the guessed
+    // project and a way to pick another, which is UI that does not exist yet. Until it does, routing
+    // accuracy is entirely the router's job (see kPanelRouteDeadline).
     if (!auto_sent && route_id && route_id[0]) panel_client_voice_confirm(route_id, project_id);
 }
 
@@ -3135,7 +3877,8 @@ void ui_notify_task_done(const char *project_id)
     display_lock();
     int i = find_proj(project_id);
     if (i >= 0) {
-        bool viewing = !display_is_asleep() && !s_overview_active && !s_notif_open && s_active_idx == i;
+        bool viewing = !display_is_asleep() && !s_overview_active && !s_settings_active
+                       && !s_notif_open && s_active_idx == i;
         if (!viewing) {
             bool was_asleep = display_is_asleep();
             notif_push(project_id, i);   // record it so the drawer/badge has the entry
@@ -4108,7 +4851,7 @@ static void tile_changed(lv_event_t *e)
     update_content_window();   // materialize the newly-active tile ± window, free the rest
     rebuild_page_dots();       // move the green sparkle to the newly-centered page
     // Swiping onto an agent's tile = the user saw it → drop that agent's notification (if any).
-    if (!s_overview_active &&
+    if (!s_overview_active && !s_settings_active &&
         s_active_idx >= 0 && s_active_idx < s_proj_count && s_proj[s_active_idx].id[0]) {
         notif_remove(s_proj[s_active_idx].id);
     }
@@ -4139,8 +4882,7 @@ bool ui_voice_is_active(void)    { return voice_active(); }
 void ui_tap(void)
 {
     if (lv_screen_active() == scr_reader) { reader_close(NULL); return; }
-    if (lv_screen_active() == scr_projects && !s_overview_active
-        && s_active_idx >= 0 && s_active_idx < s_proj_count) {
+    if (on_project_page() && s_active_idx >= 0 && s_active_idx < s_proj_count) {
         proj_t *p = &s_proj[s_active_idx];
         // While the agent is working, the tile shows the LIVE status ("Cooking… 34s" + tool line); the
         // reader would only show the PREVIOUS turn's stale text. Keep the live view — don't open detail.
@@ -4154,7 +4896,7 @@ void ui_tap(void)
 void ui_swipe_vert(int dir)
 {
     if (dir > 0) {                   // swipe up
-        if (lv_screen_active() != scr_projects || s_overview_active) return;
+        if (!on_project_page()) return;
         if (s_active_idx < 0 || s_active_idx >= s_proj_count) return;
         proj_t *p = &s_proj[s_active_idx];
         if (p->busy_model) return;   // working → keep the live tile, don't open the stale detail reader
@@ -4185,7 +4927,8 @@ void ui_boot_pressed(void)
     display_lock();
     bool q = s_q.active;
     int idx = (s_active_idx >= 0 && s_active_idx < s_proj_count) ? s_active_idx : 0;
-    bool processing = (!q && s_proj_count > 0 && !s_overview_active && s_proj[idx].busy != NULL);
+    bool processing = (!q && s_proj_count > 0 && !s_overview_active && !s_settings_active
+                       && s_proj[idx].busy != NULL);
     if (q) { display_unlock(); q_back_tap(NULL); return; }
     if (processing) {
         ESP_LOGI(TAG, "BOOT → show 'Cancel task?' confirm");
@@ -4221,7 +4964,8 @@ void ui_stop_active_turn(void)
 {
     display_lock();
     int idx = (s_active_idx >= 0 && s_active_idx < s_proj_count) ? s_active_idx : 0;
-    bool processing = (s_proj_count > 0 && !s_overview_active && s_proj[idx].busy != NULL);
+    bool processing = (s_proj_count > 0 && !s_overview_active && !s_settings_active
+                       && s_proj[idx].busy != NULL);
     char pid[ID_MAX];
     snprintf(pid, sizeof(pid), "%s", processing ? s_proj[idx].id : "");
     display_unlock();
@@ -4254,7 +4998,10 @@ const char *ui_get_active_project_id(void)
     static char out[ID_MAX];
     out[0] = '\0';
     display_lock();
-    if (s_proj_count > 0 && !s_overview_active) {
+    // Settings excluded deliberately: this is what voice_start_impl asks to decide whether the user named
+    // a project or spoke from a screen that names none. Answering with the last project looked at would
+    // make a sentence spoken on the Settings page dispatch itself into it.
+    if (s_proj_count > 0 && !s_overview_active && !s_settings_active) {
         int idx = (s_active_idx >= 0 && s_active_idx < s_proj_count) ? s_active_idx : 0;
         snprintf(out, sizeof(out), "%s", s_proj[idx].id);
     }
@@ -4271,6 +5018,17 @@ static void voice_start_impl(voice_cmd_t cmd)
     bool q_active = s_q.active;
     display_unlock();
     if (q_active) return;
+
+    // Not while the screen is locked.
+    //
+    // ⚠️ THE REFERENCE DOES NOT DO THIS, and it is not an oversight worth copying: `ui_lock_active()` is
+    // declared and defined over there with **no readers at all**. The gesture layer runs its recognisers in
+    // the raw indev callback, BEFORE LVGL hit-tests anything, so the lock overlay never sees the touch that
+    // matters — a double-tap under "Draw Pattern to Unlock" would start recording, upload the clip and
+    // dispatch a turn into somebody's repository, with the lock screen still up the whole time.
+    //
+    // A lock that stops nothing it was put there to stop is worse than no lock, because it is believed.
+    if (ui_lock_active()) { ESP_LOGW(TAG, "voice: the screen is locked"); return; }
 
     if (voice_active()) { ESP_LOGW(TAG, "voice: already active"); return; }
     // Gate on the SESSION, not on a cable: usb_serial_jtag_is_connected() is true of any running computer

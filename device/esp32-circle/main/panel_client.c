@@ -216,6 +216,23 @@ static void send_hello(void)
     send_json(m);
 }
 
+// The answer to grid-app's heartbeat. Empty on purpose — the ARRIVAL is the content.
+//
+// grid-app has no other way to find out that the port it is holding has gone stale. Measured on macOS on
+// 2026-08-17, right after this device took a firmware update over the cable: rebooting leaves the host's
+// /dev/cu.usbmodem node with the same name, the same inode and the same device numbers, writes to the old
+// handle keep succeeding, and its read stream never ends. The app pinged a dead file for as long as
+// anyone watched while this panel sat there saying `hello` every 15 s to nobody.
+//
+// Cheap enough not to think about: ~30 bytes every 5 s, on a cable that carries 8 KB firmware slices.
+static void send_pong(void)
+{
+    cJSON *m = cJSON_CreateObject();
+    if (!m) return;
+    cJSON_AddStringToObject(m, "t", "pong");
+    send_json(m);
+}
+
 static void send_projects_list(void)
 {
     cJSON *m = cJSON_CreateObject();
@@ -276,6 +293,11 @@ void panel_client_voice_begin(const char *project_id, voice_cmd_t cmd)
     // plain turn and a modified one differ by a field being there, not by its value.
     if (cmd == VOICE_CMD_GOAL)      cJSON_AddStringToObject(m, "cmd", "goal");
     else if (cmd == VOICE_CMD_LOOP) cJSON_AddStringToObject(m, "cmd", "loop");
+    // Which language to transcribe THIS capture in — the Settings page's Voice row, or grid-app's own
+    // proposal when nobody has touched it. Sent per capture rather than announced once: it is a property
+    // of what was just said, and a device whose setting changed mid-session would otherwise have to
+    // remember to tell anyone.
+    cJSON_AddStringToObject(m, "lang", ui_voice_lang());
     send_json(m);
 }
 
@@ -427,11 +449,21 @@ static void apply_project(const cJSON *j)
     ui_project_set_name(id, jstr(j, "name"));
     ui_project_set_engine(id, jstr(j, "agent"));
     ui_project_set_selected_model(id, jstr(j, "model"));
-    // A tile with a recap already on it is not overwritten by the list: `recap` is one line, and a turn
-    // that has since finished put something fuller there. Restore rather than emit, so a project that is
-    // busy right now keeps its Working row (ui_project_restore_event never touches the live lifecycle).
+    // A tile with a recap already on it is not overwritten by the list: a turn that has since finished put
+    // something fresher there. Restore rather than emit, so a project that is busy right now keeps its
+    // Working row (ui_project_restore_event never touches the live lifecycle).
+    //
+    // BOTH zones, and as `summary` rather than `done`. Two things were wrong here and both showed on every
+    // cold start: `done` is the kind of a finished STEP, so the card came up green with a tick; and passing
+    // the headline as the body with no 4th argument left the tile and the reader drawing ONE string — which
+    // is why "the recap and the summary are the same sentence" was the first thing anyone noticed after a
+    // replug. The headline goes in the headline slot, where it is drawn unclipped; `summary` is the body
+    // behind it, and when the app has none the headline stands in for both.
     const char *recap = jstr(j, "recap");
-    if (recap[0] && !ui_project_has_event(id)) ui_project_restore_event(id, "done", recap, NULL);
+    const char *summary = jstr(j, "summary");
+    if (recap[0] && !ui_project_has_event(id)) {
+        ui_project_restore_event(id, "summary", summary[0] ? summary : recap, recap);
+    }
     // The tint. An unrecognised value is drawn as `done` by ui_project_set_recap_kind, never as an error —
     // guessing "failed" on a turn that worked is the worse of the two mistakes.
     const char *rk = jstr(j, "recapKind");
@@ -448,6 +480,11 @@ static void on_welcome(const cJSON *root)
     char id[sizeof(s_machine_id)], name[sizeof(s_machine_name)];
     snprintf(id,   sizeof(id),   "%s", jstr(machine, "id"));
     snprintf(name, sizeof(name), "%s", jstr(machine, "name"));
+
+    // The language grid-app transcribes in, for the Settings page's Voice row. Applied BEFORE the keepalive
+    // return below, not after: it refreshes a label in place and costs nothing, and putting it after would
+    // mean a machine whose locale changed only told the panel on the next reconnect.
+    ui_set_voice_lang(jstr(root, "voiceLang"));
 
     // The keepalive hello (see HELLO_KEEPALIVE_MS) earns a welcome every 15 s in the steady state, and
     // treating each of those as a fresh connection would re-request the project list, rebuild every tile
@@ -690,9 +727,10 @@ static void handle_json(const uint8_t *payload, size_t len)
     else if (strcmp(t, "project.updated") == 0) on_project_updated(root);
     else if (strcmp(t, "turn.parts") == 0)      on_turn_parts(root);
     else if (strcmp(t, "ping") == 0) {
-        // The heartbeat, every 5 s. note_inbound() above has already done the whole of the work; the case
-        // exists so a `ping` is not COUNTED as a message this build has no reader for, which would make a
-        // perfectly healthy link read as a version mismatch in the telemetry line.
+        // The heartbeat, every 5 s. note_inbound() above has already done this side's half of the work —
+        // it is what keeps the panel from deciding the app has gone quiet — and the answer does the other
+        // side's: see send_pong() for the host-side failure that has no other symptom.
+        send_pong();
     } else if (strcmp(t, "turn.started") == 0) {
         // Anchors the clock. Every step's `t0` is measured from this instant, and the device counts from
         // here rather than stamping a step when it first sees one — `onAttach` re-sends the whole timeline
@@ -705,16 +743,40 @@ static void handle_json(const uint8_t *payload, size_t len)
         // the agent said, cut to a line), so passing it as `recap` as well would print the same sentence
         // twice — see the two-zone rule in project_apply_event.
         //
-        // It may be the EMPTY STRING — a turn can be stopped before the assistant says anything — and
-        // unlike the project shape this key is always present. "done" is the fallback the tile draws then.
-        ui_project_emit(pid, "done", recap[0] ? recap : "done", NULL);
-        // The tint comes from the LIST's `recapKind`, not from here: turn.done carries no kind, and the
-        // `project.updated` that follows a finished turn is what says how it ended.
+        // Emitted as `summary`, NOT as `done`, and the difference is visible on the glass. `kind_style`
+        // gives `done` a green ✓, which is right for the thing that kind means in the reference — a STEP
+        // completing, the same mark a finished sub-agent wears. A recap is not a step: it is the tile's
+        // main readable content, the sentence someone walks over to read. `summary` is the kind the
+        // reference already reserved for exactly that, and its own comment says why — "neutral, not
+        // alarming green". Reported from the desk 2026-08-17: a finished task drew its recap green.
+        //
+        // The empty case still goes through `done`, and the literal string matters: a turn can be stopped
+        // before the assistant says anything, and `project_apply_event` matches a bare "done" to clear the
+        // Processing row while KEEPING the last real card. Sent as an empty `summary` it would instead
+        // replace a perfectly good recap with a blank one.
+        // The recap rides as BOTH the body and the headline (4th argument). As the headline it is drawn
+        // unclipped, which is the point of a ≤15-word budget; as the body it gives the reader something
+        // to show for the seconds before `summary` lands, and for the turns where it never does.
+        if (recap[0]) ui_project_emit(pid, "summary", recap, recap);
+        else          ui_project_emit(pid, "done", "done", NULL);
+        // How it ENDED still comes from the list's `recapKind` — the `project.updated` that follows a
+        // finished turn is what paints a failure red or a stop grey, on top of this neutral default.
         display_unlock();
         // ⚠️ This can arrive for a project the panel does not think is running — after a panel reboot
         // mid-turn, for instance. It means "that project is idle now", not that something went wrong.
         ui_notify_task_done(pid);   // wake / badge / open the drawer, depending on what is on screen
         audio_notify_done();
+    } else if (strcmp(t, "turn.summarizing") == 0) {
+        // The agent has stopped working and its headline is being written. Arrives INSTEAD of `turn.done`,
+        // so the tile must stay exactly as it is — working — until there is something true to put there.
+        // A placeholder recap that changes a few seconds later is not missing information, it is WRONG
+        // information, on a screen someone is reading from across the room.
+        //
+        // Mapped onto `processing`, which is the same state the turn was already in and the same one the
+        // reference used for its trailing "Summarizing…" window. That also re-stamps `busy_last_ms`, so
+        // the 25s stale-busy sweep does not fire in the middle of it — and still fires if the app dies
+        // here, which is the whole reason that sweep exists.
+        ui_project_emit(jstr(root, "projectId"), "processing", NULL, NULL);
     } else if (strcmp(t, "summary") == 0) {
         // The long form of the last recap, and a SEPARATE message on purpose: the app writes it by asking
         // a model, which takes seconds, and holding turn.done for it would leave a tile spinning on work
@@ -724,6 +786,11 @@ static void handle_json(const uint8_t *payload, size_t len)
         // KEYED TO THE PROJECT, NOT TO THE OUTCOME: it can follow `turn.error` as well as `turn.done`,
         // because a turn that failed halfway may still have said enough to be worth reading. Nothing here
         // asks how the turn ended.
+        //
+        // It arrives AFTER `turn.done`, which already carried the ≤15-word headline and put the tile back
+        // to rest. This is only the ≤120-word body behind it, so it touches the reader and NOT the card:
+        // `set_summary` replaces `m_full` and repaints a reader that happens to be open on this project,
+        // leaving the headline the tile is drawing exactly where it is.
         ui_project_set_summary(jstr(root, "projectId"), jstr(root, "text"));
     } else if (strcmp(t, "question") == 0) {
         ui_question_show(jstr(root, "projectId"), jstr(root, "id"), jstr(root, "summary"),

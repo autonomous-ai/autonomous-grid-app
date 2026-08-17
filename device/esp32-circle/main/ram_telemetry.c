@@ -149,12 +149,18 @@ void ram_telemetry_periodic(const char *tag)
     ram_telemetry_checkpoint(tag);
     if (++s_periodic_count % 10 != 0) return;
 
+    // Every task this firmware actually creates. The list arrived from the reference naming
+    // proj_refresh, ptt and commander_ws — none of which exist here (the first two were never ported,
+    // the third was cut with the WebSocket) — and log_task_stack returns silently for a name it cannot
+    // resolve, so three of the five readings were absent rather than wrong. Absent is worse: the
+    // headroom check before shipping looked like it had run.
     static const char *const tasks[] = {
         "lvgl",
-        "proj_refresh",
-        "ptt",
+        "panel_link",
+        "panel_hello",
+        "voice",
         "beep",
-        "commander_ws",
+        "buttons",
     };
     for (size_t i = 0; i < sizeof(tasks) / sizeof(tasks[0]); i++) log_task_stack(tasks[i]);
 }

@@ -325,11 +325,6 @@ void fw_on_slice(const uint8_t *data, size_t len)
     if (s_written == s_size) finish();
 }
 
-bool fw_in_progress(void)
-{
-    return s_busy;
-}
-
 void fw_tick(void)
 {
     if (!s_busy) return;

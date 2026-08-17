@@ -33,10 +33,6 @@ void fw_on_offer(const char *version, int size, const char *sha256);
 // One 0x03 frame. Frames arrive in order from offset 0 and are written as they land.
 void fw_on_slice(const uint8_t *data, size_t len);
 
-// True between `fw.accept` and the reboot. The link layer uses it to keep an offer from arriving on top
-// of a transfer already running.
-bool fw_in_progress(void);
-
 // Give up on a transfer that has stopped arriving. Called from the handshake task's existing loop,
 // because this file has no task of its own and the failure it catches is real: a grid-app that accepts,
 // sends part of an image and then stops — crashed, or interrupted by its user — leaves an unplugged
