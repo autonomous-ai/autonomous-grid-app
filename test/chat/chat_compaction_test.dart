@@ -2,8 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_compaction.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 
-ChatMessage _user(String text) =>
-    ChatMessage(role: ChatRole.user, text: text);
+ChatMessage _user(String text) => ChatMessage(role: ChatRole.user, text: text);
 ChatMessage _bot(String text) =>
     ChatMessage(role: ChatRole.assistant, text: text);
 
@@ -53,16 +52,19 @@ void main() {
       expect(read?.at, written.at);
     });
 
-    test('half-written or foreign JSON reads as no compaction, so the chat '
-        'opens carrying its whole history — costing context, never content', () {
-      expect(ChatCompaction.fromJson(null), isNull);
-      expect(ChatCompaction.fromJson({'summary': '', 'through': 2}), isNull);
-      expect(ChatCompaction.fromJson({'summary': 'x', 'through': 0}), isNull);
-      expect(
-        ChatCompaction.fromJson({'summary': 'x', 'through': 2, 'at': 'nope'}),
-        isNull,
-      );
-    });
+    test(
+      'half-written or foreign JSON reads as no compaction, so the chat '
+      'opens carrying its whole history — costing context, never content',
+      () {
+        expect(ChatCompaction.fromJson(null), isNull);
+        expect(ChatCompaction.fromJson({'summary': '', 'through': 2}), isNull);
+        expect(ChatCompaction.fromJson({'summary': 'x', 'through': 0}), isNull);
+        expect(
+          ChatCompaction.fromJson({'summary': 'x', 'through': 2, 'at': 'nope'}),
+          isNull,
+        );
+      },
+    );
   });
 
   group('what the summarizer is asked', () {
@@ -77,10 +79,7 @@ void main() {
       expect(asked.last['content'], contains('User: fix the parser'));
       expect(asked.last['content'], contains('Assistant: done'));
       // The empty turn left no "Assistant:" line of its own.
-      expect(
-        'Assistant:'.allMatches(asked.last['content']!).length,
-        1,
-      );
+      expect('Assistant:'.allMatches(asked.last['content']!).length, 1);
     });
 
     test("the user's own words steer the summary when they gave any", () {

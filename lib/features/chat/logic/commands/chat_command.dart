@@ -19,6 +19,17 @@ enum ChatCommand {
     detail: 'Keeps you where you are — in this project, or in the chat list.',
   ),
 
+  /// Work toward a condition across turns until a second model says it holds.
+  /// The argument is the condition, or one of [kGoalClearWords], or nothing at
+  /// all (which asks for the status).
+  goal(
+    name: 'goal',
+    summary: 'Keep working until something is true',
+    detail:
+        'Write the finished state — "the tests in test/auth pass". It keeps '
+        'going by itself until a check says so, or says it never will.',
+  ),
+
   /// Summarize the conversation so the next turn carries the summary instead of
   /// the whole history. Takes optional focus instructions.
   compact(

@@ -24,8 +24,11 @@ void main() {
         [_share('a', 2), _share('b', 1)],
         [_share('a', 100), _share('b', 1)],
       ]) {
-        expect(percentages(shares).fold(0, (s, v) => s + v), 100,
-            reason: 'for $shares');
+        expect(
+          percentages(shares).fold(0, (s, v) => s + v),
+          100,
+          reason: 'for $shares',
+        );
       }
     });
 
@@ -108,8 +111,10 @@ void main() {
     });
 
     test('says "1 request" rather than "1 requests"', () {
-      expect(modelShareDetail([_share('a', 1)], label: _plain),
-          contains('1 request'));
+      expect(
+        modelShareDetail([_share('a', 1)], label: _plain),
+        contains('1 request'),
+      );
     });
   });
 }
