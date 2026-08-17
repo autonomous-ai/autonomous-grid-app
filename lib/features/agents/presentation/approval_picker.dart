@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -42,17 +44,85 @@ const _menuWidth = 340.0;
 const _rowGutter = 8.0;
 const _rowInnerPad = 10.0;
 
+/// The rest of a row's box, spelled out because [_menuSize] measures the text
+/// inside it: the gutter above and below each row, the padding on the row's
+/// trailing edge, the icon chip and the gap after it, and the tick column with
+/// the gap before it.
+const _rowOuterPadV = 3.0;
+const _rowTrailPad = 8.0;
+const _iconChip = 30.0;
+const _iconGap = 10.0;
+const _tickGap = 8.0;
+const _tickWidth = 18.0;
+const _titleDetailGap = 3.0;
+
+/// The panel's own vertical padding — [appMenuStyle]'s `vertical: 5`, read off
+/// that style rather than guessed. Same note in `grid_model_picker`: the two
+/// drifting apart is what pushes a menu off its button.
+const _menuPadding = 5.0;
+
+/// The air the panel keeps from the window edge, passed to
+/// [anchoredMenuPosition] and used to work out how tall it may draw.
+const _menuMargin = 8.0;
+
+/// The width a row's detail text wraps inside, derived through the same boxes
+/// the row builds: panel minus its gutters, minus the row's own padding, minus
+/// the icon chip and the tick column.
+const _detailWidth =
+    _menuWidth -
+    _rowGutter * 2 -
+    _rowInnerPad -
+    _rowTrailPad -
+    _iconChip -
+    _iconGap -
+    _tickGap -
+    _tickWidth;
+
+/// The heading's own box: it lines up on the rows' icon chips (their outer
+/// gutter plus their inner pad) and keeps its own air above and below. Named so
+/// [_headingHeight] and [_MenuHeading] can't drift apart.
+const _headingPadTop = 8.0;
+const _headingPadBottom = 9.0;
+const _headingPadRight = 14.0;
+
+/// The width the heading wraps inside — its own padding, not a row's.
+const _headingWidth =
+    _menuWidth - (_rowGutter + _rowInnerPad) - _headingPadRight;
+
 /// A menu row's corner. One radius, not the 11 that used to be typed twice in
 /// the same widget for the row's shape and its decoration.
 final _rowRadius = BorderRadius.circular(AppControl.radius);
 
-/// What the heading and one mode row occupy. Measured off the drawn rows: each
-/// row is a title plus a two-line detail inside 10px of inner padding. Four
-/// modes put this menu past [AppControl.menuMaxHeight], where every estimate
-/// clamps to the same number — the parts are spelled out anyway so a fifth mode,
-/// or a shorter list, still places on the pill.
-const _headingHeight = 30.0;
-const _modeRowHeight = 70.0;
+/// The heading, and the style both [_menuSize] and [_MenuHeading] resolve it
+/// with.
+///
+/// Shared rather than typed in both places: the panel is placed by laying this
+/// exact string out, so a heading reworded or resized in the widget alone would
+/// place a panel of the wrong height. And built off the theme rather than as a
+/// bare `TextStyle`, because a bare one *inherits* the ambient default — the
+/// string that draws would carry a family and tracking the measured string
+/// doesn't, and would wrap somewhere else. The colour is applied where it is
+/// drawn: a token resolved at paint time can't sit in a const.
+const _headingText = 'What may the assistant do on this computer?';
+const _headingSize = 11.5;
+
+TextStyle _headingStyle(ThemeData theme) => theme.textTheme.bodySmall!.copyWith(
+  fontSize: _headingSize,
+  fontWeight: AppFont.medium,
+  letterSpacing: AppFont.trackingFor(_headingSize),
+);
+
+/// The tallest this panel may draw: the window, less the margin it keeps at both
+/// edges.
+///
+/// Its own cap rather than [AppControl.menuMaxHeight]'s 240, because this menu
+/// is not a list that may be scrolled past — it is four fixed choices about what
+/// the assistant may do to the computer, and at 240 the panel drew the heading
+/// and two of them. The other two, including the one that stops asking
+/// altogether, were below the fold of a panel with no visible scrollbar: a
+/// safety control that hides its safest and most dangerous options.
+double _menuMaxHeight(BuildContext context) =>
+    MediaQuery.sizeOf(context).height - _menuMargin * 2;
 
 /// What the menu will measure, so [anchoredMenuPosition] lands it on the pill.
 ///
@@ -60,9 +130,63 @@ const _modeRowHeight = 70.0;
 /// "top-left on the pill's top-left, then grow *down*", which drives a tall panel
 /// through the composer; Flutter shoves it up and sideways to fit the window and
 /// the result sits wherever the clamp left it. Same note in `agent_picker`.
-Size _menuSize(int modes) {
-  final rows = _headingHeight + _modeRowHeight * modes;
-  return Size(_menuWidth, rows.clamp(0.0, AppControl.menuMaxHeight));
+///
+/// Every part is *measured*, not estimated: the details are sentences of
+/// different lengths, so the rows are not the same height as each other, and a
+/// row that wraps to a third line at the user's font size is not the height it
+/// is on this machine. A flat per-row guess is what put a 70px estimate on rows
+/// that draw ~81 and ~98.
+Size _menuSize(BuildContext context) {
+  final theme = Theme.of(context);
+  final scaler = MediaQuery.textScalerOf(context);
+  final title = _titleStyle(theme);
+  final detail = _detailStyle(theme);
+
+  var height = _menuPadding * 2 + _headingHeight(theme, scaler);
+  for (final mode in AgentApprovalMode.values) {
+    final text =
+        _textHeight(approvalLabel(mode), title, _detailWidth, scaler, 1) +
+        _titleDetailGap +
+        _textHeight(approvalDetail(mode), detail, _detailWidth, scaler, null);
+    height += _rowOuterPadV * 2 + _rowInnerPad * 2 + math.max(_iconChip, text);
+  }
+  return Size(_menuWidth, height);
+}
+
+TextStyle _titleStyle(ThemeData theme) => theme.textTheme.bodyMedium!.copyWith(
+  fontWeight: FontWeight.w600,
+  height: 1.16,
+);
+
+TextStyle _detailStyle(ThemeData theme) =>
+    theme.textTheme.bodySmall!.copyWith(height: 1.28);
+
+double _headingHeight(ThemeData theme, TextScaler scaler) =>
+    _headingPadTop +
+    _headingPadBottom +
+    _textHeight(
+      _headingText,
+      _headingStyle(theme),
+      _headingWidth,
+      scaler,
+      null,
+    );
+
+/// What a line box of [text] occupies at [style], laid out in [maxWidth].
+double _textHeight(
+  String text,
+  TextStyle style,
+  double maxWidth,
+  TextScaler scaler,
+  int? maxLines,
+) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+    textScaler: scaler,
+    maxLines: maxLines,
+  )..layout(maxWidth: maxWidth);
+  return painter.height;
 }
 
 class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
@@ -82,12 +206,16 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
       // Positioned, not aligned — see [_menuSize] for why.
       position: anchoredMenuPosition(
         context,
-        menuSize: _menuSize(AgentApprovalMode.values.length),
-        margin: 8,
+        menuSize: _menuSize(context),
+        margin: _menuMargin,
         gap: AppControl.menuGap,
         // The pill sits at the bottom of the window, so the menu opens upward;
         // `anchoredMenuPosition` drops back below if it won't fit.
         preferAbove: true,
+        // The same cap the panel is drawn with in `build` — placement sums the
+        // height the panel is about to take, so the two clamping to different
+        // numbers is exactly what lifts a menu clear of its button.
+        maxHeight: _menuMaxHeight(context),
       ),
     );
   }
@@ -99,8 +227,14 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
     final current = widget.value;
     return MenuAnchor(
       controller: _menu,
-      // The shared recipe — see the same note on the agent pill beside this one.
-      style: appMenuStyle(),
+      // The shared recipe — see the same note on the agent pill beside this one
+      // — with its 240 cap lifted: see [_menuMaxHeight] for why this panel is
+      // the one menu in the app that may draw as tall as its content.
+      style: appMenuStyle().copyWith(
+        maximumSize: WidgetStatePropertyAll(
+          Size.fromHeight(_menuMaxHeight(context)),
+        ),
+      ),
       menuChildren: [
         const SizedBox(width: _menuWidth, child: _MenuHeading()),
         for (final mode in AgentApprovalMode.values)
@@ -137,14 +271,17 @@ class _MenuHeading extends StatelessWidget {
       // Lines up on the rows' icon chips: their outer gutter plus their inner
       // pad. Spelled as the sum so it tracks the row when either changes — it
       // used to be the hand-added answer, 18.
-      padding: const EdgeInsets.fromLTRB(_rowGutter + _rowInnerPad, 8, 14, 9),
+      padding: const EdgeInsets.fromLTRB(
+        _rowGutter + _rowInnerPad,
+        _headingPadTop,
+        _headingPadRight,
+        _headingPadBottom,
+      ),
       child: Text(
-        'What may the assistant do on this computer?',
-        style: TextStyle(
-          color: AppPalette.textFaint,
-          fontSize: 11.5,
-          fontWeight: AppFont.medium,
-        ),
+        _headingText,
+        style: _headingStyle(
+          Theme.of(context),
+        ).copyWith(color: AppPalette.textFaint),
       ),
     );
   }
@@ -232,10 +369,10 @@ class _ModeItemState extends State<_ModeItem> {
                             approvalLabel(mode),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              height: 1.16,
-                            ),
+                            // The same styles [_menuSize] lays out to place the
+                            // panel — restyling the row here alone would move
+                            // the menu off its pill.
+                            style: _titleStyle(theme),
                           ),
                         ),
                         // The whole detail line used to be warn-orange, which
@@ -251,10 +388,9 @@ class _ModeItemState extends State<_ModeItem> {
                     const SizedBox(height: 3),
                     Text(
                       approvalDetail(mode),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: AppPalette.textSecondary,
-                        height: 1.28,
-                      ),
+                      style: _detailStyle(
+                        theme,
+                      ).copyWith(color: AppPalette.textSecondary),
                     ),
                   ],
                 ),
