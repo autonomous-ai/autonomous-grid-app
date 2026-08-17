@@ -46,11 +46,11 @@ mixin _ChatSettle on _ChatSessions {
   /// and Riverpod asserts on any state written there. There is also nothing left
   /// to free — the whole controller is going.
   void _releaseAgentSlot(String id) {
-    if (_disposed || !state.runningAgentIds.contains(id)) return;
+    if (_disposed || !state.runningAgents.containsKey(id)) return;
     state = state.copyWith(
-      runningAgentIds: {
-        for (final running in state.runningAgentIds)
-          if (running != id) running,
+      runningAgents: {
+        for (final running in state.runningAgents.entries)
+          if (running.key != id) running.key: running.value,
       },
     );
   }

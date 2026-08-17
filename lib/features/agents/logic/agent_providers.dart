@@ -92,7 +92,7 @@ class AgentRun {
 /// belongs to.
 ///
 /// **Keyed, not shared.** Agent turns run at the same time in different projects
-/// (see `ChatSessionsState.runningAgentIds`), and one app-wide feed would show
+/// (see `ChatSessionsState.runningAgents`), and one app-wide feed would show
 /// each of those chats the other's work — and pin one chat's citations onto the
 /// other's answer. The key is what keeps two live turns apart.
 final agentRunsProvider = NotifierProvider<AgentRuns, Map<String, AgentRun>>(

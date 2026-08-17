@@ -827,7 +827,14 @@ void main() {
         isTrue,
         reason: 'the second turn in this project dispatches, it does not queue',
       );
-      expect(read().runningAgentIds, {aId, bId});
+      expect(
+        read().runningAgents,
+        {aId: 'hermes', bId: 'hermes'},
+        reason:
+            'each running turn records the agent answering it, which is '
+            'what "Working now" names — under Auto it is decided per turn, so '
+            'the chat\'s own pick would be a guess',
+      );
 
       // A finishes without disturbing B, which is still going.
       answering.emit(
@@ -840,9 +847,11 @@ void main() {
       await sentA;
       await pumpEventQueue();
       expect(read().sendingFor(aId), isFalse);
-      expect(read().runningAgentIds, {
-        bId,
-      }, reason: 'one finishing releases only itself');
+      expect(
+        read().runningAgents.keys.toSet(),
+        {bId},
+        reason: 'one finishing releases only itself',
+      );
 
       answering.emit(
         bId,
@@ -855,7 +864,11 @@ void main() {
 
       final s = read();
       expect(s.sending, isFalse);
-      expect(s.runningAgentIds, isEmpty, reason: 'no agent turn left running');
+      expect(
+        s.runningAgents.keys.toSet(),
+        isEmpty,
+        reason: 'no agent turn left running',
+      );
       final a = s.conversations.firstWhere((x) => x.id == aId);
       final b = s.conversations.firstWhere((x) => x.id == bId);
       expect(a.messages.last.text, 'giá vàng: ...');
@@ -900,7 +913,7 @@ void main() {
         isTrue,
         reason: 'another folder entirely — nothing to wait for',
       );
-      expect(read().runningAgentIds, {aId, bId});
+      expect(read().runningAgents.keys.toSet(), {aId, bId});
 
       for (final id in [aId, bId]) {
         answering.emit(
@@ -913,7 +926,7 @@ void main() {
       }
       await sentA;
       await sentB;
-      expect(read().runningAgentIds, isEmpty);
+      expect(read().runningAgents.keys.toSet(), isEmpty);
     });
 
     test(
@@ -948,7 +961,7 @@ void main() {
         final bId = read().activeId!;
 
         expect(answering.controllers.containsKey(bId), isTrue);
-        expect(read().runningAgentIds, {aId, bId});
+        expect(read().runningAgents.keys.toSet(), {aId, bId});
 
         for (final id in [aId, bId]) {
           answering.emit(
@@ -995,13 +1008,13 @@ void main() {
       );
       await pumpEventQueue();
       final bId = read().activeId!;
-      expect(read().runningAgentIds, {aId, bId});
+      expect(read().runningAgents.keys.toSet(), {aId, bId});
 
       // Delete A mid-turn: its send settles, B carries on.
       c.deleteConversation(aId);
       await sentA;
       await pumpEventQueue();
-      expect(read().runningAgentIds, {
+      expect(read().runningAgents.keys.toSet(), {
         bId,
       }, reason: 'A is gone; B never noticed');
       expect(read().sendingFor(bId), isTrue);

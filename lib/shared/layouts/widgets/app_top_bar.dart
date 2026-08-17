@@ -20,6 +20,7 @@ import '../../widgets/panel_toggle.dart';
 import '../shell_state.dart';
 import 'grid_power_pill.dart';
 import 'top_bar_pill.dart';
+import 'working_now_pill.dart';
 
 /// The slim strip above the open section: on the left, the conversation you're
 /// reading; on the right, which grid is active and what it has behind it
@@ -98,6 +99,10 @@ class AppTopBar extends ConsumerWidget {
                     },
                   ),
                 ),
+                // Leftmost of the pills, furthest from the panel toggles: it is
+                // the only one about work the user started, and the only one
+                // they may want to act on.
+                const WorkingNowPill(),
                 const _ModelDownloadPill(),
                 const GridPowerPill(),
                 const _ProjectRailToggle(),

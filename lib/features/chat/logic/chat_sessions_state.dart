@@ -73,7 +73,8 @@ class ChatSessionsState {
     this.errors = const {},
     this.awaitingPlanIds = const {},
     this.outOfStepsIds = const {},
-    this.runningAgentIds = const {},
+    this.runningAgents = const {},
+    this.turnStartedAt = const {},
     this.queued = const {},
     this.loading = false,
   });
@@ -92,7 +93,8 @@ class ChatSessionsState {
   /// the `@`-mention menu its folder) before the first send saves it.
   final String? draftProjectId;
 
-  /// The conversations whose **agent** turn is running right now.
+  /// The conversations whose **agent** turn is running right now, each mapped to
+  /// the id of the agent answering it (`hermes`, `codex`, …).
   ///
   /// More than one, because turns are serialized **per project**, not app-wide:
   /// two chats in the same folder would trip over each other's files, so they
@@ -103,8 +105,19 @@ class ChatSessionsState {
   ///
   /// The UI reads this to show the "agent is working" steps on a chat that is
   /// running — including the ones the user is not looking at, since several
-  /// chats can be working at once.
-  final Set<String> runningAgentIds;
+  /// chats can be working at once. The agent's *id* rather than a bare
+  /// membership flag because "Working now" names who is answering each chat, and
+  /// under Auto that is decided per turn — the chat's own pick would be a guess.
+  final Map<String, String> runningAgents;
+
+  /// When each in-flight turn went out, keyed by conversation id — what
+  /// "Working now" counts its elapsed time from.
+  ///
+  /// Written when the turn is actually dispatched, not when Send was pressed: a
+  /// turn held behind another would otherwise be charged for a wait that was the
+  /// app's doing. Dropped the moment the chat goes idle (see [withPhase]), so
+  /// this only ever holds turns that are still running.
+  final Map<String, DateTime> turnStartedAt;
 
   /// In-flight send phase per conversation id — absent means idle.
   final Map<String, SendPhase> phases;
@@ -170,7 +183,15 @@ class ChatSessionsState {
 
   /// Whether the chat with [id] has an **agent** turn running right now — as
   /// opposed to a relay turn, or nothing at all.
-  bool agentRunningIn(String? id) => id != null && runningAgentIds.contains(id);
+  bool agentRunningIn(String? id) =>
+      id != null && runningAgents.containsKey(id);
+
+  /// The id of the agent answering the chat with [id], or null when the grid
+  /// itself is (a picture, or a computer with no agent installed).
+  String? agentRunningId(String? id) => id == null ? null : runningAgents[id];
+
+  /// When the chat with [id]'s turn went out, or null when it isn't running.
+  DateTime? turnStartFor(String? id) => id == null ? null : turnStartedAt[id];
 
   /// The last error on the chat with [id], or null.
   String? errorFor(String? id) => id == null ? null : errors[id];
@@ -215,7 +236,8 @@ class ChatSessionsState {
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
     Set<String>? outOfStepsIds,
-    Set<String>? runningAgentIds,
+    Map<String, String>? runningAgents,
+    Map<String, DateTime>? turnStartedAt,
     Map<String, List<QueuedTurn>>? queued,
     bool? loading,
   }) => ChatSessionsState(
@@ -229,7 +251,8 @@ class ChatSessionsState {
     errors: errors ?? this.errors,
     awaitingPlanIds: awaitingPlanIds ?? this.awaitingPlanIds,
     outOfStepsIds: outOfStepsIds ?? this.outOfStepsIds,
-    runningAgentIds: runningAgentIds ?? this.runningAgentIds,
+    runningAgents: runningAgents ?? this.runningAgents,
+    turnStartedAt: turnStartedAt ?? this.turnStartedAt,
     queued: queued ?? this.queued,
   );
 
@@ -247,15 +270,31 @@ class ChatSessionsState {
 
   /// This state with the chat [id]'s phase set — removed from the map when it
   /// goes idle, so [phases] only ever holds the chats actually working.
+  ///
+  /// Going idle also drops the turn's start time: this is the one funnel every
+  /// landing goes through — the answer, the failure, the half-turn Stop kept —
+  /// so clearing it here is what keeps [turnStartedAt] from outliving the turn
+  /// it timed.
   ChatSessionsState withPhase(String id, SendPhase phase) {
     final next = Map<String, SendPhase>.from(phases);
-    if (phase is SendIdle) {
-      next.remove(id);
-    } else {
+    if (phase is! SendIdle) {
       next[id] = phase;
+      return copyWith(phases: next);
     }
-    return copyWith(phases: next);
+    next.remove(id);
+    return copyWith(
+      phases: next,
+      turnStartedAt: {
+        for (final e in turnStartedAt.entries)
+          if (e.key != id) e.key: e.value,
+      },
+    );
   }
+
+  /// This state with the chat [id]'s turn timed from [at] — what "Working now"
+  /// counts up from.
+  ChatSessionsState withTurnStarted(String id, DateTime at) =>
+      copyWith(turnStartedAt: {...turnStartedAt, id: at});
 
   /// This state with the chat [id]'s error set (or cleared when null).
   ChatSessionsState withError(String id, String? error) {
@@ -290,11 +329,15 @@ class ChatSessionsState {
     return copyWith(outOfStepsIds: next);
   }
 
-  /// Drop every trace of the chats in [ids] — their in-flight phase, error, plan
-  /// flag and out-of-steps flag — for when they're deleted.
+  /// Drop every trace of the chats in [ids] — their in-flight phase, start time,
+  /// error, plan flag and out-of-steps flag — for when they're deleted.
   ChatSessionsState withoutInFlight(Set<String> ids) => copyWith(
     phases: {
       for (final e in phases.entries)
+        if (!ids.contains(e.key)) e.key: e.value,
+    },
+    turnStartedAt: {
+      for (final e in turnStartedAt.entries)
         if (!ids.contains(e.key)) e.key: e.value,
     },
     errors: {

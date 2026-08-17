@@ -350,11 +350,17 @@ mixin _ChatSend on _ChatSessions {
     required Completer<void> done,
   }) {
     final id = conversation.id;
-    // Say this chat has an agent running — what the sidebar marks and what
-    // `stop` releases — and mark where this turn's file changes begin, so "what
-    // did it just do?" answers for this turn and not the chat's whole history.
+    // Time the turn from here, not from `send`: a turn can wait behind a queued
+    // one, and "Working now" would otherwise report the wait as work.
+    state = state.withTurnStarted(id, DateTime.now());
+    // Say this chat has an agent running, and which one — what the sidebar
+    // marks, what "Working now" names, and what `stop` releases — and mark where
+    // this turn's file changes begin, so "what did it just do?" answers for this
+    // turn and not the chat's whole history.
     if (viaAgent) {
-      state = state.copyWith(runningAgentIds: {...state.runningAgentIds, id});
+      state = state.copyWith(
+        runningAgents: {...state.runningAgents, id: agent.id},
+      );
       ref.read(agentChangesProvider.notifier).beginTurn(id);
     }
 
@@ -726,21 +732,43 @@ mixin _ChatSend on _ChatSessions {
       ? ref.read(agentChatSenderProvider(agent))
       : ref.read(chatSenderProvider);
 
-  /// Stop the **open** chat's in-flight reply, keeping whatever the assistant had
-  /// already said. A reply streaming in another chat is left running.
+  /// Stop the **open** chat's in-flight reply. A reply streaming in another chat
+  /// is left running — see [stopChat], which this is the composer's shorthand
+  /// for.
+  void stop() {
+    final id = state.activeId;
+    if (id != null) stopChat(id);
+  }
+
+  /// Stop every chat that is answering — "Working now"'s stop-all.
+  ///
+  /// Over a copy of the keys, because each [stopChat] writes state: iterating the
+  /// live map would be modifying it while walking it.
+  void stopAll() {
+    for (final id in state.phases.keys.toList()) {
+      stopChat(id);
+    }
+  }
+
+  /// Stop the chat with [id]'s in-flight reply, keeping whatever the assistant
+  /// had already said.
   ///
   /// The user's turn is persisted up front, but a half-written answer lives only
   /// in [SendStreaming] — dropping it would wipe text the user is reading, and
   /// they usually stop *because* they've read enough of it. Nothing streamed yet
   /// (the agent still thinking) means there's nothing to keep.
-  void stop() {
-    final id = state.activeId;
-    if (id == null || !state.sendingFor(id)) return;
+  ///
+  /// Takes the chat by id rather than acting on the open one, because it is
+  /// reached from "Working now" as well as the composer: a turn several projects
+  /// away is exactly the one a user stops from there, and it must not bring that
+  /// chat to the front to do it (see [_commit], which leaves the open chat put).
+  void stopChat(String id) {
+    if (!state.sendingFor(id)) return;
     final phase = state.phaseFor(id);
     _cancel(id);
 
     final partial = phase is SendStreaming ? phase.text.trim() : '';
-    final current = state.active;
+    final current = _find(id);
     if (partial.isEmpty || current == null) {
       state = state.withPhase(id, const SendIdle());
       return;

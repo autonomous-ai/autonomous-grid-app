@@ -134,21 +134,33 @@ const int kMaxMatchesPerGroup = 8;
 ///
 /// Matches on the *start* of a word rank above matches buried in the middle: a
 /// user typing "we" means "Weekly review", not "Answer we discussed".
+///
+/// [working] are the chats answering right now. They lead the results, and are
+/// left out of the "Chats" run below so the same chat is never offered twice.
+/// The palette is the one way to reach them from *anywhere* — the top bar's
+/// pill and the sidebar both go with the shell when Settings takes the window,
+/// while ⌘K is bound above it.
 List<CommandGroup> searchCommands({
   required String query,
   required List<Conversation> chats,
   required List<Project> projects,
   required List<ScheduledJob> tasks,
+  Set<String> working = const {},
 }) {
+  OpenChatCommand openChat(Conversation chat) => OpenChatCommand(
+    chat,
+    projectName: projects
+        .where((p) => p.id == chat.projectId)
+        .firstOrNull
+        ?.name,
+  );
+  final workingItems = [
+    for (final chat in chats)
+      if (working.contains(chat.id)) openChat(chat),
+  ];
   final chatItems = [
     for (final chat in chats)
-      OpenChatCommand(
-        chat,
-        projectName: projects
-            .where((p) => p.id == chat.projectId)
-            .firstOrNull
-            ?.name,
-      ),
+      if (!working.contains(chat.id)) openChat(chat),
   ];
   final commands = <CommandItem>[
     const NewChatCommand(),
@@ -164,6 +176,10 @@ List<CommandGroup> searchCommands({
   final q = query.trim().toLowerCase();
   if (q.isEmpty) {
     return [
+      // Above the recent chats, and uncapped: a running turn is the thing most
+      // worth reaching, and there are only ever as many of them as the user
+      // started.
+      if (workingItems.isNotEmpty) CommandGroup('Working now', workingItems),
       if (chatItems.isNotEmpty)
         CommandGroup('Chats', chatItems.take(kRecentChatCount).toList()),
       CommandGroup('Suggested', [
@@ -177,6 +193,7 @@ List<CommandGroup> searchCommands({
 
   return [
     for (final group in [
+      ('Working now', _rank(workingItems, q)),
       ('Chats', _rank(chatItems, q)),
       ('Scheduled', _rank(taskItems, q)),
       ('Commands', _rank(commands, q)),

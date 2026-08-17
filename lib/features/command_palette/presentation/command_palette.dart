@@ -6,6 +6,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../chat/logic/conversation.dart';
+import '../../chat/logic/working_chats.dart';
 import '../../feedback/presentation/feedback_dialog.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/presentation/create_project_dialog.dart';
@@ -74,6 +75,11 @@ class _CommandPaletteState extends ConsumerState<CommandPalette> {
       ),
       projects: ref.watch(projectsProvider),
       tasks: ref.watch(scheduledJobsProvider).value ?? const [],
+      // The chats answering right now, listed first. Read through
+      // [workingChatsProvider] rather than off the state: it carries its own
+      // equality, so a reply streaming behind the palette doesn't re-run the
+      // search on every token.
+      working: ref.watch(workingChatsProvider).ids,
     );
     final items = flattenCommands(groups);
     final highlight = items.isEmpty ? 0 : _highlight.clamp(0, items.length - 1);
