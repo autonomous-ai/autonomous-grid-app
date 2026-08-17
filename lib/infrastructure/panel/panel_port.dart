@@ -20,6 +20,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'panel_link.dart';
+import 'panel_silence.dart';
 
 /// The panel's **native** USB interface — Espressif's USB-Serial-JTAG.
 ///
@@ -128,9 +129,11 @@ class PanelPort implements PanelTransport {
     Future<String?> Function()? locate,
     void Function(String message)? log,
     Duration retry = const Duration(seconds: 3),
+    Duration silence = kPanelSilenceLimit,
   }) : _locate = locate ?? findPanelPort,
        _log = log ?? _silent,
-       _retry = retry;
+       _retry = retry,
+       _watch = PanelSilenceWatch(limit: silence);
 
   /// How the port is found — injected so this can be driven by a pipe.
   final Future<String?> Function() _locate;
@@ -158,6 +161,16 @@ class PanelPort implements PanelTransport {
   /// reconnects a few seconds later forever.
   RandomAccessFile? _writer;
   Timer? _retryTimer;
+
+  /// The liveness check, and the only thing standing between a rebooted panel and
+  /// a link that stays dead until someone restarts the app. See
+  /// [PanelSilenceWatch] for what was measured.
+  final PanelSilenceWatch _watch;
+
+  /// Polls [_watch] while a port is open. Cheap — one clock comparison — and it
+  /// runs several times inside the window so a stale handle is noticed near the
+  /// limit rather than a whole limit late.
+  Timer? _watchTimer;
   bool _running = false;
   String? _port;
 
@@ -206,6 +219,8 @@ class PanelPort implements PanelTransport {
     _running = false;
     _retryTimer?.cancel();
     _retryTimer = null;
+    _watchTimer?.cancel();
+    _watchTimer = null;
     await _release();
     if (!_incoming.isClosed) await _incoming.close();
   }
@@ -249,13 +264,40 @@ class PanelPort implements PanelTransport {
     // failed write to the caller, which [send] already turns into a reconnect.
 
     _port = port;
+    _bytesIn = 0;
+    _watch.opened(DateTime.now());
+    _watchTimer?.cancel();
+    _watchTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!_watch.isStale(DateTime.now())) return;
+      // Not phrased as a guess. There is exactly one way to reach this line —
+      // the handle no longer reaches the panel — and naming the cause here is
+      // what keeps the next person from reading it as a flaky cable.
+      _detach(
+        'nothing heard for ${_watch.limit.inSeconds}s after $_bytesIn bytes — the '
+        'port still opens and still accepts writes, so the panel rebooted and '
+        'this handle is stale',
+      );
+    });
     _log('attached to $port');
   }
 
   void _onBytes(List<int> chunk) {
     if (_incoming.isClosed) return;
+    // AN EMPTY CHUNK IS NOT A SIGN OF LIFE, and this line is the whole reason the
+    // first version of the watchdog below never fired. A handle onto a panel that
+    // has rebooted keeps its read stream open and delivers nothing but zero-length
+    // reads — forever, without ever completing — so counting a chunk rather than a
+    // byte made the deadest possible link look like the busiest one.
+    if (chunk.isEmpty) return;
+    _bytesIn += chunk.length;
+    _watch.heard(DateTime.now());
     _incoming.add(chunk);
   }
+
+  /// Bytes read since the port was opened. Only ever reported in the detach
+  /// message, where it separates "the panel went away" from "this handle never
+  /// carried anything".
+  int _bytesIn = 0;
 
   /// The panel went away. Usually because it rebooted — which is what flashing
   /// it does, several times a session — so this is a reconnect, not a failure,
@@ -268,6 +310,9 @@ class PanelPort implements PanelTransport {
   }
 
   Future<void> _release() async {
+    _watchTimer?.cancel();
+    _watchTimer = null;
+    _watch.closed();
     final reader = _reader;
     final writer = _writer;
     _reader = null;

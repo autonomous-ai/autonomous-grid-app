@@ -41,6 +41,7 @@ import 'package:grid_app/infrastructure/panel/panel_frame.dart';
 import 'package:grid_app/infrastructure/panel/panel_link.dart';
 import 'package:grid_app/infrastructure/panel/panel_link_provider.dart';
 import 'package:grid_app/infrastructure/panel/panel_message.dart';
+import 'package:grid_app/infrastructure/state/panel_recap_store.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 import 'package:grid_app/shared/app_info.dart';
@@ -50,6 +51,15 @@ import 'panel_firmware_test.dart' show espAppImage;
 /// A transport backed by two lists instead of a cable — the same fake
 /// `panel_link_test.dart` drives the framing with, so the controller is
 /// exercised over the real codec and never over a stub of it.
+/// The last reply of a given kind.
+///
+/// Position-free on purpose. The link carries traffic no test asked for — the 5s
+/// `ping`, an unsolicited tile push, a `turn.summarizing` beat — so `replies.last`
+/// is only the message a test means while the run stays under five seconds. It
+/// stopped being that, intermittently, and the failure looked like the feature.
+Map<String, Object?> _lastOf(_FakeTransport transport, String type) =>
+    transport.replies.lastWhere((r) => r['t'] == type);
+
 class _FakeTransport implements PanelTransport {
   final _in = StreamController<List<int>>();
   final sent = <List<int>>[];
@@ -757,10 +767,13 @@ void main() {
         ),
         runs: const {},
       );
+      // NOT `turn.done`. A turn that worked hands over to the headline writer,
+      // and the panel is told to keep its tile working until there is something
+      // true to put there — a placeholder recap that changes seconds later is
+      // wrong information, not missing information.
       expect(jsonDecode(done.single), {
-        't': 'turn.done',
+        't': 'turn.summarizing',
         'projectId': 'p-1',
-        'recap': 'Ran the tests',
       });
     });
 
@@ -838,23 +851,55 @@ void main() {
       ]);
     });
 
-    test('the turn that just ended is handed on once, so the long-form summary '
-        'is written from the same moment the tile was told to stop', () {
-      final ended = <String>[];
-      final mirror = PanelTurnMirror(
-        onTurnEnded: (projectId, chat) => ended.add('$projectId/${chat?.id}'),
-      );
+    test('the turn that just ended is handed on once, and only after the pass '
+        'that announced it — the headline is what ends the turn', () {
+      final mirror = PanelTurnMirror();
       mirror.onChange(
         projects: projects,
         chats: _chatsWith(chatId: 'c-1', running: true, sending: true),
         runs: const {},
       );
-      expect(ended, isEmpty);
+      expect(mirror.drainEnded(), isEmpty);
 
       final idle = _chatsWith(chatId: 'c-1', messages: [_said('Done')]);
+      final settled = mirror.onChange(
+        projects: projects,
+        chats: idle,
+        runs: const {},
+      );
+      // The pass produces the announcement; the ended turn waits to be drained,
+      // so whoever writes the headline cannot answer before the panel has been
+      // told the turn is being read.
+      expect((jsonDecode(settled.single) as Map)['t'], 'turn.summarizing');
+      final ended = mirror.drainEnded();
+      expect(ended.map((e) => '${e.projectId}/${e.chat?.id}'), ['p-1/c-1']);
+
+      // Once handed on, it is gone — a turn closed out twice would send two
+      // terminal messages for one turn.
       mirror.onChange(projects: projects, chats: idle, runs: const {});
-      mirror.onChange(projects: projects, chats: idle, runs: const {});
-      expect(ended, ['p-1/c-1']);
+      expect(mirror.drainEnded(), isEmpty);
+    });
+
+    test('a turn that FAILED is not queued for a headline — turn.error is '
+        'already the ending, and a turn.done behind it would be a second', () {
+      final mirror = PanelTurnMirror();
+      mirror.onChange(
+        projects: projects,
+        chats: _chatsWith(chatId: 'c-1', running: true, sending: true),
+        runs: const {},
+      );
+      final settled = mirror.onChange(
+        projects: projects,
+        chats: _chatsWith(
+          chatId: 'c-1',
+          error: 'The engine refused the model.',
+        ),
+        runs: const {},
+      );
+      expect((jsonDecode(settled.single) as Map)['t'], 'turn.error');
+      // Nothing owes it a close-out: the failure IS the outcome, and settling a
+      // recap on top of it would replace what the user needs to read.
+      expect(mirror.drainEnded(), isEmpty);
     });
   });
 
@@ -1182,16 +1227,15 @@ void main() {
     });
   });
 
-  group('the long form of a recap', () {
-    test('is written from the turn as it was recorded — what it ran and what '
-        'it said, including the steps it never heard back about', () {
+  group('the headline and the long form of a recap', () {
+    test('is written from what the assistant SAID, not from the steps it ran — '
+        'a headline built out of tool names reads like a build log', () {
       final source = panelSummarySourceOf(
         _chat(
           id: 'c-1',
           projectId: 'p-1',
           at: DateTime(2026, 8, 17),
           messages: [
-            const ChatMessage(role: ChatRole.user, text: 'run the tests'),
             ChatMessage(
               role: ChatRole.assistant,
               text: 'All 1599 passed.',
@@ -1199,21 +1243,13 @@ void main() {
                 TurnStep(
                   _step('s1', 'flutter test', status: AgentActivityStatus.done),
                 ),
-                TurnStep(
-                  _step(
-                    's2',
-                    'git status',
-                    status: AgentActivityStatus.unknown,
-                  ),
-                ),
               ],
             ),
           ],
         ),
       );
-      expect(source, contains('- flutter test [done]'));
-      expect(source, contains('- git status [unknown]'));
-      expect(source, contains('All 1599 passed.'));
+      expect(source, 'All 1599 passed.');
+      expect(source, isNot(contains('flutter test')));
     });
 
     test('a chat with nothing said in it is not sent to a model at all', () {
@@ -1225,15 +1261,110 @@ void main() {
       );
     });
 
-    test('what the model answers is taken back to something a round screen can '
-        'draw — no fence, and short enough to fit a frame', () {
-      expect(
-        tidyPanelSummary('```\nIt ran the tests.\n```'),
-        'It ran the tests.',
+    test(
+      "the user's own question rides along, because a headline has to answer "
+      'it rather than describe the topic',
+      () {
+        final ask = panelSummaryAskOf(
+          _chat(
+            id: 'c-1',
+            projectId: 'p-1',
+            at: DateTime(2026, 8, 17),
+            messages: [
+              ChatMessage(role: ChatRole.user, text: 'Giá bao nhiêu?'),
+              ChatMessage(role: ChatRole.assistant, text: 'Nó là 240 nghìn.'),
+            ],
+          ),
+        );
+        expect(ask, 'Giá bao nhiêu?');
+        expect(panelSummaryPrompt('Nó là 240 nghìn.', ask), contains(ask));
+      },
+    );
+
+    test('one answer, split on the blank line, each half capped on its own — a '
+        'runaway headline must not eat the summary\'s budget', () {
+      final split = splitPanelSummary(
+        'Tests all pass after the retry guard.\n\n'
+        'I added an idempotency key before dispatch, so a timeout no longer '
+        'replays the charge. All 42 tests pass.',
       );
-      final long = tidyPanelSummary('x' * 5000);
-      expect(long.length, kPanelSummaryLimit + 1);
-      expect(long.endsWith('…'), isTrue);
+      expect(split.recap, 'Tests all pass after the retry guard.');
+      expect(split.summary, startsWith('I added an idempotency key'));
+    });
+
+    test('one line and no blank line is a headline, not a body — inventing a '
+        'summary out of it would be inventing', () {
+      final split = splitPanelSummary('Fixed the webhook retry loop.');
+      expect(split.recap, 'Fixed the webhook retry loop.');
+      expect(split.summary, isEmpty);
+    });
+
+    test('a headline over budget is cut at a clause and left complete, and it '
+        'NEVER carries an ellipsis — a headline reads as finished', () {
+      final capped = capPanelRecap(
+        'Grid wins 2-1 after a late penalty, and the crowd went home happy '
+        'despite the rain',
+        15,
+      );
+      expect(capped.split(' ').length, lessThanOrEqualTo(15));
+      expect(capped, isNot(contains('…')));
+      expect(capped, isNot(endsWith(',')));
+    });
+
+    test('a cut landing on a Vietnamese connector is stripped — Dart word '
+        'boundaries are ASCII-only, so "nhờ" would otherwise dangle', () {
+      expect(capPanelRecap('Grid thắng 2-1, nhờ', 15), 'Grid thắng 2-1');
+      expect(capPanelRecap('It works, because', 15), 'It works');
+    });
+
+    test('an ellipsis the model wrote anyway is removed rather than kept', () {
+      expect(
+        capPanelRecap('It passed… eventually', 15),
+        'It passed eventually',
+      );
+    });
+
+    test('the body prefers to end on a real sentence inside its budget', () {
+      final body = capPanelSentence(
+        '${'word ' * 60}Done. ${'more ' * 80}',
+        120,
+      );
+      expect(body, endsWith('.'));
+      expect(body.split(' ').length, lessThanOrEqualTo(120));
+    });
+
+    test('an answer in another script is caught without naming a language, in '
+        'both directions', () {
+      expect(
+        panelLanguageDrifted(
+          'Giá của nó là 240 nghìn đồng, đã bao gồm thuế và phí giao hàng',
+          'The price is 240 thousand dong, including tax and delivery',
+        ),
+        isTrue,
+      );
+      expect(
+        panelLanguageDrifted(
+          'The price is 240 thousand dong, including tax and delivery',
+          'Giá của nó là 240 nghìn đồng, đã bao gồm thuế và phí giao hàng',
+        ),
+        isTrue,
+      );
+    });
+
+    test('quoting a product name in another script is not a drift', () {
+      expect(
+        panelLanguageDrifted(
+          'The tests all pass on the build server now, every single one of '
+              'them, across all of the packages we have in the repository today',
+          'All of the tests pass on the build server now, every one of them, '
+              'across every package in the repository, including the Đạo module',
+        ),
+        isFalse,
+      );
+    });
+
+    test('too little text to judge is never called a drift', () {
+      expect(panelLanguageDrifted('ok', 'rồi'), isFalse);
     });
   });
 
@@ -1278,6 +1409,14 @@ void main() {
           ),
           chatPrefsStoreProvider.overrideWithValue(
             ChatPrefsStore(file: File('${tmp.path}/chat_prefs.json')),
+          ),
+          // Every turn that ends is remembered, so without this the suite writes
+          // its invented project ids into the real ~/.grid/app/panel_recaps.json
+          // — which it did, 95 of them, until a panel plugged into this machine
+          // came up showing history for projects that never existed (§8: never
+          // the real ~/.grid).
+          panelRecapStoreProvider.overrideWithValue(
+            PanelRecapStore(file: File('${tmp.path}/panel_recaps.json')),
           ),
           mediaOutputsDirProvider.overrideWithValue(
             Directory('${tmp.path}/outputs'),
@@ -1340,6 +1479,9 @@ void main() {
 
       final welcome = transport.replies.single;
       expect(welcome['t'], 'welcome');
+      // The Settings page's Voice row reports this rather than choosing it, so it
+      // has to be the same reading the transcriber is given.
+      expect(welcome['voiceLang'], isNotNull);
       expect(welcome['proto'], 1);
       expect(welcome['app'], '0.9.1');
       expect((welcome['machine']! as Map<String, Object?>)['id'], 'this-mac');
@@ -1386,7 +1528,8 @@ void main() {
       expect(
         [for (final r in transport.replies.skip(beforeKeepalive)) r['t']],
         ['welcome'],
-        reason: 'a keepalive earns a welcome and nothing else — re-attaching '
+        reason:
+            'a keepalive earns a welcome and nothing else — re-attaching '
             'would push the whole turn again every 15 seconds',
       );
       await agent.answer('done');
@@ -1451,8 +1594,7 @@ void main() {
       transport.deliver('{"t":"projects.list"}');
       await pumpEventQueue();
 
-      final reply = transport.replies.last;
-      expect(reply['t'], 'projects');
+      final reply = _lastOf(transport, 'projects');
       final items = (reply['items']! as List).cast<Map<String, Object?>>();
       // Pinned first, exactly as the rail shows them.
       expect(items.map((i) => i['name']).toList(), ['notes', 'api']);
@@ -1548,8 +1690,7 @@ void main() {
       expect(agent.history!.last.text, 'run the tests');
       expect(agent.workdir, project.path);
       expect(agent.model, 'qwen');
-      final started = transport.replies.last;
-      expect(started['t'], 'turn.started');
+      final started = _lastOf(transport, 'turn.started');
       expect(started['projectId'], project.id);
     });
 
@@ -1576,21 +1717,30 @@ void main() {
 
       final replies = [for (final r in transport.replies) r['t']];
       expect(replies, contains('turn.started'));
-      expect(replies.last, 'turn.error');
-      expect(transport.replies.last['message'], contains('already working'));
+      expect(replies, contains('turn.error'));
+      expect(
+        _lastOf(transport, 'turn.error')['message'],
+        contains('already working'),
+      );
       // And the second ask never reached the assistant.
       expect(agent.history, hasLength(1));
     });
 
     test('the panel watches a turn happen — it starts, the steps arrive as '
-        'they are run, and it lands with a recap', () async {
+        'they are run, and it lands with a headline', () async {
       final agent = _HeldTurn();
+      // A model that answers, because the turn no longer ENDS on the panel until
+      // one has: `turn.summarizing` holds the tile in the working state and the
+      // headline is what closes it. Without a model here the test would sit out
+      // the writer's 20s deadline before seeing `turn.done`.
+      final model = _OneShotModel('Tests all pass.\n\nEvery one of them.');
       final transport = _FakeTransport();
       final container = harness(
         transport,
         grid: _credential(),
         agent: agent,
         models: const ['qwen'],
+        oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
       final project = container
@@ -1620,12 +1770,22 @@ void main() {
       await pumpEventQueue();
 
       await agent.answer('All 1599 passed.');
+      // Twice: the turn ending now hands over to the headline writer, so
+      // `turn.done` is one async hop further out than it used to be.
+      await pumpEventQueue();
       await pumpEventQueue();
 
       final kinds = [for (final r in transport.replies) r['t']];
       expect(kinds, contains('turn.started'));
       expect(kinds, contains('turn.parts'));
+      // Working right up to the moment there is a headline: the turn ending is
+      // announced as `turn.summarizing`, and only the writer closes it out.
+      expect(kinds, contains('turn.summarizing'));
       expect(kinds.last, 'turn.done');
+      expect(
+        kinds.indexOf('turn.summarizing'),
+        lessThan(kinds.indexOf('turn.done')),
+      );
 
       // The timeline reads in the order it happened: what it said, then what
       // it ran with the status that step got to, then the closing words the
@@ -1653,13 +1813,16 @@ void main() {
           {'k': 't', 'text': 'All 1599 passed.'},
         ],
       );
-      expect(transport.replies.last['recap'], 'All 1599 passed.');
+      expect(_lastOf(transport, 'turn.done')['recap'], 'All 1599 passed.');
     });
 
     test('a turn that ends is followed by the long form of its recap, after '
         'the fact and on its own — never in front of turn.done', () async {
       final agent = _HeldTurn();
-      final model = _OneShotModel('It ran the tests and they all passed.');
+      final model = _OneShotModel(
+        'Tests all pass after the retry guard.\n\n'
+        'I ran the suite and every one of the 1599 tests passed.',
+      );
       final transport = _FakeTransport();
       final container = harness(
         transport,
@@ -1682,10 +1845,27 @@ void main() {
       await pumpEventQueue();
 
       final kinds = [for (final r in transport.replies) r['t']];
+      // The tile works until the headline exists, then the turn closes with it,
+      // and the body follows for the reader.
+      expect(
+        kinds.indexOf('turn.summarizing'),
+        lessThan(kinds.indexOf('turn.done')),
+      );
       expect(kinds.indexOf('turn.done'), lessThan(kinds.indexOf('summary')));
+      // ONE model call, both readings: the ≤15-word headline that ends the turn
+      // and the ≤120-word body behind it. Asked separately they could disagree
+      // about what the turn was even about.
+      final done = transport.replies.lastWhere((r) => r['t'] == 'turn.done');
+      expect(done['recap'], 'Tests all pass after the retry guard.');
       final summary = transport.replies.lastWhere((r) => r['t'] == 'summary');
       expect(summary['projectId'], project.id);
-      expect(summary['text'], 'It ran the tests and they all passed.');
+      expect(
+        summary['text'],
+        'I ran the suite and every one of the 1599 tests passed.',
+      );
+      // And the user's own question went in, so the headline can answer it
+      // rather than describe the topic.
+      expect('${model.asked!.last['content']}', contains('run them'));
       // And what it was written from is the turn, not the tile's one line.
       expect('${model.asked!.last['content']}', contains('All 1599 passed.'));
     });
@@ -1804,7 +1984,9 @@ void main() {
       expect(answered, 'allow_once');
       // The window's card is gone, and the panel is told to drop its own.
       expect(container.read(agentPermissionsProvider), isEmpty);
-      expect(transport.replies.last['t'], 'question.cancel');
+      expect([
+        for (final r in transport.replies) r['t'],
+      ], contains('question.cancel'));
     });
 
     test('an answer for a question this app has already settled is dropped '
@@ -1855,8 +2037,7 @@ void main() {
       await agent.fail('Hermes stopped answering');
       await pumpEventQueue();
 
-      final last = transport.replies.last;
-      expect(last['t'], 'turn.error');
+      final last = _lastOf(transport, 'turn.error');
       expect(last['message'], 'Hermes stopped answering');
     });
 
@@ -1926,7 +2107,9 @@ void main() {
         // The turn goes through the same path `turn.send` uses, so the panel
         // watches it exactly as it watches a typed one.
         expect(agent.history!.last.text, 'run the tests');
-        expect(transport.replies.last['t'], 'turn.started');
+        expect([
+          for (final r in transport.replies) r['t'],
+        ], contains('turn.started'));
         // And what was transcribed is the audio the panel actually sent, in a
         // container the CLI can read.
         expect(String.fromCharCodes(stt.clip!.sublist(0, 4)), 'RIFF');
@@ -1956,7 +2139,11 @@ void main() {
       );
       transport.deliverAudio(pcm);
       transport.deliver('{"t":"voice.end"}');
-      await pumpEventQueue();
+      // Drained rather than counted. The transcript reaches the panel on the
+      // first pass, but the turn it starts is dispatched unawaited and lands
+      // several hops later — and how many depends on what else is listening,
+      // which is not a thing a test should have to track.
+      await pumpEventQueue(times: 40);
 
       // Prefixed once, in one place: the transcript the panel is shown and
       // the message the agent receives are the same string.
@@ -1998,10 +2185,37 @@ void main() {
       },
     );
 
-    test('a sentence spoken from a screen that names no project is guessed at '
-        'and asked about, never dispatched on the guess', () async {
-      // A guess that dispatches itself into a real repository is worse than
-      // one extra tap.
+    test("the device's chosen language is what the clip is transcribed in, not "
+        "the machine's locale — the panel's Settings page owns it", () async {
+      final agent = _HeldTurn();
+      final stt = _FakeStt(const SttSuccess('mở lại retry guard'));
+      final transport = _FakeTransport();
+      final container = harness(
+        transport,
+        grid: _credential(),
+        agent: agent,
+        models: const ['qwen'],
+        stt: stt,
+      );
+      await container.read(chatSessionsProvider.notifier).restored;
+      final project = container
+          .read(projectsProvider.notifier)
+          .create(path: '${tmp.path}/api', name: 'api');
+
+      transport.deliver(
+        '{"t":"voice.begin","projectId":"${project.id}","lang":"vi"}',
+      );
+      transport.deliverAudio(pcm);
+      transport.deliver('{"t":"voice.end"}');
+      await pumpEventQueue(times: 40);
+
+      // Asking for the wrong language does not degrade a transcript, it empties
+      // it — so this is the one field that must come from whoever holds the panel.
+      expect(stt.lang, 'vi');
+    });
+
+    test('a sentence spoken from the Overview with ONE project goes straight '
+        'there — there is nothing to guess between', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
       final container = harness(
@@ -2019,28 +2233,60 @@ void main() {
       transport.deliver('{"t":"voice.begin"}');
       transport.deliverAudio(pcm);
       transport.deliver('{"t":"voice.end"}');
-      await pumpEventQueue();
+      await pumpEventQueue(times: 40);
 
-      final transcript = transport.replies.last;
-      expect(transcript['t'], 'voice.transcript');
-      expect(transcript['needsConfirm'], true);
+      // No model is asked and nobody is: one candidate cannot be the wrong one,
+      // and a confirmation here is a tap that answers a question with one option.
+      final transcript = _lastOf(transport, 'voice.transcript');
+      expect(transcript['needsConfirm'], false);
       expect(transcript['projectId'], project.id);
-      expect(agent.history, isNull);
-
-      // Confirming is what dispatches it, and the project the user picked wins
-      // over the one the app guessed.
-      final other = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/notes', name: 'notes');
-      transport.deliver(
-        '{"t":"voice.confirm","routeId":"${transcript['routeId']}",'
-        '"projectId":"${other.id}"}',
-      );
-      await pumpEventQueue();
-
       expect(agent.history!.last.text, 'deploy it');
-      expect(agent.workdir, other.path);
     });
+
+    test(
+      'with more than one project and no router to ask, the app falls back to '
+      'its own guess and ASKS — a guess must not dispatch itself',
+      () async {
+        // The router being unreachable must not lose a sentence someone already
+        // said out loud, and must not spend it on a guess either.
+        final agent = _HeldTurn();
+        final transport = _FakeTransport();
+        final container = harness(
+          transport,
+          grid: _credential(),
+          agent: agent,
+          models: const ['qwen'],
+          stt: _FakeStt(const SttSuccess('deploy it')),
+        );
+        await container.read(chatSessionsProvider.notifier).restored;
+        final projects = container.read(projectsProvider.notifier);
+        final api = projects.create(path: '${tmp.path}/api', name: 'api');
+        projects.create(path: '${tmp.path}/notes', name: 'notes');
+
+        transport.deliver('{"t":"voice.begin"}');
+        transport.deliverAudio(pcm);
+        transport.deliver('{"t":"voice.end"}');
+        await pumpEventQueue();
+        await pumpEventQueue();
+
+        final transcript = _lastOf(transport, 'voice.transcript');
+        expect(transcript['needsConfirm'], true);
+        expect(transcript['projectId'], api.id);
+        expect(agent.history, isNull);
+
+        // Confirming is what dispatches it, and the project the user picked wins
+        // over the one the app guessed.
+        final other = projects.create(path: '${tmp.path}/other', name: 'other');
+        transport.deliver(
+          '{"t":"voice.confirm","routeId":"${transcript['routeId']}",'
+          '"projectId":"${other.id}"}',
+        );
+        await pumpEventQueue();
+
+        expect(agent.history!.last.text, 'deploy it');
+        expect(agent.workdir, other.path);
+      },
+    );
 
     test('a confirmation for a transcript nobody is holding is answered, not '
         'ignored — the panel is waiting on something', () async {

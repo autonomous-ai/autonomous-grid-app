@@ -132,6 +132,7 @@ whole message — a peer with an extra field is not a broken peer.
 | `t` | Fields | Meaning |
 |---|---|---|
 | `hello` | `fw` string, `proto` int, `mac` string | First thing after the port opens. `mac` is also the device's USB serial number, so the app can tell one panel from another before a byte is exchanged. |
+| `pong` | — | The answer to a `ping`. Empty: the arrival is the content, and it is the only thing that tells the app its port handle still reaches a running panel (below). |
 | `projects.list` | — | Send me the tiles. |
 | `turn.send` | `projectId`, `text` | The user asked for something. |
 | `turn.stop` | `projectId` | Interrupt that project's turn. The id travels because the panel can stop a project the desktop does not have open. |
@@ -141,14 +142,15 @@ whole message — a peer with an extra field is not a broken peer.
 
 | `t` | Fields |
 |---|---|
-| `welcome` | `proto` int, `app` string, `machine: {id, name}` |
+| `welcome` | `proto` int, `app` string, `machine: {id, name}`, `voiceLang` |
 | `projects` | `items[]` of the project shape below |
 | `project.updated` | `item` — one project |
 | `turn.started` | `projectId` |
 | `turn.parts` | `projectId`, `parts[]`, `todos[]` — the turn so far as one ordered timeline (below) |
-| `turn.done` | `projectId`, `recap` |
+| `turn.summarizing` | `projectId` — the work is over, the headline is being written (below) |
+| `turn.done` | `projectId`, `recap` — ≤15 words, and the end of the turn |
 | `turn.error` | `projectId`, `message` |
-| `summary` | `projectId`, `text` — the long form of the last `recap` (below) |
+| `summary` | `projectId`, `text` — ≤120 words, the body behind the headline (below) |
 | `question` | `projectId`, `id`, `summary`, `command?`, `options[]` (below) |
 | `question.cancel` | `projectId`, `id` |
 | `ping` | — the heartbeat (below) |
@@ -244,9 +246,16 @@ empty plan and is drawn as nothing at all.
 ### The project shape
 
 ```json
-{ "id": "p-1", "name": "grid-app", "agent": "claude", "model": "auto",
-  "busy": true, "recap": "Ran the tests", "recapKind": "done" }
+{ "id": "p-1", "name": "grid-app", "agent": "claude", "model": "auto", "busy": true,
+  "recap": "Retry guard shipped; all 42 tests pass", "recapKind": "done",
+  "summary": "I added an idempotency key before dispatch, so a timeout no longer replays the charge." }
 ```
+
+**`recap` and `summary` are the SAME PAIR the live turn sends** (below), remembered per project so a panel
+that has just been plugged in has both to draw. Sending only `recap` is what makes the tile and the reader
+show one string on every cold start — they are two zones, and one sentence in both reads as a bug in the
+reader. `summary` is absent until a model has written one, and the reader then says there is nothing more
+rather than repeating the headline.
 
 Deliberately thin. The panel draws a name, a state and one line of recap; a project in the app also
 has instructions, memory and a workspace path, and none of that belongs on a tile. `agent`, `model`,
@@ -287,12 +296,53 @@ stale board for as long as it stays plugged in.
 The app is expected to **say nothing when nothing the panel can draw has changed**. That is what
 keeps a link idle during a long turn, and it is why the heartbeat below has to exist.
 
-### The summary, and why it arrives late
+### How a turn that worked actually ends
 
-`turn.done.recap` is one line — enough for a tile, not enough to read. `summary` carries the long
-form for the detail screen, and it is a **separate message on purpose**: the app writes it by asking
-a model, which takes seconds, and holding `turn.done` for it would leave a tile spinning on work
-that has already finished.
+Not with `turn.done`. A finished turn is read at two distances, so it is written at two lengths **by
+one model call** — and the tile keeps working until that call answers:
+
+```
+turn.parts …                          the agent is working
+turn.summarizing                      the agent stopped; the headline is being written
+turn.done      { recap }              ≤15 words — the headline, and the end of the turn
+summary        { text }               ≤120 words — the body, for the reader
+```
+
+| | | |
+|---|---|---|
+| `recap` | **≤ 15 words** | the headline, on `turn.done`. What the tile draws, **in full** — a headline that is itself clipped has failed at the one job it has |
+| `text` | **≤ 120 words** | the body, on `summary`. **Optional**: a one-line turn earns a headline and nothing more, and inventing a body from it would be inventing |
+
+**One call, not two.** They are the same judgement at two lengths; asked separately they could disagree
+about what the turn was even about. The model is given the user's own request as well as the
+assistant's reply, so the headline **answers the question** instead of describing the topic — asked a
+price, it leads with the price.
+
+> **Why the tile keeps working instead of showing something at once.** The obvious design sends
+> `turn.done` the moment the agent stops, carrying whatever cheap recap is to hand, and swaps in the
+> real headline seconds later. Tried, and it is worse: the intermediate state is not *missing*
+> information, it is **wrong** information — a sentence someone reads from across the room and then
+> watches change. `turn.summarizing` says "the work is over, the account of it is coming", and the
+> tile stays exactly as it was.
+
+**`turn.summarizing` repeats, every ~5 s, until the turn is closed.** The device clears a busy tile
+after **25 s** with no message (`ui_prune_stale_busy`), and a real model can spend longer than that on
+one prompt — so the window is held open by saying so again, not by hoping the write is quick.
+
+> ⚠️ **Do not bound the write under 25 s instead.** That was tried: a 20 s deadline with no beat, on
+> the theory that answering before the sweep is simpler than out-running it. The grid's own model
+> answered in a little over a minute, so the deadline fired on **every** turn, the tile settled on the
+> cheap recap — the exact state this design exists to avoid — and the real headline arrived afterwards
+> to be thrown away. Measured 2026-08-17.
+
+The writer gives up after **90 s** and closes the turn with the cheap recap. What that number bounds is
+not the device's patience — the beat covers that — but how long someone watches a finished turn claim
+it is still reading.
+
+**A turn that FAILED does not go through this.** `turn.error` is sent immediately and is already
+terminal: the failure message *is* the outcome, there is nothing a model could add, and "Summarizing…"
+over a turn that already broke would delay the one thing worth saying. It is never followed by a
+`turn.done` — that would be a second ending for one turn.
 
 So the order is always `turn.done` first, `summary` maybe. A summary may never arrive — no model
 reachable, the call failed, the turn said nothing worth summarising — and the detail screen must read
@@ -341,10 +391,37 @@ nothing to say. Both are silence. So the app sends `ping` on a fixed cadence —
 | | |
 |---|---|
 | App sends `ping` | every 5 s, regardless of activity |
+| Panel answers with `pong` | every one, immediately |
 | Panel declares the app gone | after **15 s** with no message of any kind |
+| App declares the handle dead | after **20 s** with no bytes of any kind — then closes the port and reopens it |
 | Panel while it thinks the app is gone | re-sends `hello` periodically — the app may start later, and it cannot see the panel until the panel speaks |
 
-Any inbound message counts as a sign of life, not only `ping` — a busy link needs no extra proof.
+Any inbound message counts as a sign of life, not only `ping`/`pong` — a busy link needs no extra proof.
+The two windows differ (15 s / 20 s) so a single late message cannot trip both at once and have each side
+conclude the other left.
+
+**Why the app needs `pong` at all**, given the panel is the one with a screen to change: because on the
+host there is no other symptom. Measured on macOS on 2026-08-17, immediately after a firmware update the
+app itself had just delivered — an ESP32-S3 that reboots comes back on a `/dev/cu.usbmodem*` node with
+**the same name, the same inode and the same device numbers**. Writes to the old handle keep succeeding,
+the read stream never completes, and nothing raises. The app went on pinging a dead file for as long as
+anyone watched, while the panel two feet away re-introduced itself every 15 s to nobody; only restarting
+the app or replugging the cable recovered it. Everything else the panel sends is something a person did,
+so an idle panel is silent and there is no other traffic to time out on. The update path is exactly where
+this bites, which makes `pong` a requirement of shipping firmware over the cable rather than a nicety.
+
+**`voiceLang` is a PROPOSAL; the device decides.** The app reads the machine's own locale and sends it on
+`welcome` — the right default and a poor decision, because the person holding the panel may well speak
+something other than the laptop is set to. So the Settings page's Voice row can change it, the choice is
+kept in the device's own NVS, and **`voice.begin` carries the answer as `lang`** on every capture.
+
+Once the row has been tapped the app's proposal is ignored, which matters because `welcome` arrives every
+15 seconds on the keepalive: without that rule the tap would be undone over and over and the row would
+look like a switch that springs back.
+
+The app falls back to its own reading only when `voice.begin` carries no `lang` — a firmware old enough
+not to send one, not a disagreement. **Getting this wrong does not degrade a transcript, it empties it**:
+the transcriber is asked for a language the audio is not in and answers with nothing.
 
 **`hello` repeats, and it is not a new panel each time.** The device has no port-open event to wait
 on, so it keeps greeting on a cadence — fast (~2 s) while it believes nobody is there, slow (15 s)
@@ -377,7 +454,7 @@ the CLI already has.
 
 | Direction | `t` | Fields |
 |---|---|---|
-| → app | `voice.begin` | `projectId` — **optional**, absent when the user spoke from a screen that names no project · `cmd` — **optional**, `"goal"` or `"loop"` |
+| → app | `voice.begin` | `projectId` — **optional**, absent when the user spoke from a screen that names no project · `cmd` — **optional**, `"goal"` or `"loop"` · `lang` — `"en"` or `"vi"` |
 | → app | *(frames `0x02`)* | 16 kHz mono 16-bit PCM, in order |
 | → app | `voice.end` | — |
 | → device | `voice.transcript` | `routeId`, `text`, `projectId?`, `needsConfirm` |
@@ -385,10 +462,41 @@ the CLI already has.
 | → app | `voice.confirm` | `routeId`, `projectId` |
 
 **Routing is the hard half, not transcription.** When `voice.begin` names a project the transcript
-goes there. When it does not, the app has to guess, and a guess that dispatches itself into a real
-repository is worse than one extra tap — so it answers with `needsConfirm: true` and waits for
-`voice.confirm`. A panel that ignores `needsConfirm` and dispatches anyway defeats the only guard
-there is.
+goes there — nothing to decide. When it does not (the Overview names none), the app has to work it out,
+and a wrong answer dispatches someone's sentence into the wrong repository.
+
+It is decided by a **model**, not by "the project talked in most recently":
+
+```
+transcript + [ { id, name, last 3 headlines } … ]  →  { projectId, confidence, reason }
+```
+
+- **The name carries most of the signal** — people name a project after the thing it is — and **what it
+  recently did breaks the ties** names leave ("api" and "api-v2"). That is why the app keeps each
+  project's last **three** headlines (`~/.grid/app/panel_recaps.json`): one turn is a skewed picture, and
+  a project whose last turn was "fixed a typo" would read as a typo project.
+- **There is no "none" and no declining.** The sentence has already been said and transcribed; "I
+  couldn't tell" leaves the user with nothing to do but say it again. A bad fit comes back as the
+  closest project with a low confidence, which is something the app can act on.
+- **`confidence` decides whether anyone is asked.** At **0.85+** the app dispatches and sends
+  `needsConfirm: false`. Below it — and for every failure, including an unreachable router — it falls
+  back to its own guess and sends `needsConfirm: true`.
+
+A panel that ignores `needsConfirm` and dispatches anyway defeats the only guard there is.
+
+⚠️ **The firmware in this repo does exactly that today.** `ui_voice_routed` answers `voice.confirm`
+the moment it arrives, so `needsConfirm: true` costs one round trip and asks nobody. It is not a
+disagreement with this spec — it is unwritten UI, flagged at the call site as `TODO(BE)`. Two
+consequences to hold on to while it stands: routing accuracy is **entirely** the router's, and the
+router's deadline is therefore a correctness knob rather than a comfort one. It was 12s until
+2026-08-17, when a routing call over the hosted relay returned a correct answer in 12s, one second
+late, and a question about crypto prices opened a turn in a sports project instead. It is 30s now.
+
+> ⚠️ **Today's firmware auto-confirms.** `ui_voice_routed` focuses the guessed project and sends
+> `voice.confirm` itself, with no prompt — so in practice a low-confidence pick still dispatches, and
+> the user finds out where their sentence went *after* it went. The app half is built to be asked;
+> making the device actually ask is a UI that does not exist yet, and the `question` card is the shape
+> to reuse for it.
 
 **`cmd` is a prefix, not a mode.** The panel's action bar has three pills — Voice, Goal, Loop — and
 the two modifiers say what *kind* of thing the sentence is. They arrive as `cmd` and the app puts

@@ -43,6 +43,7 @@ class PanelVoiceCapture {
   PanelVoiceCapture({
     this.projectId,
     this.command = PanelVoiceCommand.none,
+    this.lang,
     this.limitBytes = kPanelVoiceMaxBytes,
   });
 
@@ -55,6 +56,12 @@ class PanelVoiceCapture {
   /// again at the end, because by then the panel may already be showing a
   /// different tile with a different pill lit.
   final PanelVoiceCommand command;
+
+  /// The language the device asked for, or null when it named none. Carried on
+  /// the capture rather than read again at the end, for the same reason
+  /// [command] is: by then the Settings page may have been changed again, and
+  /// this clip was spoken under the old setting.
+  final String? lang;
 
   final int limitBytes;
 

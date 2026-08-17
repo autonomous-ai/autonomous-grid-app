@@ -139,6 +139,16 @@ class GridPaths {
   static File get modelContextFile =>
       File('${home.path}/app/model_context.json');
 
+  /// What each project's last few turns came to — the headlines the Grid Panel
+  /// draws, kept so the voice router can read what a project is *working on*
+  /// rather than only what it is called.
+  ///
+  /// A file rather than a field because the question it answers is asked from a
+  /// cold start: someone speaks at the panel the minute the app comes up, and a
+  /// router with no history behind it has nothing to route on but names.
+  /// App-owned; the CLI never touches it.
+  static File get panelRecapsFile => File('${home.path}/app/panel_recaps.json');
+
   /// The first-run onboarding choice (run a model locally, use a cloud provider,
   /// or set up later) — remembered so a user who already picked a path isn't
   /// asked again on every launch, including the paths that install nothing.

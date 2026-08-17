@@ -75,6 +75,7 @@ sealed class PanelInbound {
       'voice.begin' => PanelVoiceBegin(
         projectId: _str(decoded['projectId']),
         command: PanelVoiceCommand.of(_str(decoded['cmd'])),
+        lang: _str(decoded['lang']),
       ),
       'voice.end' => const PanelVoiceEnd(),
       'voice.confirm' => PanelVoiceConfirm(
@@ -85,6 +86,7 @@ sealed class PanelInbound {
       'fw.progress' => PanelFirmwareProgress(
         written: _int(decoded['written']) ?? 0,
       ),
+      'pong' => const PanelPong(),
       'fw.done' => const PanelFirmwareDone(),
       'fw.error' => PanelFirmwareFailed(_str(decoded['message']) ?? ''),
       _ => PanelUnknown(type, decoded),
@@ -202,12 +204,21 @@ class PanelVoiceBegin extends PanelInbound {
   const PanelVoiceBegin({
     this.projectId,
     this.command = PanelVoiceCommand.none,
+    this.lang,
   });
 
   final String? projectId;
 
   /// The modifier pill that started it, if any.
   final PanelVoiceCommand command;
+
+  /// Which language to transcribe this capture in — the device's Settings page.
+  ///
+  /// Null from a firmware that does not send it, and the app then falls back to
+  /// its own reading of the machine's locale. Getting this wrong does not degrade
+  /// the transcript, it EMPTIES it: the transcriber is asked for a language the
+  /// audio is not in and answers with nothing.
+  final String? lang;
 }
 
 /// The user stopped speaking; every chunk has been sent.
@@ -245,6 +256,22 @@ class PanelFirmwareFailed extends PanelInbound {
   const PanelFirmwareFailed(this.message);
 
   final String message;
+}
+
+/// The panel's answer to a `ping`.
+///
+/// Carries nothing, and the arrival IS the content: it is what tells the app the
+/// port handle it is holding still reaches a running panel. Nothing else can,
+/// and that is not a design preference — measured on macOS on 2026-08-17, an
+/// ESP32 that reboots leaves `/dev/cu.usbmodem*` with the same name, the same
+/// inode and the same device numbers, writes to it keep succeeding, and the read
+/// stream never completes. So the app held a dead handle for as long as anyone
+/// watched, right after shipping the firmware that caused the reboot.
+///
+/// An idle panel is otherwise silent — everything else it sends is something a
+/// person did — so without this there is no traffic to time out on.
+class PanelPong extends PanelInbound {
+  const PanelPong();
 }
 
 /// A well-formed message this build has no case for.
@@ -297,6 +324,7 @@ class PanelProject {
     this.model,
     this.busy = false,
     this.recap = '',
+    this.summary = '',
     this.recapKind,
   });
 
@@ -305,7 +333,18 @@ class PanelProject {
   final String? agent;
   final String? model;
   final bool busy;
+
+  /// The headline of the last turn — at most fifteen words, drawn on the tile in
+  /// full.
   final String recap;
+
+  /// The paragraph behind it, for the reader.
+  ///
+  /// Carried on the tile so a panel that has just been plugged in has something
+  /// to read. Without it the reader falls back to the headline, which is how
+  /// "the recap and the summary are the same sentence" happens on every cold
+  /// start — the two zones would be showing one string.
+  final String summary;
 
   /// How the turn behind [recap] ended, or null when there is no recap to
   /// tint. Never sent for a project nobody has talked in yet: a kind with no
@@ -319,6 +358,7 @@ class PanelProject {
     if (model != null) 'model': model,
     'busy': busy,
     if (recap.isNotEmpty) 'recap': recap,
+    if (summary.isNotEmpty) 'summary': summary,
     if (recap.isNotEmpty && recapKind != null) 'recapKind': recapKind!.name,
   };
 }
@@ -437,15 +477,23 @@ class PanelQuestionOption {
 abstract final class PanelOutbound {
   /// Answer to [PanelHello]. Carries which machine the panel is looking at,
   /// which on this link is simply the computer it is plugged into.
+  /// The app's answer to `hello`.
+  ///
+  /// [voiceLang] is the language transcription runs in — the app's own reading of
+  /// the machine's locale. It rides here rather than being asked for because the
+  /// device has no say in it: the Settings page reports it, and a device that
+  /// picked its own would disagree with every capture the app then sends.
   static String welcome({
     required String appVersion,
     required String machineId,
     required String machineName,
+    required String voiceLang,
   }) => jsonEncode({
     't': 'welcome',
     'proto': kPanelProtocolVersion,
     'app': appVersion,
     'machine': {'id': machineId, 'name': machineName},
+    'voiceLang': voiceLang,
   });
 
   static String projects(List<PanelProject> projects) => jsonEncode({
@@ -498,6 +546,19 @@ abstract final class PanelOutbound {
   /// it is written by asking a model, which takes seconds, and holding the
   /// tile's "finished" on that would leave it spinning on work that is over.
   /// It may never arrive at all.
+  /// The turn's work is over and its headline is being written.
+  ///
+  /// Sent INSTEAD of `turn.done`, so the tile stays in the working state it is
+  /// already in until there is something true to replace it with. `turn.done`
+  /// follows within seconds carrying the real headline — or the cheap one, if
+  /// the model could not be reached.
+  static String turnSummarizing(String projectId) =>
+      jsonEncode({'t': 'turn.summarizing', 'projectId': projectId});
+
+  /// The paragraph behind the headline, for the detail screen.
+  ///
+  /// May be empty and then is not sent at all: a one-line turn earns a headline
+  /// and nothing more, and inventing a body from it would be inventing.
   static String summary({required String projectId, required String text}) =>
       jsonEncode({'t': 'summary', 'projectId': projectId, 'text': text});
 

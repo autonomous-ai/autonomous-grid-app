@@ -11,6 +11,7 @@ import '../../../infrastructure/panel/panel_link_provider.dart';
 import '../../../infrastructure/panel/panel_message.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../infrastructure/state/panel_recap_store.dart';
 import '../../../shared/app_info.dart';
 import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_providers.dart';
@@ -26,6 +27,7 @@ import 'panel_question_mirror.dart';
 import 'panel_summary_writer.dart';
 import 'panel_turn_mirror.dart';
 import 'panel_voice.dart';
+import 'panel_voice_router.dart';
 
 /// The app's side of the conversation with a Grid Panel.
 ///
@@ -58,6 +60,10 @@ final panelControllerProvider = Provider<PanelController>((ref) {
   // deleted on the desktop reached a plugged-in panel only if it happened to
   // ask again — which it does once, on waking.
   ref.listen(sortedProjectsProvider, (_, _) => controller.mirrorProjects());
+  // And when a turn's headline is written down: the tile carries the remembered
+  // one, so the list is only as current as this store. The mirror dedups by
+  // payload, so a turn that changed nothing the panel draws still sends nothing.
+  ref.listen(panelRecapsProvider, (_, _) => controller.mirrorProjects());
   ref.onDispose(controller.stop);
   return controller;
 });
@@ -71,7 +77,7 @@ class PanelController {
   StreamSubscription<List<int>>? _audioSub;
 
   /// What the panel has already been told about turns in flight.
-  late final _turns = PanelTurnMirror(onTurnEnded: _summarize);
+  final _turns = PanelTurnMirror();
 
   /// What the panel has already been told about permission questions.
   final _questions = PanelQuestionMirror();
@@ -82,6 +88,16 @@ class PanelController {
   /// Says the app is still here, on the cadence the panel measures absence
   /// against.
   Timer? _heartbeat;
+
+  /// One per turn whose headline is being written, saying the tile should keep
+  /// working.
+  ///
+  /// Held here as well as in the write's own `finally` because the write may
+  /// never finish: a model that hangs leaves a periodic timer running for as long
+  /// as the process lives, and in a test that outlives its container it is a
+  /// pending timer at teardown. A set rather than a field because two projects
+  /// can finish a turn at the same moment.
+  final _summarizing = <Timer>{};
 
   /// Whether a panel has introduced itself on this link.
   ///
@@ -200,8 +216,8 @@ class PanelController {
         _startTurn(projectId, text);
       case PanelAnswered(:final projectId, :final id, :final optionId):
         _answerQuestion(projectId, id, optionId);
-      case PanelVoiceBegin(:final projectId, :final command):
-        _beginVoice(projectId, command);
+      case PanelVoiceBegin(:final projectId, :final command, :final lang):
+        _beginVoice(projectId, command, lang);
       case PanelVoiceEnd():
         await _finishVoice();
       case PanelVoiceConfirm(:final routeId, :final projectId):
@@ -218,6 +234,13 @@ class PanelController {
         _firmware.done();
       case PanelFirmwareFailed(:final message):
         _firmware.failed(message);
+      case PanelPong():
+        // Nothing to do here on purpose. The work a pong does happens one layer
+        // down, where the bytes land: PanelPort times the silence and reopens a
+        // handle that has gone stale. This case exists so the answer to our own
+        // heartbeat is not logged as a message the build cannot read, four
+        // hundred times an hour.
+        break;
       case PanelUnknown(:final type):
         _log.warn('panel', 'Panel sent "$type", which this build cannot read');
       case PanelMalformed(:final reason):
@@ -271,6 +294,10 @@ class PanelController {
             appVersion: await _appVersion(),
             machineId: _ref.read(nodeNameProvider),
             machineName: _machineName(),
+            // The same function the mic button and every panel capture go
+            // through, so the Settings page cannot report one language while the
+            // transcriber is given another.
+            voiceLang: preferredSttLang(),
           ),
         );
     // Everything below re-establishes a panel that knows nothing, so it runs
@@ -291,6 +318,7 @@ class PanelController {
         runs: _ref.read(agentRunsProvider),
       ),
     );
+    _closeEndedTurns();
     // Including a question it is standing in front of: an agent waiting on a
     // yes does not ask twice, so a panel that woke up during one would show an
     // idle tile over a turn that is stopped dead.
@@ -321,6 +349,11 @@ class PanelController {
         runs: _ref.read(agentRunsProvider),
       ),
     );
+    // AFTER the push, never before: a turn that worked has just gone out as
+    // `turn.summarizing`, and this is what owes it the `turn.done` that ends it.
+    // Run first, the end of the turn reached the panel ahead of the news that it
+    // was still being read.
+    _closeEndedTurns();
     final deferred = _deferredOffer;
     // A panel plugged in during a turn is not offered an update then. This is
     // the moment that changes: the machine has just gone idle, and the panel
@@ -349,6 +382,7 @@ class PanelController {
         panelProjectsFor(
           projects: _ref.read(sortedProjectsProvider),
           chats: _ref.read(chatSessionsProvider),
+          history: _ref.read(panelRecapsProvider),
         ),
       ),
     );
@@ -386,32 +420,120 @@ class PanelController {
   /// Never awaited by the caller. `turn.done` has already gone out, and this
   /// takes as long as a model takes — holding the two together would leave a
   /// tile spinning on work that finished seconds ago.
+  /// Remember how a turn came out, for the voice router to read later.
+  ///
+  /// Every turn, not only the ones a model summarised: the cheap headline is
+  /// weaker signal but it is signal, and a project with no history at all is one
+  /// the router can only match by name.
+  void _rememberTurn(
+    String projectId, {
+    required String recap,
+    String summary = '',
+  }) => _ref
+      .read(panelRecapsProvider.notifier)
+      .record(projectId, recap: recap, summary: summary);
+
+  /// Close out every turn that settled on the last pass.
+  ///
+  /// One `turn.done` each, without exception. The mirror has already told the
+  /// panel `turn.summarizing` for each of them, which leaves its tile working —
+  /// so a turn dropped here is a tile that works forever on finished work.
+  void _closeEndedTurns() {
+    for (final ended in _turns.drainEnded()) {
+      _summarize(ended.projectId, ended.chat);
+    }
+  }
+
+  /// A turn ended well; the panel has been told `turn.summarizing` and is owed a
+  /// `turn.done`.
+  ///
+  /// No panel has greeted us, or the chat is gone: nothing is watching, so close
+  /// it out at once rather than paying for a model. The send is harmless either
+  /// way — a panel that never heard `turn.summarizing` reads `turn.done` for a
+  /// project it thinks is idle as "that project is idle now", which the protocol
+  /// already requires it to tolerate.
   void _summarize(String projectId, Conversation? chat) {
-    if (chat == null || !_greeted) return;
+    if (chat == null || !_greeted) {
+      final recap = panelRecapOf(chat);
+      _rememberTurn(projectId, recap: recap);
+      _ref
+          .read(panelLinkProvider)
+          .send(PanelOutbound.turnDone(projectId: projectId, recap: recap));
+      return;
+    }
     unawaited(_writeSummary(projectId, chat));
   }
 
+  /// Write the headline, then close the turn out on the panel.
+  ///
+  /// **This must always end in a `turn.done`.** `_settle` has already told the
+  /// panel `turn.summarizing`, which leaves its tile in the working state — so
+  /// every path out of here, including every failure, owes it a terminal
+  /// message. Drop one and the tile works forever on a turn that ended.
   Future<void> _writeSummary(String projectId, Conversation chat) async {
-    final (text, failure) = await _ref
-        .read(panelSummaryWriterProvider)
-        .write(chat);
+    PanelTurnSummary? written;
+    String? failure;
+    final clock = Stopwatch()..start();
+    // Hold the tile awake for as long as this takes. The device frees a busy tile
+    // after 25s of silence and a real model can spend longer than that on one
+    // prompt, so the window is kept open by repeating rather than by hoping the
+    // write is quick. This is the beat the reference sends too, and skipping it —
+    // bounding the write under 25s instead — is what made the first deadline too
+    // tight to ever be met.
+    final beat = Timer.periodic(
+      kPanelSummarizingBeat,
+      (_) => _ref
+          .read(panelLinkProvider)
+          .send(PanelOutbound.turnSummarizing(projectId)),
+    );
+    _summarizing.add(beat);
+    try {
+      (written, failure) = await _ref
+          .read(panelSummaryWriterProvider)
+          .write(chat, budget: kPanelSummaryDeadline)
+          .timeout(kPanelSummaryDeadline);
+    } on TimeoutException {
+      failure =
+          'the model took longer than ${kPanelSummaryDeadline.inSeconds}s';
+    } finally {
+      beat.cancel();
+      _summarizing.remove(beat);
+    }
     // A model takes seconds and the app can be quit inside one of them. Nothing
     // below this line may touch the container once it has gone.
     if (!_ref.mounted) return;
-    if (text == null) {
-      // Logged and not sent. The panel's detail screen reads a summary that
-      // never arrives as "nothing more to show", which is honest; a sentence
-      // apologising for a model would be four lines of a 466px screen spent
-      // saying nothing about the work (§5).
-      _log.warn(
-        'panel',
-        'No summary for the last turn in $projectId: $failure',
+    // Logged every time, pass or fail: this number is the only evidence for what
+    // the deadline should be, and the first guess at it was wrong by a factor of
+    // three.
+    _log.info(
+      'panel',
+      'The headline for $projectId took ${clock.elapsed.inSeconds}s',
+    );
+
+    final link = _ref.read(panelLinkProvider);
+    if (written == null) {
+      // The cheap recap — the agent's own last sentence, cut to a line — is what
+      // there is to show when no model would read the turn. Logged with the real
+      // reason, because the panel is given a sentence about the WORK and never
+      // one apologising for a model: that would be four lines of a 466px screen
+      // spent saying nothing about what happened (§5).
+      _log.warn('panel', 'No headline for the turn in $projectId: $failure');
+      link.send(
+        PanelOutbound.turnDone(projectId: projectId, recap: panelRecapOf(chat)),
       );
       return;
     }
-    _ref
-        .read(panelLinkProvider)
-        .send(PanelOutbound.summary(projectId: projectId, text: text));
+    _rememberTurn(projectId, recap: written.recap, summary: written.summary);
+    link.send(
+      PanelOutbound.turnDone(projectId: projectId, recap: written.recap),
+    );
+    // Second, and only when there is one. The headline ends the turn; the body
+    // is what the reader screen shows behind it.
+    if (written.summary.isNotEmpty) {
+      link.send(
+        PanelOutbound.summary(projectId: projectId, text: written.summary),
+      );
+    }
   }
 
   void _push(List<String> messages) {
@@ -428,6 +550,7 @@ class PanelController {
     final tiles = panelProjectsFor(
       projects: _ref.read(sortedProjectsProvider),
       chats: _ref.read(chatSessionsProvider),
+      history: _ref.read(panelRecapsProvider),
     );
     _ref.read(panelLinkProvider).send(_tiles.all(tiles));
   }
@@ -590,9 +713,13 @@ class PanelController {
   /// A capture already open is dropped rather than continued: a second
   /// `voice.begin` means the first one's `voice.end` never arrived, and the
   /// sentence being spoken now is the one somebody is waiting on.
-  void _beginVoice(String? projectId, PanelVoiceCommand command) {
+  void _beginVoice(String? projectId, PanelVoiceCommand command, String? lang) {
     _voiceOpen?.cancel();
-    _voice = PanelVoiceCapture(projectId: projectId, command: command);
+    _voice = PanelVoiceCapture(
+      projectId: projectId,
+      command: command,
+      lang: lang,
+    );
     _voiceOpen = Timer(kPanelVoiceOpenLimit, () => unawaited(_finishVoice()));
   }
 
@@ -686,7 +813,15 @@ class PanelController {
       await clip.writeAsBytes(capture.toWav(), flush: true);
       return await client.transcribe(
         audioPath: clip.path,
-        lang: preferredSttLang(),
+        // The DEVICE's choice wins. Its Settings page owns this once someone has
+        // tapped the row, and the app's own reading of the machine locale is only
+        // the proposal it started from (`welcome.voiceLang`) — so falling back to
+        // it here is for a firmware old enough not to send one, not for a
+        // disagreement. Asking for the wrong language does not degrade a
+        // transcript, it empties it.
+        lang: capture.lang?.trim().isNotEmpty == true
+            ? capture.lang!.trim()
+            : preferredSttLang(),
       );
     } on Object catch (e) {
       _log.warn('panel', 'A panel voice clip could not be transcribed: $e');
@@ -722,14 +857,99 @@ class PanelController {
     final routeId = 'r${++_routes}';
     switch (route) {
       case PanelVoiceRouted(:final projectId):
+        // The panel named it. Nothing to decide, and nothing a model could add.
         _sendTranscript(routeId, projectId, text, needsConfirm: false);
         _startTurn(projectId, text);
       case PanelVoiceGuessed(:final projectId):
-        _remember(routeId, projectId, text);
-        _sendTranscript(routeId, projectId, text, needsConfirm: true);
+        // Spoken from the Overview, where no project is named. `projectId` here
+        // is the app's own guess — the most recently used one — and it stands as
+        // the answer only if the router cannot do better.
+        unawaited(_routeByModel(routeId, projectId, text));
       case PanelVoiceUnroutable(:final message):
         _voiceError(message);
     }
+  }
+
+  /// Ask a model which project a sentence spoken from the Overview belongs to.
+  ///
+  /// The names alone are a strong signal — people name a project after the thing
+  /// it is — but they tie often enough ("api" and "api-v2") that what each project
+  /// has recently *done* is what breaks it. That history is the whole reason
+  /// [panelRecapsProvider] exists.
+  ///
+  /// [fallback] is the app's own guess, and it is what a failure resolves to: the
+  /// router being unreachable must not lose a sentence someone already said out
+  /// loud.
+  Future<void> _routeByModel(
+    String routeId,
+    String fallback,
+    String text,
+  ) async {
+    final projects = _ref.read(sortedProjectsProvider);
+    final recaps = _ref.read(panelRecapsProvider.notifier);
+    // In the app's own order, so the router's own fallback — the first candidate —
+    // is the same project the app would have guessed without it.
+    final candidates = [
+      for (final project in projects)
+        PanelRouteCandidate(
+          id: project.id,
+          name: project.name,
+          recent: recaps.recentFor(project.id),
+        ),
+    ];
+
+    PanelRouteDecision? decision;
+    var timedOut = false;
+    // Timed, and the elapsed time is in the log line either way. "The router did
+    // not answer" was the same sentence whether the model was unreachable, said
+    // something unusable, or answered a second late — and on 2026-08-17 it was
+    // the third one, which cost a debugging session to tell apart from the first.
+    final clock = Stopwatch()..start();
+    try {
+      decision = await _ref
+          .read(panelVoiceRouterProvider)
+          .route(text, candidates)
+          .timeout(kPanelRouteDeadline);
+    } on TimeoutException {
+      timedOut = true;
+      decision = null;
+    }
+    clock.stop();
+    if (!_ref.mounted) return;
+
+    final took = '${(clock.elapsedMilliseconds / 1000).toStringAsFixed(0)}s';
+    final projectId = decision?.projectId ?? fallback;
+    if (decision == null) {
+      _log.warn(
+        'panel',
+        timedOut
+            ? 'The router was still thinking after $took, so the sentence goes '
+                  'to $projectId — where this computer was last spoken to. The '
+                  'answer may yet arrive and will be ignored.'
+            : 'The router had nothing to say after $took (no model reachable, or '
+                  'an unusable answer); sending the sentence to $projectId, '
+                  'which is where this computer was last spoken to',
+      );
+    } else {
+      _log.info(
+        'panel',
+        'The router chose $projectId at ${decision.confidence.toStringAsFixed(2)}'
+            ' in $took'
+            '${decision.reason.isEmpty ? '' : ': ${decision.reason}'}',
+      );
+    }
+
+    // Confident enough to act on, or confident enough only to offer. A pick in
+    // the router's lower bands dispatching itself into a real repository is the
+    // failure the confirm step exists to prevent — and the sentence is already
+    // said, so the cost of asking is one tap.
+    if (decision != null && decision.isConfident) {
+      _sendTranscript(routeId, projectId, text, needsConfirm: false);
+      _startTurn(projectId, text);
+      return;
+    }
+    _remember(routeId, projectId, text);
+    _sendTranscript(routeId, projectId, text, needsConfirm: true);
   }
 
   void _sendTranscript(
@@ -881,14 +1101,22 @@ class PanelController {
 List<PanelProject> panelProjectsFor({
   required List<Project> projects,
   required ChatSessionsState chats,
-}) => [for (final project in projects) panelProjectFor(project, chats)];
+  Map<String, List<PanelTurnRecord>> history = const {},
+}) => [
+  for (final project in projects)
+    panelProjectFor(project, chats, history[project.id]?.firstOrNull),
+];
 
 /// One project as a tile: its name, which assistant answers in it, whether it
 /// is working right now, and one line of what was last said there.
 ///
 /// Thin on purpose — the panel is 480px across. Instructions, memory and the
 /// workspace path stay in the app.
-PanelProject panelProjectFor(Project project, ChatSessionsState chats) {
+PanelProject panelProjectFor(
+  Project project,
+  ChatSessionsState chats, [
+  PanelTurnRecord? last,
+]) {
   final conversations = [
     for (final conversation in chats.live)
       if (conversation.projectId == project.id) conversation,
@@ -907,10 +1135,19 @@ PanelProject panelProjectFor(Project project, ChatSessionsState chats) {
     // that says idle while `turn.started` is on its way about the same project
     // is two answers to one question.
     busy: conversations.any((c) => panelTurnInFlight(chats, c.id)),
-    // The last thing said in the project's most recently used chat, cut to one
-    // line. Empty when nothing has been said yet — [PanelProject] then leaves
-    // the field out rather than sending a blank one.
-    recap: panelRecapOf(newest),
+    // The REMEMBERED headline, when there is one — the ≤15-word line a model
+    // wrote when that turn ended, which is what the tile is meant to draw.
+    //
+    // The last thing said in the chat, cut to one line, is only the fallback:
+    // that is what there is before any turn has been summarised, and on a cold
+    // start it used to be all the panel ever got. A first line of prose and a
+    // headline are not the same thing, and it showed — the tile and the reader
+    // were handed one string and drew it twice.
+    recap: last?.recap.isNotEmpty == true ? last!.recap : panelRecapOf(newest),
+    // The long form, so a panel plugged in cold has something behind the
+    // headline. Absent until a model has written one, and then the reader says
+    // there is nothing more rather than repeating the headline.
+    summary: last?.summary ?? '',
     // Read off the same chat as the line above, so a recap and the colour
     // behind it always describe one turn.
     recapKind: panelRecapKindOf(

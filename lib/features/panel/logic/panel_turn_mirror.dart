@@ -264,15 +264,18 @@ String panelTurnPartsMessage({
 /// Keyed by **project**, because a project is what a tile is. Which chat inside
 /// it holds the turn is the desktop's business.
 class PanelTurnMirror {
-  PanelTurnMirror({this.onTurnEnded});
+  PanelTurnMirror();
 
-  /// Called as a turn settles, with the chat it ended in.
+  /// Turns that settled on the last pass, waiting for someone to close them out.
   ///
-  /// The hook the long-form `summary` hangs off. It fires here rather than
-  /// being worked out again by the controller because *this* is where a turn
-  /// ending is noticed — a second reading of the same moment would be free to
-  /// disagree about when it happened, and the two would drift.
-  final void Function(String projectId, Conversation? chat)? onTurnEnded;
+  /// **Collected rather than called back**, and the ordering is the reason. A
+  /// turn that worked settles as `turn.summarizing`, and whoever writes the
+  /// headline answers with the `turn.done` that ends it — so the callback must
+  /// not run until the message it follows has actually gone. Called from inside
+  /// `_settle` it fired first, and the panel received the end of the turn before
+  /// it was told the turn was still being read. Drained by [drainEnded] after
+  /// the caller has pushed what this pass produced.
+  final _ended = <({String projectId, Conversation? chat})>[];
 
   /// The chat holding each project's turn, as the panel last heard it.
   final Map<String, String> _holding = {};
@@ -280,6 +283,17 @@ class PanelTurnMirror {
   /// The last `turn.parts` payload sent per project, so an unchanged timeline
   /// is not sent twice.
   final Map<String, String> _sent = {};
+
+  /// The turns that settled since this was last called, and forget them.
+  ///
+  /// Call it AFTER pushing what the same pass returned: a turn that worked was
+  /// announced as `turn.summarizing`, and each of these is owed the `turn.done`
+  /// that follows it.
+  List<({String projectId, Conversation? chat})> drainEnded() {
+    final ended = [..._ended];
+    _ended.clear();
+    return ended;
+  }
 
   /// What to say after a change in chat state.
   List<String> onChange({
@@ -375,20 +389,37 @@ class PanelTurnMirror {
   ///
   /// [panelRecapKindOf] makes the choice, so the tile's tint and the message
   /// the panel gets here can never say different things about one turn.
+  /// How the turn that was running in [chatId] ended, as the panel is told it.
+  ///
+  /// A turn that WORKED does not end here — it hands over to
+  /// [PanelTurnMirror.onTurnEnded], which writes the headline, and the panel is
+  /// told `turn.summarizing` so its tile stays in the working state it is
+  /// already in. Showing a placeholder recap for the few seconds that takes and
+  /// then swapping it is worse than showing nothing: the intermediate state is
+  /// not missing information, it is **wrong** information, and it is wrong on a
+  /// screen someone is reading from across the room.
+  ///
+  /// A turn that FAILED ends immediately. The failure message *is* the outcome —
+  /// there is nothing a model could add, and "Summarizing…" over a turn that
+  /// already broke would delay the one thing worth saying.
   String _settle(String projectId, String chatId, ChatSessionsState chats) {
     final chat = panelChatById(chats, chatId);
     final failure = chats.errorFor(chatId);
-    onTurnEnded?.call(projectId, chat);
-    return switch (panelRecapKindOf(failure: failure, conversation: chat)) {
-      PanelRecapKind.failed => PanelOutbound.turnError(
-        projectId: projectId,
-        message: failure!.trim(),
-      ),
-      PanelRecapKind.done || PanelRecapKind.stopped => PanelOutbound.turnDone(
-        projectId: projectId,
-        recap: panelRecapOf(chat),
-      ),
-    };
+    switch (panelRecapKindOf(failure: failure, conversation: chat)) {
+      case PanelRecapKind.failed:
+        // Ends here, and is NOT queued for a headline. `turn.error` is already
+        // terminal, and a `turn.done` behind it would be a second ending for one
+        // turn — the tile would settle on a recap where it had just shown the
+        // failure. Only what leaves as `turn.summarizing` is owed a close-out.
+        return PanelOutbound.turnError(
+          projectId: projectId,
+          message: failure!.trim(),
+        );
+      case PanelRecapKind.done:
+      case PanelRecapKind.stopped:
+        _ended.add((projectId: projectId, chat: chat));
+        return PanelOutbound.turnSummarizing(projectId);
+    }
   }
 }
 
