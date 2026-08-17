@@ -164,10 +164,17 @@ final npxPathProvider = Provider<String?>(
   (ref) => HostEnvironment.findExecutable('npx'),
 );
 
+/// The browser this app would launch for the fallback lane, or null when this
+/// computer has none. A provider so the screen that explains the lane and the
+/// turn that takes it are reading the same answer.
+final chromeBinaryProvider = Provider<String?>((ref) => resolveChromeBinary());
+
 /// Whether the fallback lane has both halves it needs: a browser to drive and
 /// the runner for the MCP server that drives it. Checked before a turn commits
 /// to the lane, so a machine without Node degrades to "no browser" with a
 /// reason instead of a turn whose tools never load.
 final chromeBridgeAvailableProvider = Provider<bool>(
-  (ref) => ref.watch(npxPathProvider) != null && resolveChromeBinary() != null,
+  (ref) =>
+      ref.watch(npxPathProvider) != null &&
+      ref.watch(chromeBinaryProvider) != null,
 );
