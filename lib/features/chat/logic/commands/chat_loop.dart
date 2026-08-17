@@ -122,18 +122,16 @@ const Duration kLoopExpiry = Duration(days: 7);
 /// a loop is not watching something, it is hammering it.
 const Duration kMinLoopInterval = Duration(minutes: 1);
 
-/// How long one iteration's turn may run before the loop gives up on it and
-/// moves to the next beat.
+/// How long a loop iteration's turn may make **no progress** — no streamed
+/// text, no status update — before the loop treats it as hung and stops it.
 ///
-/// A loop runs unattended, so a turn that hangs — a `claude -p` agent turn has
-/// sat for close to five hours — has nobody there to press Stop. And because
-/// the next beat is only armed once the current turn returns, a single hung
-/// turn freezes the whole loop for as long as it hangs: "run all night" quietly
-/// stops after one iteration. Twenty minutes is far longer than the quick checks
-/// a loop is for (a deploy, a PR, a build) yet short enough that a night is not
-/// lost to one stuck turn.
-/// TODO(BE): make this configurable for a loop whose turns are legitimately long.
-const Duration kLoopTurnCeiling = Duration(minutes: 20);
+/// A stall window, not a wall-clock cap: a turn that keeps producing output is
+/// working, however long it runs, and a loop must never cut real work short.
+/// What this catches is a turn gone *silent* — a `claude -p` that answered once
+/// and then sat for hours (4h46m in the logs) — because only then is nobody
+/// home, and waiting freezes the whole loop (the next beat is armed only once
+/// the current turn returns). An hour of complete silence is a hang, not work.
+const Duration kLoopTurnStall = Duration(minutes: 60);
 
 /// The bounds a self-paced loop may choose between.
 const Duration kMinPacedDelay = Duration(minutes: 1);

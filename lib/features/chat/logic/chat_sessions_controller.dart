@@ -65,10 +65,10 @@ final chatSessionsProvider =
       ChatSessionsController.new,
     );
 
-/// How long one loop iteration's turn may run before the loop abandons it and
-/// moves to the next beat. A seam over [kLoopTurnCeiling] so a test can shorten
-/// the wait instead of holding a hung turn for the full twenty minutes.
-final loopTurnCeilingProvider = Provider<Duration>((ref) => kLoopTurnCeiling);
+/// How long a loop iteration may go with no progress before it is treated as
+/// hung. A seam over [kLoopTurnStall] so a test can shorten the wait instead of
+/// holding a stalled turn for the full hour.
+final loopTurnStallProvider = Provider<Duration>((ref) => kLoopTurnStall);
 
 /// Everything needed to repeat a failed turn without asking the user to rebuild
 /// its text, pictures, documents, or captured context in the composer.
@@ -132,6 +132,11 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// cancelled on disposal — a timer that outlives its controller fires into a
   /// state that is no longer there.
   final Map<String, Timer> _loopTimers = {};
+
+  /// When each in-flight turn last showed progress — a streamed chunk or a
+  /// status change. The loop reads it to tell a turn that is working from one
+  /// that has hung (see [kLoopTurnStall]); in memory, like the turn itself.
+  final Map<String, DateTime> _turnActivityAt = {};
 
   /// The chats with a naming attempt in flight. Naming is retried on every turn
   /// until it lands, and an attempt can take longer than a short turn does — so
