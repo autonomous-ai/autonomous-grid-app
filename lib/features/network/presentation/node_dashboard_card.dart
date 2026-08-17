@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -30,9 +33,9 @@ const String _unmeasuredHint = 'This machine does not report this reading.';
 ///
 /// Every row is always present, so two cards side by side line up label for
 /// label and the eye can compare figures instead of re-reading the layout. Rows
-/// the machine said nothing about print `—` over a dashed track — see
-/// [NodeMetric.measured], and the note atop `node_metrics.dart` for why "never
-/// measured" must never be allowed to look like "measured zero".
+/// the machine said nothing about print `—` over a hairline instead of a run of
+/// segments — see [NodeMetric.measured], and the note atop `node_metrics.dart`
+/// for why "never measured" must never be allowed to look like "measured zero".
 class NodeDashboardCard extends StatelessWidget {
   const NodeDashboardCard({required this.node, super.key});
 
@@ -236,7 +239,7 @@ class _Gauge extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         if (metric.measured && metric.fraction != null)
-          _FilledTrack(fraction: metric.fraction!, tone: metric.tone)
+          _SegmentedTrack(fraction: metric.fraction!, tone: metric.tone)
         else
           const _DashedTrack(),
       ],
@@ -246,74 +249,76 @@ class _Gauge extends StatelessWidget {
   }
 }
 
-/// A measured reading: solid track, coloured fill. An empty one here means a
-/// real zero.
-class _FilledTrack extends StatelessWidget {
-  const _FilledTrack({required this.fraction, required this.tone});
+/// How tall every track is, measured or not, so the rows below one card line up
+/// with the rows below the next.
+const double _trackHeight = 6;
+
+/// A measured reading: a run of segments, the used ones coloured. All of them
+/// grey means a real, measured zero.
+///
+/// Segments rather than one continuous bar because a reading is compared, not
+/// read off: at a glance twelve lit blocks against nineteen is a difference the
+/// eye lands on, where two bar ends a few pixels apart is one it has to measure.
+///
+/// A **fixed count**, not a fixed segment width, so every card divides its own
+/// width the same way — two cards side by side are then comparable block for
+/// block, which is the whole reason this dashboard levels its rows.
+class _SegmentedTrack extends StatelessWidget {
+  const _SegmentedTrack({required this.fraction, required this.tone});
 
   final double fraction;
   final MetricTone tone;
 
+  static const int segments = 24;
+
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(3),
-      child: Stack(
-        children: [
-          Container(height: 4, color: AppCard.inset),
-          FractionallySizedBox(
-            widthFactor: fraction,
-            child: Container(height: 4, color: _toneColor(tone)),
-          ),
-        ],
+    // Any reading above zero lights at least one block. Rounding alone would
+    // leave everything under 2% drawn exactly like a measured zero, and "barely
+    // busy" and "doing nothing" are different answers to the question this card
+    // is asked.
+    final lit = fraction <= 0
+        ? 0
+        : math.max(1, (fraction * segments).round()).clamp(0, segments);
+    return SizedBox(
+      height: _trackHeight,
+      child: CustomPaint(
+        painter: _SegmentPainter(
+          lit: lit,
+          fill: _toneColor(tone),
+          empty: AppCard.inset,
+        ),
       ),
     );
   }
 }
 
-/// An unmeasured reading: a broken line where a bar would be.
-///
-/// The texture is the point. A solid empty track is what a genuine `0%` looks
-/// like, so an absent reading drawn that way would claim the node is idle. A
-/// dashed one belongs to no scale at all and cannot be misread as a quantity.
-///
-/// Painted rather than built from a row of boxes, because the row needed a
-/// `LayoutBuilder` to count how many dashes fit — and **no card may contain
-/// one**. The dashboard sizes each row with `IntrinsicHeight` so cards come out
-/// level, which asks every child for its intrinsic height; `LayoutBuilder`
-/// refuses that question and throws mid-layout, leaving a half-built render tree
-/// that the mouse tracker then re-enters. A painter has no such trouble.
-class _DashedTrack extends StatelessWidget {
-  const _DashedTrack();
+class _SegmentPainter extends CustomPainter {
+  const _SegmentPainter({
+    required this.lit,
+    required this.fill,
+    required this.empty,
+  });
 
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 4,
-      child: CustomPaint(painter: _DashPainter(color: AppCard.inset)),
-    );
-  }
-}
+  final int lit;
+  final Color fill;
+  final Color empty;
 
-class _DashPainter extends CustomPainter {
-  const _DashPainter({required this.color});
-
-  final Color color;
-
-  static const double _dash = 4;
-  static const double _gap = 3;
+  static const double _gap = 2.5;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    for (var x = 0.0; x < size.width; x += _dash + _gap) {
-      // The last dash is clipped to the track rather than allowed to run past
-      // it, so the line ends flush with the bars above and below.
-      final width = x + _dash > size.width ? size.width - x : _dash;
+    final width =
+        (size.width - _gap * (_SegmentedTrack.segments - 1)) /
+        _SegmentedTrack.segments;
+    if (width <= 0) return;
+    final paint = Paint();
+    for (var i = 0; i < _SegmentedTrack.segments; i++) {
+      paint.color = i < lit ? fill : empty;
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, 0, width, size.height),
-          const Radius.circular(1),
+          Rect.fromLTWH(i * (width + _gap), 0, width, size.height),
+          const Radius.circular(1.5),
         ),
         paint,
       );
@@ -321,7 +326,63 @@ class _DashPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DashPainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(_SegmentPainter old) =>
+      old.lit != lit || old.fill != fill || old.empty != empty;
+}
+
+/// An unmeasured reading: a hairline where a row of blocks would be.
+///
+/// The texture is the point, and the texture had to change when the measured
+/// track became segmented. It used to be dashes against a solid bar, which read
+/// clearly; against twenty-four grey blocks a dashed line is just a coarser row
+/// of blocks, and "measured zero" and "never measured" would have collapsed into
+/// the same picture — the one confusion this file exists to prevent (see the
+/// note at the top of `node_metrics.dart`).
+///
+/// So it is now the one thing a segmented track can never be: continuous, thin,
+/// and centred in the space a track would occupy. It belongs to no scale, cannot
+/// be counted, and cannot be mistaken for a quantity of anything.
+///
+/// Painted rather than built from widgets, because a row of boxes needed a
+/// `LayoutBuilder` and **no card may contain one**. The dashboard sizes each row
+/// with `IntrinsicHeight` so cards come out level, which asks every child for its
+/// intrinsic height; `LayoutBuilder` refuses that question and throws mid-layout,
+/// leaving a half-built render tree that the mouse tracker then re-enters. A
+/// painter has no such trouble.
+class _DashedTrack extends StatelessWidget {
+  const _DashedTrack();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _trackHeight,
+      child: CustomPaint(painter: _HairlinePainter(color: AppCard.inset)),
+    );
+  }
+}
+
+class _HairlinePainter extends CustomPainter {
+  const _HairlinePainter({required this.color});
+
+  final Color color;
+
+  static const double _thickness = 2;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final top = (size.height - _thickness) / 2;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, top, size.width, _thickness),
+        const Radius.circular(1),
+      ),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HairlinePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// The figures that read better as facts than as bars: power, free memory,
@@ -514,6 +575,24 @@ class _ThroughputFooter extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
+            // A gauge, because this figure is the only one on the card without a
+            // track under it — the three above are read against a bar, and this
+            // one arrives as a bare number at the foot of a card full of them.
+            // The mark says "speed" before the eye reaches the unit.
+            //
+            // Outside the baseline alignment the row imposes: an icon has no
+            // alphabetic baseline, so Flutter falls back to its bottom edge and
+            // the glyph sinks below the digits it sits beside.
+            Padding(
+              padding: const EdgeInsets.only(right: 7, bottom: 3),
+              child: Icon(
+                LucideIcons.gauge,
+                size: 17,
+                color: measured
+                    ? AppPalette.textSecondary
+                    : AppPalette.textFaint,
+              ),
+            ),
             Text(
               value,
               style: TextStyle(
