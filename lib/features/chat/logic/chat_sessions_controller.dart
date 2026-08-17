@@ -102,25 +102,6 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// request.
   final Set<String> _naming = {};
 
-  /// Agent turns waiting for their **project's** lane, oldest first, keyed by
-  /// project id. The chats running right now are
-  /// [ChatSessionsState.runningAgentIds].
-  ///
-  /// One lane per project, because that is the real conflict: two agents let
-  /// loose in the same folder edit the same files, run the same dev server and
-  /// undo each other's work. Two *different* projects share nothing, so making
-  /// them take turns only made the user wait — which is what one app-wide lane
-  /// did, and why a chat could sit on "Finishing another chat first…" over work
-  /// in a folder it had never heard of.
-  ///
-  /// A chat outside every project never queues: it has no lane, so it goes out
-  /// the moment it's sent.
-  ///
-  /// The user turn is already committed and the chat sits in [SendBusy] until
-  /// its [dispatch] runs. Relay/media turns touch none of this and never queue.
-  final Map<String, List<({String id, void Function() dispatch})>>
-  _agentQueues = {};
-
   ChatStore get _store => ref.read(chatStoreProvider);
 
   /// The open conversation, or a fresh (unsaved) one seeded with [model] and the
@@ -238,10 +219,6 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 
   /// Cancel one chat's send — [_ChatSettle].
   void _cancel(String id);
-
-  /// Whether a project's agent lane is taken — [_ChatSettle], read by
-  /// [_ChatSend] to decide between dispatching a turn and queueing it.
-  bool _laneBusy(String lane, {required String except});
 }
 
 class ChatSessionsController extends _ChatSessions

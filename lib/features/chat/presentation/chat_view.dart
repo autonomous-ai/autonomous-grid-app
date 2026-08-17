@@ -11,7 +11,6 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/chat_drop.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
 import '../../agents/logic/agent_changes.dart';
@@ -1150,9 +1149,6 @@ class _TrailingBubble extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final phase = ref.watch(chatSessionsProvider.select((s) => s.phase));
     final chatId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
-    final laneQueued = ref.watch(
-      chatSessionsProvider.select((s) => s.laneQueuedIn(s.activeId)),
-    );
     if (chatId == null) return const SizedBox.shrink();
     return switch (phase) {
       SendGenerating g => GeneratingBubble(phase: g),
@@ -1163,14 +1159,11 @@ class _TrailingBubble extends ConsumerWidget {
         onRedrawn: onRedrawn,
       ),
       SendStreaming() => AgentWorkingBubble(chatId: chatId),
-      SendBusy() when agentMode && laneQueued => const _QueuedBubble(),
-      // Committed, not queued: the turn is being set up — under Auto that is a
-      // live call asking the grid which assistant should answer. The feed's
-      // "Thinking…" line is what that is, and it is the same cue the turn keeps
-      // showing once the agent takes over, so nothing flickers when it does.
-      // Asking "is an agent running yet?" here instead put the queue's line —
-      // "finishing another chat in this project…" — under a chat that was
-      // waiting on nothing of the sort.
+      // Committed but not streaming yet: the turn is being set up — under Auto
+      // that is a live call asking the grid which assistant should answer. The
+      // feed's "Thinking…" line is what that is, and it is the same cue the turn
+      // keeps showing once the agent takes over, so nothing flickers when it
+      // does.
       SendBusy() when agentMode => AgentWorkingBubble(chatId: chatId),
       _ => const SizedBox.shrink(),
     };
@@ -1397,45 +1390,6 @@ class _StreamingReplyState extends ConsumerState<_StreamingReply> {
           chatId: widget.chatId,
           leadingGap: false,
           answer: open.isEmpty ? null : _bubble,
-        ),
-      ),
-    );
-  }
-}
-
-/// Shown on a chat whose turn is queued behind another **in the same project** —
-/// two agents let loose in one folder would edit the same files, so they take
-/// turns. Chats in other projects (and outside every project) are unaffected and
-/// answer at the same time.
-///
-/// Deliberately NOT [AgentWorkingBubble]: this turn hasn't started, so its feed
-/// is empty and the bubble would sit blank. This says what is actually happening
-/// — a spinner and one line.
-class _QueuedBubble extends StatelessWidget {
-  const _QueuedBubble();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const AppSpinner(),
-            const SizedBox(width: 10),
-            Text(
-              'Finishing another chat in this project…',
-              style: theme.textTheme.bodyMedium,
-            ),
-          ],
         ),
       ),
     );

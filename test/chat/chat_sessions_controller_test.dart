@@ -762,9 +762,9 @@ void main() {
     );
   });
 
-  group('agent turns take turns per project', () {
-    test('a second agent turn in the same project waits for the first — two '
-        'agents let loose in one folder would edit the same files', () async {
+  group('agent turns run side by side', () {
+    test('two chats in one project answer at the same time — a question about '
+        'a folder must not sit behind a twenty-minute turn in it', () async {
       final answering = _PerChatSender();
       final h = _harness(
         tmp,
@@ -788,15 +788,10 @@ void main() {
       await pumpEventQueue();
       final aId = read().activeId!;
       expect(answering.controllers.containsKey(aId), isTrue);
-      expect(
-        read().agentRunningIn(aId),
-        isTrue,
-        reason: "A holds its project's lane",
-      );
+      expect(read().agentRunningIn(aId), isTrue);
 
       // Chat B (tin thế giới) is sent into the same project while A is still
-      // generating. It must NOT reach the agent yet — it waits in the lane,
-      // showing its own busy state.
+      // generating. It reaches the agent straight away.
       c.newChat(projectId: project.id);
       final sentB = c.send(
         network: _credential(),
@@ -808,23 +803,12 @@ void main() {
       expect(bId, isNot(aId));
       expect(
         answering.controllers.containsKey(bId),
-        isFalse,
-        reason: 'the second turn in this project is queued, not dispatched',
-      );
-      expect(read().sendingFor(aId), isTrue);
-      expect(
-        read().sendingFor(bId),
         isTrue,
-        reason: 'B waits in its busy state',
+        reason: 'the second turn in this project dispatches, it does not queue',
       );
-      expect(read().agentRunningIn(bId), isFalse);
-      // Only B is waiting on the lane, and the transcript's "finishing another
-      // chat in this project…" is drawn from exactly this. A is running, so it
-      // must not claim to be waiting on itself.
-      expect(read().laneQueuedIn(bId), isTrue);
-      expect(read().laneQueuedIn(aId), isFalse);
+      expect(read().runningAgentIds, {aId, bId});
 
-      // A finishes. Only now does B reach the agent — and A never hung.
+      // A finishes without disturbing B, which is still going.
       answering.emit(
         aId,
         const ChatSendSuccess(
@@ -835,17 +819,9 @@ void main() {
       await sentA;
       await pumpEventQueue();
       expect(read().sendingFor(aId), isFalse);
-      expect(
-        answering.controllers.containsKey(bId),
-        isTrue,
-        reason: 'B dispatches once the lane frees',
-      );
-      expect(read().agentRunningIn(bId), isTrue);
-      expect(
-        read().laneQueuedIn(bId),
-        isFalse,
-        reason: 'it is no longer waiting for anything — it is answering',
-      );
+      expect(read().runningAgentIds, {
+        bId,
+      }, reason: 'one finishing releases only itself');
 
       answering.emit(
         bId,
@@ -901,7 +877,7 @@ void main() {
       expect(
         answering.controllers.containsKey(bId),
         isTrue,
-        reason: 'another project has its own lane — nothing to wait for',
+        reason: 'another folder entirely — nothing to wait for',
       );
       expect(read().runningAgentIds, {aId, bId});
 
@@ -920,8 +896,8 @@ void main() {
     });
 
     test(
-      'chats outside every project never queue — there is no folder for them '
-      'to collide in',
+      'chats outside every project answer together too — the rule is the same '
+      'wherever a chat lives',
       () async {
         final answering = _PerChatSender();
         final h = _harness(
@@ -967,63 +943,58 @@ void main() {
       },
     );
 
-    test(
-      'deleting the chat holding a project lane lets the queued one run — '
-      'a cancelled turn must not strand the ones waiting behind it',
-      () async {
-        final answering = _PerChatSender();
-        final h = _harness(
-          tmp,
-          updates: const [],
-          agentInstalled: true,
-          answering: answering,
-        );
-        final c = h.container.read(chatSessionsProvider.notifier);
-        ChatSessionsState read() => h.container.read(chatSessionsProvider);
-        final project = h.container
-            .read(projectsProvider.notifier)
-            .add('${tmp.path}/api');
+    test('deleting one chat mid-turn leaves the other running — they share a '
+        'folder, not a fate', () async {
+      final answering = _PerChatSender();
+      final h = _harness(
+        tmp,
+        updates: const [],
+        agentInstalled: true,
+        answering: answering,
+      );
+      final c = h.container.read(chatSessionsProvider.notifier);
+      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+      final project = h.container
+          .read(projectsProvider.notifier)
+          .add('${tmp.path}/api');
 
-        c.newChat(projectId: project.id);
-        final sentA = c.send(
-          network: _credential(),
-          model: 'qwen',
-          message: 'first',
-        );
-        await pumpEventQueue();
-        final aId = read().activeId!;
-        c.newChat(projectId: project.id);
-        final sentB = c.send(
-          network: _credential(),
-          model: 'qwen',
-          message: 'second',
-        );
-        await pumpEventQueue();
-        final bId = read().activeId!;
-        expect(answering.controllers.containsKey(bId), isFalse);
+      c.newChat(projectId: project.id);
+      final sentA = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'first',
+      );
+      await pumpEventQueue();
+      final aId = read().activeId!;
+      c.newChat(projectId: project.id);
+      final sentB = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'second',
+      );
+      await pumpEventQueue();
+      final bId = read().activeId!;
+      expect(read().runningAgentIds, {aId, bId});
 
-        // Delete A while it holds the lane: B must not wait forever.
-        c.deleteConversation(aId);
-        await sentA;
-        await pumpEventQueue();
-        expect(
-          answering.controllers.containsKey(bId),
-          isTrue,
-          reason: 'B runs once A releases the lane',
-        );
-        expect(read().sendingFor(bId), isTrue);
+      // Delete A mid-turn: its send settles, B carries on.
+      c.deleteConversation(aId);
+      await sentA;
+      await pumpEventQueue();
+      expect(read().runningAgentIds, {
+        bId,
+      }, reason: 'A is gone; B never noticed');
+      expect(read().sendingFor(bId), isTrue);
 
-        answering.emit(
-          bId,
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'done second'),
-          ),
-        );
-        await answering.close(bId);
-        await sentB;
-        expect(read().sendingFor(bId), isFalse);
-      },
-    );
+      answering.emit(
+        bId,
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'done second'),
+        ),
+      );
+      await answering.close(bId);
+      await sentB;
+      expect(read().sendingFor(bId), isFalse);
+    });
   });
 
   group('stop', () {
@@ -2473,38 +2444,34 @@ void main() {
       },
     );
 
-    test(
-      'while the grid is choosing, the chat is not waiting on a lane',
-      () async {
-        // The transcript draws "finishing another chat in this project…" from
-        // this fact alone. Routing leaves the turn committed but undispatched —
-        // read as "queued", that line went under a chat in a project where
-        // nothing else was running, and the user read it as the app doing
-        // something it wasn't.
-        final h = autoHarness();
-        final chats = h.container.read(chatSessionsProvider.notifier);
-        final project = h.container
-            .read(projectsProvider.notifier)
-            .add('${tmp.path}/api');
-        chats.newChat(projectId: project.id);
-        h.grid.hold();
+    test('while the grid is choosing, the turn is in flight but no agent is '
+        'running yet', () async {
+      // The two are not the same, and the transcript draws different things
+      // from them: routing leaves the turn committed and sending, with no
+      // agent to show steps for, so the bubble says "Thinking…" rather than
+      // opening an empty activity feed.
+      final h = autoHarness();
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      final project = h.container
+          .read(projectsProvider.notifier)
+          .add('${tmp.path}/api');
+      chats.newChat(projectId: project.id);
+      h.grid.hold();
 
-        final sending = chats.send(
-          network: _credential(),
-          model: 'qwen',
-          message: 'refactor this module',
-        );
-        await pumpEventQueue();
+      final sending = chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'refactor this module',
+      );
+      await pumpEventQueue();
 
-        final waiting = h.container.read(chatSessionsProvider);
-        expect(waiting.sending, isTrue, reason: 'the turn is in flight');
-        expect(waiting.laneQueuedIn(waiting.activeId), isFalse);
-        expect(waiting.agentRunningIn(waiting.activeId), isFalse);
+      final waiting = h.container.read(chatSessionsProvider);
+      expect(waiting.sending, isTrue, reason: 'the turn is in flight');
+      expect(waiting.agentRunningIn(waiting.activeId), isFalse);
 
-        h.grid.release();
-        await sending;
-      },
-    );
+      h.grid.release();
+      await sending;
+    });
 
     test(
       "the previous turn's steps are gone before the grid is even asked",

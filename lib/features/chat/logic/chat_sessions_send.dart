@@ -233,7 +233,7 @@ mixin _ChatSend on _ChatSessions {
     // Empty this chat's live feed the moment the turn is committed, not when its
     // sender finally starts. The working bubble is on screen from here, and
     // everything between here and the sender — the grid being asked which
-    // assistant answers, a wait for the project's lane — is time it would spend
+    // assistant answers, for one — is time it would spend
     // showing the *previous* turn's commands under the new question. The sender
     // resets again as it starts, because it is reached from the Playground too;
     // this is the earlier of the two, not a second copy of the rule.
@@ -295,19 +295,21 @@ mixin _ChatSend on _ChatSessions {
       done: done,
     );
 
-    // Agent turns take turns **within a project** (see [_agentQueues]): two
-    // agents in one folder would edit the same files. Anywhere else — another
-    // project, or no project at all — the turn goes straight out, concurrently,
-    // as a relay/media turn always has.
-    final lane = conversation.projectId;
-    if (viaAgent && lane != null && _laneBusy(lane, except: id)) {
-      (_agentQueues[lane] ??= []).add((id: id, dispatch: dispatch));
-      // Said out loud in the state, because the transcript's "finishing another
-      // chat in this project…" is only true here — see [laneQueuedIds].
-      state = state.withLaneQueued(id, true);
-    } else {
-      dispatch();
-    }
+    // Every turn goes out when it is sent, agent or not, project or not.
+    //
+    // Agent turns used to take turns within a project, on the grounds that two
+    // agents in one folder edit the same files. What that cost was worse than
+    // what it prevented: a second question about the same project sat behind a
+    // twenty-minute turn saying "finishing another chat in this project…", with
+    // no way to run the two at once and no way to see why waiting was the app's
+    // idea rather than the machine's.
+    //
+    // TODO(BE): the clash it was guarding is real and is now the user's to
+    // avoid — two agents told to edit the same file will both edit it, and the
+    // one that writes last wins. Worth revisiting as something the app can
+    // *detect* (the changes each turn records are already tracked per chat)
+    // rather than something it forbids in advance.
+    dispatch();
     return done.future;
   }
 
@@ -348,12 +350,9 @@ mixin _ChatSend on _ChatSessions {
     required Completer<void> done,
   }) {
     final id = conversation.id;
-    // Whatever it was waiting for, it isn't waiting now.
-    if (state.laneQueuedIn(id)) state = state.withLaneQueued(id, false);
-    // Take this project's lane — released on finish/stop, which then starts the
-    // next turn waiting in it — and mark where this turn's file changes begin,
-    // so "what did it just do?" answers for this turn and not the chat's whole
-    // history.
+    // Say this chat has an agent running — what the sidebar marks and what
+    // `stop` releases — and mark where this turn's file changes begin, so "what
+    // did it just do?" answers for this turn and not the chat's whole history.
     if (viaAgent) {
       state = state.copyWith(runningAgentIds: {...state.runningAgentIds, id});
       ref.read(agentChangesProvider.notifier).beginTurn(id);
