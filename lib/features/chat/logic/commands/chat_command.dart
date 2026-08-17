@@ -30,6 +30,16 @@ enum ChatCommand {
         'going by itself until a check says so, or says it never will.',
   ),
 
+  /// Re-run a prompt on a timer. The argument is an optional interval followed
+  /// by the prompt, or one of [kGoalClearWords] to stop it.
+  loop(
+    name: 'loop',
+    summary: 'Repeat something every so often',
+    detail:
+        'Say the gap and what to do — "/loop 5m check the deploy". Leave the '
+        'gap out and it picks its own. Stops after 7 days.',
+  ),
+
   /// Summarize the conversation so the next turn carries the summary instead of
   /// the whole history. Takes optional focus instructions.
   compact(
