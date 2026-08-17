@@ -453,6 +453,42 @@ void main() {
       expect(nodeServingLine(node), '1 chat model · 16 parallel');
     });
 
+    test('the host reads as a handle, not a whole address', () {
+      // On a work grid every address shares one domain, so the half after the
+      // `@` is the same word on every row: it costs the width that tells the
+      // rows apart and adds nothing.
+      expect(
+        nodeHostHandle(fromRelay({'provider_email': 'design@autonomous.ai'})),
+        '@design',
+      );
+      expect(
+        nodeHostHandle(
+          fromRelay({'provider_email': 'caonguyenkhanh24@gmail.com'}),
+        ),
+        '@caonguyenkhanh24',
+      );
+    });
+
+    test('a node the relay named nobody for carries no handle', () {
+      // An older relay sends no `provider_email`, and a lone "@" would be a
+      // marker for an owner the grid never named.
+      expect(nodeHostHandle(fromRelay({})), isEmpty);
+      expect(nodeHostHandle(fromRelay({'provider_email': '  '})), isEmpty);
+      expect(
+        nodeHostHandle(fromRelay({'provider_email': '@nolocal.com'})),
+        isEmpty,
+      );
+    });
+
+    test('a bare username is shown as it came', () {
+      // Some relays fill this with a username rather than an address; dropping
+      // it would lose a name the grid does have.
+      expect(
+        nodeHostHandle(fromRelay({'provider_email': 'scholes'})),
+        '@scholes',
+      );
+    });
+
     test('a node that described neither is a blank line, not a placeholder', () {
       // Every provider in the field before this shipped. One honest blank beats "Unknown GPU",
       // which a reader would take as something the machine actually reported.
@@ -521,6 +557,48 @@ void main() {
       ]);
 
       expect(totals, isEmpty);
+    });
+
+    test('a model nobody used today states its zero', () {
+      // Hiding the line makes an idle model look like one the app forgot to ask
+      // about, and leaves the list saying less the emptier the day was.
+      final got = modelAnswered(
+        const {},
+        'gemma-4-31b-it',
+        gridTotal: const NodeAnswered(
+          windowSeconds: 86400,
+          tokensOut: 500,
+          requests: 3,
+        ),
+      );
+
+      expect(got, isNotNull);
+      expect(got!.tokensOut, 0);
+      expect(got.requests, 0);
+      // Named for the same span as the rows above it.
+      expect(got.windowSeconds, 86400);
+    });
+
+    test('a grid nothing measured stays silent instead of claiming zeros', () {
+      // An older relay computes no rollup at all. Printing "0 requests" against
+      // every model on such a grid would report a busy fleet as dead.
+      expect(
+        modelAnswered(const {}, 'gemma-4-31b-it', gridTotal: null),
+        isNull,
+      );
+    });
+
+    test('a model with its own rows keeps them', () {
+      final own = const NodeAnswered(
+        windowSeconds: 86400,
+        tokensOut: 8000,
+        requests: 41,
+      );
+
+      expect(
+        modelAnswered({'glm-4.6': own}, 'GLM-4.6', gridTotal: own),
+        same(own),
+      );
     });
 
     test('the window travels with the sum', () {

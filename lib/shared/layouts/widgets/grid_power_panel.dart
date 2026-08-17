@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/network/logic/node_display.dart';
-import '../../../features/network/logic/node_metrics.dart'
-    show answeredWindowLabel, formatCount;
 import '../../../features/network/presentation/node_dashboard_dialog.dart';
 import '../../../features/provider_node/logic/serving_engines_provider.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
@@ -128,8 +126,6 @@ class GridPowerPanel extends ConsumerWidget {
                     const SizedBox(height: 8),
                     _NodeBreakdown(nodes: subNodes, totalGb: null),
                   ],
-                  const SizedBox(height: 11),
-                  _FooterStats(power: power),
                   _PanelActions(canHost: canHost, onDismiss: onDismiss),
                 ],
               ),
@@ -265,97 +261,6 @@ class _LegendRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// The figures that aren't memory: how many tasks at once, how many models,
-/// and throughput when the grid reports it. Rows rather than the bar above,
-/// because none of them decompose by machine in a way worth drawing.
-class _FooterStats extends StatelessWidget {
-  const _FooterStats({required this.power});
-
-  final GridPower power;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final parallel = power.parallel;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(height: 1, color: AppGlass.hair),
-        const SizedBox(height: 7),
-        // What the grid handled, above what it can do. Labelled, because these
-        // four rows are a *window* while the two below them are right-now —
-        // unlabelled they read as one list of current facts, and "1294M input
-        // tokens" as a live reading is a very different claim from a day's
-        // total.
-        //
-        // Input is the *fresh* half: cached prefill is a share of input, not a
-        // fourth kind ([AnsweredTokens]), so these three rows add up to exactly
-        // what the grid handled. `tokensIn` raw would sum to more than that.
-        if (power.answered case final answered?) ...[
-          _AnsweredHeading(windowSeconds: answered.windowSeconds),
-          PillPanelStatRow(
-            label: 'Input',
-            value: formatCount(answered.freshInputTokens),
-            unit: 'tokens',
-          ),
-          // Kept at zero: a grid whose cache never hits should be able to see
-          // that, and a row that vanishes at zero makes the rest look like the
-          // whole story.
-          PillPanelStatRow(
-            label: 'Cached',
-            value: formatCount(answered.tokensCached),
-            unit: 'tokens',
-          ),
-          PillPanelStatRow(
-            label: 'Output',
-            value: formatCount(answered.tokensOut),
-            unit: 'tokens',
-          ),
-          PillPanelStatRow(
-            label: 'Answered',
-            value: formatCount(answered.requests),
-            unit: plural(answered.requests, 'request'),
-          ),
-          const SizedBox(height: 4),
-        ],
-        if (parallel != null)
-          PillPanelStatRow(
-            label: 'Runs at once',
-            value: '$parallel',
-            unit: plural(parallel, 'task'),
-          ),
-        // No grid-wide "Speed" row: a single tok/s for the whole grid is the
-        // average of machines that differ by an order of magnitude, so it
-        // describes none of them. The dashboard shows each node's own figure.
-        PillPanelStatRow(
-          label: 'Models',
-          value: '${power.models}',
-          unit: plural(power.models, 'model'),
-        ),
-      ],
-    );
-  }
-}
-
-/// Names the span the token rows under it cover — "TOKENS · LAST 24H", or plain
-/// "TOKENS" when the relay reported no window to name.
-class _AnsweredHeading extends StatelessWidget {
-  const _AnsweredHeading({required this.windowSeconds});
-
-  final int windowSeconds;
-
-  @override
-  Widget build(BuildContext context) {
-    final window = answeredWindowLabel(windowSeconds);
-    return Padding(
-      padding: const EdgeInsets.only(top: 3, bottom: 5),
-      child: PillPanelLabel(
-        label: window.isEmpty ? 'Tokens' : 'Tokens · last $window',
-      ),
     );
   }
 }

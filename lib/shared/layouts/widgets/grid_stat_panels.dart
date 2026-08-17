@@ -3,10 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
-import '../../../features/network/logic/member_providers.dart';
 import '../../../features/network/logic/node_display.dart';
 import '../../../features/network/logic/node_metrics.dart'
     show answeredSummary, answeredWindowLabel, formatCount;
@@ -14,8 +12,9 @@ import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../theme/app_theme.dart';
 import 'pill_panel_shell.dart';
 
-/// The panel behind one figure in the top bar's grid pill: hovering "18 members"
-/// names the eighteen, "8 nodes" the eight machines, "7 models" the seven models.
+/// The panel behind one figure in the top bar's grid pill: hovering "8 nodes"
+/// names the eight machines, "7 models" the seven models, the token figure the
+/// four counts it sums.
 ///
 /// The pill's numbers used to be unreadable in the only way that matters — you
 /// could see *how many* and never *which*, and the one panel the pill opened
@@ -24,7 +23,7 @@ import 'pill_panel_shell.dart';
 ///
 /// The frame only: anchored under its own figure (not the whole pill, so it
 /// points at the number it belongs to) and carrying the shared surface. What
-/// goes inside is [GridMembersList] / [GridNodesList] / [GridModelsList].
+/// goes inside is [GridNodesList] / [GridModelsList] / [GridTokensList].
 class GridStatPanel extends StatelessWidget {
   const GridStatPanel({
     super.key,
@@ -115,42 +114,6 @@ class GridStatPanel extends StatelessWidget {
   }
 }
 
-/// Who is on this grid, by email — the panel behind the pill's member count.
-class GridMembersList extends ConsumerWidget {
-  const GridMembersList({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final grid = ref.watch(selectedNetworkProvider);
-    if (grid == null) return const SizedBox.shrink();
-    return ref
-        .watch(networkMembersProvider(grid.networkId))
-        .when(
-          loading: () => const _PanelMessage(text: 'Loading members…'),
-          // The provider's own message, which is already written for a person
-          // ("Sign in to manage members.") rather than a socket error.
-          error: (err, _) => _PanelMessage(text: '$err'),
-          data: (members) => _PanelBody(
-            label: 'Members',
-            trailing: '${members.length}',
-            emptyText: 'No one is on this grid yet.',
-            itemCount: members.length,
-            itemBuilder: (context, i) => _PanelRow(
-              label: members[i].email,
-              // Owner first, because it outranks the other note; a work-email
-              // member is marked so the roster explains itself here the same way
-              // the Members tab does.
-              trailing: members[i].isOwner
-                  ? 'Owner'
-                  : members[i].isDomainMember
-                  ? 'Work email'
-                  : null,
-            ),
-          ),
-        );
-  }
-}
-
 /// The machines online right now — the panel behind the pill's node count.
 ///
 /// Strongest first ([gridOnlineNodesProvider]) and named the way the hardware
@@ -206,7 +169,18 @@ class _NodeRow extends StatelessWidget {
           // on its own line: the machine name is the one string here whose
           // length nothing bounds, and every fact sharing its line was a fact
           // that disappeared when a box turned out to be an EPYC.
-          _PanelRow(label: name, trailing: _nodeDetail(node), dense: true),
+          // The owner's handle before the machine's name: on a shared grid the
+          // first question a row answers is whose box this is, and a hostname
+          // rarely says. Dropped when the relay named nobody, so the row falls
+          // back to the name alone rather than leading with an empty marker.
+          _PanelRow(
+            label: switch (nodeHostHandle(node)) {
+              '' => name,
+              final handle => '$handle · $name',
+            },
+            trailing: _nodeDetail(node),
+            dense: true,
+          ),
           if (machine.isNotEmpty)
             _NodeDetailLine(text: machine, live: false, maxLines: 2),
           if (serving.isNotEmpty) _NodeDetailLine(text: serving, live: false),
@@ -291,16 +265,21 @@ class GridModelsList extends ConsumerWidget {
     // rollup per node, so the grid-level figure for a model exists nowhere in
     // the payload and is added up here.
     final answered = answeredByModel(ref.watch(gridOnlineNodesProvider));
+    // The grid-level rollup, used only to tell "served nothing today" from
+    // "nothing measured it" for a model the map has no rows for — see
+    // [modelAnswered].
+    final gridTotal = ref.watch(gridPowerProvider).answered;
     return _PanelBody(
       label: 'Models',
       trailing: '${models.length}',
       emptyText: 'This grid serves no model yet.',
       itemCount: models.length,
-      // Taller than the members panel: its rows are two lines, not one.
-      maxHeight: 300,
+      // Taller than the models list used to be: every row is two lines now that
+      // an unused model states its zero instead of going quiet.
+      maxHeight: 320,
       itemBuilder: (context, i) => _ModelRow(
         model: models[i],
-        answered: answered[modelKey(models[i].id)],
+        answered: modelAnswered(answered, models[i].id, gridTotal: gridTotal),
       ),
     );
   }

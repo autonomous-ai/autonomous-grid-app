@@ -5,7 +5,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_overview_refresh.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
-import '../../../features/network/logic/member_providers.dart';
 import '../../../features/network/logic/node_metrics.dart'
     show answeredWindowLabel, formatCount;
 import '../../theme/app_theme.dart';
@@ -43,7 +42,7 @@ class GridPowerPill extends ConsumerStatefulWidget {
 /// way to add this one — kept for the grid's name, its memory figure and the
 /// chevron, which are *about the grid* rather than about one count. The other
 /// three name the things their own figure counts.
-enum _PanelKind { power, members, nodes, models, tokens }
+enum _PanelKind { power, nodes, models, tokens }
 
 /// What a stat panel hangs from: the link that places it under its figure, and
 /// the key that says where that figure sits. Both, because the link alone can't
@@ -59,7 +58,6 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
   /// One anchor per figure, so a stat panel hangs under the number it explains
   /// rather than under the capsule as a whole. A [LayerLink] can only be
   /// attached to one target, hence one per figure.
-  final _memberAnchor = _newFigureAnchor();
   final _nodeAnchor = _newFigureAnchor();
   final _modelAnchor = _newFigureAnchor();
   final _tokenAnchor = _newFigureAnchor();
@@ -162,9 +160,6 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
     AppTheme.watch(context);
     final grid = ref.watch(selectedNetworkProvider);
     final power = ref.watch(gridPowerProvider);
-    // The people on the grid, beside the hardware behind it. Null while the
-    // roster loads or when it can't be read — see [selectedGridMemberCountProvider].
-    final members = ref.watch(selectedGridMemberCountProvider);
     if (grid == null) return const SizedBox.shrink();
 
     // The refresher wraps the *empty* case too. Gating it behind `isEmpty`
@@ -195,7 +190,7 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
                     overlayChildBuilder: (context) =>
                         _panelFor(_panel, grid.name, grid.canManageProvider),
                     child: Semantics(
-                      label: _semanticsLabel(grid.name, power, members),
+                      label: _semanticsLabel(grid.name, power),
                       button: true,
                       container: true,
                       child: GestureDetector(
@@ -205,8 +200,6 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
                           child: _PillRow(
                             name: grid.name,
                             power: power,
-                            members: members,
-                            memberAnchor: _memberAnchor,
                             nodeAnchor: _nodeAnchor,
                             modelAnchor: _modelAnchor,
                             tokenAnchor: _tokenAnchor,
@@ -237,11 +230,6 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
       onEnter: () => _onEnter(_PanelKind.power),
       onExit: () => _onExit(_PanelKind.power),
       onDismiss: _hide,
-    ),
-    _PanelKind.members => _statPanel(
-      kind,
-      _memberAnchor,
-      const GridMembersList(),
     ),
     // Wider: a node's rows carry a spec line and a live line under the name,
     // and at the list width those ellipsize to nothing worth reading.
@@ -288,11 +276,9 @@ String _windowSuffix(int seconds) {
 
 /// A spoken summary for screen readers — the panel is pointer-driven, so
 /// everything it says has to be reachable from the pill itself.
-String _semanticsLabel(String name, GridPower power, int? members) {
+String _semanticsLabel(String name, GridPower power) {
   final parts = <String>[
     name,
-    if (members != null)
-      '$members ${plural(members, 'person', 'people')} on it',
     '${power.onlineNodes} ${plural(power.onlineNodes, 'computer')} hosting',
     '${power.models} ${plural(power.models, 'model')} available',
     // Spelled out, not the pill's shortened "1.2M": a screen reader saying "one
@@ -363,8 +349,6 @@ class _PillRow extends StatelessWidget {
   const _PillRow({
     required this.name,
     required this.power,
-    required this.members,
-    required this.memberAnchor,
     required this.nodeAnchor,
     required this.modelAnchor,
     required this.tokenAnchor,
@@ -375,11 +359,6 @@ class _PillRow extends StatelessWidget {
   final String name;
   final GridPower power;
 
-  /// People on the grid, or null when the roster hasn't been read — the figure
-  /// is then omitted rather than guessed at.
-  final int? members;
-
-  final _FigureAnchor memberAnchor;
   final _FigureAnchor nodeAnchor;
   final _FigureAnchor modelAnchor;
   final _FigureAnchor tokenAnchor;
@@ -434,14 +413,6 @@ class _PillRow extends StatelessWidget {
         // People first, then the machines: the pill reads "who is on this grid,
         // and what is standing behind it" — and the count nearest the name is
         // the one that belongs to the grid rather than to its hardware.
-        if (members case final count?)
-          _HoverTarget(
-            kind: _PanelKind.members,
-            anchor: memberAnchor,
-            onEnter: onEnter,
-            onExit: onExit,
-            child: _Stat(value: '$count', unit: plural(count, 'member')),
-          ),
         _HoverTarget(
           kind: _PanelKind.nodes,
           anchor: nodeAnchor,
