@@ -36,6 +36,7 @@ import 'chat_title_writer.dart';
 import 'commands/chat_command.dart';
 import 'commands/chat_compaction.dart';
 import 'commands/chat_goal.dart';
+import 'commands/chat_loop.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
@@ -46,6 +47,7 @@ import 'conversation.dart';
 export 'chat_sessions_state.dart';
 
 part 'chat_sessions_goals.dart';
+part 'chat_sessions_loops.dart';
 part 'chat_sessions_queue.dart';
 part 'chat_sessions_send.dart';
 part 'chat_sessions_settle.dart';
@@ -88,11 +90,12 @@ class _RetryableTurn {
 /// moved nothing, and three of those in a row is a loop, not thinking.
 typedef _TurnOutcome = ({String? reply, String? failure, bool ranSteps});
 
-/// The plumbing the Chat tab's four jobs share — running a turn, settling it,
-/// holding what the user typed behind it, and driving a goal.
+/// The plumbing the Chat tab's five jobs share — running a turn, settling it,
+/// holding what the user typed behind it, driving a goal, and repeating a
+/// prompt on a timer.
 ///
 /// They live in files of their own (§4) and reach the same state through this
-/// spine. What is left `abstract` below is exactly the set of calls those four
+/// spine. What is left `abstract` below is exactly the set of calls those five
 /// make into each other: naming them in one place is what keeps the seams
 /// visible instead of hiding a cycle inside one 1,400-line class.
 abstract class _ChatSessions extends Notifier<ChatSessionsState> {
@@ -119,6 +122,11 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// counter. In memory only: a goal that survives a restart comes back
   /// stalled anyway.
   final Map<String, int> _idleGoalTurns = {};
+
+  /// The pending wake-up of each repeating prompt. In memory by nature, and
+  /// cancelled on disposal — a timer that outlives its controller fires into a
+  /// state that is no longer there.
+  final Map<String, Timer> _loopTimers = {};
 
   /// The chats with a naming attempt in flight. Naming is retried on every turn
   /// until it lands, and an attempt can take longer than a short turn does — so
@@ -250,7 +258,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 }
 
 class ChatSessionsController extends _ChatSessions
-    with _ChatSend, _ChatSettle, _ChatQueue, _ChatGoals {
+    with _ChatSend, _ChatSettle, _ChatQueue, _ChatGoals, _ChatLoops {
   /// Whether the user has already chosen what to look at — opened a chat, or
   /// started a new one — before the saved history landed. Once they have,
   /// restoring must not move them somewhere else.
@@ -281,6 +289,11 @@ class ChatSessionsController extends _ChatSessions
     ref.onDispose(() {
       _disposed = true;
       _cancelAll();
+      // A pending loop wake-up would fire into a controller that is gone.
+      for (final timer in _loopTimers.values) {
+        timer.cancel();
+      }
+      _loopTimers.clear();
     });
     // Read off the first frame: the whole history is on disk, and decoding it
     // here is the frame's budget spent before anything is drawn (see
@@ -382,8 +395,9 @@ class ChatSessionsController extends _ChatSessions
         // into a conversation the user has walked away from. Claude Code's
         // `/clear` ends the goal for the same reason.
         final leaving = state.active;
+        if (leaving != null) _endLoop(leaving.id);
         if (leaving?.goal != null) {
-          _saveAndReplace(leaving!.copyWith(clearGoal: true));
+          _saveAndReplace(_find(leaving!.id)!.copyWith(clearGoal: true));
         }
         newChat(projectId: leaving?.projectId ?? state.draftProjectId);
         return null;
@@ -399,6 +413,12 @@ class ChatSessionsController extends _ChatSessions
           return _clearGoal();
         }
         return _setGoal(argument);
+      case ChatCommand.loop:
+        final argument = call.argument;
+        if (kGoalClearWords.contains(argument.toLowerCase())) {
+          return _stopLoop();
+        }
+        return _startLoop(argument);
       case ChatCommand.compact:
         return _compact(call.argument);
     }
@@ -578,6 +598,8 @@ class ChatSessionsController extends _ChatSessions
   /// streaming into it is cancelled first, so nothing writes back afterwards.
   void deleteConversation(String id) {
     _cancel(id);
+    // Nothing may go on repeating into a chat that no longer exists.
+    _cancelLoopTimer(id);
     _store.delete(id);
     _deletedWhileLoading?.add(id);
     // The chat that held this undo is gone, so nothing can reach it any more —

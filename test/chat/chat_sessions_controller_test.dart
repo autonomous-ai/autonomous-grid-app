@@ -2465,6 +2465,128 @@ void main() {
     });
   });
 
+  group('/loop', () {
+    Future<void> settle() async {
+      for (var i = 0; i < 60; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    test('the first run goes out at once — a loop that sits silent for five '
+        'minutes after you set it reads as broken', () async {
+      final grid = _FakeClassifier('30\nNothing is pending.');
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'still building'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: '5m check the deploy',
+      ));
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(_userTurns(h.container, chat.id), contains('check the deploy'));
+      expect(chat.loop?.interval, const Duration(minutes: 5));
+      expect(chat.loop?.iterations, 1);
+      expect(chat.loop?.isRunning, isTrue);
+
+      // Leave nothing armed behind the test.
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    test(
+      'a self-paced loop asks how long to wait and shows the reason',
+      () async {
+        final grid = _FakeClassifier('25\nThe PR has gone quiet.');
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          grid: grid,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'no new comments'),
+            ),
+          ],
+        );
+        final chats = h.container.read(chatSessionsProvider.notifier);
+        await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+
+        await chats.runCommand((
+          command: ChatCommand.loop,
+          argument: 'watch the PR',
+        ));
+        await settle();
+
+        final loop = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single
+            .loop;
+        expect(loop?.isSelfPaced, isTrue);
+        expect(loop?.pacing, 'The PR has gone quiet.');
+
+        await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+      },
+    );
+
+    test('/loop with nothing to run says what to type instead of starting a '
+        'loop about nothing', () async {
+      final h = _harness(tmp, agentInstalled: true, updates: const []);
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+
+      final outcome = await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: '5m',
+      ));
+
+      expect(outcome?.failed, isTrue);
+      expect(outcome?.message, contains('/loop 5m'));
+      expect(
+        h.container.read(chatSessionsProvider).conversations.single.loop,
+        isNull,
+      );
+    });
+
+    test('/clear stops the loop on the chat being left, so nothing goes on '
+        'repeating into a conversation nobody is reading', () async {
+      final grid = _FakeClassifier('30\nQuiet.');
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'ok'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: '5m check the deploy',
+      ));
+      await settle();
+
+      await chats.runCommand((command: ChatCommand.clear, argument: ''));
+      await settle();
+
+      final left = h.container.read(chatSessionsProvider).conversations.single;
+      expect(left.loop?.isRunning, isFalse);
+    });
+  });
+
   group('/compact', () {
     test('after compacting, the turn carries the summary in place of what it '
         'covers — and the chat itself still holds every message', () async {
