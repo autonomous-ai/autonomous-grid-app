@@ -460,6 +460,7 @@ class NodeAnswered with AnsweredTokens {
 class OverviewNode {
   const OverviewNode({
     required this.name,
+    this.providerEmail,
     this.device,
     this.chip,
     this.memoryGb,
@@ -486,6 +487,14 @@ class OverviewNode {
   });
 
   final String name;
+
+  /// The email of whoever put this machine on the grid, as the relay reports it
+  /// (`provider_email`). Null on an older relay, or when the control plane
+  /// couldn't resolve the owner.
+  ///
+  /// Shown as a handle, never whole — see `nodeHostHandle`.
+  final String? providerEmail;
+
   final String? device;
   final String? chip;
   final int? memoryGb;
@@ -553,6 +562,7 @@ class OverviewNode {
 
   factory OverviewNode.fromJson(Map<String, dynamic> j) => OverviewNode(
     name: '${j['name'] ?? ''}',
+    providerEmail: j['provider_email'] as String?,
     device: j['device'] as String?,
     chip: j['chip'] as String?,
     memoryGb: (j['memory_gb'] as num?)?.toInt(),
@@ -600,6 +610,7 @@ class OverviewNode {
   bool operator ==(Object other) =>
       other is OverviewNode &&
       other.name == name &&
+      other.providerEmail == providerEmail &&
       other.device == device &&
       other.chip == chip &&
       other.memoryGb == memoryGb &&
@@ -629,6 +640,7 @@ class OverviewNode {
   @override
   int get hashCode => Object.hashAll([
     name,
+    providerEmail,
     device,
     chip,
     memoryGb,

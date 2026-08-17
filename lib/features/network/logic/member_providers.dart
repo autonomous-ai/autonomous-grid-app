@@ -82,26 +82,6 @@ final networkMembersProvider = FutureProvider.autoDispose
       return members;
     });
 
-/// How many people are on the selected grid — the top bar's member figure.
-///
-/// Null until the roster resolves, and null forever on a grid whose members the
-/// control plane won't hand over (signed out, or a grid it doesn't host): the
-/// pill drops the figure rather than showing a `0` that would read as "nobody is
-/// on this grid" when the truth is "we didn't get to ask".
-///
-/// Shares [networkMembersProvider]'s cache with the Members tab, so opening that
-/// tab costs no second request and an add/remove there moves this count too.
-///
-/// Reads `.value`, not `.asData`: an invalidate (the Members tab refreshing after
-/// an add) puts the roster back into a loading state that `asData` reports as
-/// nothing, which would blink the figure out of the pill — and out from under the
-/// panel anchored to it — for the length of one request.
-final selectedGridMemberCountProvider = Provider.autoDispose<int?>((ref) {
-  final grid = ref.watch(selectedNetworkProvider);
-  if (grid == null) return null;
-  return ref.watch(networkMembersProvider(grid.networkId)).value?.length;
-});
-
 /// Add/remove a member through the control plane, logging the HTTP call to the
 /// Debug tab (like [CreateNetworkController]) and returning a user-facing error
 /// message, or `null` on success. The caller invalidates [networkMembersProvider]

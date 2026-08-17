@@ -121,6 +121,29 @@ String? nodePlatformLabel(String? platform) {
   return null;
 }
 
+/// Who put this machine on the grid, as a handle — `design@autonomous.ai` reads
+/// `@design`. Empty when the relay named nobody.
+///
+/// The local part alone, deliberately. On a work grid every address shares one
+/// domain, so the half after the `@` is the same word on every row: it costs the
+/// width that tells the rows apart and adds nothing. The handle is also the form
+/// people use for each other in chat, which is the register this list is read in
+/// — "whose machine is that", not "what is their address".
+///
+/// Not a privacy measure and shouldn't be mistaken for one: `/grid/overview` is
+/// unauthenticated and carries the whole address. This is about what a row is
+/// for, not about what a determined reader can find.
+String nodeHostHandle(OverviewNode node) {
+  final email = (node.providerEmail ?? '').trim();
+  if (email.isEmpty) return '';
+  final at = email.indexOf('@');
+  // No `@` at all: some relays fill this with a bare username, and dropping it
+  // would lose a name the grid does have. An address that *starts* with `@` has
+  // no local part to show and is not that case — it falls through to empty.
+  final local = at < 0 ? email : email.substring(0, at);
+  return local.isEmpty ? '' : '@$local';
+}
+
 /// What kind of machine a node is, and nothing else — "Apple M4 Pro · macOS",
 /// "AMD EPYC 9124 16-Core Processor · Linux".
 ///
@@ -294,6 +317,39 @@ Map<String, NodeAnswered> answeredByModel(Iterable<OverviewNode> nodes) {
         requests: t.requests,
       ),
   };
+}
+
+/// What to show for one model: its own figures, a measured zero, or nothing.
+///
+/// [byModel] only holds models the rollup found rows for, so a model missing
+/// from it is ambiguous on its own — it either served nothing, or nothing
+/// measured it. [gridTotal] settles that, because the grid-level rollup is
+/// non-null exactly when at least one node reported one:
+///
+/// - **In the map** — its own figures.
+/// - **Missing, and the grid was measured** — a real zero. A model nobody used
+///   today is a fact about the grid worth seeing; hiding the line makes an idle
+///   model look like one the app forgot to ask about, and leaves the list saying
+///   less the emptier the day was.
+/// - **Missing, and nothing was measured** — null, and the row stays silent. An
+///   older relay computes no rollup, and printing `0 requests` against every
+///   model on such a grid would report a busy fleet as dead.
+///
+/// The window comes from [gridTotal] so the zero row names the same span as the
+/// rows above it.
+NodeAnswered? modelAnswered(
+  Map<String, NodeAnswered> byModel,
+  String modelId, {
+  required NodeAnswered? gridTotal,
+}) {
+  final own = byModel[modelKey(modelId)];
+  if (own != null) return own;
+  if (gridTotal == null) return null;
+  return NodeAnswered(
+    windowSeconds: gridTotal.windowSeconds,
+    tokensOut: 0,
+    requests: 0,
+  );
 }
 
 /// Whether [id] is a real chat/text model the grid can actually answer with:
