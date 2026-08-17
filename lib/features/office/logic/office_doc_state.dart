@@ -1,5 +1,7 @@
+import 'dart:typed_data';
+
 import '../../../core/folder_name.dart';
-import 'docx/docx_model.dart';
+import 'docx_format.dart';
 
 /// What the Docs screen is showing right now.
 ///
@@ -31,16 +33,37 @@ final class OfficeDocOpen extends OfficeDocState {
     required this.path,
     required this.text,
     required this.savedText,
-    this.layout,
+    this.bytes,
+    this.formats = const [],
+    this.pageWidthPx = 816,
+    this.staleOnDisk = false,
     this.save = const OfficeSaveIdle(),
   });
 
-  /// The document with its formatting — what the Formatted view draws.
+  /// How each paragraph of the file as it was *opened* looks — what the Edit view
+  /// styles its fields from, by line index.
   ///
-  /// Null when the file's own parts couldn't be read for display even though its
-  /// text could. The two readers are independent on purpose, so a document with,
-  /// say, a corrupt `styles.xml` still opens as text instead of not opening.
-  final ParsedDocx? layout;
+  /// It doesn't grow when the user splits a paragraph: a new paragraph has no
+  /// entry, and the view falls back to the format of the one it was split from,
+  /// which is also the style the save gives it (`_insertLines` clones the
+  /// paragraph above). One rule, in two places that have to agree.
+  final List<DocxLineFormat> formats;
+
+  /// The document's own page width in logical pixels — US Letter until the file
+  /// says otherwise. Both views size their sheet by it.
+  final double pageWidthPx;
+
+  /// The file exactly as it was read, kept for the Read view.
+  ///
+  /// `docx_file_viewer` parses for itself — it takes the bytes and does its own
+  /// reading — so what the state carries is the file, not a model of it. Null only
+  /// if the read gave nothing, in which case Read has nothing to show and the
+  /// switch says so.
+  ///
+  /// It is the *opened* bytes and stays that way while paragraphs are edited: Read
+  /// shows what is on disk, which is the truthful thing for a view that cannot
+  /// show unsaved edits anyway. Save, then switch, to see them there.
+  final Uint8List? bytes;
 
   /// Which *opening* this is — bumped every time a document is opened, the same
   /// file included.
@@ -64,6 +87,16 @@ final class OfficeDocOpen extends OfficeDocState {
   /// How the last save went, so the bar can say so where the user is looking.
   final OfficeSaveState save;
 
+  /// The file on disk has moved on since it was opened — the assistant edited it —
+  /// and the app has *not* re-read it, because there are unsaved edits here that a
+  /// re-read would throw away.
+  ///
+  /// It matters more than a stale view: a save patches the bytes the document was
+  /// opened with, so writing while this is true would undo whatever changed the
+  /// file. The screen says so and offers the reload; [OfficeDocController.save]
+  /// refuses rather than trusting the user read it.
+  final bool staleOnDisk;
+
   bool get dirty => text != savedText;
 
   String get name => folderName(path);
@@ -72,12 +105,16 @@ final class OfficeDocOpen extends OfficeDocState {
     String? text,
     String? savedText,
     OfficeSaveState? save,
+    bool? staleOnDisk,
   }) => OfficeDocOpen(
     openId: openId,
     path: path,
     text: text ?? this.text,
     savedText: savedText ?? this.savedText,
-    layout: layout,
+    bytes: bytes,
+    formats: formats,
+    pageWidthPx: pageWidthPx,
+    staleOnDisk: staleOnDisk ?? this.staleOnDisk,
     save: save ?? this.save,
   );
 }

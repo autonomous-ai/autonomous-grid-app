@@ -2,41 +2,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Which way Docs is showing the open document.
 ///
-/// Two views over one file, and each is honest about what it can do — which is
-/// why they are separate rather than one half-capable screen:
+/// Two views over one file, and each is honest about what it can do rather than
+/// one screen that half-does both:
 enum OfficeViewMode {
-  /// The document as the document: its fonts, alignment, spacing, tables and
-  /// pictures, read from the file's own styles. Read-only, because editing what
-  /// you see means editing runs, not lines.
-  formatted('Formatted'),
+  /// The document as it really is — the page size its `w:sectPr` asks for, its
+  /// styles, tables, pictures, headers and footers, drawn by `docx_file_viewer`.
+  /// Read-only, and faithful.
+  read('Read'),
 
-  /// The document's words in one editable column. No formatting, and none lost —
-  /// a save rewrites only the paragraphs whose text changed.
-  text('Text');
+  /// The document's paragraphs, editable, carrying enough of their formatting to
+  /// be recognisable. Where the caret goes.
+  edit('Edit');
 
   const OfficeViewMode(this.label);
 
-  /// The word on the switch. Carried here so the control and the mode can't
-  /// drift apart.
+  /// The word on the switch. Carried here so the control and the mode can't drift
+  /// apart.
   final String label;
 }
 
 /// The open view. Session state, and deliberately not per document: someone who
-/// prefers to read formatted wants the next document formatted too.
+/// prefers to type wants the next document open for typing too.
 final officeViewModeProvider =
     NotifierProvider<OfficeViewModeNotifier, OfficeViewMode>(
       OfficeViewModeNotifier.new,
     );
 
 class OfficeViewModeNotifier extends Notifier<OfficeViewMode> {
-  /// Opens formatted: it is what the document actually looks like, and a person
-  /// opening a file wants to read it before they change it.
+  /// Opens on Read: it is what the document actually looks like, and a person
+  /// opening a file wants to see it before they change it.
   @override
-  OfficeViewMode build() => OfficeViewMode.formatted;
+  OfficeViewMode build() => OfficeViewMode.read;
 
   void select(OfficeViewMode mode) => state = mode;
 
-  void toggle() => state = state == OfficeViewMode.formatted
-      ? OfficeViewMode.text
-      : OfficeViewMode.formatted;
+  void toggle() => state = state == OfficeViewMode.read
+      ? OfficeViewMode.edit
+      : OfficeViewMode.read;
 }

@@ -31,6 +31,8 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 
+import 'docx_format.dart';
+
 /// The part of the zip that holds the prose. Everything else is copied through.
 const _bodyPart = 'word/document.xml';
 
@@ -48,7 +50,20 @@ const _runWrappers = {'hyperlink', 'smartTag', 'sdtContent', 'ins', 'del'};
 /// [save] patches the file as it was opened every time, so saving twice with the
 /// same text gives the same bytes as saving once.
 class DocxFile {
-  const DocxFile._(this._zip, this._bodyXml, this.lines);
+  const DocxFile._(
+    this._zip,
+    this._bodyXml,
+    this.lines,
+    this.formats,
+    this.pageWidthPx,
+  );
+
+  /// How wide this document's pages are, in logical pixels.
+  ///
+  /// Read here because the walk is already open and both views need it: the Read
+  /// view sizes its sheet by it, and a document is laid out for the paper it was
+  /// written on — A4 is 794px where US Letter is 816.
+  final double pageWidthPx;
 
   final Archive _zip;
 
@@ -59,6 +74,12 @@ class DocxFile {
 
   /// The document's paragraphs, one line each, in the order Word lays them out.
   final List<String> lines;
+
+  /// How each of those paragraphs looks, by the same index.
+  ///
+  /// Read in the same pass as [lines] — see `docx_format.dart` for why that
+  /// matters and how shallow it deliberately is.
+  final List<DocxLineFormat> formats;
 
   /// Opens [bytes] as a Word document — or null when it isn't one this app can
   /// edit: not a zip, no `word/document.xml` inside, malformed XML, or a body
@@ -77,9 +98,17 @@ class DocxFile {
     if (body == null) return null;
     final paragraphs = _paragraphsOf(body);
     if (paragraphs.isEmpty) return null;
-    return DocxFile._(zip, xml, [
-      for (final paragraph in paragraphs) _paragraphLine(paragraph),
-    ]);
+    final styles = _stylesRootOf(zip);
+    return DocxFile._(
+      zip,
+      xml,
+      [for (final paragraph in paragraphs) _paragraphLine(paragraph)],
+      // The same list, walked once more rather than parsed again: index i of one
+      // is index i of the other by construction, which is what the Edit view
+      // relies on to type into the paragraph it is pointing at.
+      lineFormats(paragraphs, styles, body),
+      _pageWidthPxOf(body),
+    );
   }
 
   /// The document as the editor shows it: one line per paragraph.
@@ -304,6 +333,37 @@ XmlElement _buildRun(String? prefix, XmlElement? style, String text) {
     );
   }
   return XmlElement(XmlName.parts('r', prefix: prefix), const [], children);
+}
+
+/// The page width from the body's trailing `w:sectPr`, in logical pixels.
+///
+/// US Letter when the document doesn't say — Word's own default, and the width
+/// most documents that omit `w:pgSz` were written at.
+double _pageWidthPxOf(XmlDocument body) {
+  const letterTwips = 12240;
+  final sections = body.findAllElements('sectPr', namespaceUri: '*').toList();
+  final size = sections.isEmpty
+      ? null
+      : sections.last.childElements
+            .where((e) => e.name.local == 'pgSz')
+            .firstOrNull;
+  final twips = int.tryParse(
+    size?.attributes
+            .where((a) => a.name.local == 'w')
+            .firstOrNull
+            ?.value
+            .trim() ??
+        '',
+  );
+  return (twips ?? letterTwips) / 15;
+}
+
+/// `word/styles.xml`, or null when the file has none — a document with no style
+/// part still opens, its paragraphs just draw at the fallback size.
+XmlElement? _stylesRootOf(Archive zip) {
+  final bytes = zip.findFile('word/styles.xml')?.readBytes();
+  if (bytes == null) return null;
+  return _parse(utf8.decode(bytes, allowMalformed: true))?.rootElement;
 }
 
 String? _bodyXmlOf(Archive zip) {

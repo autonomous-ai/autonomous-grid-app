@@ -9,6 +9,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:docx_creator/docx_creator.dart';
 import 'package:grid_app/features/office/logic/docx_edit.dart';
 
 const _document = '''
@@ -38,7 +39,7 @@ void check(String what, Object? actual, Object? expected) {
   }
 }
 
-void main() {
+Future<void> main() async {
   final original = _fixture();
   final doc = DocxFile.open(original)!;
   check('reads one line per paragraph', doc.lines, [
@@ -169,6 +170,22 @@ void main() {
     DocxFile.open(Uint8List.fromList([1, 2, 3])),
     null,
   );
+
+  // 8. The blank document "New" makes is one this patcher can open and write
+  // back. Two packages have to agree here — docx_creator generates the file and
+  // docx_edit patches it — so a version bump to either can break New without
+  // touching a line of our own code.
+  final blank = File('${Directory.systemTemp.path}/grid-blank-probe.docx');
+  await DocxExporter().exportToFile(docx().p('').build(), blank.path);
+  final made = DocxFile.open(await blank.readAsBytes());
+  check('a generated blank document opens', made != null, true);
+  check('and holds one empty paragraph', made?.lines, ['']);
+  check(
+    'and takes typed text back',
+    DocxFile.open(made!.save('Hello from Grid'))?.lines,
+    ['Hello from Grid'],
+  );
+  await blank.delete();
 
   stdout.writeln(failures == 0 ? '\nALL PASS' : '\n$failures FAILED');
 }

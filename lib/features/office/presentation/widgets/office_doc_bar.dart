@@ -49,6 +49,19 @@ class OfficeDocBar extends ConsumerWidget {
     await ref.read(officeDocProvider.notifier).pickAndOpen();
   }
 
+  /// Start an empty document — asking first for the same reason [_open] does,
+  /// since it also replaces what is on screen.
+  Future<void> _create(
+    BuildContext context,
+    WidgetRef ref,
+    OfficeDocOpen? open,
+  ) async {
+    if (open != null && open.dirty) {
+      if (!await confirmDiscardChanges(context, open.name)) return;
+    }
+    await ref.read(officeDocProvider.notifier).createBlank();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
@@ -72,7 +85,7 @@ class OfficeDocBar extends ConsumerWidget {
                     ),
                     const SizedBox(width: 8),
                     if (open != null && !tight) ...[
-                      _ViewSwitch(hasLayout: open.layout != null),
+                      _ViewSwitch(hasViewer: open.bytes != null),
                       const SizedBox(width: 12),
                     ],
                     Expanded(
@@ -92,8 +105,21 @@ class OfficeDocBar extends ConsumerWidget {
                     // you get to the editor at all, so it is the last thing a
                     // narrow bar may lose.
                     if (open != null && tight) ...[
-                      _ViewSwitchButton(hasLayout: open.layout != null),
+                      _ViewSwitchButton(hasViewer: open.bytes != null),
                       const SizedBox(width: 4),
+                    ],
+                    // A new document without going back to an empty screen
+                    // first. Glyph-only even when there is room: it is the third
+                    // action in a bar whose first two are the ones people came
+                    // for.
+                    if (!tight) ...[
+                      AppIconButton(
+                        icon: LucideIcons.filePlus300,
+                        size: 16,
+                        tooltip: 'New blank document',
+                        onPressed: () => _create(context, ref, open),
+                      ),
+                      const SizedBox(width: 2),
                     ],
                     _OpenButton(
                       tight: tight,
@@ -124,28 +150,29 @@ class OfficeDocBar extends ConsumerWidget {
   }
 }
 
-/// Formatted or Text — the two ways to look at the open document.
+/// Read or Edit — the two ways to have the open document on screen.
 ///
-/// Both words are on it because they mean different capabilities, not different
-/// skins: one shows the document, the other lets you type in it. Disabled when
-/// the file's formatting couldn't be read, with the reason in the tooltip rather
-/// than a switch that silently does nothing.
+/// Both words are on it because they are different capabilities, not different
+/// skins: Read is the document as it really is and cannot be typed in, Edit is
+/// where the caret goes. Collapses to the one word that is true when the file's
+/// bytes aren't there for the viewer, with the reason in a tooltip rather than a
+/// switch that silently does nothing.
 class _ViewSwitch extends ConsumerWidget {
-  const _ViewSwitch({required this.hasLayout});
+  const _ViewSwitch({required this.hasViewer});
 
-  final bool hasLayout;
+  final bool hasViewer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     const modes = OfficeViewMode.values;
     final mode = ref.watch(officeViewModeProvider);
-    if (!hasLayout) {
+    if (!hasViewer) {
       return Tooltip(
         message:
-            "Grid couldn't read this document's formatting, so only the "
-            'text view is available.',
+            "Grid couldn't hand this document to the viewer, so only the "
+            'editable view is available.',
         child: Text(
-          OfficeViewMode.text.label,
+          OfficeViewMode.edit.label,
           style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
         ),
       );
@@ -161,15 +188,14 @@ class _ViewSwitch extends ConsumerWidget {
 
 /// The switch folded to one button, for a bar with no room for two words.
 class _ViewSwitchButton extends ConsumerWidget {
-  const _ViewSwitchButton({required this.hasLayout});
+  const _ViewSwitchButton({required this.hasViewer});
 
-  final bool hasLayout;
+  final bool hasViewer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!hasLayout) return const SizedBox.shrink();
-    final formatted =
-        ref.watch(officeViewModeProvider) == OfficeViewMode.formatted;
+    if (!hasViewer) return const SizedBox.shrink();
+    final formatted = ref.watch(officeViewModeProvider) == OfficeViewMode.read;
     return AppIconButton(
       icon: formatted ? LucideIcons.pencil300 : LucideIcons.layoutPanelTop300,
       size: 16,

@@ -11,10 +11,10 @@ import '../logic/office_doc_controller.dart';
 import '../logic/office_doc_state.dart';
 import '../logic/office_layout.dart';
 import '../logic/office_view_mode.dart';
-import 'widgets/docx_document_view.dart';
 import 'widgets/office_chat_column.dart';
+import 'widgets/office_formatted_view.dart';
 import 'widgets/office_doc_bar.dart';
-import 'widgets/office_paper.dart';
+import 'widgets/office_editor_view.dart';
 
 /// Docs: a Word document on the right, the assistant beside it on the left.
 ///
@@ -23,8 +23,10 @@ import 'widgets/office_paper.dart';
 /// it takes the side of the window that grows, and the conversation keeps a fixed
 /// column the eye returns to.
 ///
-/// First version, and it is honest about that — text in, text out, no ribbon. See
-/// `docx_edit.dart` for exactly what a save preserves and what it flattens.
+/// Two views over the file: Read draws it faithfully (`docx_file_viewer`), Edit
+/// puts a caret in its paragraphs. No ribbon either way — nothing here formats
+/// text. See `docx_edit.dart` for exactly what a save preserves and what it
+/// flattens.
 class OfficeDocsView extends ConsumerWidget {
   const OfficeDocsView({super.key});
 
@@ -96,11 +98,36 @@ class _DocumentSide extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         OfficeDocBar(doc: open),
+        // The file moved on under the document — the assistant edited it — and
+        // there are unsaved edits here, so the app didn't choose between them.
+        // This is the one notice that carries an action, because the way out
+        // isn't on screen anywhere else.
+        if (open != null && open.staleOnDisk)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+            child: ComposerNoticeBar(
+              icon: LucideIcons.fileClock,
+              label:
+                  '${open.name} changed on disk. Your edits here are not in '
+                  'the file, and saving them would undo that change.',
+              actions: [
+                TextButton(
+                  onPressed: () =>
+                      ref.read(officeDocProvider.notifier).reloadFromDisk(),
+                  child: const Text('Reload'),
+                ),
+              ],
+            ),
+          ),
         // Reports, and offers nothing — because the offer is already on screen:
         // a failed save leaves the document dirty, so Save in the bar above is
         // live and is the retry. A "Try again" here would be a second door to
         // the same action, and one the bar has no room for at its narrowest.
-        if (open?.save case OfficeSaveFailed(:final message))
+        // The stale-file failure is the exception, and the notice above carries
+        // its action instead.
+        if (open?.save case OfficeSaveFailed(
+          :final message,
+        ) when !(open?.staleOnDisk ?? false))
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: ComposerNoticeBar(
@@ -140,10 +167,9 @@ class _DocumentSide extends ConsumerWidget {
 
 /// The open document, in whichever view the user chose.
 ///
-/// Formatted falls back to the text editor when the file's formatting couldn't be
-/// read — the switch is disabled in that case, and this is the same decision made
-/// where it has to hold: a mode that has nothing to draw must not draw a blank
-/// page.
+/// Read falls back to Edit when the file's bytes aren't there to hand the viewer —
+/// the switch is disabled in that case too, and the fallback is here as well
+/// because a mode with nothing to draw must not draw a blank page.
 class _OpenDocument extends ConsumerWidget {
   const _OpenDocument({required this.doc});
 
@@ -151,12 +177,12 @@ class _OpenDocument extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final layout = doc.layout;
+    final bytes = doc.bytes;
     final mode = ref.watch(officeViewModeProvider);
-    if (mode == OfficeViewMode.formatted && layout != null) {
-      return DocxDocumentView(doc: layout);
+    if (mode == OfficeViewMode.read && bytes != null) {
+      return OfficeFormattedView(bytes: bytes, pageWidth: doc.pageWidthPx);
     }
-    return OfficePaper(doc: doc);
+    return OfficeEditorView(doc: doc);
   }
 }
 
@@ -171,13 +197,27 @@ class _NoDocument extends ConsumerWidget {
     icon: LucideIcons.fileText300,
     title: 'No document open',
     message:
-        'Open a Word document (.docx) to read and edit its text here, with '
-        'the assistant beside it.',
+        'Open a Word document (.docx) — or start an empty one. Either way the '
+        'assistant works beside it, in a chat that belongs to that file.',
     compact: !withAction,
+    // Two ways in, and the order says which is which: most people arrive with a
+    // file. Starting from nothing is the quieter button, not a hidden one.
     action: withAction
-        ? FilledButton(
-            onPressed: () => ref.read(officeDocProvider.notifier).pickAndOpen(),
-            child: const Text('Open document'),
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton(
+                onPressed: () =>
+                    ref.read(officeDocProvider.notifier).pickAndOpen(),
+                child: const Text('Open document'),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () =>
+                    ref.read(officeDocProvider.notifier).createBlank(),
+                child: const Text('New blank document'),
+              ),
+            ],
           )
         : null,
   );
