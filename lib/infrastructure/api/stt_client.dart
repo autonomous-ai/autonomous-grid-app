@@ -14,6 +14,16 @@ import '../providers.dart';
 const String kSttUnavailableMessage =
     "The grid tool isn't available on this computer.";
 
+/// What to say when `grid` is there but has never heard of `stt transcribe`.
+///
+/// Deliberately does not say "update it": the verb is not in a release yet, and
+/// copy that sends someone to run an update which cannot fix this is worse than
+/// copy that simply says what is wrong (conventions §5 — never promise a
+/// fallback works). Shared by the mic button and the panel for the same reason
+/// [kSttUnavailableMessage] is: one cause should not read as two problems.
+const String kSttUnsupportedMessage =
+    'Voice needs a newer grid tool than this computer has.';
+
 /// 'vi' when the OS locale is Vietnamese, 'en' otherwise.
 ///
 /// The STT endpoint has no auto-detect, so something has to pick, and the
@@ -104,10 +114,28 @@ class GridCliSttClient implements SttClient {
     if (raw.toLowerCase().contains('timed out')) {
       return "The server didn't respond in time.";
     }
+    if (_isUnknownCommand(raw)) return kSttUnsupportedMessage;
     if (raw.length <= 400) {
       return raw;
     }
     return '${raw.substring(0, 399)}…';
+  }
+
+  /// Whether [raw] is argparse refusing the subcommand rather than the command
+  /// failing.
+  ///
+  /// The pass-through above assumes the CLI's refusals are sentences, and most
+  /// are. This one is not: an unknown subcommand prints a usage block and the
+  /// full list of verbs the build does know — around 380 characters, which slips
+  /// under the cap and lands on screen whole. On a 466px round panel that is a
+  /// wall of grey text where a sentence belongs (seen on hardware 2026-08-17).
+  ///
+  /// Matched on the shape rather than on the word `stt`, because the same thing
+  /// will happen to the next verb this app learns before the CLI ships it.
+  static bool _isUnknownCommand(String raw) {
+    final text = raw.toLowerCase();
+    return text.contains('invalid choice') ||
+        (text.contains('usage: grid') && text.contains('error: argument'));
   }
 
   static String _messageForStatus(int status) => switch (status) {

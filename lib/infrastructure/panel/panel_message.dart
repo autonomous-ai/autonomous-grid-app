@@ -19,6 +19,15 @@ import 'dart:convert';
 /// forces a firmware reflash for what is only a new field.
 const int kPanelProtocolVersion = 1;
 
+/// How often the app says it is still here.
+///
+/// Over a cable there is no connection to lose: the app quitting and the app
+/// having nothing to say are the same silence. The panel declares the app gone
+/// after 15 s without a message of any kind, so this has to be comfortably
+/// under a third of that — two pings may be lost to a busy moment and the link
+/// still reads as alive.
+const Duration kPanelHeartbeat = Duration(seconds: 5);
+
 /// A message from the panel.
 ///
 /// Sealed so the app's handler is exhaustive — except for [PanelUnknown],
@@ -57,6 +66,11 @@ sealed class PanelInbound {
       ),
       'turn.stop' => PanelStopRequested(
         projectId: _str(decoded['projectId']) ?? '',
+      ),
+      'answer' => PanelAnswered(
+        projectId: _str(decoded['projectId']) ?? '',
+        id: _str(decoded['id']) ?? '',
+        optionId: _str(decoded['optionId']) ?? '',
       ),
       'voice.begin' => PanelVoiceBegin(
         projectId: _str(decoded['projectId']),
@@ -124,6 +138,24 @@ class PanelStopRequested extends PanelInbound {
   const PanelStopRequested({required this.projectId});
 
   final String projectId;
+}
+
+/// The user answered a `question` on the panel.
+///
+/// [id] is the app's own handle for the request, echoed back unchanged — the
+/// panel never looks inside it. [optionId] is one of the options that question
+/// was sent with; the two surfaces race by design, so an answer naming a
+/// request the app has already settled is dropped rather than reported.
+class PanelAnswered extends PanelInbound {
+  const PanelAnswered({
+    required this.projectId,
+    required this.id,
+    required this.optionId,
+  });
+
+  final String projectId;
+  final String id;
+  final String optionId;
 }
 
 /// Which pill on the panel's action bar started this voice turn.
@@ -235,6 +267,23 @@ class PanelMalformed extends PanelInbound {
   final String reason;
 }
 
+/// How the turn behind a tile's recap ended, which tints the recap card.
+///
+/// A recap is one line of ordinary prose whether the turn succeeded or died,
+/// and a 466px tile has no other room to say which — so the fact travels
+/// beside it rather than being read out of the words.
+enum PanelRecapKind {
+  /// The turn ended by itself.
+  done,
+
+  /// It ended on an error the app is showing in the window too.
+  failed,
+
+  /// It was cut off — Stop, a dead process, a broken stream — and left a step
+  /// that never reported how it went.
+  stopped,
+}
+
 /// One project as the panel shows it.
 ///
 /// A thin projection on purpose: the panel draws a tile, so it needs a name, a
@@ -248,6 +297,7 @@ class PanelProject {
     this.model,
     this.busy = false,
     this.recap = '',
+    this.recapKind,
   });
 
   final String id;
@@ -257,6 +307,11 @@ class PanelProject {
   final bool busy;
   final String recap;
 
+  /// How the turn behind [recap] ended, or null when there is no recap to
+  /// tint. Never sent for a project nobody has talked in yet: a kind with no
+  /// line under it is a colour with nothing to colour.
+  final PanelRecapKind? recapKind;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
@@ -264,6 +319,7 @@ class PanelProject {
     if (model != null) 'model': model,
     'busy': busy,
     if (recap.isNotEmpty) 'recap': recap,
+    if (recap.isNotEmpty && recapKind != null) 'recapKind': recapKind!.name,
   };
 }
 
@@ -276,10 +332,25 @@ class PanelProject {
 /// frame budget on characters this screen cannot show.
 class PanelTurnPart {
   /// A passage the agent wrote.
-  const PanelTurnPart.text(String text) : label = text, status = null;
+  const PanelTurnPart.text(String text)
+    : label = text,
+      status = null,
+      kind = null,
+      tool = null,
+      arg = null,
+      parent = null,
+      t0 = null;
 
   /// A step the agent ran, with where it has got to.
-  const PanelTurnPart.step({required this.label, required String this.status});
+  const PanelTurnPart.step({
+    required this.label,
+    required String this.status,
+    required String this.kind,
+    this.tool,
+    this.arg,
+    this.parent,
+    this.t0,
+  });
 
   /// The prose, or the step's one-line label.
   final String label;
@@ -287,11 +358,76 @@ class PanelTurnPart {
   /// The step's status, or null when this is prose.
   final String? status;
 
+  /// `command` · `web` · `tool` · `thinking` — what picks the row's colour on
+  /// the device. Sent rather than left to be guessed from [tool], because a
+  /// tool's name is the agent's own and every agent words it differently: a
+  /// panel inferring a colour from it would draw the same kind of work in
+  /// three colours depending on who ran it.
+  final String? kind;
+
+  /// The tool's own name (`Bash`, `Read`), when the transport carried one.
+  final String? tool;
+
+  /// What the agent asked the tool to do, clipped like the label.
+  final String? arg;
+
+  /// The id of the step that spawned this one — a sub-agent's work, drawn on
+  /// its own band rather than the main one.
+  final String? parent;
+
+  /// Milliseconds from the start of the turn to the moment this step started.
+  ///
+  /// **Fixed while the step runs**, which is the whole point: the sender says
+  /// nothing when nothing has changed, and an elapsed count would change every
+  /// second and put the whole timeline back on the wire each tick. The device
+  /// knows when `turn.started` arrived, so it can tick its own clock off a
+  /// payload that is standing still.
+  final int? t0;
+
   bool get isStep => status != null;
 
   Map<String, Object?> toJson() => status == null
       ? {'k': 't', 'text': label}
-      : {'k': 's', 'label': label, 'status': status};
+      : {
+          'k': 's',
+          'label': label,
+          'status': status,
+          if (tool != null) 'tool': tool,
+          if (arg != null) 'arg': arg,
+          'kind': kind,
+          if (parent != null) 'parent': parent,
+          if (t0 != null) 't0': t0,
+        };
+}
+
+/// One step of the agent's plan as the panel draws it.
+///
+/// Rides the message rather than the parts: a plan is the state of an
+/// intention, not a point in the story, and threading it through the timeline
+/// would put a copy of the whole list beside every step that revised it.
+class PanelTurnTodo {
+  const PanelTurnTodo({required this.text, required this.status});
+
+  final String text;
+
+  /// The same vocabulary a step's status uses, so the device has one set of
+  /// marks to draw rather than two.
+  final String status;
+
+  Map<String, Object?> toJson() => {'text': text, 'status': status};
+}
+
+/// One answer the user can give to a [PanelOutbound.question].
+///
+/// [id] is the agent's own option id, echoed back in `answer` unchanged — the
+/// app looks it up rather than reading the label, which is only ever drawn.
+class PanelQuestionOption {
+  const PanelQuestionOption({required this.id, required this.label});
+
+  final String id;
+  final String label;
+
+  Map<String, Object?> toJson() => {'id': id, 'label': label};
 }
 
 /// Messages this app sends to the panel.
@@ -339,17 +475,65 @@ abstract final class PanelOutbound {
   /// carries each step's request and result clipped at 800 characters. A tile
   /// draws a label and a spinner, so that payload would spend the frame budget
   /// on text no one on this screen can read.
+  /// [todos] is left out entirely when the agent has no plan — which is a
+  /// different fact from a plan with no steps in it, and is drawn as nothing at
+  /// all rather than as an empty checklist.
   static String turnParts({
     required String projectId,
     required List<PanelTurnPart> parts,
+    List<PanelTurnTodo> todos = const [],
   }) => jsonEncode({
     't': 'turn.parts',
     'projectId': projectId,
     'parts': [for (final p in parts) p.toJson()],
+    if (todos.isNotEmpty) 'todos': [for (final t in todos) t.toJson()],
   });
 
   static String turnDone({required String projectId, required String recap}) =>
       jsonEncode({'t': 'turn.done', 'projectId': projectId, 'recap': recap});
+
+  /// The long form of the last `recap`, for the detail screen.
+  ///
+  /// A separate message, and always later than the `turn.done` it belongs to:
+  /// it is written by asking a model, which takes seconds, and holding the
+  /// tile's "finished" on that would leave it spinning on work that is over.
+  /// It may never arrive at all.
+  static String summary({required String projectId, required String text}) =>
+      jsonEncode({'t': 'summary', 'projectId': projectId, 'text': text});
+
+  /// The agent has stopped mid-turn and wants permission.
+  ///
+  /// [options] is the whole set of answers, in the order the panel should draw
+  /// them — never a fixed yes/no pair, because what the agent offered varies.
+  static String question({
+    required String projectId,
+    required String id,
+    required String summary,
+    String? command,
+    required List<PanelQuestionOption> options,
+  }) => jsonEncode({
+    't': 'question',
+    'projectId': projectId,
+    'id': id,
+    'summary': summary,
+    'command': ?command,
+    'options': [for (final o in options) o.toJson()],
+  });
+
+  /// That question is settled — answered here, answered there, or expired.
+  ///
+  /// Sent on every route out of a question, not only the ones the panel could
+  /// have caused: the desktop shows the same card, whichever surface answers
+  /// first cancels the other, and a panel that is never told holds a dead card
+  /// forever.
+  static String questionCancel({
+    required String projectId,
+    required String id,
+  }) => jsonEncode({'t': 'question.cancel', 'projectId': projectId, 'id': id});
+
+  /// The heartbeat. Deliberately empty — it says the app is alive and nothing
+  /// else, so a quiet link stays quiet.
+  static String ping() => jsonEncode({'t': 'ping'});
 
   /// What the app heard, and which project it thinks it belongs to.
   ///

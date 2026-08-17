@@ -12,6 +12,7 @@ import '../../../infrastructure/panel/panel_message.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/app_info.dart';
+import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_providers.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
@@ -20,6 +21,9 @@ import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import 'panel_firmware_updater.dart';
+import 'panel_project_mirror.dart';
+import 'panel_question_mirror.dart';
+import 'panel_summary_writer.dart';
 import 'panel_turn_mirror.dart';
 import 'panel_voice.dart';
 
@@ -43,6 +47,17 @@ final panelControllerProvider = Provider<PanelController>((ref) {
   // says a turn is happening, and the run feed says what it has done so far.
   ref.listen(chatSessionsProvider, (_, _) => controller.mirrorTurns());
   ref.listen(agentRunsProvider, (_, _) => controller.mirrorTurns());
+  // A question is the one thing on this link the panel can answer *instead of*
+  // the window, so it has to arrive there as fast as it arrives here — and,
+  // more importantly, leave as fast. Whichever surface answers first cancels
+  // the other, and every route out of a permission (either surface, the expiry
+  // timer, the turn ending) empties this same map, so one listener covers them
+  // all rather than four call sites remembering to say so.
+  ref.listen(agentPermissionsProvider, (_, _) => controller.mirrorQuestions());
+  // The tiles move on their own too. Without this a project created, renamed or
+  // deleted on the desktop reached a plugged-in panel only if it happened to
+  // ask again — which it does once, on waking.
+  ref.listen(sortedProjectsProvider, (_, _) => controller.mirrorProjects());
   ref.onDispose(controller.stop);
   return controller;
 });
@@ -56,7 +71,25 @@ class PanelController {
   StreamSubscription<List<int>>? _audioSub;
 
   /// What the panel has already been told about turns in flight.
-  final _turns = PanelTurnMirror();
+  late final _turns = PanelTurnMirror(onTurnEnded: _summarize);
+
+  /// What the panel has already been told about permission questions.
+  final _questions = PanelQuestionMirror();
+
+  /// What the panel has already been told about the tiles.
+  final _tiles = PanelProjectMirror();
+
+  /// Says the app is still here, on the cadence the panel measures absence
+  /// against.
+  Timer? _heartbeat;
+
+  /// Whether a panel has introduced itself on this link.
+  ///
+  /// The only evidence this side has that anyone is reading. [PanelPort.send]
+  /// already drops bytes when nothing is attached, so this is not about the
+  /// wire — it is about not spending a model call (and the user's tokens, and a
+  /// line in the Debug tab) writing a summary for a screen that is not there.
+  bool _greeted = false;
 
   /// Audio arriving between `voice.begin` and `voice.end`, or null when nobody
   /// is speaking.
@@ -127,6 +160,15 @@ class PanelController {
     // lands would miss whatever chunks were already in flight behind it — the
     // first syllable of every sentence.
     _audioSub ??= link.audio.listen(_onAudio);
+    // Started here rather than on `hello`, because the silence this fills is
+    // the app's: over a cable there is nothing to disconnect, so an app that
+    // has quit and an app with nothing to say look identical from the panel.
+    // Empty on purpose — it says "still here" and re-sends no state, which is
+    // what keeps a link idle through a long turn.
+    _heartbeat ??= Timer.periodic(
+      kPanelHeartbeat,
+      (_) => _ref.read(panelLinkProvider).send(PanelOutbound.ping()),
+    );
   }
 
   /// Stop answering. The link and the port are released by their own providers.
@@ -137,7 +179,10 @@ class PanelController {
     _audioSub = null;
     _voiceOpen?.cancel();
     _voiceOpen = null;
+    _heartbeat?.cancel();
+    _heartbeat = null;
     _voice = null;
+    _greeted = false;
     _deferredOffer = null;
     _updater?.reset();
     _updater = null;
@@ -153,6 +198,8 @@ class PanelController {
         _stopProject(projectId);
       case PanelTurnRequested(:final projectId, :final text):
         _startTurn(projectId, text);
+      case PanelAnswered(:final projectId, :final id, :final optionId):
+        _answerQuestion(projectId, id, optionId);
       case PanelVoiceBegin(:final projectId, :final command):
         _beginVoice(projectId, command);
       case PanelVoiceEnd():
@@ -181,13 +228,31 @@ class PanelController {
   /// Answer the panel's introduction, and say which machine it is looking at —
   /// on this link simply the computer it is plugged into.
   Future<void> _welcome(PanelHello hello) async {
+    // A `hello` is not proof of a new panel. The firmware keeps saying it on a
+    // keepalive — every 15s once a session is up — because it has no port-open
+    // event to wait on and the app may start at any moment. Measured on real
+    // hardware 2026-08-17: the panel greeted a connected app four times a
+    // minute, forever.
+    //
+    // So a repeat from the same board is answered but NOT re-attached. Attaching
+    // clears what the mirrors believe this panel already knows, and doing that
+    // on a timer would re-send the whole turn, question and tile state every 15
+    // seconds — the one thing `PanelTurnMirror` exists to prevent, undone by the
+    // handshake rather than by any change in state.
+    final resumed = _greeted && _mac == hello.mac;
     _mac = hello.mac;
     _firmwareVersion = hello.firmware;
-    _log.info(
-      'panel',
-      'Panel ${hello.mac} said hello '
-          '(firmware ${hello.firmware}, protocol ${hello.protocol})',
-    );
+    _greeted = true;
+    // Logged once per session, not per keepalive: a line every 15 seconds
+    // buries everything else in the panel log, and the second one says nothing
+    // the first didn't.
+    if (!resumed) {
+      _log.info(
+        'panel',
+        'Panel ${hello.mac} said hello '
+            '(firmware ${hello.firmware}, protocol ${hello.protocol})',
+      );
+    }
     // Answered even when the versions disagree. The app carries the firmware
     // image and can reflash over this same cable, so a mismatch is a state to
     // act on — and the panel only learns which version to reflash to from the
@@ -208,6 +273,14 @@ class PanelController {
             machineName: _machineName(),
           ),
         );
+    // Everything below re-establishes a panel that knows nothing, so it runs
+    // only for one that actually does — a fresh board, or the same board back
+    // from a reboot with its screen empty. A keepalive greeting from a panel
+    // already holding this state gets the `welcome` above and nothing more.
+    if (resumed) {
+      await _offerFirmware(hello);
+      return;
+    }
     // A panel plugged in mid-turn — or one that has just rebooted after a flash
     // — knows nothing about work already running. Told now, its tile shows the
     // turn it walked in on instead of waiting for the next step to arrive.
@@ -218,6 +291,20 @@ class PanelController {
         runs: _ref.read(agentRunsProvider),
       ),
     );
+    // Including a question it is standing in front of: an agent waiting on a
+    // yes does not ask twice, so a panel that woke up during one would show an
+    // idle tile over a turn that is stopped dead.
+    _push(
+      _questions.onAttach(
+        projects: _ref.read(sortedProjectsProvider),
+        chats: _ref.read(chatSessionsProvider),
+        permissions: _ref.read(agentPermissionsProvider),
+      ),
+    );
+    // The tiles are sent when it asks (`projects.list`, which it does on
+    // waking); what is forgotten here is what the *app* thinks it has already
+    // told this panel, which belonged to the one that was plugged in before.
+    _tiles.forget();
     await _offerFirmware(hello);
   }
 
@@ -243,6 +330,90 @@ class PanelController {
     unawaited(_offerFirmware(deferred));
   }
 
+  /// Tell the panel whatever has changed about the questions an agent is
+  /// waiting on.
+  void mirrorQuestions() {
+    _push(
+      _questions.onChange(
+        projects: _ref.read(sortedProjectsProvider),
+        chats: _ref.read(chatSessionsProvider),
+        permissions: _ref.read(agentPermissionsProvider),
+      ),
+    );
+  }
+
+  /// Tell the panel whatever has changed about the tiles themselves.
+  void mirrorProjects() {
+    _push(
+      _tiles.onChange(
+        panelProjectsFor(
+          projects: _ref.read(sortedProjectsProvider),
+          chats: _ref.read(chatSessionsProvider),
+        ),
+      ),
+    );
+  }
+
+  /// The user answered a question on the panel.
+  ///
+  /// Routed through [AgentPermissionController.answer] rather than straight
+  /// back to the agent, because answering is more than a reply: it stops the
+  /// countdown, takes the card off the window, and records an approved edit so
+  /// it can be undone. A panel answer that skipped it would leave the desktop
+  /// showing a question nobody is waiting on.
+  void _answerQuestion(String projectId, String id, String optionId) {
+    final chatId = _questions.chatFor(projectId, id);
+    // Settled while the answer was in flight — the two surfaces race by design
+    // and the loser is dropped without a word.
+    if (chatId == null) return;
+    final request = _ref.read(agentPermissionsProvider)[chatId];
+    if (request == null) return;
+    final choice = panelChoiceForAnswer(optionId, request);
+    if (choice == null) {
+      _log.warn(
+        'panel',
+        'Panel answered "$optionId", which is not one of the options that '
+            'question was sent with — ignored',
+      );
+      return;
+    }
+    _log.info('panel', 'Panel answered a permission in $projectId: $optionId');
+    _ref.read(agentPermissionsProvider.notifier).answer(chatId, choice);
+  }
+
+  /// A turn ended: write the long form of its recap and send it after the fact.
+  ///
+  /// Never awaited by the caller. `turn.done` has already gone out, and this
+  /// takes as long as a model takes — holding the two together would leave a
+  /// tile spinning on work that finished seconds ago.
+  void _summarize(String projectId, Conversation? chat) {
+    if (chat == null || !_greeted) return;
+    unawaited(_writeSummary(projectId, chat));
+  }
+
+  Future<void> _writeSummary(String projectId, Conversation chat) async {
+    final (text, failure) = await _ref
+        .read(panelSummaryWriterProvider)
+        .write(chat);
+    // A model takes seconds and the app can be quit inside one of them. Nothing
+    // below this line may touch the container once it has gone.
+    if (!_ref.mounted) return;
+    if (text == null) {
+      // Logged and not sent. The panel's detail screen reads a summary that
+      // never arrives as "nothing more to show", which is honest; a sentence
+      // apologising for a model would be four lines of a 466px screen spent
+      // saying nothing about the work (§5).
+      _log.warn(
+        'panel',
+        'No summary for the last turn in $projectId: $failure',
+      );
+      return;
+    }
+    _ref
+        .read(panelLinkProvider)
+        .send(PanelOutbound.summary(projectId: projectId, text: text));
+  }
+
   void _push(List<String> messages) {
     if (messages.isEmpty) return;
     final link = _ref.read(panelLinkProvider);
@@ -258,7 +429,7 @@ class PanelController {
       projects: _ref.read(sortedProjectsProvider),
       chats: _ref.read(chatSessionsProvider),
     );
-    _ref.read(panelLinkProvider).send(PanelOutbound.projects(tiles));
+    _ref.read(panelLinkProvider).send(_tiles.all(tiles));
   }
 
   /// Interrupt whatever is running in [projectId].
@@ -472,6 +643,23 @@ class PanelController {
       case SttFailure(:final message):
         _voiceError(message);
       case SttSuccess(:final text):
+        // Nothing came back. On its own that is two failures wearing one
+        // sentence — a microphone that sent silence, and a transcriber that
+        // could not place real words — so the capture is described here, where
+        // the bytes are still in hand and the answer is already known to be
+        // empty. `peak` separates them: near zero is the device's problem, and
+        // 32767 is a signal so hot it has been clipped flat.
+        //
+        // Only on this branch. A line per capture would say the same thing
+        // about every working turn, and the one time it matters is the one time
+        // nobody can see what happened. It has earned its place twice:
+        // 8 kHz audio labelled 16 kHz, and a railed mic.
+        if (text.trim().isEmpty) {
+          _log.warn(
+            'panel',
+            'Nothing was transcribed from ${capture.describe()}',
+          );
+        }
         // The modifier goes on here, not on the panel and not in the router:
         // this is the last point where the words are still just words, and the
         // next thing that happens to them is being sent as a message.
@@ -705,6 +893,7 @@ PanelProject panelProjectFor(Project project, ChatSessionsState chats) {
     for (final conversation in chats.live)
       if (conversation.projectId == project.id) conversation,
   ];
+  final newest = _newestOf(conversations);
   return PanelProject(
     id: project.id,
     name: project.name,
@@ -718,22 +907,27 @@ PanelProject panelProjectFor(Project project, ChatSessionsState chats) {
     // that says idle while `turn.started` is on its way about the same project
     // is two answers to one question.
     busy: conversations.any((c) => panelTurnInFlight(chats, c.id)),
-    recap: _recapOf(conversations),
+    // The last thing said in the project's most recently used chat, cut to one
+    // line. Empty when nothing has been said yet — [PanelProject] then leaves
+    // the field out rather than sending a blank one.
+    recap: panelRecapOf(newest),
+    // Read off the same chat as the line above, so a recap and the colour
+    // behind it always describe one turn.
+    recapKind: panelRecapKindOf(
+      failure: chats.errorFor(newest?.id),
+      conversation: newest,
+    ),
   );
 }
 
-/// The last thing the assistant said in the project's most recently used chat,
-/// cut to one line.
+/// The project's most recently used chat, or null when it has none.
 ///
 /// Sorted here rather than trusting the order [ChatSessionsState.live] comes
 /// in: that one floats pinned chats to the top, which is right for a sidebar
 /// the user clicks and wrong for "what happened here last".
-///
-/// Empty when nothing has been said yet — [PanelProject] then leaves the field
-/// out rather than sending a blank one.
-String _recapOf(List<Conversation> conversations) {
-  if (conversations.isEmpty) return '';
+Conversation? _newestOf(List<Conversation> conversations) {
+  if (conversations.isEmpty) return null;
   final newest = [...conversations]
     ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-  return panelRecapOf(newest.first);
+  return newest.first;
 }

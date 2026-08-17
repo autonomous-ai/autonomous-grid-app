@@ -88,6 +88,48 @@ class PanelVoiceCapture {
 
   /// The audio as a WAV file, ready for `grid stt transcribe`.
   Uint8List toWav() => wavFromPcm16(_pcm.toBytes());
+
+  /// How long the capture is, in seconds **at the rate the protocol fixes** —
+  /// which is a reading, not a measurement. A device recording at another rate
+  /// makes this number wrong by exactly that ratio, and it will still look
+  /// plausible: 4.4 seconds of speech captured at 8 kHz reads as 2.2 here.
+  double get seconds => _pcm.length / (kPanelVoiceSampleRate * 2);
+
+  /// One line describing the audio, for the log when nothing was transcribed.
+  ///
+  /// Assembled here because this is where the sample rate is known; the caller
+  /// would have to import the audio layer to say the same thing.
+  String describe() =>
+      '$length bytes (${seconds.toStringAsFixed(1)}s at '
+      '${kPanelVoiceSampleRate}Hz), peaking at $peakAmplitude/32767';
+
+  /// The loudest sample in the capture, 0…32767.
+  ///
+  /// The one number that tells a silent microphone from a transcriber that heard
+  /// words it could not place. Both come back as an empty transcript, and
+  /// without this they read as the same failure — which cost a debugging session
+  /// on 2026-08-17, when "I couldn't make out any words" was reported for audio
+  /// nobody had yet established was audio.
+  ///
+  /// Read as little-endian signed 16-bit, exactly as [wavFromPcm16] stores it,
+  /// so a peak of zero here means the bytes really are silence rather than
+  /// meaning this reading disagrees with the container.
+  int get peakAmplitude {
+    final bytes = _pcm.toBytes();
+    final samples = Int16List.sublistView(
+      bytes,
+      0,
+      bytes.length - bytes.length % 2,
+    );
+    var peak = 0;
+    for (final sample in samples) {
+      // -32768 has no positive counterpart; clamping it keeps the range honest
+      // rather than overflowing into a negative "peak".
+      final magnitude = sample == -32768 ? 32767 : sample.abs();
+      if (magnitude > peak) peak = magnitude;
+    }
+    return peak;
+  }
 }
 
 /// Where a transcript is going.
