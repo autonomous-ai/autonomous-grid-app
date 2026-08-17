@@ -35,9 +35,8 @@ import '../../playground/presentation/chat_minimap.dart';
 import '../../playground/presentation/message_content.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../../playground/presentation/transcript_view.dart';
-import '../../prompts/logic/prompt_slash.dart';
-import '../../prompts/presentation/prompt_dialog.dart';
-import '../../prompts/presentation/prompt_slash_menu.dart';
+import '../logic/commands/chat_command.dart';
+import 'command_slash_menu.dart';
 import '../../skills/presentation/save_skill_bar.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
 import '../logic/active_workdir.dart';
@@ -354,6 +353,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _send(PlaygroundModality modality) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
+    // A command the app owns is performed, not sent: `/clear` reaching an
+    // assistant as text is issue #13, and every agent would answer it with a
+    // paragraph about clearing.
+    final command = parseChatCommand(message);
+    if (command != null) {
+      _runCommand(command);
+      return;
+    }
     ref
         .read(chatSessionsProvider.notifier)
         .send(
@@ -560,22 +567,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _message.selection = TextSelection.collapsed(offset: prompt.length);
   }
 
-  /// The composer's prompts button: with an empty box, open the `/` menu; with a
-  /// draft already typed, offer to save it as a reusable prompt.
-  void _promptsButton() {
-    final draft = _message.text.trim();
-    if (draft.isNotEmpty) {
-      showNewPromptDialog(context, initialBody: draft);
-      return;
-    }
+  /// The composer's commands button: type the slash for the user and let the
+  /// menu below do the rest.
+  void _commandsButton() {
     _message.text = '/';
     _message.selection = const TextSelection.collapsed(offset: 1);
   }
 
-  /// Replace the slash command being typed with the picked prompt's body.
-  void _insertPrompt(String body) {
-    _message.text = body;
-    _message.selection = TextSelection.collapsed(offset: body.length);
+  /// Run [call] and empty the composer — the command *was* the message.
+  void _runCommand(ChatCommandCall call) {
+    ref.read(chatSessionsProvider.notifier).runCommand(call);
+    _message.clear();
   }
 
   /// Replace the `@`-mention being typed with the picked file's [name]. The
@@ -946,9 +948,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               _message.text.trim().isNotEmpty &&
                               (!needsImage || _attachments.isNotEmpty) &&
                               !visionLocked;
-                          // A leading "/" (with no space yet) opens the
-                          // saved-prompt menu; an "@" token opens the file menu.
-                          // Only one shows at a time, prompts first.
+                          // A leading "/" (with no space yet) opens the command
+                          // menu; an "@" token opens the file menu. Only one
+                          // shows at a time, commands first.
                           final slash = sending
                               ? null
                               : slashQuery(_message.text);
@@ -976,9 +978,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               const SaveSkillBar(),
                               const QueuedFollowUps(),
                               if (slash != null)
-                                PromptSlashMenu(
+                                CommandSlashMenu(
                                   query: slash,
-                                  onPick: _insertPrompt,
+                                  onRun: (command) => _runCommand((
+                                    command: command,
+                                    argument: '',
+                                  )),
                                 )
                               else if (mention != null)
                                 FileMentionMenu(
@@ -1070,10 +1075,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 onRemoveTerminal: (tabId) => ref
                                     .read(attachedTerminalsProvider.notifier)
                                     .remove(tabId),
-                                onOpenPrompts: _promptsButton,
-                                promptsSaveInput: _message.text
-                                    .trim()
-                                    .isNotEmpty,
+                                onOpenCommands: _commandsButton,
                                 onSend: () => _send(modality),
                                 onStop: () => ref
                                     .read(chatSessionsProvider.notifier)

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
 import 'package:grid_app/features/chat/logic/chat_approval.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
+import 'package:grid_app/features/chat/logic/commands/chat_command.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
@@ -2254,6 +2255,66 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(_userTurns(h.container, id), ['first']);
+    });
+  });
+
+  group('/clear starts a new chat where the user is standing (issue #13)', () {
+    test('inside a project, the fresh chat stays in that project — the folder '
+        'is the whole reason they opened a chat there', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'a'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      final project = h.container
+          .read(projectsProvider.notifier)
+          .add('${tmp.path}/my-notes');
+      chats.newChat(projectId: project.id);
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'what changed?',
+      );
+
+      chats.runCommand((command: ChatCommand.clear, argument: ''));
+
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.activeId, isNull);
+      expect(state.draftProjectId, project.id);
+      // The chat it started from is still there: /clear starts something new,
+      // it does not throw the conversation away.
+      expect(state.conversations, hasLength(1));
+    });
+
+    test('outside a project it lands in the chat list, with no project '
+        'invented for it', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'a'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'hello',
+      );
+
+      chats.runCommand((command: ChatCommand.clear, argument: ''));
+
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.activeId, isNull);
+      expect(state.draftProjectId, isNull);
+      expect(state.conversations, hasLength(1));
     });
   });
 

@@ -30,6 +30,7 @@ import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
 import 'chat_title.dart';
 import 'chat_title_writer.dart';
+import 'commands/chat_command.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
@@ -333,6 +334,22 @@ class ChatSessionsController extends _ChatSessions
   void newChat({String? projectId}) {
     _chose = true;
     state = state.copyWith(activeId: null, draftProjectId: projectId);
+  }
+
+  /// Run a slash command the app owns (see [ChatCommand]).
+  ///
+  /// Kept on the controller rather than in the view: every one of these acts on
+  /// chat state, and a view that reached in and did it itself would be the
+  /// second place that knows how.
+  void runCommand(ChatCommandCall call) {
+    switch (call.command) {
+      // Issue #13: a new chat *where the user is standing*. The project comes
+      // from the open chat, or from the compose they are already in — dropping
+      // it would move them out of the folder they were working in, which is the
+      // one thing "start a new chat here" promises not to do.
+      case ChatCommand.clear:
+        newChat(projectId: state.active?.projectId ?? state.draftProjectId);
+    }
   }
 
   /// Switch to a saved conversation. Allowed mid-send — a reply streaming into

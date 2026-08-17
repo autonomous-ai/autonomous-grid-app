@@ -1,7 +1,7 @@
 /// What goes inside a snapshot, and what is deliberately left out of it.
 ///
 /// A snapshot is a zip of the small, portable things — the chat files, the
-/// saved prompts, the project list, and a [SyncManifest] describing them.
+/// project list, and a [SyncManifest] describing them.
 /// Media never goes in: an image is uploaded once as its own object and
 /// referenced by id, so a second upload of a hundred unchanged photos costs
 /// nothing. Everything here is pure — bytes in, bytes out — so the rules can
@@ -19,7 +19,6 @@ import 'sync_envelope.dart';
 /// finds files by these, not by scanning.
 const String syncManifestEntry = 'manifest.json';
 const String syncChatsPrefix = 'chats/';
-const String syncPromptsEntry = 'prompts.json';
 const String syncProjectsEntry = 'projects.json';
 
 /// The largest media file that will be uploaded, matching the control plane's
@@ -147,7 +146,6 @@ class SyncManifest {
     required this.device,
     required this.app,
     required this.chatCount,
-    required this.promptCount,
     required this.projectCount,
     this.media = const [],
     this.skipped = const [],
@@ -157,7 +155,6 @@ class SyncManifest {
   final String device;
   final String app;
   final int chatCount;
-  final int promptCount;
   final int projectCount;
   final List<SyncMediaEntry> media;
   final List<SyncSkippedMedia> skipped;
@@ -173,7 +170,6 @@ class SyncManifest {
     'app': app,
     'counts': {
       'chats': chatCount,
-      'prompts': promptCount,
       'projects': projectCount,
       'media': media.length,
     },
@@ -195,7 +191,6 @@ class SyncManifest {
       device: json['device'] is String ? json['device'] as String : 'unknown',
       app: json['app'] is String ? json['app'] as String : '',
       chatCount: byName['chats'] is int ? byName['chats'] as int : 0,
-      promptCount: byName['prompts'] is int ? byName['prompts'] as int : 0,
       projectCount: byName['projects'] is int ? byName['projects'] as int : 0,
       media: [
         if (json['media'] is List)

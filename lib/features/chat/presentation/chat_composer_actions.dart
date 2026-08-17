@@ -9,8 +9,7 @@ class _Actions extends StatelessWidget {
     this.agentPicker,
     required this.modelPicker,
     required this.onAttachFile,
-    required this.onOpenPrompts,
-    required this.promptsSaveInput,
+    required this.onOpenCommands,
     required this.messageController,
     required this.onSend,
     required this.onStop,
@@ -30,8 +29,7 @@ class _Actions extends StatelessWidget {
   final Widget? agentPicker;
   final Widget modelPicker;
   final VoidCallback onAttachFile;
-  final VoidCallback onOpenPrompts;
-  final bool promptsSaveInput;
+  final VoidCallback onOpenCommands;
 
   /// Where a transcribed voice clip lands — see [_MicButton].
   final TextEditingController messageController;
@@ -63,11 +61,7 @@ class _Actions extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _AttachButton(canAttach: canAttach, onAttach: onAttachFile),
-                _PromptsButton(
-                  enabled: !sending,
-                  savesInput: promptsSaveInput,
-                  onPressed: onOpenPrompts,
-                ),
+                _CommandsButton(enabled: !sending, onPressed: onOpenCommands),
                 if (approvalPicker != null) ...[
                   const SizedBox(width: 4),
                   Flexible(
@@ -169,23 +163,18 @@ class _AttachButton extends StatelessWidget {
 /// One button with two honest jobs: with the box empty it browses prompts (drops
 /// a `/` in to open the menu); with a draft typed it offers to keep that draft
 /// for reuse. The icon and tooltip switch so the user knows which before tapping.
-class _PromptsButton extends StatelessWidget {
-  const _PromptsButton({
-    required this.enabled,
-    required this.savesInput,
-    required this.onPressed,
-  });
+/// Opens the `/` command menu, by typing the slash the menu watches for — the
+/// same keystroke the user could have made, so there is one way in and not two.
+class _CommandsButton extends StatelessWidget {
+  const _CommandsButton({required this.enabled, required this.onPressed});
 
   final bool enabled;
-  final bool savesInput;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) => ComposerIconButton(
-    icon: savesInput
-        ? Icons.bookmark_add_outlined
-        : Icons.bookmark_outline_rounded,
-    tooltip: savesInput ? 'Save as a prompt' : 'Insert a saved prompt',
+    icon: Icons.bolt_outlined,
+    tooltip: 'Commands',
     onPressed: enabled ? onPressed : null,
   );
 }

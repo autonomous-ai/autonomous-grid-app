@@ -117,10 +117,6 @@ class GridPaths {
   static File get projectTasksFile =>
       File('${home.path}/app/project_tasks.json');
 
-  /// The user's saved prompts — reusable messages they insert into the composer
-  /// with `/`. App-owned; the CLI never touches it.
-  static File get promptsFile => File('${home.path}/app/prompts.json');
-
   /// Working checkouts of the shared code projects, one folder each
   /// (`~/.grid/app/code/<project>`). The app keeps them here rather than asking
   /// the user where to put them, and refreshes each after one of their tasks
