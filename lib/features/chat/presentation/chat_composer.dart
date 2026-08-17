@@ -53,6 +53,7 @@ class ComposerSection extends StatelessWidget {
     required this.onRemoveTerminal,
     required this.onOpenCommands,
     required this.onSend,
+    required this.focusNode,
     required this.onStop,
   });
 
@@ -112,6 +113,12 @@ class ComposerSection extends StatelessWidget {
 
   /// Opens the `/` command menu.
   final VoidCallback onOpenCommands;
+
+  /// The message field's focus, owned by the view so it can put the cursor
+  /// back in the box — after picking a command out of the `/` menu, which
+  /// leaves a line half-typed and the user with nowhere to finish it.
+  final FocusNode focusNode;
+
   final VoidCallback onSend;
 
   /// Ends the turn that's running — Send turns into Stop while one is.
@@ -178,6 +185,7 @@ class ComposerSection extends StatelessWidget {
                 canSend: canSend,
                 onSend: onSend,
                 onPaste: onPaste,
+                focusNode: focusNode,
                 builder: (context, focusNode) => TextField(
                   controller: messageController,
                   focusNode: focusNode,

@@ -86,6 +86,10 @@ class ChatView extends ConsumerStatefulWidget {
 class _ChatViewState extends ConsumerState<ChatView> {
   final _model = TextEditingController();
   final _message = TextEditingController();
+
+  /// The message field's focus, held here so picking a command out of the `/`
+  /// menu can hand the caret straight back to the box it half-filled.
+  final _composerFocus = FocusNode();
   final _scroll = ScrollController();
   final List<MediaAttachment> _attachments = [];
 
@@ -152,6 +156,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _scroll.removeListener(_onScroll);
     _model.dispose();
     _message.dispose();
+    _composerFocus.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -574,6 +579,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _commandsButton() {
     _message.text = '/';
     _message.selection = const TextSelection.collapsed(offset: 1);
+    _composerFocus.requestFocus();
   }
 
   /// What picking [command] out of the `/` menu does: a command that needs
@@ -591,6 +597,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final line = '${command.slash} ';
     _message.text = line;
     _message.selection = TextSelection.collapsed(offset: line.length);
+    // Clicking the row took the focus out of the field, so half a line would
+    // be sitting there with the caret nowhere near it.
+    _composerFocus.requestFocus();
   }
 
   /// Run [call] and empty the composer — the command *was* the message.
@@ -1122,6 +1131,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 onRemoveTerminal: (tabId) => ref
                                     .read(attachedTerminalsProvider.notifier)
                                     .remove(tabId),
+                                focusNode: _composerFocus,
                                 onOpenCommands: _commandsButton,
                                 onSend: () => _send(modality),
                                 onStop: () => ref
