@@ -38,6 +38,7 @@ import '../../playground/presentation/transcript_view.dart';
 import '../logic/commands/chat_command.dart';
 import 'command_slash_menu.dart';
 import 'compacted_divider.dart';
+import 'goal_bar.dart';
 import '../../skills/presentation/save_skill_bar.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
 import '../logic/active_workdir.dart';
@@ -1003,6 +1004,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               // turn" scope reads it (`lastTurnAgentPaths`) —
                               // so bringing the bar back is putting this one
                               // line back.
+                              const GoalBar(),
                               const RunningServicesBar(),
                               const SaveSkillBar(),
                               const QueuedFollowUps(),

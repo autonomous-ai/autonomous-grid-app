@@ -9,6 +9,7 @@ import 'package:grid_app/features/chat/logic/chat_approval.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_command.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_compaction.dart';
+import 'package:grid_app/features/chat/logic/commands/chat_goal.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
@@ -282,6 +283,7 @@ _harness(
   String? modelName,
   ChatSender? answering,
   GridOverview? overview,
+  ChatTransport? grid,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
@@ -328,6 +330,23 @@ _harness(
       ),
       // Approving a plan reads the current grid; keep it off the real home.
       selectedNetworkProvider.overrideWith(_FixedNetwork.new),
+      // What answers the one-shot calls — the goal's evaluator, `/compact`'s
+      // summarizer. Absent unless a test cares, so nothing reaches a network.
+      if (grid != null) ...[
+        chatTransportProvider.overrideWithValue(grid),
+        // And something for `resolveOneShotTarget` to resolve *to*: without a
+        // text model on the grid there is nobody to ask, and the goal stalls
+        // before any verdict is read.
+        playgroundModelsProvider.overrideWith(
+          (ref) => const [
+            PlaygroundModelOption(
+              id: 'qwen',
+              label: 'qwen',
+              modality: PlaygroundModality.text,
+            ),
+          ],
+        ),
+      ],
     ],
   );
   addTearDown(container.dispose);
@@ -2304,11 +2323,7 @@ void main() {
         ],
       );
       final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(
-        network: _credential(),
-        model: 'qwen',
-        message: 'hello',
-      );
+      await chats.send(network: _credential(), model: 'qwen', message: 'hello');
 
       chats.runCommand((command: ChatCommand.clear, argument: ''));
 
@@ -2316,6 +2331,137 @@ void main() {
       expect(state.activeId, isNull);
       expect(state.draftProjectId, isNull);
       expect(state.conversations, hasLength(1));
+    });
+  });
+
+  group('/goal', () {
+    /// Let the loop's queued continuations land — each turn hands the next off
+    /// with `unawaited`, so one await would only see the first.
+    Future<void> settle() async {
+      for (var i = 0; i < 60; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    test('setting a goal sends the condition straight out — a goal that waits '
+        'for you to type something is a note to yourself', () async {
+      final grid = _FakeClassifier('MET\nAll green.');
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'done'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+
+      await chats.runCommand((
+        command: ChatCommand.goal,
+        argument: 'the tests pass',
+      ));
+      await settle();
+
+      final id = h.container.read(chatSessionsProvider).conversations.single.id;
+      expect(_userTurns(h.container, id), contains('the tests pass'));
+    });
+
+    test(
+      'a MET verdict ends it, and the bar says met rather than stopped',
+      () async {
+        final grid = _FakeClassifier('MET\nAll six tests pass.');
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          grid: grid,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'done'),
+            ),
+          ],
+        );
+        final chats = h.container.read(chatSessionsProvider.notifier);
+        await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+        await chats.runCommand((
+          command: ChatCommand.goal,
+          argument: 'the tests pass',
+        ));
+        await settle();
+
+        final goal = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single
+            .goal;
+        expect(goal?.status, GoalStatus.met);
+        expect(goal?.reason, 'All six tests pass.');
+        expect(goal?.turnsEvaluated, 1);
+      },
+    );
+
+    test('/goal clear stops it and names the condition back, so "cleared" is '
+        'never confused with "nothing was set"', () async {
+      final grid = _FakeClassifier('NOT_YET\nTwo still fail.');
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'working'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await chats.runCommand((
+        command: ChatCommand.goal,
+        argument: 'the tests pass',
+      ));
+      await settle();
+
+      final outcome = await chats.runCommand((
+        command: ChatCommand.goal,
+        argument: 'clear',
+      ));
+
+      expect(outcome?.message, contains('the tests pass'));
+      expect(outcome?.failed, isFalse);
+      expect(
+        h.container.read(chatSessionsProvider).conversations.single.goal,
+        isNull,
+      );
+    });
+
+    test('/clear ends the goal on the chat being left, so it cannot go on '
+        'firing turns into a conversation the user walked away from', () async {
+      final grid = _FakeClassifier('NOT_YET\nStill going.');
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'working'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await chats.runCommand((
+        command: ChatCommand.goal,
+        argument: 'the tests pass',
+      ));
+      await settle();
+
+      await chats.runCommand((command: ChatCommand.clear, argument: ''));
+      await settle();
+
+      final left = h.container.read(chatSessionsProvider).conversations.single;
+      expect(left.goal, isNull);
     });
   });
 
@@ -2342,10 +2488,7 @@ void main() {
       // Stand in for the summarizer: the model call is exercised by
       // `chat_compaction_test.dart`; what matters here is what a turn sends
       // once a compaction exists.
-      final chat = h.container
-          .read(chatSessionsProvider)
-          .conversations
-          .single;
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
       expect(chat.messages, hasLength(2));
       final compacted = chat.copyWith(
         compaction: ChatCompaction(
@@ -2368,10 +2511,7 @@ void main() {
       expect(sent.first.text, contains('we agreed to rewrite the parser'));
       expect(sent.map((m) => m.text), isNot(contains('fix the parser')));
       // Nothing was thrown away: the transcript still reads in full.
-      final kept = h.container
-          .read(chatSessionsProvider)
-          .conversations
-          .single;
+      final kept = h.container.read(chatSessionsProvider).conversations.single;
       expect(kept.messages.first.text, 'fix the parser');
     });
   });

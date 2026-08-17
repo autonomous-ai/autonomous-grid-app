@@ -222,9 +222,8 @@ class _MicButton extends ConsumerWidget {
               child: AppSpinner(size: SpinnerSize.small),
             ),
             RecordingActive() => const Icon(Icons.stop_rounded),
-            RecordingIdle() || RecordingFailed() => const Icon(
-              Icons.mic_none_rounded,
-            ),
+            RecordingIdle() ||
+            RecordingFailed() => const Icon(Icons.mic_none_rounded),
           },
           onPressed: busy ? null : () => _tap(context, ref),
         ),

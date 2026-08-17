@@ -12,7 +12,11 @@ mixin _ChatSettle on _ChatSessions {
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
-    _drainQueue(id);
+    // The user's own words first: a follow-up they typed outranks the goal's
+    // next step, and the goal picks up again once the queue is empty.
+    final outcome = _lastTurn.remove(id);
+    if (_drainQueue(id)) return;
+    unawaited(_judgeGoalTurn(id, outcome));
   }
 
   /// Cancel one conversation's in-flight reply (if any) and settle it. Also

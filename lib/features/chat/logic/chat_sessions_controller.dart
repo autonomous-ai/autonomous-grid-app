@@ -35,6 +35,7 @@ import 'chat_title.dart';
 import 'chat_title_writer.dart';
 import 'commands/chat_command.dart';
 import 'commands/chat_compaction.dart';
+import 'commands/chat_goal.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
@@ -44,6 +45,7 @@ import 'conversation.dart';
 /// hear about.
 export 'chat_sessions_state.dart';
 
+part 'chat_sessions_goals.dart';
 part 'chat_sessions_queue.dart';
 part 'chat_sessions_send.dart';
 part 'chat_sessions_settle.dart';
@@ -79,11 +81,18 @@ class _RetryableTurn {
   final AgentTool? continuedAgent;
 }
 
-/// The plumbing the Chat tab's three jobs share — running a turn, settling it,
-/// and holding what the user typed behind it.
+/// How a turn ended, for the goal loop to judge: what the assistant said, why
+/// it failed if it did, and whether it actually did any work.
+///
+/// [ranSteps] is the stall guard's evidence — a turn that only produced prose
+/// moved nothing, and three of those in a row is a loop, not thinking.
+typedef _TurnOutcome = ({String? reply, String? failure, bool ranSteps});
+
+/// The plumbing the Chat tab's four jobs share — running a turn, settling it,
+/// holding what the user typed behind it, and driving a goal.
 ///
 /// They live in files of their own (§4) and reach the same state through this
-/// spine. What is left `abstract` below is exactly the set of calls those three
+/// spine. What is left `abstract` below is exactly the set of calls those four
 /// make into each other: naming them in one place is what keeps the seams
 /// visible instead of hiding a cycle inside one 1,400-line class.
 abstract class _ChatSessions extends Notifier<ChatSessionsState> {
@@ -99,6 +108,17 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Naming a chat outlives the send it started in (the agent writes the name
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
+
+  /// How the last turn of each chat ended, so the goal loop can judge it
+  /// without the update stream having to carry it there. Written as the turn
+  /// lands, read and dropped as it settles; absent means the turn was stopped
+  /// rather than finished.
+  final Map<String, _TurnOutcome> _lastTurn = {};
+
+  /// Consecutive judged turns that did no work, per chat — the stall guard's
+  /// counter. In memory only: a goal that survives a restart comes back
+  /// stalled anyway.
+  final Map<String, int> _idleGoalTurns = {};
 
   /// The chats with a naming attempt in flight. Naming is retried on every turn
   /// until it lands, and an attempt can take longer than a short turn does — so
@@ -219,6 +239,9 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Send the next held turn, if any — [_ChatQueue].
   bool _drainQueue(String id);
 
+  /// Judge a finished turn against the chat's goal — [_ChatGoals].
+  Future<void> _judgeGoalTurn(String id, _TurnOutcome? outcome);
+
   /// Settle a finished send — [_ChatSettle].
   void _finish(String id);
 
@@ -227,7 +250,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 }
 
 class ChatSessionsController extends _ChatSessions
-    with _ChatSend, _ChatSettle, _ChatQueue {
+    with _ChatSend, _ChatSettle, _ChatQueue, _ChatGoals {
   /// Whether the user has already chosen what to look at — opened a chat, or
   /// started a new one — before the saved history landed. Once they have,
   /// restoring must not move them somewhere else.
@@ -355,8 +378,27 @@ class ChatSessionsController extends _ChatSessions
       // it would move them out of the folder they were working in, which is the
       // one thing "start a new chat here" promises not to do.
       case ChatCommand.clear:
-        newChat(projectId: state.active?.projectId ?? state.draftProjectId);
+        // A goal left running in the chat being left would go on sending turns
+        // into a conversation the user has walked away from. Claude Code's
+        // `/clear` ends the goal for the same reason.
+        final leaving = state.active;
+        if (leaving?.goal != null) {
+          _saveAndReplace(leaving!.copyWith(clearGoal: true));
+        }
+        newChat(projectId: leaving?.projectId ?? state.draftProjectId);
         return null;
+      case ChatCommand.goal:
+        final argument = call.argument;
+        if (argument.isEmpty) {
+          return (
+            message: goalStatusLine(state.active?.goal, DateTime.now()),
+            failed: false,
+          );
+        }
+        if (kGoalClearWords.contains(argument.toLowerCase())) {
+          return _clearGoal();
+        }
+        return _setGoal(argument);
       case ChatCommand.compact:
         return _compact(call.argument);
     }
@@ -421,7 +463,7 @@ class ChatSessionsController extends _ChatSessions
       log.warn(
         'chat',
         'compacting $id failed: ${error?.message ?? 'the model replied with '
-            'nothing'}',
+                'nothing'}',
       );
       return (
         message: error == null

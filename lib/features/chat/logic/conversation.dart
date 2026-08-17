@@ -2,6 +2,7 @@ import 'turn_model_share.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import 'commands/chat_compaction.dart';
+import 'commands/chat_goal.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/message_media.dart';
 
@@ -23,6 +24,7 @@ class Conversation {
     this.archivedAt,
     this.approval,
     this.pinned = false,
+    this.goal,
     this.compaction,
     this.resume,
   });
@@ -99,6 +101,10 @@ class Conversation {
   /// order without changing what the order means.
   final bool pinned;
 
+  /// What this chat is working toward on its own, or null for an ordinary
+  /// back-and-forth. See [ChatGoal].
+  final ChatGoal? goal;
+
   /// Where this chat's context was summarized, or null while it carries its
   /// whole history. See [ChatCompaction].
   final ChatCompaction? compaction;
@@ -142,6 +148,10 @@ class Conversation {
     // mode in it is a real choice.
     AgentApprovalMode? approval,
     bool? pinned,
+    ChatGoal? goal,
+    // A goal is *removed*, not merely changed, when the user clears it — which
+    // the `?? this` idiom can't say.
+    bool clearGoal = false,
     ChatCompaction? compaction,
     // Only ever *set*: a session that can be resumed goes on being resumable
     // until it is replaced by a newer one. It is dropped by the sender at the
@@ -164,6 +174,7 @@ class Conversation {
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
     approval: approval ?? this.approval,
     pinned: pinned ?? this.pinned,
+    goal: clearGoal ? null : (goal ?? this.goal),
     compaction: compaction ?? this.compaction,
     resume: clearResume ? null : (resume ?? this.resume),
   );
@@ -193,6 +204,7 @@ class Conversation {
     // Written only when set, like the two above, so an unpinned chat's file is
     // byte-identical to what every build before pinning existed wrote.
     if (pinned) 'pinned': true,
+    if (goal != null) 'goal': goal!.toJson(),
     if (compaction != null) 'compaction': compaction!.toJson(),
     // Same rule again: absent means "start a fresh session", which is what
     // every chat saved before this field existed did.
@@ -237,6 +249,7 @@ class Conversation {
       // Absent — every chat saved before this field existed — means unpinned,
       // which is what they all were.
       pinned: json['pinned'] == true,
+      goal: ChatGoal.fromJson(json['goal']),
       compaction: ChatCompaction.fromJson(json['compaction']),
       // A point that won't parse reads as none, which costs a replay — the same
       // thing that happens to every chat written before this existed.

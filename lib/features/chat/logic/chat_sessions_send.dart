@@ -502,6 +502,13 @@ mixin _ChatSend on _ChatSessions {
             _retryableTurns.remove(id);
             _nameConversation(answered, agentSessionId);
             _announceTurn(answered, body: firstLinePreview(reply.text));
+            _lastTurn[id] = (
+              reply: reply.text,
+              failure: null,
+              // Did it *do* anything, or only talk? The stamped timeline is the
+              // record of the steps it ran.
+              ranSteps: messages.last.parts.isNotEmpty,
+            );
           case ChatSendFailure(:final error, :final partial):
             // Keep what the assistant produced before it failed — its streamed
             // prose, the plan it laid out — instead of wiping the turn to a bare
@@ -535,6 +542,7 @@ mixin _ChatSend on _ChatSessions {
               state = state.withError(id, error);
             }
             _announceTurn(current, body: "Couldn't finish: $error");
+            _lastTurn[id] = (reply: null, failure: error, ranSteps: false);
         }
       },
       onDone: () => _finish(id),
