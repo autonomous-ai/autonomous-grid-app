@@ -10,6 +10,11 @@ import '../../core/grid_paths.dart';
 /// talk to, and spends context saying so.
 const String kClaudeInChromeExtensionId = 'fcoeoabgfenejglbffodgkkbkcdhcgfn';
 
+/// Where the user installs it. Built from the id above rather than pasted, so
+/// the page the app opens and the folder it probes for can't drift apart.
+const String kClaudeInChromeStoreUrl =
+    'https://chromewebstore.google.com/detail/$kClaudeInChromeExtensionId';
+
 /// The native messaging host Claude Code installs the first time it runs with
 /// `--chrome`. The extension and the CLI never speak directly: Chrome launches
 /// this host (`~/.claude/chrome/chrome-native-host`) and relays between them.
