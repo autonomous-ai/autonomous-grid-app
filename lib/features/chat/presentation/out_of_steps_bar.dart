@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../network/logic/grid_power_provider.dart' show plural;
 import '../../../shared/widgets/composer_notice_bar.dart';
 import '../logic/chat_sessions_controller.dart';
 
@@ -13,23 +14,34 @@ import '../logic/chat_sessions_controller.dart';
 /// a turn it cut off exactly like a finished one, so a five-step plan abandoned
 /// at three arrived looking like completed work — and "why does it keep stopping
 /// halfway?" had no answer anywhere in the app.
+///
+/// Since issue #28 the app carries on by itself first (up to [kCarryOnTurns]),
+/// so by the time this bar appears the work has usually been through several
+/// turns already — and the bar says so rather than reading like the first stop.
 class OutOfStepsBar extends ConsumerWidget {
   const OutOfStepsBar({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Selected down to the one bool, so a streamed token doesn't rebuild a bar
-    // that sits over the composer for the whole conversation.
-    final show = ref.watch(
-      chatSessionsProvider.select((s) => s.outOfSteps && !s.sending),
+    // Selected down to what the bar draws, so a streamed token doesn't rebuild a
+    // bar that sits over the composer for the whole conversation.
+    final (show, carriedOn) = ref.watch(
+      chatSessionsProvider.select(
+        (s) => (s.outOfSteps && !s.sending, s.carriedOnHere),
+      ),
     );
     if (!show) return const SizedBox.shrink();
     final controller = ref.read(chatSessionsProvider.notifier);
     return ComposerNoticeBar(
       icon: Icons.hourglass_bottom_rounded,
       // No jargon: the user doesn't have "tool-calling iterations", they have an
-      // assistant that stopped with work left (§5).
-      label: 'The assistant hit its limit for one reply and stopped mid-task',
+      // assistant that stopped with work left (§5). And when the app has already
+      // spent turns of its own on this, it says how many — those turns cost the
+      // user's grid, and they happened while nobody was watching.
+      label: carriedOn == 0
+          ? 'The assistant hit its limit for one reply and stopped mid-task'
+          : 'The assistant carried on $carriedOn more '
+                '${plural(carriedOn, 'time')} and still has not finished',
       onDismiss: controller.dismissOutOfSteps,
       actions: [_CarryOnButton(onTap: controller.continueTurn)],
     );

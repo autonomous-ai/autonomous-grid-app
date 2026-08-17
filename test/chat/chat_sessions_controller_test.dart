@@ -1958,42 +1958,20 @@ void main() {
   });
 
   group('a turn that ran out of tool calls', () {
-    ({ProviderContainer container, _FakeSender agent}) cappedHarness() {
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        updates: const [
-          ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'Got three of five.'),
-            outOfSteps: true,
-          ),
-        ],
-      );
-      return (container: h.container, agent: h.agent);
-    }
-
-    test(
-      'is offered a way on rather than passed off as finished work',
-      () async {
-        final h = cappedHarness();
-
-        await h.container
-            .read(chatSessionsProvider.notifier)
-            .send(network: _credential(), model: 'qwen', message: 'do the lot');
-
-        expect(h.container.read(chatSessionsProvider).outOfSteps, isTrue);
-      },
-    );
-
-    test('carrying on spends a fresh turn, and the offer goes away when that '
-        'turn finishes the work', () async {
-      final scripted = _ScriptedSender([
-        const [
-          ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'Got three of five.'),
-            outOfSteps: true,
-          ),
-        ],
+    /// A chat whose every turn stops for want of room, until [thenFinishes]
+    /// turns are behind it. The sender repeats its last script once it runs
+    /// out, so a run of "ran out of room" replies is one entry long.
+    ({ProviderContainer container, _ScriptedSender sender}) cappedHarness({
+      required int outOfStepsTurns,
+    }) {
+      final sender = _ScriptedSender([
+        for (var i = 0; i < outOfStepsTurns; i++)
+          const [
+            ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'Got three of five.'),
+              outOfSteps: true,
+            ),
+          ],
         const [
           ChatSendSuccess(
             ChatMessage(role: ChatRole.assistant, text: 'Finished the rest.'),
@@ -2004,8 +1982,66 @@ void main() {
         tmp,
         agentInstalled: true,
         updates: const [],
-        answering: scripted,
+        answering: sender,
       );
+      return (container: h.container, sender: sender);
+    }
+
+    test(
+      'carries on by itself, because the person who set a long task going '
+      'is the person least likely to be there to press a button (#28)',
+      () async {
+        final h = cappedHarness(outOfStepsTurns: 1);
+
+        await h.container
+            .read(chatSessionsProvider.notifier)
+            .send(network: _credential(), model: 'qwen', message: 'do the lot');
+        await pumpEventQueue();
+
+        expect(
+          h.sender.calls,
+          2,
+          reason: 'a second turn — a fresh budget — went out unasked',
+        );
+        final state = h.container.read(chatSessionsProvider);
+        expect(
+          state.outOfSteps,
+          isFalse,
+          reason: 'the second turn finished it',
+        );
+        expect(
+          state.conversations.single.messages.last.text,
+          'Finished the rest.',
+        );
+      },
+    );
+
+    test('stops after three turns of its own and hands back, rather than '
+        'spending someone\'s grid on a task that never converges', () async {
+      final h = cappedHarness(outOfStepsTurns: 4);
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'do the lot');
+      await pumpEventQueue();
+
+      expect(
+        h.sender.calls,
+        1 + kCarryOnTurns,
+        reason: 'the turn the user asked for, and three of the app\'s own',
+      );
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.outOfSteps, isTrue, reason: 'the offer is back');
+      expect(
+        state.carriedOnHere,
+        kCarryOnTurns,
+        reason: 'the bar says how many turns went on this while nobody watched',
+      );
+    });
+
+    test('the user pressing Carry on hands out a fresh budget — they have read '
+        'where it got to and asked for more', () async {
+      final h = cappedHarness(outOfStepsTurns: 4);
       final controller = h.container.read(chatSessionsProvider.notifier);
 
       await controller.send(
@@ -2013,18 +2049,46 @@ void main() {
         model: 'qwen',
         message: 'do the lot',
       );
+      await pumpEventQueue();
       await controller.continueTurn();
+      await pumpEventQueue();
 
-      // A second turn really went out — a fresh budget is the whole point — and
-      // its ordinary reply leaves nothing to carry on from.
-      expect(scripted.calls, 2);
-      expect(h.container.read(chatSessionsProvider).outOfSteps, isFalse);
+      expect(h.sender.calls, 1 + kCarryOnTurns + 1);
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.outOfSteps, isFalse);
+      expect(state.carriedOnHere, 0, reason: 'the budget starts over');
+    });
+
+    test('a message the user sends clears the budget — the count guards one '
+        'instruction running away, not a conversation', () async {
+      final h = cappedHarness(outOfStepsTurns: 4);
+      final controller = h.container.read(chatSessionsProvider.notifier);
+
+      await controller.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'do the lot',
+      );
+      await pumpEventQueue();
+      expect(
+        h.container.read(chatSessionsProvider).carriedOnHere,
+        kCarryOnTurns,
+      );
+
+      await controller.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'never mind — do this instead',
+      );
+      await pumpEventQueue();
+
+      expect(h.container.read(chatSessionsProvider).carriedOnHere, 0);
     });
 
     test(
       'waving the offer away sends nothing — stopping short may be fine',
       () async {
-        final h = cappedHarness();
+        final h = cappedHarness(outOfStepsTurns: 4);
         final controller = h.container.read(chatSessionsProvider.notifier);
 
         await controller.send(
@@ -2032,10 +2096,16 @@ void main() {
           model: 'qwen',
           message: 'do the lot',
         );
+        await pumpEventQueue();
         controller.dismissOutOfSteps();
+        await pumpEventQueue();
 
         expect(h.container.read(chatSessionsProvider).outOfSteps, isFalse);
-        expect(h.agent.planFirsts, [false]);
+        expect(
+          h.sender.calls,
+          1 + kCarryOnTurns,
+          reason: 'dismissing spends no further turn',
+        );
       },
     );
 
@@ -2054,8 +2124,11 @@ void main() {
       await h.container
           .read(chatSessionsProvider.notifier)
           .send(network: _credential(), model: 'qwen', message: 'do the lot');
+      await pumpEventQueue();
 
-      expect(h.container.read(chatSessionsProvider).outOfSteps, isFalse);
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.outOfSteps, isFalse);
+      expect(state.carriedOnHere, 0, reason: 'nothing was carried on');
     });
   });
 

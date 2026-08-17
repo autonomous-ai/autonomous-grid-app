@@ -1,5 +1,17 @@
 part of 'chat_sessions_controller.dart';
 
+/// How many turns a chat may carry on by itself before it stops and asks
+/// (issue #28).
+///
+/// Three, because the thing being guarded against is a task that never
+/// converges: the assistant is spending the user's grid — and, on a paid seat,
+/// their money — on turns nobody asked for, and it does it while they are away
+/// from the machine, which is the whole reason the app continues at all. Three
+/// clears the ordinary case (a long job that needed one or two more budgets) and
+/// still puts a floor under the pathological one. Past it the chat stops and the
+/// "carry on" bar comes back, with the count in it.
+const int kCarryOnTurns = 3;
+
 /// How a turn ends: the desktop notification, the name the agent gives the
 /// chat, and the bookkeeping that frees the agent's single slot and starts
 /// whatever was waiting behind it.
@@ -12,11 +24,77 @@ mixin _ChatSettle on _ChatSessions {
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
-    // The user's own words first: a follow-up they typed outranks the goal's
-    // next step, and the goal picks up again once the queue is empty.
+    // The user's own words first: a follow-up they typed outranks both the
+    // carry-on and the goal's next step, and those pick up again once the queue
+    // is empty.
     final outcome = _lastTurn.remove(id);
     if (_drainQueue(id)) return;
+    if (_carriesOnAlone(id, outcome)) return;
     unawaited(_judgeGoalTurn(id, outcome));
+  }
+
+  /// Send the assistant back in, unasked, when the last turn stopped for want of
+  /// room rather than because the work was done (issue #28). True when it did.
+  ///
+  /// A turn that hits its tool-call budget mid-plan has produced a summary, not
+  /// an answer, and the only thing standing between it and the rest of the job
+  /// was a click — which is no use at all to the person who set a long task
+  /// going and left the room. This is that click, up to [kCarryOnTurns] times.
+  ///
+  /// It stands down in three cases, each for its own reason:
+  ///
+  /// - **The user pressed Stop** ([outcome] is null). They have said what they
+  ///   want, and carrying on would be the app arguing with them.
+  /// - **A goal or a loop is running.** Those already own this chat's cadence;
+  ///   a second automatic sender would spend two turns for every one the user
+  ///   asked for, and the two would interleave.
+  /// - **The budget is spent.** The bar comes back and says how many turns went
+  ///   on it, because by then the app has spent three the user never saw.
+  bool _carriesOnAlone(String id, _TurnOutcome? outcome) {
+    if (outcome == null) return false;
+    final spent = state.carriedOnFor(id);
+    if (!willCarryOn(id)) {
+      // Nothing to say unless this is the app giving up: a warning, not an info
+      // line, because it has just spent turns of somebody's grid on one
+      // instruction and is stopping with the work still unfinished.
+      if (state.outOfStepsFor(id) && spent >= kCarryOnTurns) {
+        ref
+            .read(appLogProvider)
+            .warn(
+              'chat',
+              'chat $id ran out of room again after $spent carry-on turn(s) — '
+                  'stopping and asking the user',
+            );
+      }
+      return false;
+    }
+    ref
+        .read(appLogProvider)
+        .info(
+          'chat',
+          'chat $id ran out of room mid-plan — carrying on by itself '
+              '(${spent + 1} of $kCarryOnTurns)',
+        );
+    state = state.withCarriedOn(id, spent + 1);
+    unawaited(continueChat(id));
+    return true;
+  }
+
+  /// Whether chat [id], as things stand, is one the app would carry on by
+  /// itself.
+  ///
+  /// Read twice: once by [_carriesOnAlone] to do it, and once by the turn that
+  /// just landed to decide whether it is worth telling the desktop about (see
+  /// `_announceTurn`) — a task carried on three times must not send three
+  /// notifications saying it stopped, to a user who is not there precisely
+  /// because the app can now finish without them.
+  @override
+  bool willCarryOn(String id) {
+    if (!state.outOfStepsFor(id)) return false;
+    if (state.carriedOnFor(id) >= kCarryOnTurns) return false;
+    final chat = _find(id);
+    if (chat == null) return false;
+    return !(chat.goal?.isRunning ?? false) && !(chat.loop?.isRunning ?? false);
   }
 
   /// Cancel one conversation's in-flight reply (if any) and settle it. Also

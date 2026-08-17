@@ -50,6 +50,13 @@ mixin _ChatSend on _ChatSessions {
     // The chat was deleted while its follow-up waited. Nothing to send it to.
     if (target == null) return;
 
+    // Something the user actually sent — typed now, or typed behind the last
+    // turn — is a fresh start for the carry-on budget (issue #28): the count
+    // guards one instruction running away, not a conversation. A turn the app
+    // sends on their behalf ([continuing]) is what the budget is *for*, so it
+    // leaves the count alone.
+    if (!continuing) state = state.withCarriedOn(target.id, 0);
+
     // Auto agent: the grid picks which installed assistant answers, and it runs
     // on the grid's auto model — the one model every agent can use, so the
     // routed one never dead-ends on a pair the composer left showing. The agent
@@ -507,7 +514,13 @@ mixin _ChatSend on _ChatSessions {
             );
             _retryableTurns.remove(id);
             _nameConversation(answered, agentSessionId);
-            _announceTurn(answered, body: firstLinePreview(reply.text));
+            // Silent when the app is about to carry this turn on itself: the
+            // reply is a summary the agent was told to write mid-job, and a
+            // notification per budget would tell a user who stepped away that
+            // their task stopped three times when it is still running.
+            if (!willCarryOn(id)) {
+              _announceTurn(answered, body: firstLinePreview(reply.text));
+            }
             _lastTurn[id] = (
               reply: reply.text,
               failure: null,

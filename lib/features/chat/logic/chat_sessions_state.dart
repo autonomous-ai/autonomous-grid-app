@@ -73,6 +73,7 @@ class ChatSessionsState {
     this.errors = const {},
     this.awaitingPlanIds = const {},
     this.outOfStepsIds = const {},
+    this.carriedOn = const {},
     this.runningAgents = const {},
     this.turnStartedAt = const {},
     this.queued = const {},
@@ -145,6 +146,17 @@ class ChatSessionsState {
   /// the next commit in that chat, and never saved with the conversation.
   final Set<String> outOfStepsIds;
 
+  /// How many turns each chat has carried on **by itself** since the user last
+  /// said something (issue #28).
+  ///
+  /// A budget, not a tally: the app continues an unfinished turn without being
+  /// asked, and this is what stops that from becoming a loop nobody is watching.
+  /// Spent one turn at a time and cleared by the next thing the user sends, so a
+  /// second instruction gets its own allowance rather than inheriting what the
+  /// first one used up. In memory only — it belongs to the run of turns being
+  /// worked, not to the conversation.
+  final Map<String, int> carriedOn;
+
   /// The open conversation, or null while composing a new one.
   Conversation? get active {
     final id = activeId;
@@ -203,6 +215,9 @@ class ChatSessionsState {
   /// Whether the chat with [id] stopped last turn for want of tool calls.
   bool outOfStepsFor(String? id) => id != null && outOfStepsIds.contains(id);
 
+  /// How many turns the chat with [id] has carried on by itself.
+  int carriedOnFor(String? id) => id == null ? 0 : (carriedOn[id] ?? 0);
+
   /// What is waiting to be sent in the chat with [id], oldest first.
   List<QueuedTurn> queuedFor(String? id) =>
       (id == null ? null : queued[id]) ?? const [];
@@ -228,6 +243,11 @@ class ChatSessionsState {
   /// Whether the open conversation's last turn ran out of room mid-plan.
   bool get outOfSteps => outOfStepsFor(activeId);
 
+  /// How many turns the open conversation has carried on by itself — what the
+  /// "carry on" bar reports, so a user who left the room can read what the app
+  /// did while they were gone.
+  int get carriedOnHere => carriedOnFor(activeId);
+
   ChatSessionsState copyWith({
     List<Conversation>? conversations,
     Object? activeId = _keep,
@@ -236,6 +256,7 @@ class ChatSessionsState {
     Map<String, String?>? errors,
     Set<String>? awaitingPlanIds,
     Set<String>? outOfStepsIds,
+    Map<String, int>? carriedOn,
     Map<String, String>? runningAgents,
     Map<String, DateTime>? turnStartedAt,
     Map<String, List<QueuedTurn>>? queued,
@@ -251,6 +272,7 @@ class ChatSessionsState {
     errors: errors ?? this.errors,
     awaitingPlanIds: awaitingPlanIds ?? this.awaitingPlanIds,
     outOfStepsIds: outOfStepsIds ?? this.outOfStepsIds,
+    carriedOn: carriedOn ?? this.carriedOn,
     runningAgents: runningAgents ?? this.runningAgents,
     turnStartedAt: turnStartedAt ?? this.turnStartedAt,
     queued: queued ?? this.queued,
@@ -318,6 +340,19 @@ class ChatSessionsState {
     return copyWith(awaitingPlanIds: next);
   }
 
+  /// This state with the chat [id]'s carry-on budget set to [turns] — dropped
+  /// from the map at zero, so it only holds chats that have actually carried on.
+  ChatSessionsState withCarriedOn(String id, int turns) {
+    if (turns <= 0 && !carriedOn.containsKey(id)) return this;
+    final next = Map<String, int>.from(carriedOn);
+    if (turns <= 0) {
+      next.remove(id);
+    } else {
+      next[id] = turns;
+    }
+    return copyWith(carriedOn: next);
+  }
+
   /// This state with the chat [id]'s out-of-steps flag set or cleared.
   ChatSessionsState withOutOfSteps(String id, bool outOfSteps) {
     final next = Set<String>.from(outOfStepsIds);
@@ -351,6 +386,10 @@ class ChatSessionsState {
     outOfStepsIds: {
       for (final id in outOfStepsIds)
         if (!ids.contains(id)) id,
+    },
+    carriedOn: {
+      for (final e in carriedOn.entries)
+        if (!ids.contains(e.key)) e.key: e.value,
     },
   );
 }

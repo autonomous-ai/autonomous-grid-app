@@ -250,8 +250,18 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Judge a finished turn against the chat's goal — [_ChatGoals].
   Future<void> _judgeGoalTurn(String id, _TurnOutcome? outcome);
 
+  /// Send the agent back into chat [id] where it ran out of room —
+  /// [ChatSessionsController]. Called by the user's "Carry on" and by the
+  /// automatic one in [_ChatSettle].
+  Future<void> continueChat(String id);
+
   /// Settle a finished send — [_ChatSettle].
   void _finish(String id);
+
+  /// Whether chat [id] is one the app would carry on by itself as things stand
+  /// — [_ChatSettle]. Read by the send that just landed, to keep an
+  /// intermediate stop out of the desktop's notifications.
+  bool willCarryOn(String id);
 
   /// Cancel one chat's send — [_ChatSettle].
   void _cancel(String id);
@@ -776,21 +786,41 @@ class ChatSessionsController extends _ChatSessions
     );
   }
 
-  /// Send the agent back in where it ran out of room.
+  /// The user pressing "Carry on" on the open chat.
+  ///
+  /// Also hands that chat a fresh carry-on budget: the app stops on its own
+  /// after [kCarryOnTurns] turns, and a user who has read where it got to and
+  /// asked for more has answered exactly the question that stop was asking.
+  Future<void> continueTurn() {
+    final id = state.activeId;
+    if (id == null) return Future.value();
+    state = state.withCarriedOn(id, 0);
+    return continueChat(id);
+  }
+
+  /// Send the agent back into chat [id] where it ran out of room.
   ///
   /// The assistant didn't stop because it was finished — it used every tool call
   /// one turn is allowed and Hermes made it summarise. Carrying on is a fresh
   /// turn with a fresh budget, and the agent keeps the conversation, so the
   /// message only has to point it at the work it named itself.
-  Future<void> continueTurn() {
-    if (!state.outOfSteps || state.sending) return Future.value();
+  ///
+  /// By id rather than "the open chat", because the app sends this itself when a
+  /// turn runs out of room (see `_ChatSettle`) — and the chat that ran out may be
+  /// one the user has since switched away from.
+  @override
+  Future<void> continueChat(String id) {
+    if (!state.outOfStepsFor(id) || state.sendingFor(id)) {
+      return Future.value();
+    }
     final network = ref.read(selectedNetworkProvider);
-    final active = state.active;
-    if (network == null || active == null) return Future.value();
+    final chat = _find(id);
+    if (network == null || chat == null) return Future.value();
     return send(
       network: network,
-      model: active.model,
+      model: chat.model,
       message: 'Carry on from where you stopped — finish the steps still open.',
+      into: id,
       // "Where you stopped" only means something to the agent that stopped.
       continuing: true,
     );
