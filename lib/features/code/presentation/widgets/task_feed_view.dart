@@ -28,18 +28,43 @@ class TaskFeedView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final lines = [
-      for (final event in feed.events)
-        if (taskEventLine(event) case final line?) (event.seq, line),
-    ];
-
+    final lines = taskFeedLines(feed.events);
     if (lines.isEmpty) return _Waiting(status: feed.status);
+    return TaskLinesView(lines: lines, tail: tail);
+  }
+}
 
+/// The lines themselves, wherever they came from — the stream while a task
+/// runs, or what was kept of it afterwards.
+///
+/// Shared so a run cannot be drawn one way while it happens and another way
+/// when it is read back.
+class TaskLinesView extends StatelessWidget {
+  const TaskLinesView({
+    super.key,
+    required this.lines,
+    this.tail,
+    this.dropped = 0,
+  });
+
+  final List<TaskLine> lines;
+
+  /// How many lines from the end to show, or null for all of them.
+  final int? tail;
+
+  /// Steps that are gone before the first one here — from the store's cap.
+  final int dropped;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final limit = tail;
-    final hidden = (limit == null || lines.length <= limit)
-        ? 0
-        : lines.length - limit;
-    final shown = hidden == 0 ? lines : lines.sublist(hidden);
+    final hidden =
+        dropped +
+        ((limit == null || lines.length <= limit) ? 0 : lines.length - limit);
+    final shown = (limit == null || lines.length <= limit)
+        ? lines
+        : lines.sublist(lines.length - limit);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,8 +77,8 @@ class TaskFeedView extends StatelessWidget {
             text: '$hidden earlier ${hidden == 1 ? 'step' : 'steps'}',
             tone: TaskLineTone.note,
           ),
-        for (final (seq, line) in shown)
-          _Line(key: ValueKey(seq), text: line.text, tone: line.tone),
+        for (final line in shown)
+          _Line(key: ValueKey(line.seq), text: line.text, tone: line.tone),
       ],
     );
   }
