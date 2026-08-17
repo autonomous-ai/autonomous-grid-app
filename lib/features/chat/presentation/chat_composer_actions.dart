@@ -25,8 +25,8 @@ class _Actions extends StatelessWidget {
   /// control isn't offered where it would mean nothing.
   final Widget? approvalPicker;
 
-  /// Which agent answers — sits just left of the model it runs. Null on a turn
-  /// no agent answers (a picture goes to the grid).
+  /// Which agent answers text-only turns — sits just left of the model it runs.
+  /// It stays visible on a pictured turn even though that request bypasses it.
   final Widget? agentPicker;
   final Widget modelPicker;
   final VoidCallback onAttachFile;

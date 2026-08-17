@@ -6,6 +6,7 @@ library;
 
 import 'dart:convert';
 
+import '../../../core/relay_identity.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'client_app_detector.dart';
 
@@ -71,11 +72,25 @@ String openClawSnippet(String base, String key, List<String> models) {
       '}';
 }
 
-/// The Hermes `custom_providers` name for a grid — its relay host (e.g.
-/// `grid.autonomous.ai`), so the grid registers as a named provider in Hermes's
-/// model picker. Falls back to the brand host if [base] can't be parsed.
+/// The Hermes `custom_providers` name for a grid — **its grid id**, so the grid
+/// registers as a named provider Hermes can tell apart from the user's other
+/// grids. Falls back to the relay host for an endpoint that names no grid (a LAN
+/// relay), and to the brand host if [base] can't be parsed at all.
+///
+/// The id, not the host, and this is not cosmetic: every grid on a deployment
+/// shares one host, while Hermes keys its credential pool by this name
+/// (`custom:<name>`, `agent/credential_pool.py`). Naming by host filed every
+/// grid the user belongs to under one identity, so a credential minted for one
+/// could be handed to another's endpoint — which the relay rejects with
+/// `401 Invalid Grid token: Audience doesn't match`. See [relayIdentityDoc].
 String hermesProviderName(String base) =>
-    Uri.tryParse(base)?.host ?? 'grid.autonomous.ai';
+    gridIdFromRelayBase(base) ??
+    Uri.tryParse(base)?.host ??
+    'grid.autonomous.ai';
+
+/// Pointer to where the grid-identity rules are written down, so the name above
+/// doesn't get "simplified" back to a host by the next reader.
+const String relayIdentityDoc = 'core/relay_identity.dart';
 
 /// The `~/.hermes/config.yaml` blocks that point Hermes at a grid: the active
 /// `model:` selection (`base_url`/`api_key`, the `default` model, and a
@@ -231,6 +246,31 @@ const String kClaudeSubagentModelEnv = 'CLAUDE_CODE_SUBAGENT_MODEL';
 /// own maximum, so a value that's too generous is capped rather than obeyed.
 const String kClaudeCompactWindowEnv = 'CLAUDE_CODE_AUTO_COMPACT_WINDOW';
 
+/// Keeps the skills bundled inside Claude Code out of the turn.
+///
+/// `claude-api` is why: a reference for Anthropic's own API that the Skill tool
+/// loads **whole** — ~922 KB, about 230000 tokens, in one tool result. On a
+/// model holding 262144 with 32000 reserved for the reply, that overflows by a
+/// single token, and a brand-new chat fails on its first message before the user
+/// has said anything long (autonomous-grid-app#16).
+///
+/// All of them rather than that one, because the next bundle is one release
+/// away and would fail exactly the same way under a different name. Nothing here
+/// is worth that risk: they document Anthropic's API and Claude Code itself,
+/// while a Grid chat runs models on the grid.
+///
+/// **Skills Grid installs are untouched** — `~/.claude/skills/` is a different
+/// path, and the setting names it as unaffected, so `grid-serve` and the rest go
+/// on working.
+///
+/// Built-in commands stay *typable*; they are only hidden from the model. That
+/// is what the app's own compaction relies on — it sends `/compact` as a turn's
+/// whole prompt rather than asking the model to reach for it.
+/// TODO(BE): unproven against a live turn; if compaction ever stops working,
+/// look here first.
+const String kClaudeDisableBundledSkillsEnv =
+    'CLAUDE_CODE_DISABLE_BUNDLED_SKILLS';
+
 /// The model tier each `ANTHROPIC_DEFAULT_*_MODEL` variable overrides. Claude
 /// Code resolves an alias like `opus` through these, so a grid that serves its
 /// own Claude tiers (`claude:opus`) answers every `/model` switch the user makes
@@ -279,11 +319,17 @@ String claudeTierModel(String tier, List<String> models) => models.firstWhere(
 /// anything the grid serves. A chat turn always sends one — see
 /// `modelContextWindowProvider`, which falls back on `kAssumedContextWindow`
 /// rather than leaving the number to Claude Code's idea of an Anthropic model.
+/// [withoutBundledSkills] drops the skills shipped inside Claude Code (see
+/// [kClaudeDisableBundledSkillsEnv]). Off by default, and passed only by a chat
+/// turn: the guide and "Set up for me" write the user's **own** `settings.json`,
+/// and taking skills away from every Claude Code session on their computer is
+/// not something this app gets to decide for them.
 Map<String, String> claudeCodeEnv(
   String base,
   String key,
   List<String> models, {
   int? compactWindow,
+  bool withoutBundledSkills = false,
 }) {
   // Opus leads and sonnet takes the side work: the same split Claude Code makes
   // on Anthropic's own API, so a grid serving the tiers behaves as users expect
@@ -300,6 +346,8 @@ Map<String, String> claudeCodeEnv(
       tier.value: claudeTierModel(tier.key, models),
     if (compactWindow != null && compactWindow > 0)
       kClaudeCompactWindowEnv: '$compactWindow',
+    // `1` — the value the setting's own documentation gives for it.
+    if (withoutBundledSkills) kClaudeDisableBundledSkillsEnv: '1',
   };
 }
 

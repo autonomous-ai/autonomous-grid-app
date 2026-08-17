@@ -4,6 +4,7 @@ import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/network/logic/member_providers.dart';
 import 'package:grid_app/infrastructure/api/models/managed_network_member.dart';
 import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
+import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
 const _net = 'net-1';
 
@@ -176,4 +177,114 @@ void main() {
       expect(error, contains('cannot be removed'));
     });
   });
+
+  group('selectedGridMemberCountProvider', () {
+    test('counts everyone the roster returns', () async {
+      final container = _countContainer(
+        list:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+            }) async => ([_member, _domainMember], null),
+      );
+      container.listen(selectedGridMemberCountProvider, (_, _) {});
+
+      await container.read(networkMembersProvider(_net).future);
+
+      expect(container.read(selectedGridMemberCountProvider), 2);
+    });
+
+    test('stays null when the roster cannot be read', () async {
+      // The pill drops the figure entirely here — a 0 would read as "nobody is
+      // on this grid" when the truth is that we never got an answer.
+      final container = _countContainer(
+        list:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+            }) async => (null, 'Members are unavailable.'),
+      );
+      container.listen(selectedGridMemberCountProvider, (_, _) {});
+
+      // Let the failing roster call settle. Not awaited through
+      // `networkMembersProvider(...).future`: that future carries the error, and
+      // the assertion here is about what the *count* does with it.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(selectedGridMemberCountProvider), isNull);
+    });
+
+    test('is null with no grid selected, without asking for a roster', () {
+      var asked = false;
+      final container = _countContainer(
+        grid: null,
+        list:
+            ({
+              required apiUrl,
+              required sessionToken,
+              required networkId,
+            }) async {
+              asked = true;
+              return ([_member], null);
+            },
+      );
+
+      expect(container.read(selectedGridMemberCountProvider), isNull);
+      expect(asked, isFalse);
+    });
+  });
+}
+
+/// A member with no allowlist row — on the grid because their email is on its
+/// domain. Counted like anyone else: they use the grid like anyone else.
+const _domainMember = ManagedNetworkMember(
+  email: 'b@example.com',
+  roles: ['both'],
+  status: 'active',
+  source: 'domain',
+);
+
+/// [_container] plus a selected grid, which is what the count provider reads to
+/// know whose roster to ask for.
+ProviderContainer _countContainer({
+  required MemberListFn list,
+  NetworkCredential? grid = _grid,
+}) {
+  final container = ProviderContainer(
+    overrides: [
+      memberListFnProvider.overrideWithValue(list),
+      selectedNetworkProvider.overrideWith(() => _FixedSelectedNetwork(grid)),
+      sessionProvider.overrideWithValue(
+        const CredentialsFile(networks: [], sessionToken: 'tok'),
+      ),
+    ],
+  );
+  addTearDown(container.dispose);
+  return container;
+}
+
+const _grid = NetworkCredential(
+  networkId: _net,
+  name: 'example.com',
+  networkType: 'private-domain',
+  lanSignalingUrl: 'http://127.0.0.1:9000',
+  accessToken: 'a',
+  refreshToken: 'r',
+  email: 'a@example.com',
+  nodeId: 'node-1',
+  deviceId: 'dev-1',
+  roles: ['both'],
+  scopes: ['consumer:chat'],
+  memberEpoch: 1,
+  networkEpoch: 1,
+  expiresAt: 0,
+);
+
+class _FixedSelectedNetwork extends SelectedNetwork {
+  _FixedSelectedNetwork(this._fixed);
+  final NetworkCredential? _fixed;
+  @override
+  NetworkCredential? build() => _fixed;
 }

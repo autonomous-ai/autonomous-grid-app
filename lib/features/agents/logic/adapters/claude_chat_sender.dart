@@ -170,6 +170,11 @@ class ClaudeChatSender implements ChatSender {
             network.relayApiKey,
             [model],
             compactWindow: agentContextCeiling(window),
+            // A chat turn, so the ~922 KB reference for Anthropic's API — and
+            // every other bundle that could grow to match it — stays out of a
+            // window this turn needs for the conversation. Grid's own skills
+            // live elsewhere and are untouched.
+            withoutBundledSkills: true,
           );
     final dropEnvironment = onExtension
         ? kClaudeRelayEnvKeys

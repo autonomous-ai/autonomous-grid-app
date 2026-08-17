@@ -197,6 +197,24 @@ abstract final class AppPalette {
   static Color get divider =>
       AppTheme.pick(const Color(0x0F000000), const Color(0x14FFFFFF));
 
+  /// A hairline that has to hold a *shape* rather than just part two blocks —
+  /// the tree guide threading the sidebar's projects and their chats.
+  ///
+  /// Stronger than [divider], and deliberately so. A separator only has to be
+  /// findable at the seam the eye is already looking at; a guide is a long thin
+  /// run the eye has to follow, and at the divider's weight it stops reading as
+  /// one line and breaks into stray ticks wherever anything crosses it.
+  /// Measured against the composited rail (`AppGlass.sidebarFill` over
+  /// [windowBg]): divider lands at **1.14:1 light / 1.24:1 dark**, this at
+  /// **1.45:1 in both**.
+  ///
+  /// The two alphas differ because the rails differ — `#F9F9F8` light against
+  /// `#191919` dark — and matching the *numbers* rather than the alphas is what
+  /// keeps the guide equally present in both themes instead of a step fainter
+  /// in light, which is how the divider's pair behaved.
+  static Color get guide =>
+      AppTheme.pick(const Color(0x29000000), const Color(0x20FFFFFF));
+
   // primary action — a solid fill with white text on it, so it has to stay dark
   // enough to carry that text (white on this is 5.5:1). Same value in both
   // themes: as a *fill* it reads on either surface.
@@ -927,6 +945,15 @@ abstract final class AppControl {
   /// square-cornered, and rounding one like an iOS action sheet is one of the
   /// louder tells that a desktop app was drawn to phone conventions.
   static const double menuRadius = 6;
+
+  /// The air between a menu panel and the control it hangs off.
+  ///
+  /// One number for every menu in the app, in both directions: a downward menu
+  /// passes `Offset(0, menuGap)`, an upward one `Offset(0, -menuGap)`. It was
+  /// three numbers before — 6 nearly everywhere, 8 on the composer's agent and
+  /// approval pills, and none at all on its model pill, so the three menus that
+  /// open off the *same* toolbar each sat at a different height.
+  static const double menuGap = 6;
 
   /// The tallest a menu panel ever draws, whatever it lists — `appMenuStyle`
   /// caps every menu here.

@@ -12,7 +12,7 @@ import '../../auto_router/presentation/auto_router_card.dart';
 import '../../playground/presentation/playground_dialog.dart';
 import '../logic/delete_network_controller.dart';
 import '../logic/grid_overview_provider.dart';
-import 'add_member_dialog.dart';
+import 'share_grid_dialog.dart';
 import 'consumer_env_card.dart';
 import '../../../shared/widgets/detail_widgets.dart';
 import 'grid_hardware_section.dart';
@@ -175,13 +175,15 @@ class _Header extends ConsumerWidget {
                 ],
               ),
             ),
-            // Owner/provider header action: managing members. Using the grid is
-            // the body's "Use this grid" card (for every role), so the header
-            // carries no test/try button.
-            if (network.canManageProvider) ...[
-              const SizedBox(width: 12),
-              _AddMemberButton(network: network),
-            ],
+            // Sharing the grid, offered to everyone on it — the same rule the
+            // account menu's "Invite members" row uses, so the two entry points
+            // into [ShareGridDialog] can't disagree about who gets to see it.
+            // It used to gate on `canManageProvider`, which let a provider in
+            // but kept a pure consumer out: a third answer, and one nobody had
+            // decided on. Using the grid is the body's "Use this grid" card, so
+            // the header carries no test/try button.
+            const SizedBox(width: 12),
+            _AddMemberButton(network: network),
           ],
         ),
         const SizedBox(height: 8),
@@ -395,18 +397,21 @@ class _RenameGridButton extends ConsumerWidget {
   }
 }
 
-/// Admin/provider header action: opens the invite-member dialog. Reachable from
-/// any tab, not just Members.
+/// Admin/provider header action: opens the share dialog. Reachable from any
+/// tab, not just Members.
 class _AddMemberButton extends StatelessWidget {
   const _AddMemberButton({required this.network});
   final NetworkCredential network;
 
   @override
   Widget build(BuildContext context) {
+    // "Share", not "Add member": the dialog behind it now also shows who is
+    // already on the grid and how the grid is reachable in general, and a
+    // button named for one of three jobs hides the other two.
     return FilledButton.icon(
-      onPressed: () => AddMemberDialog.show(context, network.networkId),
+      onPressed: () => ShareGridDialog.show(context, network),
       icon: const Icon(Icons.person_add_alt_1, size: AppControl.iconSize),
-      label: const Text('Add member'),
+      label: const Text('Share'),
     );
   }
 }

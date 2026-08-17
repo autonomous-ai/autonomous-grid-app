@@ -116,8 +116,16 @@ class NetworkCredential {
   /// pending), so member-admin UI must gate on this, not [canManageProvider].
   bool get isOwner => role == NetworkRole.admin;
 
+  /// Whether the stored access token has run out — "no", rather than "yes",
+  /// when the record doesn't say.
+  ///
+  /// [expiresAt] defaults to 0 for a `[[networks]]` block written before the
+  /// field existed, and a bare `now >= 0` reads that as expired in 1970. This
+  /// gates whether the app will point an assistant at the grid at all, so a
+  /// missing field would take working chats away from anyone whose credentials
+  /// predate it — the same shape as the `archivedAt` epoch trap.
   bool isExpired(DateTime now) =>
-      now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
+      expiresAt > 0 && now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
 
   static List<String> _stringList(Object? value) =>
       value is List ? value.map((e) => e.toString()).toList() : const [];

@@ -29,10 +29,27 @@ void main() {
       expect(message, contains('Nobody on this grid'));
     });
 
-    test('a rejected token sends the user to sign in again', () {
-      final message = friendlyAgentServerError('HTTP 401: {"detail":"nope"}');
+    test('a rejected key asks for another send, because the app repairs it '
+        'itself', () {
+      final message = friendlyAgentServerError(
+        'HTTP 401: {"detail":"Invalid Grid token: Audience doesn\'t match"}',
+      );
 
-      expect(message, contains('Sign out'));
+      // Not "sign out and back in": signing in never rewrote the assistant's
+      // config, so the old line asked for a chore that fixed nothing.
+      expect(message, contains('Send again'));
+      expect(message, isNot(contains('Sign out')));
+      expect(isGridKeyRefusal('HTTP 401: {"detail":"nope"}'), isTrue);
+    });
+
+    test('being locked out of the grid is not the same as a stale key — only '
+        'one of them is worth retrying', () {
+      final message = friendlyAgentServerError(
+        'HTTP 403: {"detail":"Missing required scope: inference:create"}',
+      );
+
+      expect(message, contains('access'));
+      expect(isGridKeyRefusal('HTTP 403: {"detail":"nope"}'), isFalse);
     });
 
     test(

@@ -25,8 +25,8 @@ Color _toneColor(MetricTone tone) => switch (tone) {
 /// publish no thermal sensor at all.
 const String _unmeasuredHint = 'This machine does not report this reading.';
 
-/// One node's live readings: its identity, its gauges, the figures beside them,
-/// and its measured decode rate.
+/// One node's live readings: its identity — what it is called *and what it is* —
+/// its gauges, the figures beside them, and its measured decode rate.
 ///
 /// Every row is always present, so two cards side by side line up label for
 /// label and the eye can compare figures instead of re-reading the layout. Rows
@@ -125,36 +125,65 @@ class _CardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final hardware = nodeHardwareName(node);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // `Expanded`, so the name absorbs every spare pixel and the summary is
-        // pushed flush to the card's right edge. This was two `Flexible`s, which
-        // both defaulted to flex 1 and so split the row in half — leaving the
-        // summary right-aligned within its own half, floating in the middle.
-        Expanded(
-          child: Text(
-            node.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: AppPalette.textPrimary,
+        Row(
+          children: [
+            // `Expanded`, so the name absorbs every spare pixel and the summary
+            // is pushed flush to the card's right edge. This was two
+            // `Flexible`s, which both defaulted to flex 1 and so split the row
+            // in half — leaving the summary right-aligned within its own half,
+            // floating in the middle.
+            Expanded(
+              child: Text(
+                node.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppPalette.textPrimary,
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            // Capped rather than flexible: it is laid out before the name takes
+            // the remainder, so an unusually long summary would otherwise push
+            // the row past the card instead of ellipsizing.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: Text(
+                nodeRoleSummary(node),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 11, color: AppPalette.textFaint),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        // Capped rather than flexible: it is laid out before the name takes the
-        // remainder, so an unusually long summary would otherwise push the row
-        // past the card instead of ellipsizing.
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 150),
-          child: Text(
-            nodeRoleSummary(node),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.right,
-            style: TextStyle(fontSize: 11, color: AppPalette.textFaint),
+        const SizedBox(height: 3),
+        // What the machine is, under what it's called. A hostname says nothing
+        // about capability — "Grid-Relay" is the same word for a laptop and for
+        // a 192 GB Mac Studio — and this card exists to be read beside other
+        // cards, where the chip is the first thing worth comparing.
+        //
+        // Always drawn, [kUnmeasured] when the node described neither chip nor
+        // card, because the dashboard levels its cards by height: a line that
+        // came and went would knock every gauge below it out of line with the
+        // card beside it, which is the alignment this whole file protects.
+        Text(
+          hardware.isEmpty ? kUnmeasured : hardware,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 11,
+            color: hardware.isEmpty
+                ? AppPalette.textFaint
+                : AppPalette.textSecondary,
           ),
         ),
       ],
@@ -296,8 +325,9 @@ class _DashPainter extends CustomPainter {
 }
 
 /// The figures that read better as facts than as bars: power, free memory,
-/// storage, and what the node is serving. A fixed two-column grid — every card
-/// shows all four, so they line up across cards.
+/// storage, what the node is serving, and how much it has answered lately. A
+/// fixed two-column grid — every card shows all six, so they line up across
+/// cards.
 class _CardDetails extends StatelessWidget {
   const _CardDetails({required this.node});
 
@@ -307,39 +337,92 @@ class _CardDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final power = powerMetric(node);
     final storage = storageMetric(node);
-    final entries = <({String label, String value, bool measured})>[
-      (label: power.label, value: power.value, measured: power.measured),
+    final input = answeredInputMetric(node);
+    final cached = answeredCachedMetric(node);
+    final tokens = answeredTokensMetric(node);
+    final requests = answeredRequestsMetric(node);
+    // Both answered figures share one hint, because they are one fact split in
+    // two: whichever the pointer lands on, the split behind it is the same.
+    final byModel = answeredByModelHint(node);
+    final entries = <_Detail>[
+      (
+        label: power.label,
+        value: power.value,
+        measured: power.measured,
+        hint: '',
+      ),
       (
         label: 'Available',
         value: freeMemoryLabel(node),
         measured: freeMemoryLabel(node) != kUnmeasured,
+        hint: '',
       ),
-      (label: storage.label, value: storage.value, measured: storage.measured),
+      (
+        label: storage.label,
+        value: storage.value,
+        measured: storage.measured,
+        hint: '',
+      ),
       (
         label: nodeEngineLabel(node.engine),
         value: (node.model ?? '').isEmpty ? kUnmeasured : node.model!,
         measured: (node.model ?? '').isNotEmpty,
+        hint: '',
+      ),
+      // The full token split, in the order work happens: what came in, how much
+      // of it was already cached, what went out, and how many turns that was.
+      // Input is the *fresh* half — cached prefill is a share of input, not a
+      // fourth kind, so showing both raw would give the card three figures that
+      // sum to more than the machine handled (see [AnsweredTokens]).
+      (
+        label: input.label,
+        value: input.value,
+        measured: input.measured,
+        hint: byModel,
+      ),
+      (
+        label: cached.label,
+        value: cached.value,
+        measured: cached.measured,
+        hint: byModel,
+      ),
+      (
+        label: tokens.label,
+        value: tokens.value,
+        measured: tokens.measured,
+        hint: byModel,
+      ),
+      (
+        label: requests.label,
+        value: requests.value,
+        measured: requests.measured,
+        hint: byModel,
       ),
     ];
-    // A fixed 2x2 of equal columns. Not a `Wrap` sized by a `LayoutBuilder`:
-    // the dashboard levels each row with `IntrinsicHeight`, which asks every
-    // child for its intrinsic height, and `LayoutBuilder` throws rather than
-    // answer — see `_DashedTrack`. `Expanded` splits the width without anyone
-    // having to measure it.
+    // A fixed 2-column grid. Not a `Wrap` sized by a `LayoutBuilder`: the
+    // dashboard levels each row with `IntrinsicHeight`, which asks every child
+    // for its intrinsic height, and `LayoutBuilder` throws rather than answer —
+    // see `_DashedTrack`. `Expanded` splits the width without anyone having to
+    // measure it.
     return Column(
       children: [
-        _DetailRow(entries: entries.take(2).toList()),
-        const SizedBox(height: 12),
-        _DetailRow(entries: entries.skip(2).toList()),
+        for (var i = 0; i < entries.length; i += 2) ...[
+          if (i > 0) const SizedBox(height: 12),
+          _DetailRow(entries: entries.skip(i).take(2).toList()),
+        ],
       ],
     );
   }
 }
 
+/// One field of the detail grid: what it is, what it reads, whether the node
+/// actually reported it, and anything worth adding on hover.
+typedef _Detail = ({String label, String value, bool measured, String hint});
+
 class _DetailRow extends StatelessWidget {
   const _DetailRow({required this.entries});
 
-  final List<({String label, String value, bool measured})> entries;
+  final List<_Detail> entries;
 
   @override
   Widget build(BuildContext context) {
@@ -353,6 +436,7 @@ class _DetailRow extends StatelessWidget {
               label: entries[i].label,
               value: entries[i].value,
               measured: entries[i].measured,
+              hint: entries[i].hint,
             ),
           ),
         ],
@@ -366,11 +450,17 @@ class _DetailField extends StatelessWidget {
     required this.label,
     required this.value,
     required this.measured,
+    this.hint = '',
   });
 
   final String label;
   final String value;
   final bool measured;
+
+  /// What hovering adds, for a figure that summarises something — the per-model
+  /// split behind a node's totals. Empty for a field that is already the whole
+  /// story, which is most of them.
+  final String hint;
 
   @override
   Widget build(BuildContext context) {
@@ -397,8 +487,12 @@ class _DetailField extends StatelessWidget {
         ),
       ],
     );
-    if (measured) return field;
-    return Tooltip(message: _unmeasuredHint, child: field);
+    // The unmeasured note wins when both could apply: "this machine reports
+    // nothing" is the more important thing to say, and a breakdown of a figure
+    // that was never measured would have nothing in it anyway.
+    if (!measured) return Tooltip(message: _unmeasuredHint, child: field);
+    if (hint.isEmpty) return field;
+    return Tooltip(message: hint, child: field);
   }
 }
 

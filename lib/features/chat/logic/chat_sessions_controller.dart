@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'turn_model_usage.dart';
 import '../../../core/text_preview.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/cli/agent_event.dart';
@@ -55,6 +56,24 @@ final chatSessionsProvider =
       ChatSessionsController.new,
     );
 
+/// Everything needed to repeat a failed turn without asking the user to rebuild
+/// its text, pictures, documents, or captured context in the composer.
+class _RetryableTurn {
+  const _RetryableTurn({
+    required this.messageCount,
+    required this.attachments,
+    required this.planTurn,
+    required this.continuedAgent,
+  });
+
+  /// The transcript length after the user turn was committed. A partial answer
+  /// may follow it after failure; retry trims to this point before sending.
+  final int messageCount;
+  final List<MediaAttachment> attachments;
+  final bool planTurn;
+  final AgentTool? continuedAgent;
+}
+
 /// The plumbing the Chat tab's four jobs share — running a turn, settling it,
 /// holding what the user typed behind it, and driving a goal.
 ///
@@ -67,6 +86,10 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// tear down exactly the one they mean and each reply folds into its own chat.
   final Map<String, StreamSubscription<ChatSendUpdate>> _subs = {};
   final Map<String, Completer<void>> _dones = {};
+
+  /// The last attempted turn per chat. Kept in memory only: errors are live
+  /// state too, and without an error there is no Retry action that can read it.
+  final Map<String, _RetryableTurn> _retryableTurns = {};
 
   /// Naming a chat outlives the send it started in (the agent writes the name
   /// seconds later), so it has to know when there's no longer a state to write.
@@ -648,6 +671,7 @@ class ChatSessionsController extends _ChatSessions
   void clearError() {
     final id = state.activeId;
     if (id == null || state.errorFor(id) == null) return;
+    _retryableTurns.remove(id);
     state = state.withError(id, null);
   }
 }

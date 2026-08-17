@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../chat/logic/turn_model_share.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/context_chip.dart';
@@ -73,6 +74,7 @@ class ChatBubble extends StatelessWidget {
                   model: message.model!,
                   agent: message.agent,
                   node: message.node,
+                  modelShares: message.modelShares,
                   took: message.took,
                   firstToken: message.firstToken,
                 ),
@@ -160,6 +162,7 @@ class _ReplyFooter extends StatelessWidget {
     required this.model,
     this.agent,
     this.node,
+    this.modelShares = const [],
     this.took,
     this.firstToken,
   });
@@ -173,6 +176,9 @@ class _ReplyFooter extends StatelessWidget {
   /// The machine that served the model, or null when that can't be told — see
   /// [ChatMessage.node]. Left out rather than guessed at.
   final String? node;
+
+  /// Which models actually answered, busiest first — see [ChatMessage.modelShares].
+  final List<ModelShare> modelShares;
 
   /// How long the answer took, or null on a reply saved before the app recorded
   /// it — those keep the plain model name rather than claiming an unknown time.
@@ -190,12 +196,6 @@ class _ReplyFooter extends StatelessWidget {
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          Icons.auto_awesome_outlined,
-          size: 12,
-          color: AppPalette.textFaint,
-        ),
-        const SizedBox(width: 5),
         // The names can ellipsis; the times can't. A long model id or machine
         // name on a narrow window has to give way to the numbers, not swallow
         // them — and they give way together, so the line never breaks mid-`·`.
@@ -220,7 +220,17 @@ class _ReplyFooter extends StatelessWidget {
   /// Who, what and where, in that order — the answer's provenance, narrowing
   /// from the thing that read the prompt to the machine that ran it. Whatever
   /// isn't known is simply absent: the model is the only one always there.
-  List<String> get _names => [?_agentName, modelShortLabel(model), ?node];
+  ///
+  /// The model slot carries the *breakdown* whenever more than one model served
+  /// the turn, because then the single name is the one thing that is certainly
+  /// wrong: `auto` is a routing instruction, and even a named turn spreads across
+  /// an agent's lead / small-fast / subagent models. One model — the ordinary
+  /// case on a small grid — reads exactly as it always did.
+  List<String> get _names => [?_agentName, _modelLabel, ?node];
+
+  String get _modelLabel =>
+      modelShareLabel(modelShares, label: modelShortLabel) ??
+      modelShortLabel(model);
 
   /// The agent's name as the app calls it elsewhere ("Claude Code", not
   /// `claude`), or null for a reply the grid answered itself — and for an id
@@ -236,8 +246,14 @@ class _ReplyFooter extends StatelessWidget {
       '$who with ${modelDisplayLabel(model)}',
       if (node != null) 'on $node',
     ].join(' ');
-    if (took == null || firstToken == null) return '$where.';
-    return '$where.\nStarted answering after ${formatTurnDuration(firstToken!)}, '
+    // Every model, with its count — the footer names at most three, so "+2 more"
+    // is never where the story ends.
+    final breakdown = modelShares.isEmpty
+        ? ''
+        : '\n${modelShareDetail(modelShares, label: modelShortLabel)}';
+    if (took == null || firstToken == null) return '$where.$breakdown';
+    return '$where.$breakdown\nStarted answering after '
+        '${formatTurnDuration(firstToken!)}, '
         'finished in ${formatTurnDuration(took!)}.';
   }
 

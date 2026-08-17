@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../chat/logic/turn_model_share.dart';
+import '../../chat/logic/turn_model_usage.dart';
+import '../../playground/logic/chat_message.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -94,6 +97,9 @@ class AgentActivityFeed extends ConsumerWidget {
     for (final step in steps) {
       if (step.status == AgentActivityStatus.running) running = step;
     }
+    // A final copy so the null check below promotes it: `running` is assigned
+    // in the loop above and so stays nullable to the analyzer.
+    final active = running;
     final sections = <Widget>[
       if (run.parts.isNotEmpty || answer != null)
         AgentTurnView(parts: run.parts, trailing: answer),
@@ -114,26 +120,41 @@ class AgentActivityFeed extends ConsumerWidget {
           if (i > 0 || leadingGap) SizedBox(height: i == 0 ? 10 : 8),
           sections[i],
         ],
+        // The status line, and beside it what is answering.
+        //
         // Something is running: its own row already says *what*, and nothing
         // says *for how long* — see [_StillWorkingRow], which stays out of the
-        // way until the wait is long enough to be worth reporting.
-        if (running case final step?)
-          _StillWorkingRow(
-            key: ValueKey(step.id),
-            step: step,
-            named: showSteps,
-            gap: gap,
-          )
-        else
-          // Nothing running, so the model is composing its next step. Show
-          // that, with a live count, so a long pause reads as work rather than
-          // a stall. Reset the elapsed count each time the step list changes,
-          // so it reads as time since the last action, not since the turn
-          // began.
-          Padding(
-            padding: EdgeInsets.only(top: gap),
-            child: _ThinkingRow(key: ValueKey(steps.length)),
+        // way until the wait is long enough to be worth reporting. Nothing
+        // running: the model is composing its next step, so say that with a
+        // live count, reset each time the step list changes so it reads as time
+        // since the last action rather than since the turn began.
+        //
+        // The models share this row rather than hanging off either state,
+        // because the two swap as each tool call starts and ends — and
+        // `_StillWorkingRow` draws nothing at all for the first seconds of a
+        // step. Attached to one of them, the models blinked out for the length
+        // of every step and came back between them. What is answering does not
+        // stop being true while a command runs.
+        Padding(
+          padding: EdgeInsets.only(top: gap),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: active == null
+                    ? _ThinkingRow(key: ValueKey(steps.length))
+                    : _StillWorkingRow(
+                        key: ValueKey(active.id),
+                        step: active,
+                        named: showSteps,
+                        // The gap belongs to this row now, not the child.
+                        gap: 0,
+                      ),
+              ),
+              _LiveModels(chatId: chatId),
+            ],
           ),
+        ),
       ],
     );
   }
@@ -219,6 +240,9 @@ class _StillWorkingRowState extends State<_StillWorkingRow> {
     final row = Padding(
       padding: EdgeInsets.fromLTRB(0, widget.gap + 3, 0, 3),
       child: Row(
+        // Hug the text, like the thinking line beside it — at the default `max`
+        // it filled the bubble and pushed the models to the far right edge.
+        mainAxisSize: MainAxisSize.min,
         children: [
           const AppSpinner(size: SpinnerSize.small),
           const SizedBox(width: 8),
@@ -301,6 +325,9 @@ class _ThinkingRowState extends State<_ThinkingRow> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
+        // Hug the text. Left at the default `max` this filled the bubble and
+        // pushed whatever followed it to the far right edge.
+        mainAxisSize: MainAxisSize.min,
         children: [
           const AppSpinner(size: SpinnerSize.small),
           const SizedBox(width: 8),
@@ -317,6 +344,36 @@ class _ThinkingRowState extends State<_ThinkingRow> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// What is answering the open turn, beside the status line.
+///
+/// Under `auto` the composer's pill says "auto", which is a routing instruction
+/// and not a model; on a task that runs for minutes this is the only place the
+/// user can see which models the grid is actually spending.
+class _LiveModels extends ConsumerWidget {
+  const _LiveModels({required this.chatId});
+
+  final String chatId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final shares = ref.watch(openTurnModelsProvider(chatId));
+    final label = modelShareLabel(shares, label: modelShortLabel);
+    if (label == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }

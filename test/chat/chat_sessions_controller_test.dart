@@ -107,6 +107,9 @@ class _ScriptedSender implements ChatSender {
 
   /// How many turns were actually asked for.
   int calls = 0;
+  final histories = <List<ChatMessage>>[];
+  final models = <String>[];
+  final attachmentsPerTurn = <List<MediaAttachment>>[];
 
   @override
   Stream<ChatSendUpdate> send({
@@ -123,6 +126,9 @@ class _ScriptedSender implements ChatSender {
     AgentApprovalMode? approval,
     AgentResumePoint? resume,
   }) {
+    histories.add(history);
+    models.add(model);
+    attachmentsPerTurn.add(attachments);
     final turn = turns[calls.clamp(0, turns.length - 1)];
     calls++;
     return Stream.fromIterable(turn);
@@ -1204,6 +1210,61 @@ void main() {
       userMsg.media.single.path,
     );
   });
+
+  test(
+    'retry replaces a failed partial answer and resends the original pictured '
+    'turn with the newly selected model',
+    () async {
+      final answering = _ScriptedSender([
+        [
+          const ChatSendFailure(
+            'This model cannot read images.',
+            partial: ChatMessage(
+              role: ChatRole.assistant,
+              text: 'I cannot inspect that picture.',
+            ),
+          ),
+        ],
+        [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'It is a mouse.'),
+          ),
+        ],
+      ]);
+      final h = _harness(tmp, updates: const [], answering: answering);
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      final picture = MediaAttachment(
+        filename: 'mouse.png',
+        bytes: Uint8List.fromList([1, 2, 3]),
+      );
+
+      await chats.send(
+        network: _credential(),
+        model: 'text-only',
+        message: 'What is this?',
+        attachments: [picture],
+      );
+      final failed = h.container.read(chatSessionsProvider);
+      final savedPath = failed.active!.messages.first.media.single.path;
+      expect(failed.active!.messages, hasLength(2));
+      expect(failed.error, 'This model cannot read images.');
+
+      await chats.retry(network: _credential(), model: 'vision-model');
+
+      final retried = h.container.read(chatSessionsProvider);
+      expect(answering.calls, 2);
+      expect(answering.models, ['text-only', 'vision-model']);
+      expect(answering.attachmentsPerTurn.last.single.bytes, picture.bytes);
+      expect(answering.histories.last, hasLength(1));
+      expect(answering.histories.last.single.media.single.path, savedPath);
+      expect(retried.active!.messages, hasLength(2));
+      expect(retried.active!.messages.map((message) => message.text), [
+        'What is this?',
+        'It is a mouse.',
+      ]);
+      expect(retried.error, isNull);
+    },
+  );
 
   test('a second turn appends to the same open conversation', () async {
     final h = _harness(
@@ -2326,6 +2387,73 @@ void main() {
       expect(h.codex.planFirsts, [true, false]);
       expect(h.hermes.history, isNull);
     });
+
+    test(
+      'retrying a failed continuation stays with its original agent',
+      () async {
+        final codex = _ScriptedSender([
+          [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'The plan.'),
+            ),
+          ],
+          [const ChatSendFailure('Codex stopped.')],
+          [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'Implemented.'),
+            ),
+          ],
+        ]);
+        final hermes = _FakeSender(_kOneReply);
+        final grid = _FakeClassifier('codex');
+        final container = ProviderContainer(
+          overrides: [
+            chatStoreProvider.overrideWithValue(ChatStore(directory: tmp)),
+            chatSenderProvider.overrideWithValue(_FakeSender(_kOneReply)),
+            hermesChatSenderProvider.overrideWithValue(hermes),
+            codexChatSenderProvider.overrideWithValue(codex),
+            agentSessionTitleProvider.overrideWithValue(_FakeAgentTitle(null)),
+            mediaOutputsDirProvider.overrideWithValue(
+              Directory('${tmp.path}/outputs'),
+            ),
+            hermesPathProvider.overrideWithValue('/bin/hermes'),
+            codexPathProvider.overrideWithValue('/bin/codex'),
+            claudePathProvider.overrideWithValue(null),
+            piPathProvider.overrideWithValue(null),
+            gridOverviewProvider.overrideWith((ref) => _overview()),
+            gridServesAutoModelProvider.overrideWith((ref) => true),
+            chatTransportProvider.overrideWithValue(grid),
+            chatPrefsStoreProvider.overrideWithValue(
+              ChatPrefsStore(file: File('${tmp.path}/chat_prefs.json')),
+            ),
+            projectsStoreProvider.overrideWithValue(
+              ProjectsStore(file: File('${tmp.path}/projects.json')),
+            ),
+            selectedNetworkProvider.overrideWith(_FixedNetwork.new),
+          ],
+        );
+        addTearDown(container.dispose);
+        container.read(chatScopePrefsProvider).setAgent(kAutoAgentId);
+        final chats = container.read(chatSessionsProvider.notifier);
+
+        await chats.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'refactor this module',
+          planFirst: true,
+        );
+        grid.reply = 'hermes';
+        await chats.approvePlan();
+        expect(container.read(chatSessionsProvider).error, 'Codex stopped.');
+
+        await chats.retry(network: _credential(), model: 'qwen');
+
+        expect(codex.calls, 3);
+        expect(hermes.history, isNull);
+        expect(grid.calls, 1, reason: 'the continuation is not routed again');
+        expect(container.read(chatSessionsProvider).error, isNull);
+      },
+    );
 
     test(
       'while the grid is choosing, the chat is not waiting on a lane',
