@@ -28,7 +28,6 @@ import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
-import 'chat_goal.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
@@ -38,7 +37,6 @@ import 'conversation.dart';
 /// hear about.
 export 'chat_sessions_state.dart';
 
-part 'chat_sessions_goals.dart';
 part 'chat_sessions_queue.dart';
 part 'chat_sessions_send.dart';
 part 'chat_sessions_settle.dart';
@@ -74,11 +72,11 @@ class _RetryableTurn {
   final AgentTool? continuedAgent;
 }
 
-/// The plumbing the Chat tab's four jobs share — running a turn, settling it,
-/// holding what the user typed behind it, and driving a goal.
+/// The plumbing the Chat tab's three jobs share — running a turn, settling it,
+/// and holding what the user typed behind it.
 ///
 /// They live in files of their own (§4) and reach the same state through this
-/// spine. What is left `abstract` below is exactly the set of calls those four
+/// spine. What is left `abstract` below is exactly the set of calls those three
 /// make into each other: naming them in one place is what keeps the seams
 /// visible instead of hiding a cycle inside one 1,400-line class.
 abstract class _ChatSessions extends Notifier<ChatSessionsState> {
@@ -94,12 +92,6 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Naming a chat outlives the send it started in (the agent writes the name
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
-
-  /// How the last turn of each chat ended, so [_finish] can move that chat's
-  /// goal on without the update stream having to carry it there. Written as the
-  /// turn lands, read and dropped as it settles; absent means the turn was
-  /// stopped rather than finished.
-  final Map<String, ({String? reply, String? failure})> _lastTurn = {};
 
   /// Agent turns waiting for their **project's** lane, oldest first, keyed by
   /// project id. The chats running right now are
@@ -161,7 +153,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Persist [conversation] and publish it where it already sits.
   ///
   /// The one move behind every edit that is not talking — renaming, pinning,
-  /// picking a model, setting a goal: write it, swap it in, leave `updatedAt`
+  /// picking a model, archiving: write it, swap it in, leave `updatedAt`
   /// and the open chat alone so the sidebar never re-sorts for a change the
   /// user would not call a message.
   void _saveAndReplace(Conversation conversation) {
@@ -207,8 +199,8 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
         .withOutOfSteps(saved.id, outOfSteps);
   }
 
-  /// Send a turn — implemented by [_ChatSend], called by the queue, the goal
-  /// loop and the plan-approval bar.
+  /// Send a turn — implemented by [_ChatSend], called by the queue and the
+  /// plan-approval bar.
   ///
   /// [continuing] marks a turn the app is sending on the user's behalf to carry
   /// on work an agent has already started, so it stays with that agent instead
@@ -232,9 +224,6 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Send the next held turn, if any — [_ChatQueue].
   bool _drainQueue(String id);
 
-  /// Move a goal on now that a turn has ended — [_ChatGoals].
-  void _advanceGoal(String id, ({String? reply, String? failure})? outcome);
-
   /// Settle a finished send — [_ChatSettle].
   void _finish(String id);
 
@@ -247,7 +236,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 }
 
 class ChatSessionsController extends _ChatSessions
-    with _ChatSend, _ChatSettle, _ChatQueue, _ChatGoals {
+    with _ChatSend, _ChatSettle, _ChatQueue {
   /// Whether the user has already chosen what to look at — opened a chat, or
   /// started a new one — before the saved history landed. Once they have,
   /// restoring must not move them somewhere else.
