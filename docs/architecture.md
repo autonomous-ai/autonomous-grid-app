@@ -1,7 +1,20 @@
 # Grid Desktop App — Architecture, Domain & Features
 
-> Full architecture note, built by reading all of `lib/` (**808 Dart files, ~151,250 lines, 29 feature domains**).
-> Updated: **2026-08-17** · branch `main` · version `0.2.0+1`
+> Full architecture note, built by reading all of `lib/` (**821 Dart files, ~154,300 lines, 30 feature domains**).
+> Updated: **2026-08-17** · branch **`device`** (= `main` + the panel work) · version `0.2.0+1`
+>
+> **On `device` only — a 30th domain and a fifth plane.** `main` measured 808 files / ~151,250 lines /
+> 29 domains; everything below that number is the **Grid Panel**: a physical companion device (an ESP32
+> board with a 480×480 screen) on the end of a USB cable, which the app answers, mirrors live turns to,
+> takes voice from, and reflashes. §2 (the fifth plane), §4.7 (the wire), §7.30 (the domain), and the
+> normative [`docs/panel-protocol.md`](panel-protocol.md). ⚠️ The **device half of that work — the
+> `esp32-square` firmware — was deleted from this repo on 2026-08-17**, keeping "the half that can meet
+> another device", so the protocol document is now the only place the two sides agree.
+>
+> ⚠️ **Two unrelated things are called "panel" here.** `lib/shared/panels/` + `PanelHost`/`PanelFeature`
+> are the **work panels around a conversation** (Review / Terminal / Files, §3, §7.22–§7.24).
+> `lib/features/panel/` + `lib/infrastructure/panel/` are the **hardware Grid Panel** (§7.30). Same word,
+> unrelated code.
 >
 > The 08/12 measurement read **775 files / ~140,300 lines / 29 domains**; 08/10 read **668 / ~120,900 / 26**;
 > 06/08 read **558 / ~105,000 / 23**. This time **no domain was added** — the ~11,000 new lines all landed
@@ -65,6 +78,7 @@ From one window, the app lets you:
 | **Projects (Home)** | A project = a folder the assistant may read, plus rules + memory joined onto the opening turn |
 | **Working beside the chat** | Two **panels** around the conversation, each with several tabs: **Review** (a project's diff, stage/commit/push, per-line comments), **Terminal** (a real shell over a pty), **Files** (browse & read project files). Their contents flow back into the composer: attach a terminal, attach a file, attach a highlighted snippet |
 | **Code (shared repos)** | A second half of the app: shared repositories a grid hosts, read as conversations, where you post a coding task and a teammate's machine runs an agent on it (§7.29) |
+| **Off the screen** (`device`) | A **Grid Panel** on the desk — a small screen on a USB cable showing what each project is doing, and taking a spoken instruction without touching the window (§7.30) |
 
 ### The essence
 
@@ -77,8 +91,9 @@ the **resume points and import ledger** that let a conversation survive a quit. 
 folder, and nothing in it is authoritative about the *grid* — it is the app's memory of its own screens.
 
 The biggest gap with the README (and with every handover note before this one): they describe **two** planes
-— control = subprocess `grid`, data = HTTP relay. In reality there are **three**, and the third, the **agent
-runtime**, is larger than the other two combined.
+— control = subprocess `grid`, data = HTTP relay. In reality there are **five**: the third, the **agent
+runtime**, is larger than the first two combined; the fourth is **local tooling** (`git` + a pty); and the
+fifth, on this branch, is **the device** on the end of a USB cable.
 
 ---
 
@@ -168,23 +183,46 @@ a **login shell running in a pty**. Both go through their own seam in `infrastru
 > to type anything**. Turning the prompt off is what lets the screen say "sign in from Terminal" instead
 > of spinning. The machine's credential helper **still runs** — only the interactive branch is blocked.
 
+### The fifth plane — **the device** (`device` branch, 08/2026)
+
+A **Grid Panel** on the end of a USB cable is neither a subprocess nor an HTTP peer: it is a serial link
+the app opens for its whole life (`PanelScope`, above the router — §6) and **answers**.
+
+> **Answering is all it does.** The panel runs nothing — no model, no agent, no file — so every message
+> it sends is a question about state this app already keeps, and the answer is read back out of **the
+> same providers the window renders**. A second reader of `~/.grid` would give two truths that disagree,
+> and *"the panel says one thing and the window another"* is a miserable bug to chase.
+
+```
+lib/infrastructure/panel/   panel_frame (framing) · panel_message (JSON vocabulary)
+                            panel_link (transport-agnostic) · panel_port (the real cable)
+                            panel_firmware (+ provider) · panel_audio       ← all Flutter-free
+lib/features/panel/         panel_controller (answers) · panel_turn_mirror (pushes live turns)
+                            panel_voice (capture → grid stt) · panel_firmware_updater
+lib/app/panel_scope.dart    opens the link after the first frame, above the router
+```
+
+Detail in §4.7 and §7.30.
+
 ### Code layering
 
 ```
 lib/
 ├── main.dart              # boot sequence — the order is a contract
-├── app/                   # MaterialApp, RootView (5-way router), single-instance, window lifecycle
+├── app/                   # MaterialApp, RootView (5-way router), single-instance, window lifecycle,
+│                          # PanelScope (the USB device link)
 ├── core/                  # pure helpers: GridPaths, AppEnvironment, host_arch, composer_text
 ├── infrastructure/        # the backbone — NO business logic
-│   ├── cli/               # GridCliService + 3 agent runtimes + Chrome bridge + git seam + parsers
-│   ├── api/               # HTTP clients + DTOs
+│   ├── cli/               # GridCliService + 4 agent runtimes + Chrome bridge + git seam + parsers
+│   ├── api/               # HTTP clients + DTOs (+ stt_client, the `grid stt transcribe` seam)
 │   ├── mcp/               # ConnectorBridge, McpProxy, RestInvoker
+│   ├── panel/             # the Grid Panel wire: framing, messages, port, firmware  (Flutter-free)
 │   ├── state/             # stores that read/write ~/.grid
-│   ├── platform/          # clipboard, notification, PDF, font, window focus
+│   ├── platform/          # clipboard, notification, PDF, font, window focus, mic_recorder
 │   └── logging/           # 4 disk sinks writing ~/.grid/logs + ErrorBurstFilter
-├── features/              # 29 domains, each with logic/ + presentation/
+├── features/              # 30 domains, each with logic/ + presentation/
 └── shared/                # theme (design system), widgets, layouts (shell/sidebar/settings),
-                           # panels/ (the panel system, shared by chat + code),
+                           # panels/ (the WORK panels around a conversation — not the device),
                            # code/ (syntax highlight), markdown/ (code block + stylesheet), skills/
 ```
 
@@ -601,6 +639,65 @@ bugs:
   up its child (a running `flutter run`) instead of leaving it holding a pty nobody reads.
   Windows only knows `SIGTERM`/`SIGKILL` — asking for anything else throws
 
+### 4.7. Device link — the Grid Panel over USB (`device` branch)
+
+`lib/infrastructure/panel/` is **Flutter-free**, for the same reason `ConnectorBridge` is: the whole
+protocol can be driven from `tool/panel_tap.dart` or a test with a pair of pipes and no cable. Four
+layers, each ignorant of the one above:
+
+```
+panel_port.dart   the real cable   ─┐
+                                    ├─ PanelTransport (an interface: bytes in, bytes out)
+a pair of pipes in a test          ─┘
+panel_frame.dart  framing          — A5 5A · version · type · u16 length · payload · CRC-16/CCITT-FALSE
+panel_link.dart   messages         — typed PanelInbound; PCM kept OFF the message stream
+panel_message.dart  vocabulary     — the JSON `t` discriminator, both directions
+```
+
+**Framing** (normative in [`docs/panel-protocol.md`](panel-protocol.md) §1): 8 bytes of overhead, payload
+capped at **8192** — a bound on damage, not a capacity target. The reader **must resync**: the ESP32 ROM
+and the bootloader both print to this port before the firmware owns it, so **every boot puts arbitrary
+text in front of the first real frame**. On a bad length or a bad CRC it discards **one byte, not the
+candidate frame** — the magic may have been a coincidence inside noise, and a real frame can begin one
+byte further in. `discardedBytes` / `corruptFrames` / `unknownFrames` are counters because **the rate is
+the diagnosis**: a handful at startup is the bootloader's parting words, a steady trickle is a format
+disagreement or a bad cable. Frame bytes are **not** counted as discarded — that would make a healthy
+link read as full of noise.
+
+**An unrecognised frame type is not an error** — it is surfaced with its raw type byte, so a peer running
+ahead reads as a version mismatch someone can act on rather than as a link that connects and then goes
+quiet.
+
+**Finding the port** (`panelPortIn`, pure and tested): the board enumerates **twice**, and only the native
+USB-Serial-JTAG interface (`303a:1001`) carries this protocol — the other is a WCH CH343 console
+(`1a86:55d3`) that opens, stays open and only ever delivers log text, which reads as a device that never
+speaks rather than as the wrong port. So the match is **on the USB id and nothing else**, never by name or
+by "the only one there". `ioreg` prints a *tree*, and the ids and the device path sit on different nodes
+of it (`IOCalloutDevice` hangs two levels below, under the CDC driver), so the match arms a subtree by the
+column `+-o` starts at and takes the first path inside it — a flat scan pairs a vendor id with whatever
+path came next. The tty's line discipline must be put in **raw mode**; a mangled frame is
+indistinguishable from a bad cable. The port coming and going (a flash, a crash, a nudged cable) is **the
+normal case**, not the failure case.
+
+**Firmware.** The app ships the image its own build was compiled against, so the two halves cannot drift:
+`hello` reports what the panel runs, and anything else is offered a replacement over the cable it is
+already talking on (frame type `0x03`). `esp32ImageVersion()` reads the version out of the ESP-IDF
+`esp_app_desc_t` at byte 32 of the image — pure, which is why nothing else has to record it.
+
+**The device half lives at `device/esp32-circle/`** — the Waveshare board, ported from
+`autonomous-code/apps/esp32-circle` **by deletion**: `ui_screens.c` went 7,243 → 4,546 lines and
+everything else (`touch.c`, `display.c`, the fonts, the icons, `board/`, `audio_capture.c`) is
+byte-identical, verified with `diff`. That is not tidiness — the previous port measured it: what was
+copied behaved, what was hand-rewritten stuttered.
+
+`.gitignore` keeps the build tree out: **412 MB on disk, 61 files tracked**, none from `build/`,
+`managed_components/` or a generated `sdkconfig`.
+
+> ⚠️ **`docs/panel-protocol.md` is still the only thing the two halves share.** No code crosses; the
+> framing is written twice and agrees only because both sides assert against `test/vectors/panel_frame.txt`,
+> which a **third** implementation (`scripts/gen_panel_vectors.py`) generates from the document. Some code
+> comments still call the spec `docs/protocol.md` — same file, older name.
+
 ---
 
 ## 5. On-disk data map
@@ -694,7 +791,7 @@ bugs:
 6. **Sparkle** — set the feed URL (`{arch}` replaced by `arm64`/`x86_64`), interval 86400s.
    **Deliberately no immediate check** — the launch check is in `HomeShell`
 7. **Build** `SystemDesktopNotifier` — but **do NOT ask for permission here** (see the warning below)
-8. `runApp(ProviderScope(overrides, child: ConnectorRefreshScope › GridSkillsScope › NotificationScope › GridApp))`
+8. `runApp(ProviderScope(overrides, child: ConnectorRefreshScope › GridSkillsScope › PanelScope › NotificationScope › GridApp))`
 
 > ⚠️ **Step 7 changed, and the reason was a real bug.** `ensurePermission()` **doesn't return until the
 > user answers the OS dialog**. The window is built in step 5 but no frame is painted until `runApp` — so an
@@ -702,8 +799,15 @@ bugs:
 > launch after each update). The notifier is now overridden **unconditionally** (`show` no-ops until it
 > knows the answer), and asking is deferred to `HomeShell`, after the first frame.
 
-The two outermost scopes sit **outside the router** because connector tokens and skills belong to *the
+The outermost scopes sit **outside the router** because connector tokens and skills belong to *the
 agent* — the agent answers chats whether or not the user has the Connectors/Skills screen open.
+`PanelScope` (on `device`) is there for a related reason and one of its own: **the device answers to the
+desk, not to whichever screen happens to be open.** It draws nothing and does its work **after the first
+frame** — finding the panel shells out to `ioreg`, which costs the better part of a second, and nobody is
+waiting on a device that may not even be plugged in. The order inside it matters:
+`panelControllerProvider.listen()` is wired **before** the port opens, because the panel introduces itself
+the moment it sees the port and that handshake is a **broadcast** message — with no listener it is
+dropped, not queued.
 
 ### `RootView` — the 6-way router
 
@@ -2051,6 +2155,170 @@ The `CodePane` screen has its own ordered empty states, none of them blank: the 
 shared projects at all (`CliTooOldView`), no grid may be selected (`_NoGrid`), no project may be open
 (`_NoProjectOpen`), or the open project may have no code yet (`_NeedsImport` → "Bring in a repository").
 
+### 7.30. `panel/` — the Grid Panel on the desk (new domain, `device` branch)
+
+**Owns:** the app's side of the conversation with a physical **Grid Panel** — an ESP32 board with a
+480×480 screen, plugged in by USB, that shows what each project is doing and lets the user start, stop or
+**speak** a turn without touching the window. 4 files, ~1,474 lines, over the Flutter-free wire in
+`lib/infrastructure/panel/` (§4.7) and opened by `lib/app/panel_scope.dart` (§6).
+
+#### `PanelController` — the switchboard
+
+`ref.listen`s **two** providers, because a turn moves in two places: `chatSessionsProvider` says a turn is
+happening, `agentRunsProvider` says what it has done so far. `PanelTurnMirror` is what makes that
+affordable — a turn publishes a phase per streamed token, and the mirror **says nothing when nothing the
+panel can draw has moved**.
+
+| Panel says | The app does |
+|---|---|
+| `hello` | log it, **answer even on a protocol mismatch** (the panel only learns which version to reflash to from the `welcome` it gets back), push the turns already in flight (`onAttach` — a panel plugged in mid-turn knows nothing about work already running), then offer firmware |
+| `projects.list` | `panelProjectsFor(...)` — every project **in the order the app itself lists them**, so the panel and the rail never disagree about which is first |
+| `turn.send` | start a turn in the project's **most recently used** chat, or a new one — the same place the window would put it |
+| `turn.stop` | stop **every** conversation in that project, not one: a project is what the tile is, and which chat holds the turn is the desktop's business |
+| `voice.begin` / PCM / `voice.end` / `voice.confirm` | capture → `grid stt transcribe` → route (below) |
+| `answer` | settle a permission the agent is waiting on (below) |
+| `firmware.*` | drive `PanelFirmwareUpdater` |
+| an unknown or malformed message | **logged, never fatal** |
+
+It also **pushes four things the panel never asks for**, each through its own mirror so the "say nothing
+when nothing changed" rule holds per concern:
+
+| Push | Mirror | Note |
+|---|---|---|
+| `turn.started` / `turn.parts` / `turn.done` / `turn.error` | `panel_turn_mirror.dart` | below |
+| `projects` / `project.updated` | `panel_project_mirror.dart` | the tile list is **not** pull-only any more — a project created at the desktop reaches a plugged-in panel without a replug |
+| `question` / `question.cancel` | `panel_question_mirror.dart` | from `agentPermissionsProvider`, keyed by chat and mapped to a project by the same `panelTurnHoldersOf()` the turns use |
+| `summary` | `panel_summary_writer.dart` | one-shot model call at turn end (below) |
+| `ping` | a 5s timer in `PanelController` | cancelled in `stop()` with the rest |
+
+**Every refusal is answered in words** (`turn.error`) — no words in the message, the project is gone from
+this computer, that project is already working, no grid is open, no model available, the send threw.
+Silence would leave the tile spinning on work that is never coming, **and the panel has no other way to
+find out**: it runs no model, reads no disk and cannot see the window.
+
+**`_dispatchTurn` is deliberately not awaited.** `send()` completes when the *turn* does — minutes for an
+agent — and the panel's next message, **Stop most of all**, must not queue behind it. Everything after
+that point reaches the panel through `mirrorTurns()`.
+
+**Starting a turn in a project nobody has talked in yet opens it in the window**, unlike every other send
+the app makes on its own. The user did ask for it, just from the other side of the desk, and a reply
+landing in a chat the window never shows is a reply they have to go hunting for.
+
+**`_modelFor` takes the remembered choice as it stands** — project's model → that chat's last → the app's
+standing choice → whatever the grid serves — and does **not** check it against the grid's list. That list
+is fetched, and empty for the first moment of a session and on every refresh; checking would turn a panel
+turn into "no model available" over a grid serving a dozen.
+
+#### `PanelTurnMirror` — a turn as a bounded timeline
+
+Sends `turn.parts` **whole on every change, not as a delta**: the `AgentRun` is replaced wholesale
+upstream and a step mutates in place as it finishes, so there is no append-only stream underneath to
+mirror. It is the same `TurnPart` list §4.3 describes, which is what keeps the tile and the transcript
+telling one story.
+
+- `kPanelTurnPartLimit = 12`, `kPanelPartTextLimit = 200`, then drop **oldest-first** until the encoded
+  frame fits 8192 bytes — a character cap is an average, not a bound (200 characters of CJK is three times
+  the bytes of English). What survives is **the tail** of the turn, which is what a live tile wants anyway.
+- `panelTurnInFlight = sendingFor(id) || agentRunningIn(id)` — the union on purpose. Either alone leaves a
+  gap where the project is working and the panel says it is idle.
+- A step carries `label`, `status`, and — when known — `tool`, `arg` (the raw argument),
+  `kind` (`command`/`web`/`tool`/`thinking`, **which is what picks the colour**; the device must not
+  infer one from the tool's name), `parent` (the step that spawned it → the sub-agent band) and `t0`.
+  Its *result* still stays in the app's transcript: a 466px tile has nowhere to draw it.
+- **`t0` is a fixed number, and that is the point.** It is milliseconds from `turn.started` to when the
+  step started — *not* live elapsed. Sending elapsed would change the payload every second, defeat the
+  dedup below, and put ~3 KB on the wire per tick for a number the device can count itself. The device
+  must not stamp steps when it first sees them either: `onAttach` re-sends the whole timeline after a
+  panel reboot, and every step would read as having just begun.
+- `todos[]` rides the **message**, not the parts — a plan is a state, not a point in the story.
+- `status` has **four** values and the fourth is the one that bites: `unknown` = the turn ended without
+  this step ever reporting. **A reader must treat anything it doesn't recognise as finished, never as
+  running** — the alternative is a spinner turning forever on a turn that ended.
+
+> ⚠️ **A todo's status is a different vocabulary, and its default runs the other way.**
+> `pending` / `running` / `done`, and **an unrecognised todo status is drawn as `pending`, never as
+> done.** The two rules are opposite because the two failure modes are opposite: an unrecognised *step*
+> left spinning claims work is happening that isn't, while an unrecognised *todo* ticked claims work
+> nobody has begun is finished. `_todoStatus` in `panel_turn_mirror.dart` therefore writes the three
+> words out rather than borrowing `AgentActivityStatus` — two of them are spelled the same, and that
+> is exactly what made routing `pending` through `unknown` look reasonable. A plan has no equivalent
+> of "ran, but never reported back".
+
+#### Questions — two surfaces racing on purpose
+
+The same permission is on screen twice: pinned above the composer in the window, and as a card on the
+panel. `panel_question_mirror.dart` keeps them one thing.
+
+- `AgentPermissionController` is keyed by **chat**; a tile is a **project**. The mirror reuses
+  `panelTurnHoldersOf()` rather than growing a second mapping that could disagree with the turns'.
+- **`question.cancel` goes to the panel that answered, too.** Not special-casing your own answer is what
+  keeps one code path instead of two — and the same message covers the app's 55s timeout giving up.
+- An `answer` for a request already settled is **dropped silently**. The race is the design, not a bug.
+- **`options` is what the app can actually deliver** — 1, 2 or 3, never a fixed pair. It is deliberately
+  narrower than what the agent offered: the widest grant (`allow_always`, which Hermes would persist
+  forever) is one the app refuses to hand out, and a button whose only outcome is a refusal is worse
+  than no button.
+- Only Hermes ever asks. Codex and Claude run with permission checks off (§4.3), so a panel that never
+  shows a card is not necessarily broken.
+
+#### The summary — a second message, deliberately late
+
+`turn.done.recap` is one line, enough for a tile. The detail screen wants prose, so
+`panel_summary_writer.dart` asks a model for it at turn end through the **already-shared one-shot seam**
+(`resolveOneShotTarget` + `chatTransportProvider.complete`, the same path the commit-message writer and
+the skill generator use — §7.22).
+
+Four rules, each avoiding a specific wrong answer: `turn.done` **never waits for it** (a tile spinning
+on finished work); it runs **only when a panel is connected** (otherwise every turn buys a model call
+for nobody); a failure sends **nothing** and logs, so the reader says "nothing more to show" rather than
+loading forever; and it can follow **`turn.error` as well as `turn.done`** — a turn that broke halfway
+may still have said something worth reading.
+
+#### Voice — the panel captures, the app transcribes
+
+The device holds **no cloud credential and never talks to one**. Audio (16 kHz mono 16-bit PCM, frame type
+`0x02`) rides its own stream, off the message stream, and is subscribed to **for the whole session** —
+both are broadcast with no buffer, so subscribing at `voice.begin` would miss the chunks already in flight
+behind it: *the first syllable of every sentence*.
+
+Two caps guarding two different things: `kPanelVoiceMaxBytes` (60s) bounds the **memory**;
+`kPanelVoiceOpenLimit` (75s) bounds the **wait**, and is deliberately longer, so a capture that filled up
+is closed by the bytes and the timer only ever fires for a panel that went quiet mid-sentence.
+
+> **Routing is the hard half, not transcription.** When `voice.begin` names a project the transcript goes
+> there. When it doesn't, the app has to guess — and **a guess that dispatches itself into a real
+> repository is worse than one extra tap**, so it answers `needsConfirm: true` and holds the words
+> (`_guessed`, keyed by a session-unique route id, max `kPanelVoicePendingLimit = 4`, dropped
+> oldest-first) until `voice.confirm` says where they go. A panel that ignores `needsConfirm` and
+> dispatches anyway defeats the only guard there is.
+
+`cmd` (`goal` / `loop`) is **a prefix, not a mode** — the panel's three pills say what *kind* of thing the
+sentence is.
+
+#### Firmware — the app reflashes the device it is talking to
+
+Three pieces of session state, each preventing a specific loop that would otherwise cost the user's
+hardware:
+
+| Guard | Stops |
+|---|---|
+| `_flashed[mac]` = the version reported **before** the update | a panel that comes back still calling itself the old version being flashed again, **forever** |
+| `_refused[mac]` = image versions this session already failed to hand over | a retry on **every `hello`** — every fifteen seconds while the cable is in. Not a quiet retry: the panel **erases a flash slot before it answers an offer** |
+| `_deferredOffer` | interrupting a running turn. Retried from `mirrorTurns()` the moment the machine goes idle — the panel will not say `hello` again until it is unplugged |
+
+`_refused` is keyed by MAC (two panels can be plugged in, and one failing says nothing about the other)
+and is **session-scoped on purpose**: replugging or restarting the app is a deliberate act and earns a
+fresh attempt.
+
+#### Tests
+
+`test/panel/` — 6 files covering the frame codec, the link, port discovery, firmware parsing, the
+controller and voice, plus `test/vectors/panel_frame.txt` (generated by `scripts/gen_panel_vectors.py`).
+This is the exemption conventions §8 grants beyond the grid/agents areas, and the reason is spelled out
+there: **a codec never rots, it is pure, and it fails as a desync three layers away from the mistake** —
+which running the app diagnoses very badly. `tool/panel_tap.dart` drives the whole protocol against a real
+device with no app running.
+
 ---
 
 ## 8. End-to-end: one chat turn
@@ -2306,6 +2574,7 @@ theme-flip bug.
 | **Files** | ✅ **Shipped** | tree + breadcrumb + viewer, 2-mode Markdown, "Add to chat" |
 | **Git (install/adopt)** | ✅ Shipped | Background install + Settings ▸ Coding ▸ Git |
 | **Code half (shared repos)** | 🔒 **devOnly** | ProjectFlow catch-up/publish, task transcript, PanelHost.code — relay has no projects plane in prod |
+| **Grid Panel (USB device)** | ✅ **Both halves, `device` branch** | App half: protocol, controller, 4 mirrors, voice, reflash, 153 tests. Device half: `device/esp32-circle/` — the Waveshare 466×466 round board, ported from the reference by **deletion** (7,243 → 4,546 lines of `ui_screens.c`, everything else byte-identical), builds to a 2.1 MB image with 74% of the OTA slot free. `docs/panel-protocol.md` is the only thing the two share. §4.7, §7.30 |
 | **Sync & Backup** | ✅ Shipped | Encrypted upload/download + merge; §7.27 |
 | **Feedback** | ⚠️ **Consent surface commented out** | The dialog still zips and sends `~/.grid/logs`, but `AttachLogsField` is commented out in `feedback_dialog.dart` (commit `be506eec` "hide AttachLogField"), so `_attachLogs` is a `true` nobody can change and the logs ride along **unseen**. Two of the repo's two analyzer issues are this. §13 |
 | Skills | ✅ Shipped | 3 bugs found (§7.4), "Draft with AI" hard-off (`_showAiDraft = false`) |
@@ -2410,6 +2679,18 @@ This list is things that **each was once a real bug**. Reversing one recreates t
     the app silently stop detecting it
 39. **`GET /relay/v1/usage` answering 404 means "no data yet"**, never an error the user sees — every grid
     whose master predates the endpoint answers that way
+40. **A panel frame type this build can't read is surfaced, not dropped** — a peer running ahead must read
+    as a version mismatch someone can act on, never as a link that connects and then goes quiet
+41. **Resyncing the panel stream discards ONE byte on a bad length or CRC**, not the candidate frame — the
+    magic may have been a coincidence inside noise, and a real frame can start one byte further in
+42. **A step `status` you don't recognise is FINISHED, never running** — `unknown` is what a step settles
+    to when the turn ended without it reporting, and reading it as running leaves a spinner turning forever
+43. **A *todo* status you don't recognise is PENDING, never done** — the opposite default to #42, because
+    the opposite mistake is the costly one: a tick against work nobody has begun. The two must not share
+    an enum, however alike the words look
+44. **What the panel is told must never be a live number.** `t0` is a fixed offset, not elapsed seconds;
+    a value that changes every second defeats `PanelTurnMirror`'s payload comparison and turns an idle
+    cable into 3 KB/s. Anything that ticks is the device's job to count
 
 ---
 
@@ -2529,6 +2810,14 @@ file, not the logic.
 | `chat` ← `files` | `files_filter.dart` + widgets → `chat/logic/workspace_browser.dart` | logic ⇄ logic |
 | `chat` ⇄ `agents` (**new, 08/17**) | `chat/logic/import/session_scanner.dart` → `agents/logic/agent_prompt.dart`; back the other way `agents/presentation/agent_working_bubble.dart` → `chat/logic/turn_model_{share,usage}.dart` | logic ⇄ **presentation** |
 
+**`panel/` has the widest fan-out in the repo, and every edge points out.** Its `logic/` reads six other
+domains — `chat` (5 imports), `projects` (3), `agents` (2), `provider_node`, `playground`, `auth` — while
+**nothing imports `panel/`** except `app/panel_scope.dart` (measured 2026-08-17). That direction is the
+domain's whole point: the panel is a *second view of the same state*, so it must read the providers the
+window reads rather than keep its own (§7.30). Watch it — the day a feature imports `panel/` to "tell the
+panel something", the boundary is gone and the panel becomes a second source of truth, the exact bug §7.30
+exists to avoid.
+
 The `chat` ⇄ `terminal` pair is **one-way** and deliberate: `terminal/` doesn't know what a panel is
 (*"a terminal has no business knowing what a panel is"*), so `chat/` (via `shared/panels`) calls `endSession`
 rather than the reverse. That's the right shape — only the last step is missing: moving `TerminalCapture` down
@@ -2593,24 +2882,26 @@ sentence twice), and nothing pins it.
 > When a user reports "the connector doesn't work" or "the agent's tool call failed", **the on-disk HTTP
 > transcript holds nothing.** You debug via `appLog`.
 
-### Current measurements (2026-08-17)
+### Current measurements (2026-08-17, branch `device`)
 
-- `lib/`: **808 Dart files, ~151,250 lines, 29 feature domains**.
-- **`TODO` in `lib/`: 37 total, of which 32 are `TODO(BE)`** (awaiting the backend).
-- **`AppTheme.watch`: 573 call sites.**
+- `lib/`: **821 Dart files, ~154,300 lines, 30 feature domains** — `main` at the same date measured
+  **808 / ~151,250 / 29**; the difference is `panel/` and its wire (§7.30).
+- **`TODO` in `lib/`: 40 total, of which 34 are `TODO(BE)`** (awaiting the backend).
+- **`AppTheme.watch`: 587 call sites.**
+- `test/`: **181 files, 2,004 tests, all passing** (measured on the `main`→`device` merge, 2026-08-17).
 - Largest domains by line count: `chat` 15,758 (61 files) · `agents` 15,069 (78) · `connectors` 11,251 (33)
   · `network` 10,172 (43) · `review` 7,237 (45) · `playground` 6,299 (34) · `code` 6,192 (44).
 - Gateway connectors (measured earlier, re-measure before quoting): ~12 rows, mostly `auth_type: app`, many
   with a `mcp_url`, many returning `description: ""` (which is why `connector_blurb_fallback.dart` exists).
 
-| | 06/08 | 10/08 | 12/08 | 17/08 |
-|---|---|---|---|---|
-| Dart files in `lib/` | 558 | 668 | 775 | **808** |
-| Lines | ~105,000 | ~120,900 | ~140,300 | **~151,250** |
-| Feature domains | 23 | 26 | 29 | **29** |
-| `AppTheme.watch` | 399 | 486 | ~540 | **573** |
-| Test files | — | — | 172 | **175** |
-| Tests passing | — | — | 1599 | **1888** |
+| | 06/08 | 10/08 | 12/08 | 17/08 `main` | 17/08 `device` |
+|---|---|---|---|---|---|
+| Dart files in `lib/` | 558 | 668 | 775 | 808 | **821** |
+| Lines | ~105,000 | ~120,900 | ~140,300 | ~151,250 | **~154,300** |
+| Feature domains | 23 | 26 | 29 | 29 | **30** |
+| `AppTheme.watch` | 399 | 486 | ~540 | 573 | **587** |
+| Test files | — | — | 172 | 175 | **181** |
+| Tests passing | — | — | 1599 | 1888 | **2004** |
 
 > Re-measure before quoting any number here. This table has gone stale repeatedly.
 
@@ -2736,6 +3027,15 @@ than left as a trail to nothing.
 - **Most grids' masters predate `/usage`** and answer 404 — the caption is empty until the fleet rolls
 - **`ManagedNetworkMember.source`** — the control plane needs to say what `domain` membership actually
   admits, so the two contradictory readings in the app (see above) can be settled
+- ~~`grid stt transcribe` is not in `autonomous-grid`~~ — **it is, since 2026-08-17.** `cli/stt.py` +
+  `cli/parser.py:_add_stt` post to `{api_url}/v1/audio/transcriptions`, which the production control
+  plane already serves (verified end to end that day: a 16 kHz clip returned
+  `{"success":true,"data":{"transcript":"","lang":"en"}}`). The argv matches this app's exactly, and
+  without `--json` stdout **is** the bare transcript. **Both halves of that path were missing on
+  2026-08-16 and both landed on 2026-08-17** — the CLI verb and `grid_networks/transcription.py`; a
+  stale checkout of either reads as "voice is broken". `pull` all three repos before believing it
+- ⚠️ **`grid project …` / `grid task …` are on `origin/feat/distributed-tasks`, unmerged** — the real
+  reason the Code half is `devOnly`, alongside the relay's missing projects plane
 
 ---
 
@@ -2747,5 +3047,14 @@ clone has only these:
 - [`docs/conventions.md`](conventions.md) — architecture, Riverpod rules, Dart style, copy rules, testing policy
 - [`docs/style-guide-grid-app.md`](style-guide-grid-app.md) — **the canonical UI spec**, read before styling anything
 - [`docs/git-auto-install.md`](git-auto-install.md) — Git probe/download/adopt detail (§4.6, §7.25)
+- [`docs/panel-protocol.md`](panel-protocol.md) — **normative** wire protocol for the Grid Panel (§4.7,
+  §7.30). Tracked since 2026-08-13, and now the only place the app and the device agree
 - this file
 - [`scripts/README.md`](../scripts/README.md) — sidecar bundling, signing, packaging
+
+Outside this repo:
+
+- [`../../CONTEXT.md`](../../CONTEXT.md) — **the four repos beside this one and how they meet**: which
+  `grid` is which (there are two, sharing no code), every hand-duplicated seam, and what is currently out
+  of step — notably that `grid stt transcribe` and `grid project`/`grid task` are **not** on
+  `autonomous-grid`'s `main`
