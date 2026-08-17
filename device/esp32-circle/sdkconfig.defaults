@@ -1,0 +1,122 @@
+# Default sdkconfig for the Grid panel (Waveshare ESP32-S3-Touch-AMOLED-1.75).
+#
+# Applied on first `idf.py build` only — after that sdkconfig is authoritative and this file is ignored.
+# The top-level CMakeLists.txt stamps this file's hash so a change here re-seeds sdkconfig instead of
+# being silently dropped; read the note there before "simplifying" it away.
+#
+# Lifted from autonomous-code/apps/esp32-circle, which runs on this same board, minus everything the
+# network bought: no WiFi, no SoftAP, no HTTP server, no websocket, no TLS, no libsodium, no LWIP
+# tuning. This device only ever talks over USB.
+
+# --- Target / flash ---
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- Console: KEEP IT OFF THE NATIVE USB PORT ---
+# The single most important line in this file.
+#
+# The protocol runs on the SoC's own USB-Serial-JTAG (303a:1001). IDF's DEFAULT is to mirror the console
+# onto exactly that port as a "secondary" output, and it does it byte for byte — measured on the
+# predecessor board, 20 s of console output arrived IDENTICAL on both ports. Every one of those bytes
+# lands in the middle of the protocol stream, and the reader on the other end spends its life resyncing.
+#
+# So the console goes to UART0 and NOWHERE else. Note the shape of the fix: the flag to set is the "none"
+# arm of the ESP_CONSOLE_SECONDARY choice — writing CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=n in a
+# defaults file does NOT deselect a Kconfig choice, it just does nothing at all, which is the sort of
+# no-op that looks exactly like a fix. Verify in the GENERATED sdkconfig, not here.
+#
+# A residue survives and is by design: the ROM and the second-stage bootloader print to the native port
+# before the app owns it, so it carries some text at every boot. The framing walks through it — that is
+# what the magic scan and the CRC are for (docs/panel-protocol.md §1) — but a reader that cannot resync
+# will never start.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# --- PSRAM (ESP32-S3R8 = 8MB octal PSRAM) ---
+# PSRAM holds the LVGL object pool, the project model array and the 2 MB voice record buffer. The DRAW
+# buffers are the one thing that must NOT live here: the CO5300 flush reads them over QSPI DMA, and when
+# they shared octal PSRAM bandwidth with the CPU writing the audio record buffer the flush DMA stalled
+# and the LVGL task tripped the watchdog. display.c allocates them MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+# XIP FROM PSRAM. Every flash write disables the cache; with XIP the code and rodata the LVGL task is
+# executing stay reachable across an esp_ota_write(), which is what lets the panel keep drawing its own
+# update progress while it installs one. IDF names this scenario in its own words: XIP makes it
+# "feasible to display an OTA progress bar during your application updates". If a future change here
+# ever brings back a strobing panel mid-update, check this before reaching for display_sleep().
+#
+# It SELECTS SPIRAM_FETCH_INSTRUCTIONS + SPIRAM_RODATA, so do not also set those by hand — they become
+# forced sub-options and a stale explicit line only confuses the next reader.
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+
+# --- CPU / FreeRTOS ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_FREERTOS_HZ=1000
+
+# --- Main task stack ---
+# app_main does the hardware bring-up and builds the first screen, both of which are stack-heavy, and it
+# then lives forever as the telemetry loop. This is the reference firmware's number, not a measured one
+# for this firmware. If it is ever tuned down, tune it from the "task=main stack_free_min=" figure in the
+# RAM telemetry line, not from taste.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=10240
+
+# --- Self-update: rollback ---
+# The panel writes its own firmware over the USB cable (docs/panel-protocol.md §2, "Firmware update"),
+# and it has no other way in: no network, no recovery mode, no second channel. An image that does not
+# boot is therefore not a bad update — it is a device that needs a person, a cable and esptool.
+#
+# Rollback is what makes that impossible. The bootloader marks a freshly installed image PENDING_VERIFY
+# and reverts to the previous slot unless the new one confirms itself; app_main calls fw_mark_valid()
+# once the display is up and the USB link is installed, which is exactly the point at which the panel is
+# fixable again. main/fw_update.c #errors if this line ever goes missing, because a stale sdkconfig
+# silently dropping it is how the reference firmware shipped devices that could not update themselves.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# --- Log level ---
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# --- LVGL v9 ---
+CONFIG_LV_COLOR_DEPTH_16=y
+# ── LVGL's OWN PERF MONITOR IS OFF, and this is the note that keeps it off ──────────────────────────
+# CONFIG_LV_USE_SYSMON / CONFIG_LV_USE_PERF_MONITOR draw an FPS/CPU counter in the corner. They were
+# switched on to chase a stuttering swipe and left on, which is how they came to be MEASURED as part of
+# the stutter they were meant to explain: the overlay re-renders its own text every frame and its
+# sampling runs inside lv_timer_handler, so it inflates the very number it prints. A screenshot is what
+# caught it — it was in the picture.
+#
+# It also cannot be seen from a desk with one cable: the console is on the OTHER USB port, so nobody
+# reads a corner overlay anyway. display_draw_stats() answers the same question over the link, costs two
+# counters and draws nothing — the numbers ride on `hello` (see panel_client.c).
+#
+# If you do turn them back on: LV_USE_PERF_MONITOR alone is a NO-OP in LVGL 9 — it hangs off
+# LV_USE_SYSMON, so both are needed.
+#
+# Montserrat is linked for LV_SYMBOL_* glyphs ONLY (bell, warning, close, refresh) — those live in a
+# private-use range no other font here covers. Never set prose in one of these: Montserrat has no
+# Vietnamese, and the accents silently disappear. Prose uses the baked Geist faces.
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+CONFIG_LV_FONT_MONTSERRAT_40=y
+# LVGL's assert handler is `while(1)` — a failed allocation freezes the LVGL task silently while the rest
+# of the firmware keeps running, so the device looks alive and is not. Log at WARN so it says why, and
+# keep the object pool big enough that it does not happen.
+CONFIG_LV_USE_LOG=y
+CONFIG_LV_LOG_LEVEL_WARN=y
+CONFIG_LV_LOG_PRINTF=y
+CONFIG_LV_USE_ASSERT_MALLOC=n
+CONFIG_LV_ASSERT_HANDLER_INCLUDE="stdlib.h"
+# KEEP IN STEP WITH display.c's LVGL_PSRAM_POOL_BYTES. LVGL sizes its TLSF index from
+# LV_MEM_SIZE + LV_MEM_POOL_EXPAND_SIZE and REJECTS a larger pool at runtime — raising the code alone
+# without this boot-looped the reference. 64 KiB was measured to fragment into a freeze on this board
+# (2% → 51% within a minute of ordinary swiping), which is why it is 512 KiB.
+CONFIG_LV_MEM_SIZE_KILOBYTES=8
+CONFIG_LV_MEM_POOL_EXPAND_SIZE_KILOBYTES=512
+
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
