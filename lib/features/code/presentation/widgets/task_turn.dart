@@ -11,6 +11,7 @@ import '../../logic/task_follow_controller.dart';
 import 'code_notice.dart';
 import 'task_actions.dart';
 import 'task_feed_view.dart';
+import 'task_steps_disclosure.dart';
 
 /// One task as a pair of turns: what was asked, and what came back.
 ///
@@ -56,7 +57,12 @@ class _Answer extends ConsumerWidget {
     // A finished task is read for what it decided — its result text — not the
     // hundreds of tool calls behind it, so it opens no stream at all. Only an
     // unfinished one holds a `grid task follow`, showing its steps as they
-    // happen; the moment it lands, the feed is dropped for the answer.
+    // happen; the moment it lands, the feed gives way to the answer.
+    //
+    // The steps are not lost with it any more: the run is written down as it
+    // ends, and [TaskStepsDisclosure] below offers it back. Dropping them
+    // outright is what issue #30 was — a long run left nothing behind but its
+    // last sentence, on the same screen the user had been watching it on.
     final feed = finished ? null : ref.watch(taskFollowProvider(task.id));
 
     return Align(
@@ -73,6 +79,7 @@ class _Answer extends ConsumerWidget {
             ],
             if (said.isNotEmpty)
               MessageContent(text: said, color: AppPalette.textPrimary),
+            if (finished) TaskStepsDisclosure(taskId: task.id),
             // How it ended, but only where that isn't already obvious: a task
             // that finished and left words has said everything "Done." would.
             if (finished && !task.queueExpired && (said.isEmpty || _wentWrong))

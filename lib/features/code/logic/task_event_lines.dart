@@ -17,6 +17,23 @@ enum TaskLineTone {
   verdict,
 }
 
+/// One line of a task's run, with the sequence number it came from.
+///
+/// The seq is the key a list draws with, and the thing that makes a stored run
+/// comparable with the live one it came from.
+typedef TaskLine = ({int seq, String text, TaskLineTone tone});
+
+/// Every line [events] has to show, in order.
+///
+/// The one place that turns a run into lines. It exists because a run is drawn
+/// twice — live while it happens, and again afterwards from what was kept — and
+/// two functions doing it would be two runs that read differently.
+List<TaskLine> taskFeedLines(List<TaskEvent> events) => [
+  for (final event in events)
+    if (taskEventLine(event) case final line?)
+      (seq: event.seq, text: line.text, tone: line.tone),
+];
+
 /// One line of a task's live view, or null for an event with nothing to show.
 ///
 /// Pure, and tested, because this is where the run is translated into what a

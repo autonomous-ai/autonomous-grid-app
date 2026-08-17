@@ -114,6 +114,12 @@ class GridPaths {
   /// so a project's rail can show only its own tasks. The scheduler is Hermes's
   /// (jobs live in `~/.hermes/cron`); this app-owned map is the only record of
   /// the project a task was created for, since Hermes doesn't know about projects.
+  /// What each finished code task actually did, one file per task
+  /// (`~/.grid/app/task_steps/<id>.json`). App-owned: the relay's task row
+  /// carries the agent's closing words and nothing of the run behind them, so
+  /// without this a task read tomorrow is a summary with no history (issue #30).
+  static Directory get taskStepsDir => Directory('${home.path}/app/task_steps');
+
   static File get projectTasksFile =>
       File('${home.path}/app/project_tasks.json');
 

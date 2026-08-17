@@ -6,14 +6,17 @@ import 'code_argv.dart';
 import 'code_cli.dart';
 import 'code_projects_controller.dart';
 import 'task_event.dart';
+import 'task_event_lines.dart';
+import 'task_steps_store.dart';
 
 /// How many events one task's live view keeps.
 ///
 /// A real task makes hundreds of tool calls, and every one of them is a line.
-/// The whole stream is not what anybody reads — the last screenful is, plus the
-/// result at the end — so the feed is capped from the front the way every other
-/// log in this app is.
-const _maxEvents = 400;
+/// The cap is memory, not layout: the view has always tailed to
+/// [kLiveTaskLines] on its own, so the old 400 never made the screen shorter —
+/// it made a long run *forget its own beginning*, and the record written when
+/// it ends could then only hold what was left (issue #30).
+const _maxEvents = TaskStepsStore.maxLines;
 
 /// How many times a stream that ended with no verdict is remade.
 ///
@@ -135,6 +138,9 @@ class TaskFollowController extends Notifier<TaskFeed> {
   void _onEvent(TaskEvent event) {
     if (!ref.mounted) return;
     _cursor = event.seq;
+    // The run has ended, so this is the moment its record is worth keeping —
+    // once, with everything that arrived, rather than on every event.
+    if (event is TaskTerminal) _keep([...state.events, event]);
     // Progress refills the budget: a proxy that severs a busy stream every few
     // minutes is followed indefinitely, while a task that is genuinely over
     // costs a few empty reattaches and then stops.
@@ -173,6 +179,17 @@ class TaskFollowController extends Notifier<TaskFeed> {
     _reattaches++;
     unawaited(_subscription?.cancel());
     _listen();
+  }
+
+  /// Write down what the run did, so closing the task doesn't throw it away.
+  ///
+  /// Fired rather than awaited: the screen has an answer to show and must not
+  /// wait on a disk write, and a record that failed to save is not a reason to
+  /// hold up the verdict.
+  void _keep(List<TaskEvent> events) {
+    final lines = taskFeedLines(events);
+    if (lines.isEmpty) return;
+    unawaited(ref.read(taskStepsStoreProvider).save(taskId, lines));
   }
 
   /// Start over from where the view left off — the action behind a "watch
