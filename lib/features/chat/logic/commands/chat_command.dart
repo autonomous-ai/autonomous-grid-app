@@ -17,6 +17,16 @@ enum ChatCommand {
     name: 'clear',
     summary: 'Start a new chat here',
     detail: 'Keeps you where you are — in this project, or in the chat list.',
+  ),
+
+  /// Summarize the conversation so the next turn carries the summary instead of
+  /// the whole history. Takes optional focus instructions.
+  compact(
+    name: 'compact',
+    summary: 'Summarize this chat to free up room',
+    detail:
+        'Nothing is deleted — the assistant carries a summary from here on. '
+        'Add words after it to say what the summary should keep.',
   );
 
   const ChatCommand({
@@ -42,6 +52,13 @@ enum ChatCommand {
 ///
 /// A record rather than a class: it carries two fields and no behaviour.
 typedef ChatCommandCall = ({ChatCommand command, String argument});
+
+/// What running a command wants said afterwards.
+///
+/// [failed] is not decoration: "couldn't reach a model" and "done" must never
+/// look alike, which is the whole lesson of the goal bar that said one word for
+/// four different endings (§5).
+typedef CommandOutcome = ({String message, bool failed});
 
 /// The command [text] invokes, or null when it invokes none.
 ///

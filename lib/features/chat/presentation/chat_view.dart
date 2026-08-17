@@ -37,6 +37,7 @@ import '../../playground/presentation/no_model_yet.dart';
 import '../../playground/presentation/transcript_view.dart';
 import '../logic/commands/chat_command.dart';
 import 'command_slash_menu.dart';
+import 'compacted_divider.dart';
 import '../../skills/presentation/save_skill_bar.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
 import '../logic/active_workdir.dart';
@@ -136,8 +137,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // rebuild on its own. Refresh so the modality-driven UI (attach bar, send
     // gating, hints) tracks the selection.
     _model.addListener(_onModelChanged);
-    // The slash menu and the prompts button both track what's typed, so rebuild
-    // as the message changes.
+    // The slash menu tracks what's typed, so rebuild as the message changes.
     _scroll.addListener(_onScroll);
     // Reopening the section rebuilds this view; land on the latest turn rather
     // than stranding the user at the top of the transcript.
@@ -575,9 +575,22 @@ class _ChatViewState extends ConsumerState<ChatView> {
   }
 
   /// Run [call] and empty the composer — the command *was* the message.
-  void _runCommand(ChatCommandCall call) {
-    ref.read(chatSessionsProvider.notifier).runCommand(call);
+  ///
+  /// Some commands take a moment (a summary is a model call), so what they have
+  /// to say arrives as a toast rather than as a return value nobody sees.
+  Future<void> _runCommand(ChatCommandCall call) async {
     _message.clear();
+    final outcome = await ref
+        .read(chatSessionsProvider.notifier)
+        .runCommand(call);
+    if (outcome == null || !mounted) return;
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message: outcome.message,
+        severity: outcome.failed ? ToastSeverity.error : ToastSeverity.success,
+      ),
+    );
   }
 
   /// Replace the `@`-mention being typed with the picked file's [name]. The
@@ -801,6 +814,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
     final messages = active?.messages ?? const <ChatMessage>[];
+    final compaction = active?.compaction;
     // *Whether* there is an in-flight bubble, not what it says: this answers
     // once when the turn starts and once when it ends, while the bubble's own
     // contents change with every token.
@@ -887,16 +901,31 @@ class _ChatViewState extends ConsumerState<ChatView> {
                       : TranscriptView(
                           scroll: _scroll,
                           rows: [
-                            for (final message in messages)
+                            for (var i = 0; i < messages.length; i++) ...[
                               TranscriptRow(
                                 // A committed message is immutable and carried
                                 // across rebuilds by the controller, so its own
                                 // identity is both a stable scroll key and a
                                 // content key — it never changes in place.
-                                scrollId: message,
-                                cacheId: message,
-                                builder: (_) => ChatBubble(message: message),
+                                scrollId: messages[i],
+                                cacheId: messages[i],
+                                builder: (_) =>
+                                    ChatBubble(message: messages[i]),
                               ),
+                              // Where the context was folded up. Drawn in the
+                              // transcript rather than announced once and
+                              // forgotten: the messages above it are still
+                              // readable, and this is the line that says the
+                              // assistant is no longer reading them.
+                              if (compaction != null &&
+                                  compaction.through == i + 1)
+                                TranscriptRow(
+                                  scrollId: compaction,
+                                  cacheId: compaction,
+                                  builder: (_) =>
+                                      CompactedDivider(compaction: compaction),
+                                ),
+                            ],
                           ],
                           marksOf: () => minimapMarks(messages),
                           trailing: hasTrailing

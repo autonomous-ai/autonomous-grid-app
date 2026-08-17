@@ -415,7 +415,9 @@ mixin _ChatSend on _ChatSessions {
     final updates = _senderFor(viaAgent, agent).send(
       network: network,
       model: model,
-      history: conversation.messages,
+      // Not the whole transcript when it has been compacted: the summary
+      // stands in for what it covers (see [historyForTurn]).
+      history: historyForTurn(conversation.messages, conversation.compaction),
       modality: modality,
       attachments: attachments,
       // The chat's project, so the agent answers with that folder open. Null for

@@ -8,6 +8,7 @@ import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
 import 'package:grid_app/features/chat/logic/chat_approval.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_command.dart';
+import 'package:grid_app/features/chat/logic/commands/chat_compaction.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
@@ -2315,6 +2316,63 @@ void main() {
       expect(state.activeId, isNull);
       expect(state.draftProjectId, isNull);
       expect(state.conversations, hasLength(1));
+    });
+  });
+
+  group('/compact', () {
+    test('after compacting, the turn carries the summary in place of what it '
+        'covers — and the chat itself still holds every message', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'a'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'fix the parser',
+      );
+      final id = h.container.read(chatSessionsProvider).activeId!;
+
+      // Stand in for the summarizer: the model call is exercised by
+      // `chat_compaction_test.dart`; what matters here is what a turn sends
+      // once a compaction exists.
+      final chat = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single;
+      expect(chat.messages, hasLength(2));
+      final compacted = chat.copyWith(
+        compaction: ChatCompaction(
+          summary: 'we agreed to rewrite the parser',
+          through: 2,
+          at: DateTime.now(),
+        ),
+      );
+      ChatStore(directory: tmp).save(compacted);
+      await chats.reloadFromDisk();
+
+      await chats.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'carry on',
+        into: id,
+      );
+
+      final sent = h.agent.history!;
+      expect(sent.first.text, contains('we agreed to rewrite the parser'));
+      expect(sent.map((m) => m.text), isNot(contains('fix the parser')));
+      // Nothing was thrown away: the transcript still reads in full.
+      final kept = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single;
+      expect(kept.messages.first.text, 'fix the parser');
     });
   });
 

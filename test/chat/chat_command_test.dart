@@ -18,7 +18,13 @@ void main() {
     test('a name this app does not own stays an ordinary message — an agent '
         'has its own /review and the app must not eat it', () {
       expect(parseChatCommand('/review'), isNull);
-      expect(parseChatCommand('/compact'), isNull);
+      expect(parseChatCommand('/status'), isNull);
+    });
+
+    test('what the user typed after /compact is the focus, not a message', () {
+      final call = parseChatCommand('/compact only the API decisions');
+      expect(call?.command, ChatCommand.compact);
+      expect(call?.argument, 'only the API decisions');
     });
 
     test('a path that happens to start with a slash is a message', () {

@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'turn_model_usage.dart';
 import '../../../core/text_preview.dart';
+import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/platform/desktop_notifier.dart';
 import '../../../infrastructure/platform/window_focus.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
@@ -25,12 +27,14 @@ import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../network/logic/grid_overview_provider.dart';
 import '../../playground/logic/media_outputs.dart';
+import '../../playground/logic/one_shot_target.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
 import 'chat_title.dart';
 import 'chat_title_writer.dart';
 import 'commands/chat_command.dart';
+import 'commands/chat_compaction.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
@@ -341,7 +345,10 @@ class ChatSessionsController extends _ChatSessions
   /// Kept on the controller rather than in the view: every one of these acts on
   /// chat state, and a view that reached in and did it itself would be the
   /// second place that knows how.
-  void runCommand(ChatCommandCall call) {
+  ///
+  /// Returns the one line to tell the user, or null when the result is its own
+  /// confirmation — a new chat opening says "new chat" better than a toast.
+  Future<CommandOutcome?> runCommand(ChatCommandCall call) async {
     switch (call.command) {
       // Issue #13: a new chat *where the user is standing*. The project comes
       // from the open chat, or from the compose they are already in — dropping
@@ -349,7 +356,103 @@ class ChatSessionsController extends _ChatSessions
       // one thing "start a new chat here" promises not to do.
       case ChatCommand.clear:
         newChat(projectId: state.active?.projectId ?? state.draftProjectId);
+        return null;
+      case ChatCommand.compact:
+        return _compact(call.argument);
     }
+  }
+
+  /// How long the summarizer gets. Long, because it is reading a whole
+  /// conversation and the user asked for this and is waiting on it — unlike the
+  /// router's 8s, which runs in front of a turn nobody asked to delay.
+  static const _compactTimeout = Duration(seconds: 90);
+
+  /// Fold the open chat's history into a summary the next turn carries in its
+  /// place (see [ChatCompaction]).
+  Future<CommandOutcome?> _compact(String focus) async {
+    final chat = state.active;
+    if (chat == null || chat.messages.isEmpty) {
+      return (
+        message: "There's nothing to compact yet — this chat is empty.",
+        failed: true,
+      );
+    }
+    if ((chat.compaction?.through ?? 0) >= chat.messages.length) {
+      return (
+        message: 'Already compacted — nothing new has been said since.',
+        failed: false,
+      );
+    }
+    final target = resolveOneShotTarget(ref);
+    if (target == null) {
+      return (
+        message:
+            "No model is available to write the summary. Start an engine or "
+            "pick a grid that serves one, then try again.",
+        failed: true,
+      );
+    }
+
+    final id = chat.id;
+    // The transcript as the *assistant* sees it, so a second compaction folds
+    // in the first summary instead of dropping everything it stood for.
+    final seen = historyForTurn(chat.messages, chat.compaction);
+    final covered = chat.messages.length;
+    final log = ref.read(appLogProvider);
+    final (reply, error) = await ref
+        .read(chatTransportProvider)
+        .complete(
+          endpoint: target.endpoint,
+          apiKey: target.apiKey,
+          model: target.model,
+          messages: buildCompactMessages(messages: seen, focus: focus),
+        )
+        .timeout(
+          _compactTimeout,
+          onTimeout: () =>
+              (null, const ChatTransportError('summarizing timed out')),
+        );
+
+    if (_disposed) return null;
+    final summary = reply?.trim() ?? '';
+    if (error != null || summary.isEmpty) {
+      // The sentence the user reads is not the record: log what actually came
+      // back, or the next person debugging this has only the apology (§6).
+      log.warn(
+        'chat',
+        'compacting $id failed: ${error?.message ?? 'the model replied with '
+            'nothing'}',
+      );
+      return (
+        message: error == null
+            ? "The model returned an empty summary, so nothing was compacted."
+            : friendlyOneShotError(error, what: 'summarize this chat'),
+        failed: true,
+      );
+    }
+
+    // Re-read: the chat may have been deleted, or answered again, while the
+    // summary was being written. [covered] is the length as it was when we
+    // asked, so a message that landed since stays outside the summary.
+    final current = _find(id);
+    if (current == null) return null;
+    _saveAndReplace(
+      current.copyWith(
+        compaction: ChatCompaction(
+          summary: summary,
+          through: covered,
+          at: DateTime.now(),
+        ),
+        clearResume: true,
+      ),
+    );
+    log.info('chat', 'compacted $id through $covered messages');
+    return (
+      message:
+          'Context compacted. The chat is all still here — the assistant now '
+          'carries a summary of it.',
+      failed: false,
+    );
   }
 
   /// Switch to a saved conversation. Allowed mid-send — a reply streaming into

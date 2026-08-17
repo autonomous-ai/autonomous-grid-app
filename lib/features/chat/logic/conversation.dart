@@ -1,6 +1,7 @@
 import 'turn_model_share.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
+import 'commands/chat_compaction.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/message_media.dart';
 
@@ -22,6 +23,7 @@ class Conversation {
     this.archivedAt,
     this.approval,
     this.pinned = false,
+    this.compaction,
     this.resume,
   });
 
@@ -97,6 +99,10 @@ class Conversation {
   /// order without changing what the order means.
   final bool pinned;
 
+  /// Where this chat's context was summarized, or null while it carries its
+  /// whole history. See [ChatCompaction].
+  final ChatCompaction? compaction;
+
   /// The agent session this chat can carry on from, or null when the next
   /// message has to start a fresh one. See [AgentResumePoint].
   ///
@@ -136,10 +142,15 @@ class Conversation {
     // mode in it is a real choice.
     AgentApprovalMode? approval,
     bool? pinned,
+    ChatCompaction? compaction,
     // Only ever *set*: a session that can be resumed goes on being resumable
     // until it is replaced by a newer one. It is dropped by the sender at the
-    // moment it fails, not by a caller here.
+    // moment it fails, not by a caller here — except on a compaction, which
+    // starts the agent's own session afresh from the summary. Leaving it would
+    // hand the agent back the very history the summary replaced, and free
+    // nothing at all.
     AgentResumePoint? resume,
+    bool clearResume = false,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -153,7 +164,8 @@ class Conversation {
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
     approval: approval ?? this.approval,
     pinned: pinned ?? this.pinned,
-    resume: resume ?? this.resume,
+    compaction: compaction ?? this.compaction,
+    resume: clearResume ? null : (resume ?? this.resume),
   );
 
   Map<String, dynamic> toJson() => {
@@ -181,6 +193,7 @@ class Conversation {
     // Written only when set, like the two above, so an unpinned chat's file is
     // byte-identical to what every build before pinning existed wrote.
     if (pinned) 'pinned': true,
+    if (compaction != null) 'compaction': compaction!.toJson(),
     // Same rule again: absent means "start a fresh session", which is what
     // every chat saved before this field existed did.
     if (resume != null) 'resume': resume!.toJson(),
@@ -224,6 +237,7 @@ class Conversation {
       // Absent — every chat saved before this field existed — means unpinned,
       // which is what they all were.
       pinned: json['pinned'] == true,
+      compaction: ChatCompaction.fromJson(json['compaction']),
       // A point that won't parse reads as none, which costs a replay — the same
       // thing that happens to every chat written before this existed.
       resume: AgentResumePoint.fromJson(json['resume']),
