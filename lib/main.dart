@@ -32,12 +32,21 @@ Future<void> main() async {
   // Boot the libmpv backend powering inline chat video/audio playback.
   MediaKit.ensureInitialized();
 
-  // Quit instantly if another instance already holds the lock. `flutter run` on
-  // macOS exec's the binary then calls `open`, which makes LaunchServices spawn
+  // Quit if another instance already holds the lock. `flutter run` on macOS
+  // exec's the binary then calls `open`, which makes LaunchServices spawn
   // duplicate instances; without this each one shows a window and steals focus.
-  if (!await acquireSingleInstanceLock()) {
+  // The claim waits out a Sparkle relaunch rather than resolving on the first
+  // refusal — see acquireSingleInstanceLock.
+  final lock = await acquireSingleInstanceLock();
+  if (lock == InstanceLock.deferred) {
     appLog.info('app', 'Another instance already running — exiting');
     exit(0);
+  }
+  // Worth a line of its own: this launch decided the previous holder was dead.
+  // If that call was wrong the user is now looking at two Grid windows, and
+  // this is the only record that says which of the two paths was taken.
+  if (lock == InstanceLock.reclaimed) {
+    appLog.info('app', 'Took over the instance lock — no live Grid answered');
   }
 
   await windowManager.ensureInitialized();
