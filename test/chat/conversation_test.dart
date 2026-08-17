@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/chat/logic/chat_title.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
@@ -285,11 +286,86 @@ void main() {
         const ChatMessage(role: ChatRole.assistant, text: 'Hi there'),
         const ChatMessage(role: ChatRole.user, text: '\n  first ask  \n'),
       ]);
-      expect(title, 'first ask');
+      expect(title, 'First ask');
     });
 
     test('falls back to the placeholder with no user text', () {
       expect(deriveConversationTitle(const []), kNewConversationTitle);
+    });
+
+    // The rows from issue #37: every one of them opened with the same
+    // instruction, so the sidebar listed five chats that read alike.
+    test('drops the command and the opening, so what is left says which chat '
+        'this is', () {
+      String named(String text) => deriveConversationTitle([
+        ChatMessage(role: ChatRole.user, text: text),
+      ]);
+
+      expect(
+        named('/goal i want you to work on the pricing page'),
+        'Work on the pricing page',
+      );
+      expect(named('help me edit this X post'), 'Edit this X post');
+      expect(
+        named('/goal check out this benchmark of local models'),
+        'This benchmark of local models',
+      );
+      expect(
+        named('/goal study https://roo.dev/docs/quickstart'),
+        'Study roo.dev/docs',
+      );
+      expect(
+        named('giúp mình sửa lại phần giá trên trang chủ'),
+        'Sửa lại phần giá trên trang chủ',
+      );
+    });
+
+    test('keeps a message that is only a command, and a path that merely looks '
+        'like one', () {
+      expect(
+        deriveConversationTitle([
+          const ChatMessage(role: ChatRole.user, text: '/compact'),
+        ]),
+        'Compact',
+      );
+      expect(
+        deriveConversationTitle([
+          const ChatMessage(role: ChatRole.user, text: '/Users/me/notes.md'),
+        ]),
+        '/Users/me/notes.md',
+      );
+    });
+
+    test(
+      'cuts at a word boundary — a name cut mid-word reads as another word',
+      () {
+        final title = deriveConversationTitle([
+          const ChatMessage(
+            role: ChatRole.user,
+            text: 'Rewrite the onboarding checklist for the desktop app',
+          ),
+        ]);
+        expect(title, 'Rewrite the onboarding checklist for…');
+      },
+    );
+  });
+
+  group('tidyChatTitle', () {
+    test('takes the shapes a model wraps a one-line answer in back to the '
+        'name that was asked for', () {
+      expect(tidyChatTitle('"Landing page copy"'), 'Landing page copy');
+      expect(tidyChatTitle('Title: Landing page copy.'), 'Landing page copy');
+      expect(tidyChatTitle('```\nLanding page copy\n```'), 'Landing page copy');
+      expect(tidyChatTitle('   '), '');
+    });
+
+    test('clips a model that answered with a sentence rather than a name', () {
+      expect(
+        tidyChatTitle(
+          'This conversation is about rewriting the onboarding checklist',
+        ),
+        'This conversation is about rewriting…',
+      );
     });
   });
 

@@ -1,5 +1,6 @@
 import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../playground/logic/chat_message.dart';
+import '../chat_title.dart';
 import '../conversation.dart';
 
 /// Which tool a transcript was read out of.

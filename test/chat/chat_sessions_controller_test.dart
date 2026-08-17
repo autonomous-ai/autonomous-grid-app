@@ -8,6 +8,7 @@ import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
 import 'package:grid_app/features/chat/logic/chat_approval.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
+import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/agents/logic/agent_session_title.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
@@ -230,6 +231,22 @@ class _FakeAgentTitle implements AgentSessionTitle {
   }
 }
 
+/// Stands in for the one-shot call that asks a model to name the chat, so no
+/// test reaches for a relay. Records what it was shown, since the point of the
+/// second naming pass is that it only runs when the first one came back empty.
+class _FakeTitleWriter implements ChatTitleWriter {
+  _FakeTitleWriter(this.title);
+
+  final String? title;
+  final asked = <int>[];
+
+  @override
+  Future<String?> write(List<ChatMessage> messages) async {
+    asked.add(messages.length);
+    return title;
+  }
+}
+
 /// A grid whose machines are known — what a reply's "on which machine" is read
 /// off. Empty by default: most tests care about the turn, not the grid.
 GridOverview _overview({List<OverviewNode> nodes = const []}) => GridOverview(
@@ -250,6 +267,7 @@ OverviewNode _node(String name, {List<String> models = const []}) =>
   _FakeSender sender,
   _FakeSender agent,
   _FakeAgentTitle agentTitle,
+  _FakeTitleWriter titleWriter,
 })
 _harness(
   Directory dir, {
@@ -257,6 +275,7 @@ _harness(
   bool agentInstalled = false,
   String? agentName,
   bool holdAgentName = false,
+  String? modelName,
   ChatSender? answering,
   GridOverview? overview,
 }) {
@@ -264,6 +283,7 @@ _harness(
   final sender = _FakeSender(updates);
   final agent = _FakeSender(updates);
   final agentTitle = _FakeAgentTitle(agentName, held: holdAgentName);
+  final titleWriter = _FakeTitleWriter(modelName);
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
@@ -272,6 +292,7 @@ _harness(
       chatSenderProvider.overrideWithValue(answering ?? sender),
       hermesChatSenderProvider.overrideWithValue(answering ?? agent),
       agentSessionTitleProvider.overrideWithValue(agentTitle),
+      chatTitleWriterProvider.overrideWithValue(titleWriter),
       // Keep any saved input images in the temp dir, never the real grid home.
       mediaOutputsDirProvider.overrideWithValue(
         Directory('${dir.path}/outputs'),
@@ -312,6 +333,7 @@ _harness(
     sender: sender,
     agent: agent,
     agentTitle: agentTitle,
+    titleWriter: titleWriter,
   );
 }
 
@@ -504,7 +526,7 @@ void main() {
       final conv = state.conversations.single;
       expect(state.activeId, conv.id);
       expect(conv.model, 'qwen');
-      expect(conv.title, 'hi');
+      expect(conv.title, 'Hi');
       expect(conv.messages.map((m) => m.role).toList(), [
         ChatRole.user,
         ChatRole.assistant,
@@ -1487,7 +1509,108 @@ void main() {
 
     expect(
       h.container.read(chatSessionsProvider).conversations.single.title,
-      'hi',
+      'Hi',
+    );
+  });
+
+  test('a chat neither the agent nor a model could name keeps the name taken '
+      'from what was typed — nothing is ever blanked', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'help me edit this launch post',
+        );
+    await pumpEventQueue();
+
+    expect(
+      h.container.read(chatSessionsProvider).conversations.single.title,
+      'Edit this launch post',
+    );
+  });
+
+  test('a chat the agent never named is named by a model instead — most chats '
+      'are answered by something that names nothing', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      modelName: 'Ngân sách quý 4',
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'hi');
+    await pumpEventQueue();
+
+    final conv = h.container.read(chatSessionsProvider).conversations.single;
+    expect(conv.title, 'Ngân sách quý 4');
+    // Both turns of the opening exchange, since the ask alone is the vague half.
+    expect(h.titleWriter.asked, [2]);
+    expect(
+      (await ChatStore(directory: tmp).loadAll()).single.title,
+      conv.title,
+    );
+  });
+
+  test('the name the agent gave its own session is taken as it is, without '
+      'spending a request on a name it already has', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      agentName: 'Đọc thư mục dự án',
+      modelName: 'Never asked for',
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'qwen', message: 'hi');
+    await pumpEventQueue();
+
+    expect(
+      h.container.read(chatSessionsProvider).conversations.single.title,
+      'Đọc thư mục dự án',
+    );
+    expect(h.titleWriter.asked, isEmpty);
+  });
+
+  test('a chat the user named is left alone by both naming passes', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      modelName: 'Ngân sách quý 4',
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+    final controller = h.container.read(chatSessionsProvider.notifier);
+
+    await controller.send(network: _credential(), model: 'qwen', message: 'hi');
+    final id = h.container.read(chatSessionsProvider).conversations.single.id;
+    controller.renameConversation(id, 'Kế hoạch tuần');
+    await pumpEventQueue();
+
+    expect(
+      h.container.read(chatSessionsProvider).conversations.single.title,
+      'Kế hoạch tuần',
     );
   });
 

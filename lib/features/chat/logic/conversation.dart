@@ -27,7 +27,8 @@ class Conversation {
   final String id;
 
   /// Short human label for the sidebar — derived from the first user message
-  /// (see [deriveConversationTitle]); [kNewConversationTitle] until then.
+  /// (`deriveConversationTitle`), then replaced by the name a model gave the
+  /// conversation (`ChatTitleWriter`); [kNewConversationTitle] until then.
   final String title;
 
   /// The model id last chosen in this conversation, restored into the picker.
@@ -250,23 +251,6 @@ int liveChatCountIn(List<Conversation> all, String projectId) {
   return count;
 }
 
-/// The longest a derived title runs before it's clipped with an ellipsis.
-const int _maxTitleLength = 40;
-
-/// A sidebar title from the first user message — its first line, clipped. Falls
-/// back to [kNewConversationTitle] when there's nothing to derive from yet.
-String deriveConversationTitle(List<ChatMessage> messages) {
-  for (final message in messages) {
-    if (message.role != ChatRole.user) continue;
-    final line = message.text.trim().split('\n').first.trim();
-    if (line.isEmpty) continue;
-    return line.length > _maxTitleLength
-        ? '${line.substring(0, _maxTitleLength).trimRight()}…'
-        : line;
-  }
-  return kNewConversationTitle;
-}
-
 Map<String, dynamic> _messageToJson(ChatMessage message) => {
   'role': message.role.name,
   'text': message.text,
@@ -349,7 +333,10 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
     model: json['model'] is String ? json['model'] as String : null,
     node: json['node'] is String ? json['node'] as String : null,
     modelShares: json['model_shares'] is List
-        ? [for (final row in json['model_shares'] as List) ?ModelShare.fromJson(row)]
+        ? [
+            for (final row in json['model_shares'] as List)
+              ?ModelShare.fromJson(row),
+          ]
         : const [],
     took: json['took_ms'] is num
         ? Duration(milliseconds: (json['took_ms'] as num).toInt())

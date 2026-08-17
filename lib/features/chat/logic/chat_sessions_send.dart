@@ -499,7 +499,7 @@ mixin _ChatSend on _ChatSessions {
               outOfSteps: outOfSteps,
             );
             _retryableTurns.remove(id);
-            _adoptAgentName(answered, agentSessionId);
+            _nameConversation(answered, agentSessionId);
             _announceTurn(answered, body: firstLinePreview(reply.text));
           case ChatSendFailure(:final error, :final partial):
             // Keep what the assistant produced before it failed — its streamed
@@ -619,21 +619,22 @@ mixin _ChatSend on _ChatSessions {
     );
   }
 
-  /// Let the agent name the chat, replacing the placeholder taken from the first
-  /// message ("hi") with what the conversation turned out to be about.
+  /// Have the chat named for what it turned out to be about, replacing the line
+  /// taken from the first message ("hi").
   ///
-  /// The agent names a session once, off its opening exchange, so this only runs
-  /// on the first reply — a later turn (or reopening the chat weeks on) must not
-  /// rename a conversation the user already knows by its name.
-  void _adoptAgentName(Conversation conversation, String? sessionId) {
-    if (sessionId == null || conversation.messages.length != 2) return;
+  /// Only on the first reply: a name is decided by the opening exchange, and a
+  /// later turn — or reopening the chat weeks on — must not rename a
+  /// conversation the user already knows by its name. A chat the user named
+  /// themselves is never touched at all.
+  void _nameConversation(Conversation conversation, String? sessionId) {
+    if (conversation.messages.length != 2 || conversation.titleLocked) return;
     unawaited(_rename(conversation.id, sessionId));
   }
 
   /// Wait for the name, then swap it in — without re-sorting or stealing focus,
   /// since by now the user may well be reading a different chat.
-  Future<void> _rename(String conversationId, String sessionId) async {
-    final title = await ref.read(agentSessionTitleProvider).waitFor(sessionId);
+  Future<void> _rename(String conversationId, String? sessionId) async {
+    final title = await _nameFor(conversationId, sessionId);
     if (title == null || _disposed) return;
 
     // Re-read *after* the wait, not before: the name takes seconds to arrive,
@@ -646,6 +647,31 @@ mixin _ChatSend on _ChatSessions {
     }
     final renamed = current.copyWith(title: title);
     _saveAndReplace(renamed);
+  }
+
+  /// What to call the chat, asked for in the order of who knows most about it
+  /// for the least: the agent that ran the turn already named its own session
+  /// off the same exchange, so asking it costs a local read; every other chat —
+  /// a turn the grid's chat API answered, a computer with no agent installed,
+  /// an agent that named nothing — is worth one small completion of its own.
+  ///
+  /// Null when neither could answer, and the name derived from the first message
+  /// ([chatTitleFromLine]) stands. Nothing here ever reports a failure: nobody
+  /// asked for a name, so nobody may be interrupted about one.
+  Future<String?> _nameFor(String conversationId, String? sessionId) async {
+    if (sessionId != null) {
+      final named = await ref
+          .read(agentSessionTitleProvider)
+          .waitFor(sessionId);
+      if (named != null) return named;
+    }
+    if (_disposed) return null;
+
+    // Re-read rather than closing over the conversation: the wait above runs for
+    // seconds, and what is asked about has to be the transcript as it is now.
+    final chat = _find(conversationId);
+    if (chat == null || chat.titleLocked) return null;
+    return ref.read(chatTitleWriterProvider).write(chat.messages);
   }
 
   /// Who answers this turn: [agent] for plain text ([viaAgent]), the grid's chat
@@ -716,15 +742,14 @@ mixin _ChatSend on _ChatSessions {
         .end(chat, network);
     if (shares.isEmpty) return;
     final current = _find(chat);
-    if (current == null || index < 0 || index >= current.messages.length) return;
+    if (current == null || index < 0 || index >= current.messages.length) {
+      return;
+    }
     final messages = [...current.messages];
     messages[index] = messages[index].copyWith(modelShares: shares);
     // Whatever the chat is doing now, not an assumed idle: the user may already
     // have asked the next question, and a correction to the last turn's caption
     // must not knock that turn's "answering" state off the screen.
-    _commit(
-      current.copyWith(messages: messages),
-      phase: state.phaseFor(chat),
-    );
+    _commit(current.copyWith(messages: messages), phase: state.phaseFor(chat));
   }
 }

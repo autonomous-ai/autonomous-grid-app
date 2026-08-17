@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/model_reply_text.dart';
 import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/cli/git_providers.dart';
@@ -180,7 +181,7 @@ String tidyCommitMessage(String raw) {
   var text = raw.trim();
   if (text.isEmpty) return '';
 
-  text = _unfence(text);
+  text = unfenceReply(text);
   final lead = RegExp(
     r'^(commit\s+message|message)\s*[:\-]\s*',
     caseSensitive: false,
@@ -191,7 +192,7 @@ String tidyCommitMessage(String raw) {
   var subject = lines.first.trim();
   // A model that wrapped the subject in quotes wrapped only the subject; the
   // body below it is prose and its quotation marks belong to the sentence.
-  subject = _unquote(subject);
+  subject = unquoteLine(subject);
   while (subject.endsWith('.')) {
     subject = subject.substring(0, subject.length - 1).trimRight();
   }
@@ -199,26 +200,4 @@ String tidyCommitMessage(String raw) {
 
   final body = lines.skip(1).join('\n').trim();
   return body.isEmpty ? subject : '$subject\n\n$body';
-}
-
-/// Drops a ``` fence around the whole answer, whatever it was labelled.
-String _unfence(String text) {
-  if (!text.startsWith('```')) return text;
-  final firstBreak = text.indexOf('\n');
-  if (firstBreak == -1) return text;
-  final end = text.lastIndexOf('```');
-  final inner = end > firstBreak
-      ? text.substring(firstBreak + 1, end)
-      : text.substring(firstBreak + 1);
-  return inner.trim();
-}
-
-String _unquote(String line) {
-  const pairs = [('"', '"'), ('“', '”'), ("'", "'"), ('`', '`')];
-  for (final (open, close) in pairs) {
-    if (line.length > 1 && line.startsWith(open) && line.endsWith(close)) {
-      return line.substring(1, line.length - 1).trim();
-    }
-  }
-  return line;
 }

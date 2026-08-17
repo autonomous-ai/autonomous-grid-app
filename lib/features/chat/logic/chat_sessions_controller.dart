@@ -28,6 +28,8 @@ import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
+import 'chat_title.dart';
+import 'chat_title_writer.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
