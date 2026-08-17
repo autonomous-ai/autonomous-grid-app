@@ -24,17 +24,40 @@ class NodeSlice {
 /// shades of one, so neighbouring slices stay tellable apart at 6px tall — the
 /// bar is the only place in the app where colour carries identity rather than
 /// status, which is why these are local and not palette tokens.
+///
+/// Ten, not the five it started with. A real grid runs more machines than five,
+/// and every one past the palette fell to the same grey, so a ten-node grid
+/// arrived half-named and half-anonymous — the colour said "you are one of the
+/// leftovers" about machines the list was giving a full row each.
+///
+/// Ten hues cannot sit evenly on the wheel, so the pairs that end up close —
+/// accent blue/indigo, emerald/cyan/teal — are told apart by lightness instead,
+/// and kept far apart in this order, which is also the order they are laid down
+/// side by side in the bar. Nothing here may be a grey: [sliceColor] spends grey
+/// on the machines that ran out of colours, and a slice that borrowed it would
+/// read as one of them.
 const List<Color> kSliceColors = [
-  Color(0xFF34D399), // green
+  Color(0xFF34D399), // emerald
   Color(0xFF2F5BEA), // the app accent
   Color(0xFF8B5CF6), // violet
   Color(0xFFF5A524), // amber
   Color(0xFF22D3EE), // cyan
+  Color(0xFFEC4899), // pink
+  Color(0xFF84CC16), // lime
+  Color(0xFFF87171), // coral
+  Color(0xFF6366F1), // indigo
+  Color(0xFF0D9488), // teal
 ];
 
-/// How many machines get their own slice before the rest collapse into one.
-/// Five keeps the legend readable and the panel short on a grid with many nodes.
-const int kMaxSlices = 5;
+/// How many machines get their own slice before the rest collapse into one:
+/// exactly as many as there are colours.
+///
+/// Derived rather than written down, because the two drifting apart breaks the
+/// bar quietly in both directions — a slice past the palette would be drawn in
+/// the same grey as the "+N more" bucket it is supposed to be distinct from,
+/// and a colour past the last slice would appear in the legend beside a bar
+/// that never shows it.
+final int kMaxSlices = kSliceColors.length;
 
 /// The colour for a slice at [index], including the "+N more" bucket — past the
 /// palette, everything remaining is drawn in one muted grey rather than cycling
