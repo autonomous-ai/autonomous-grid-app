@@ -95,6 +95,13 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
 
+  /// The chats with a naming attempt in flight. Naming is retried on every turn
+  /// until it lands, and an attempt can take longer than a short turn does — so
+  /// without this a chat answered three times in a minute would have three of
+  /// them running, each waiting out the same poll and each spending its own
+  /// request.
+  final Set<String> _naming = {};
+
   /// Agent turns waiting for their **project's** lane, oldest first, keyed by
   /// project id. The chats running right now are
   /// [ChatSessionsState.runningAgentIds].

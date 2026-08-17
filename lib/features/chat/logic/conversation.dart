@@ -18,6 +18,7 @@ class Conversation {
     this.messages = const [],
     this.projectId,
     this.titleLocked = false,
+    this.titleFromModel = false,
     this.archivedAt,
     this.approval,
     this.pinned = false,
@@ -51,6 +52,21 @@ class Conversation {
   /// can land after a restart, and a title the user chose must outlive the
   /// session that chose it.
   final bool titleLocked;
+
+  /// A model wrote the name this chat is wearing — the agent's own name for its
+  /// session, or one asked for after it.
+  ///
+  /// False means the chat is still wearing the line derived from what the user
+  /// typed, and that is what lets a **later** turn try again. Naming used to get
+  /// exactly one attempt, on the first reply: a chat whose only model happened
+  /// to be unreachable that minute kept "Help me edit this…" for good, which is
+  /// the half of issue #37 the naming pass itself couldn't fix.
+  ///
+  /// Persisted, or quitting the app would put every named chat back in the queue
+  /// to be named again. A chat saved before this field existed reads as false
+  /// and so gets named on its next turn — a one-off, and the chats it touches
+  /// are the badly-named ones this was written for.
+  final bool titleFromModel;
 
   /// When the user archived this chat, or null while it's live.
   ///
@@ -109,6 +125,10 @@ class Conversation {
     // express and the plain `?? this` idiom is exactly right.
     String? projectId,
     bool? titleLocked,
+    // Only ever *set*: a name a model wrote does not stop being one. It is
+    // cleared by nothing, because nothing puts a chat back to the line it was
+    // derived from.
+    bool? titleFromModel,
     DateTime? archivedAt,
     bool clearArchivedAt = false,
     // Only ever *set*: a chat that has been given its own mode keeps it. Going
@@ -129,6 +149,7 @@ class Conversation {
     messages: messages ?? this.messages,
     projectId: projectId ?? this.projectId,
     titleLocked: titleLocked ?? this.titleLocked,
+    titleFromModel: titleFromModel ?? this.titleFromModel,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
     approval: approval ?? this.approval,
     pinned: pinned ?? this.pinned,
@@ -141,6 +162,9 @@ class Conversation {
     'model': model,
     'projectId': projectId,
     'titleLocked': titleLocked,
+    // Written only when true, so a chat still wearing its derived name is saved
+    // byte-identically to what every build before this wrote.
+    if (titleFromModel) 'titleFromModel': true,
     // UTC, so the `Z` is on the wire: these files travel between machines now
     // (Settings ▸ Sync & Backup), and a local-time stamp with no zone reads as
     // the *reader's* zone — a chat written at 15:00 in Hanoi would look newer
@@ -186,6 +210,7 @@ class Conversation {
       // Defaults to false, so every chat saved before this field existed stays
       // open to the agent's naming — which is what it had all along.
       titleLocked: json['titleLocked'] == true,
+      titleFromModel: json['titleFromModel'] == true,
       createdAt: _parseDate(json['createdAt']),
       updatedAt: _parseDate(json['updatedAt']),
       // Absent (every chat saved before this field existed) or unparseable

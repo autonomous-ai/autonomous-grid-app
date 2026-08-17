@@ -104,11 +104,13 @@ class TurnModelUsage extends Notifier<Map<String, List<ModelShare>>> {
   ) async {
     if (!ref.mounted) return null;
     try {
-      return await ref.read(relayApiClientProvider).usage(
-        baseUrl: network.relayBaseUrl,
-        apiKey: network.relayApiKey,
-        since: since,
-      );
+      return await ref
+          .read(relayApiClientProvider)
+          .usage(
+            baseUrl: network.relayBaseUrl,
+            apiKey: network.relayApiKey,
+            since: since,
+          );
     } on Object {
       return null;
     }
@@ -122,6 +124,7 @@ final turnModelUsageProvider =
 
 /// What is serving [chat]'s open turn right now — empty until the first poll
 /// lands, or on a grid that cannot answer.
-final openTurnModelsProvider = Provider.autoDispose.family<List<ModelShare>, String>(
-  (ref, chat) => ref.watch(turnModelUsageProvider)[chat] ?? const [],
-);
+final openTurnModelsProvider = Provider.autoDispose
+    .family<List<ModelShare>, String>(
+      (ref, chat) => ref.watch(turnModelUsageProvider)[chat] ?? const [],
+    );

@@ -237,7 +237,9 @@ class _FakeAgentTitle implements AgentSessionTitle {
 class _FakeTitleWriter implements ChatTitleWriter {
   _FakeTitleWriter(this.title);
 
-  final String? title;
+  /// Mutable, so a test can play the case the retry exists for: nothing could
+  /// name the chat on its first reply, and something can by its second.
+  String? title;
   final asked = <int>[];
 
   @override
@@ -1589,6 +1591,106 @@ void main() {
       'Đọc thư mục dự án',
     );
     expect(h.titleWriter.asked, isEmpty);
+  });
+
+  test('a chat nothing could name yet is named on a later turn, instead of '
+      'wearing its first line for good', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+    final controller = h.container.read(chatSessionsProvider.notifier);
+
+    await controller.send(
+      network: _credential(),
+      model: 'qwen',
+      message: 'help me edit this launch post',
+    );
+    await pumpEventQueue();
+    // Neither pass could answer, so the line the user typed still stands.
+    expect(
+      h.container.read(chatSessionsProvider).conversations.single.title,
+      'Edit this launch post',
+    );
+
+    // A model can answer by the time the next turn lands.
+    h.titleWriter.title = 'Bài đăng ra mắt';
+    await controller.send(
+      network: _credential(),
+      model: 'qwen',
+      message: 'shorter please',
+    );
+    await pumpEventQueue();
+
+    final conv = h.container.read(chatSessionsProvider).conversations.single;
+    expect(conv.title, 'Bài đăng ra mắt');
+    expect(conv.titleFromModel, isTrue);
+    // Asked once per turn while the chat had no name of its own — and the
+    // agent, which names a session only off its opening exchange, was not
+    // polled a second time.
+    expect(h.titleWriter.asked, [2, 4]);
+    expect(h.agentTitle.asked, ['sess-1']);
+  });
+
+  test(
+    'a chat a model has named is left alone by every turn after it',
+    () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        modelName: 'Bài đăng ra mắt',
+        updates: [
+          const ChatSendAgentSession('sess-1'),
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'a'),
+          ),
+        ],
+      );
+      final controller = h.container.read(chatSessionsProvider.notifier);
+
+      await controller.send(network: _credential(), model: 'm', message: 'hi');
+      await pumpEventQueue();
+      await controller.send(
+        network: _credential(),
+        model: 'm',
+        message: 'more',
+      );
+      await pumpEventQueue();
+
+      expect(
+        h.container.read(chatSessionsProvider).conversations.single.title,
+        'Bài đăng ra mắt',
+      );
+      // Named once. A second ask would spend a request to rename a chat the user
+      // has by now read in the rail.
+      expect(h.titleWriter.asked, [2]);
+    },
+  );
+
+  test('the name a model gave survives a restart, so a reloaded chat is not '
+      'put back in the queue to be named again', () async {
+    final h = _harness(
+      tmp,
+      agentInstalled: true,
+      modelName: 'Bài đăng ra mắt',
+      updates: [
+        const ChatSendAgentSession('sess-1'),
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      ],
+    );
+
+    await h.container
+        .read(chatSessionsProvider.notifier)
+        .send(network: _credential(), model: 'm', message: 'hi');
+    await pumpEventQueue();
+
+    final reloaded = (await ChatStore(directory: tmp).loadAll()).single;
+    expect(reloaded.title, 'Bài đăng ra mắt');
+    expect(reloaded.titleFromModel, isTrue);
   });
 
   test('a chat the user named is left alone by both naming passes', () async {

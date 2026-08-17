@@ -88,7 +88,9 @@ List<int> percentages(List<ModelShare> shares) {
   // one, so the same input always renders the same way.
   final order = [for (var i = 0; i < shares.length; i++) i]
     ..sort((a, b) {
-      final byRemainder = (exact[b] - floors[b]).compareTo(exact[a] - floors[a]);
+      final byRemainder = (exact[b] - floors[b]).compareTo(
+        exact[a] - floors[a],
+      );
       if (byRemainder != 0) return byRemainder;
       final bySize = shares[b].requests.compareTo(shares[a].requests);
       return bySize != 0 ? bySize : a.compareTo(b);
@@ -150,7 +152,10 @@ String? modelShareLabel(
 /// request count, but a caption that silently reorders itself when a server
 /// changes is worse than one that sorts for itself.
 List<ModelShare> rankedShares(List<ModelShare> shares) =>
-    [for (final s in shares) if (s.requests > 0) s]..sort((a, b) {
+    [
+      for (final s in shares)
+        if (s.requests > 0) s,
+    ]..sort((a, b) {
       final byRequests = b.requests.compareTo(a.requests);
       return byRequests != 0 ? byRequests : a.model.compareTo(b.model);
     });

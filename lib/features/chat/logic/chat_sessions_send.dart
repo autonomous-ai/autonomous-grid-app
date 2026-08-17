@@ -622,31 +622,56 @@ mixin _ChatSend on _ChatSessions {
   /// Have the chat named for what it turned out to be about, replacing the line
   /// taken from the first message ("hi").
   ///
-  /// Only on the first reply: a name is decided by the opening exchange, and a
-  /// later turn — or reopening the chat weeks on — must not rename a
-  /// conversation the user already knows by its name. A chat the user named
-  /// themselves is never touched at all.
+  /// Runs on every turn until a model has actually written a name, not only on
+  /// the first: nothing here is guaranteed to answer — no agent name, no model
+  /// reachable this minute — and one attempt meant a chat that missed it kept
+  /// its first line for good. Once [Conversation.titleFromModel] is set the chat
+  /// is left alone, so a conversation the user already knows by its name is
+  /// never renamed under them; a chat they named themselves is never touched at
+  /// all.
   void _nameConversation(Conversation conversation, String? sessionId) {
-    if (conversation.messages.length != 2 || conversation.titleLocked) return;
-    unawaited(_rename(conversation.id, sessionId));
+    if (conversation.titleLocked || conversation.titleFromModel) return;
+    // Nothing to name it from until something has been asked and answered.
+    if (conversation.messages.length < 2) return;
+    // An attempt takes seconds and a chat can be several turns further on by
+    // the time it lands. Without this, each of those turns starts its own.
+    if (!_naming.add(conversation.id)) return;
+    unawaited(
+      _rename(
+        conversation.id,
+        sessionId,
+        firstExchange: conversation.messages.length == 2,
+      ),
+    );
   }
 
   /// Wait for the name, then swap it in — without re-sorting or stealing focus,
   /// since by now the user may well be reading a different chat.
-  Future<void> _rename(String conversationId, String? sessionId) async {
-    final title = await _nameFor(conversationId, sessionId);
-    if (title == null || _disposed) return;
+  Future<void> _rename(
+    String conversationId,
+    String? sessionId, {
+    required bool firstExchange,
+  }) async {
+    try {
+      final title = await _nameFor(
+        conversationId,
+        sessionId,
+        firstExchange: firstExchange,
+      );
+      if (title == null || _disposed) return;
 
-    // Re-read *after* the wait, not before: the name takes seconds to arrive,
-    // and the user may have named the chat themselves in the meantime. Theirs
-    // wins — this is the only thing standing between a hand-typed title and an
-    // agent silently replacing it.
-    final current = _find(conversationId);
-    if (current == null || current.titleLocked || current.title == title) {
-      return;
+      // Re-read *after* the wait, not before: the name takes seconds to arrive,
+      // and the user may have named the chat themselves in the meantime. Theirs
+      // wins — this is the only thing standing between a hand-typed title and a
+      // model silently replacing it.
+      final current = _find(conversationId);
+      if (current == null || current.titleLocked) return;
+      // Written even when the name matches the one already there, because the
+      // flag is the point: it is what stops the next turn asking again.
+      _saveAndReplace(current.copyWith(title: title, titleFromModel: true));
+    } finally {
+      _naming.remove(conversationId);
     }
-    final renamed = current.copyWith(title: title);
-    _saveAndReplace(renamed);
   }
 
   /// What to call the chat, asked for in the order of who knows most about it
@@ -658,8 +683,15 @@ mixin _ChatSend on _ChatSessions {
   /// Null when neither could answer, and the name derived from the first message
   /// ([chatTitleFromLine]) stands. Nothing here ever reports a failure: nobody
   /// asked for a name, so nobody may be interrupted about one.
-  Future<String?> _nameFor(String conversationId, String? sessionId) async {
-    if (sessionId != null) {
+  Future<String?> _nameFor(
+    String conversationId,
+    String? sessionId, {
+    required bool firstExchange,
+  }) async {
+    // Only on the opening exchange: an agent names its session once, off that
+    // exchange, so asking on turn five is twelve seconds of polling for a name
+    // that was never going to be written.
+    if (firstExchange && sessionId != null) {
       final named = await ref
           .read(agentSessionTitleProvider)
           .waitFor(sessionId);
