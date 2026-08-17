@@ -21,6 +21,7 @@ mixin _ChatSettle on _ChatSessions {
   @override
   void _finish(String id) {
     _subs.remove(id);
+    _turnActivityAt.remove(id);
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
@@ -105,6 +106,7 @@ mixin _ChatSettle on _ChatSessions {
   @override
   void _cancel(String id) {
     _retryableTurns.remove(id);
+    _turnActivityAt.remove(id);
     final sub = _subs.remove(id);
     sub?.cancel();
     // Not while the controller is being torn down: `_cancelAll` runs from

@@ -231,10 +231,44 @@ class _HangAfterFirstSender implements ChatSender {
         ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
       ]);
     }
-    // Never finishes: send()'s future stays pending, so only the ceiling ends it.
+    // Never emits: send()'s future stays pending and, with no update ever, the
+    // stall window is the only thing that can end it.
     return StreamController<ChatSendUpdate>(
       onCancel: () => hungCancelled = true,
     ).stream;
+  }
+}
+
+/// An agent whose first turn answers and whose second turn is a stream the test
+/// drives by hand — to prove a loop turn that keeps emitting is left running
+/// past the stall window. Whether it was cut off is read from the outcome: a
+/// turn stopped mid-stream never delivers its final reply.
+class _StreamingLoopSender implements ChatSender {
+  int calls = 0;
+  StreamController<ChatSendUpdate>? loopTurn;
+
+  @override
+  Stream<ChatSendUpdate> send({
+    required NetworkCredential network,
+    required String model,
+    required List<ChatMessage> history,
+    PlaygroundModality modality = PlaygroundModality.text,
+    List<MediaAttachment> attachments = const [],
+    String? localBaseUrl,
+    String? workdir,
+    String? conversationId,
+    String? instructions,
+    bool planFirst = false,
+    AgentApprovalMode? approval,
+    AgentResumePoint? resume,
+  }) {
+    calls++;
+    if (calls == 1) {
+      return Stream.fromIterable(const [
+        ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+      ]);
+    }
+    return (loopTurn = StreamController<ChatSendUpdate>()).stream;
   }
 }
 
@@ -320,7 +354,7 @@ _harness(
   ChatSender? answering,
   GridOverview? overview,
   ChatTransport? grid,
-  Duration? loopTurnCeiling,
+  Duration? loopTurnStall,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
@@ -330,10 +364,10 @@ _harness(
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
-      // Shorten the per-iteration ceiling so a test can prove a hung loop turn
-      // is abandoned without holding it for the full twenty minutes.
-      if (loopTurnCeiling != null)
-        loopTurnCeilingProvider.overrideWithValue(loopTurnCeiling),
+      // Shorten the stall window so a test can prove a hung loop turn is stopped
+      // — and a working one is left alone — without waiting the full hour.
+      if (loopTurnStall != null)
+        loopTurnStallProvider.overrideWithValue(loopTurnStall),
       // [answering] stands in for whoever replies, for a test that cares about
       // the reply arriving over time rather than about who sent it.
       chatSenderProvider.overrideWithValue(answering ?? sender),
@@ -2666,8 +2700,9 @@ void main() {
       },
     );
 
-    test('a turn that hangs is abandoned at the ceiling, so the loop keeps its '
-        'cadence instead of freezing overnight on one stuck turn', () async {
+    test('a turn that goes silent is treated as hung and stopped, so the loop '
+        'keeps its cadence instead of freezing overnight on one stuck turn',
+        () async {
       // The bug: an agent turn hung for 4h46m and, because the next beat is only
       // armed once the current turn returns, the whole loop sat frozen — "run
       // all night" stopped dead after one iteration, with no log to say why.
@@ -2676,7 +2711,7 @@ void main() {
         tmp,
         agentInstalled: true,
         answering: sender,
-        loopTurnCeiling: const Duration(milliseconds: 100),
+        loopTurnStall: const Duration(milliseconds: 100),
         updates: const [],
       );
       final chats = h.container.read(chatSessionsProvider.notifier);
@@ -2684,13 +2719,13 @@ void main() {
       await chats.send(network: _credential(), model: 'qwen', message: 'hi');
       await settle();
 
-      // The loop's first iteration goes out to a turn that never finishes.
+      // The loop's first iteration goes out to a turn that emits nothing, ever.
       await chats.runCommand((
         command: ChatCommand.loop,
         argument: '5m check the deploy',
       ));
 
-      // Poll real time: the 100ms ceiling has to actually elapse.
+      // Poll real time: the 100ms stall window has to actually elapse.
       for (var i = 0; i < 50 && !sender.hungCancelled; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
@@ -2703,6 +2738,56 @@ void main() {
         h.container.read(chatSessionsProvider).sendingFor(chat.id),
         isFalse,
         reason: 'the chat is idle again, not stuck answering forever',
+      );
+      expect(chat.loop?.iterations, 1, reason: 'the next beat was scheduled');
+      expect(chat.loop?.isRunning, isTrue);
+
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    test('a turn that keeps streaming is left alone past the stall window — a '
+        'long turn that is working is not a hang', () async {
+      final sender = _StreamingLoopSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        answering: sender,
+        loopTurnStall: const Duration(milliseconds: 300),
+        updates: const [],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await settle();
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: '5m check the deploy',
+      ));
+
+      // Keep the turn visibly alive: a chunk every 100ms — under the 300ms
+      // window, so it never looks silent — for ~700ms, well past the window,
+      // before it finishes cleanly.
+      final deadline = DateTime.now().add(const Duration(milliseconds: 700));
+      while (DateTime.now().isBefore(deadline)) {
+        final turn = sender.loopTurn;
+        if (turn != null && !turn.isClosed) {
+          turn.add(const ChatSendStreaming('working…'));
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      sender.loopTurn!.add(
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'done')),
+      );
+      await sender.loopTurn!.close();
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      // Its final reply landed: the turn ran ~700ms, well past the 300ms window,
+      // and was never cut off — a turn stopped mid-stream never delivers 'done'.
+      expect(
+        _assistantTurns(h.container, chat.id),
+        contains('done'),
+        reason: 'a streaming turn is left to finish, not treated as hung',
       );
       expect(chat.loop?.iterations, 1, reason: 'the next beat was scheduled');
       expect(chat.loop?.isRunning, isTrue);
@@ -3138,4 +3223,14 @@ List<String> _userTurns(ProviderContainer container, String id) => [
           .firstWhere((c) => c.id == id)
           .messages)
     if (m.role == ChatRole.user) m.text,
+];
+
+List<String> _assistantTurns(ProviderContainer container, String id) => [
+  for (final m
+      in container
+          .read(chatSessionsProvider)
+          .conversations
+          .firstWhere((c) => c.id == id)
+          .messages)
+    if (m.role == ChatRole.assistant) m.text,
 ];

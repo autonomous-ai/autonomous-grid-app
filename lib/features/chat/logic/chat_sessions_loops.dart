@@ -100,32 +100,62 @@ mixin _ChatLoops on _ChatSessions {
         .read(appLogProvider)
         .info('chat', 'loop iteration ${loop.iterations + 1} in $id: '
             '${loop.prompt}');
-    // Bound the turn. A loop runs unattended, and an agent turn can hang (a
-    // `claude -p` turn has sat for close to five hours) with nobody there to
-    // press Stop — and because the next beat is only armed once this one
-    // returns, a hung turn freezes the whole loop, silently. Past the ceiling,
-    // stop the turn (keeping any partial) and go on to the next iteration so an
-    // overnight loop keeps its cadence instead of dying on one stuck turn.
-    final ceiling = ref.read(loopTurnCeilingProvider);
-    try {
-      await send(
+    // A loop runs unattended, and because the next beat is only armed once this
+    // turn returns, a turn that never returns freezes the whole loop. But a turn
+    // still emitting — streamed text, a status, a step — is working, not stuck,
+    // however long it takes, and cutting it off would throw away real work. So
+    // wait it out, and only stop it once it has gone truly silent (see
+    // [_awaitTurnOrStall]).
+    await _awaitTurnOrStall(
+      id,
+      send(
         network: network,
         model: chat.model,
         message: loop.prompt,
         into: id,
         planFirst: false,
         continuing: true,
-      ).timeout(ceiling);
-    } on TimeoutException {
-      ref.read(appLogProvider).warn(
-        'chat',
-        'loop turn in $id ran past ${loopIntervalLabel(ceiling)} '
-            'without finishing — stopping it and moving on',
-      );
-      stopChat(id);
-    }
+      ),
+    );
     if (_disposed) return;
     await _scheduleNextIteration(id);
+  }
+
+  /// Wait for chat [id]'s loop turn to finish, unless it hangs — makes no
+  /// progress at all for [loopTurnStallProvider]'s window — in which case stop
+  /// it so the caller can move on to the next beat.
+  ///
+  /// The test is "has it gone silent", not "has it run long": a turn still
+  /// streaming is doing the work the loop asked for, and a long turn that keeps
+  /// talking is not the bug. Only one that has emitted nothing for the whole
+  /// window is treated as hung — a `claude -p` that answered once and then sat
+  /// there — and stopped with [stopChat], which keeps any partial it left.
+  Future<void> _awaitTurnOrStall(String id, Future<void> turn) async {
+    final window = ref.read(loopTurnStallProvider);
+    var finished = false;
+    unawaited(turn.whenComplete(() => finished = true));
+    while (!finished && !_disposed) {
+      final since = _turnActivityAt[id] ?? DateTime.now();
+      final remaining = window - DateTime.now().difference(since);
+      if (remaining <= Duration.zero) {
+        ref.read(appLogProvider).warn(
+          'chat',
+          'loop turn in $id made no progress for ${loopIntervalLabel(window)} — '
+              'treating it as hung, stopping it and moving on',
+        );
+        stopChat(id);
+        return;
+      }
+      // Wake on whichever comes first: the turn ending, or the stall window
+      // elapsing. The timer is cancelled after, so a finished turn leaves none
+      // pending — no hour-long timer outliving a turn that ended in seconds.
+      final tick = Completer<void>();
+      final timer = Timer(remaining, () {
+        if (!tick.isCompleted) tick.complete();
+      });
+      await Future.any<void>([turn, tick.future]);
+      timer.cancel();
+    }
   }
 
   /// Work out when the next iteration is due and arm the timer for it.
