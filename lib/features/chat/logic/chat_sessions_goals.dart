@@ -32,12 +32,18 @@ mixin _ChatGoals on _ChatSessions {
       );
     }
     final chat = _startedChat(model);
+    // Which agent answers is decided here, once, and carried on the goal — see
+    // [ChatGoal.agent]. Under Auto that means `/goal` settles the routing this
+    // chat would otherwise redo every turn: an objective handed between agents
+    // mid-run is one no agent can finish, and a delegated goal would be left
+    // behind in a session nobody reads from again.
     _saveGoal(
       chat.id,
       ChatGoal(
         condition: condition,
         status: GoalStatus.active,
         startedAt: DateTime.now(),
+        agent: ref.read(chatAgentForProjectProvider(chat.projectId)),
       ),
     );
     unawaited(_sendGoalTurn(chat.id, condition));
@@ -71,6 +77,10 @@ mixin _ChatGoals on _ChatSessions {
     // with tools this evaluator does not have. Running a second judgement here
     // would spend two models on one question, let them disagree, and send a
     // continuation turn on top of the one the agent is already sending.
+    //
+    // `isAppDriven` stays true while an owner's driver is still unwritten, so
+    // this never leaves a goal with nobody advancing it — see
+    // [GoalOwner.hasDriver].
     if (!goal.owner.isAppDriven) return;
     if (outcome == null) {
       _saveGoal(id, goal.copyWith(status: GoalStatus.stalled));

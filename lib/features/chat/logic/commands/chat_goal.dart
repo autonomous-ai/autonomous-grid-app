@@ -1,3 +1,4 @@
+import '../../../agents/logic/agent_catalog.dart';
 import '../../../playground/logic/chat_message.dart';
 
 /// Where a goal has got to.
@@ -48,9 +49,9 @@ enum GoalStatus {
 /// the user gets when they run that agent directly. So Grid delegates and
 /// mirrors rather than running a second, weaker loop beside them.
 ///
-/// The value is chosen **once**, when the goal is set, and then pinned with the
-/// goal — see `Conversation.agentPin`. Re-reading the live agent every turn
-/// would hand a half-finished goal to whoever happens to be selected.
+/// This is not stored: it is read off [ChatGoal.agent], which is fixed when the
+/// goal is set and is the pin the send path honours. Re-reading the live agent
+/// every turn would hand a half-finished goal to whoever happens to be selected.
 enum GoalOwner {
   /// Grid's own evaluator loop (`chat_sessions_goals.dart`) drives it.
   ///
@@ -76,12 +77,32 @@ enum GoalOwner {
   /// Codex's thread-goal runtime drives it (`thread/goal/*`).
   codex;
 
+  /// Whether the driver for this owner is wired yet.
+  ///
+  /// Delegation lands one agent at a time, and until an owner's driver exists
+  /// there is nobody on the other side to hand a goal to.
+  bool get hasDriver => switch (this) {
+    GoalOwner.app => true,
+    // TODO(BE): flip to true with the Claude passthrough driver — dispatch
+    // `/goal <condition>` as a bare prompt on the session, read the verdict off
+    // the `goal_status` attachment in the stream, and send `/goal clear` for
+    // Stop (measured: `off`/`none` do not clear).
+    GoalOwner.claude => false,
+    // TODO(BE): flip to true with the Codex driver — `thread/goal/set|get|clear`
+    // plus the `thread/goal/updated|cleared` notifications.
+    GoalOwner.codex => false,
+  };
+
   /// Whether Grid runs the evaluator itself for this owner.
   ///
   /// The one test that keeps the app from double-driving a delegated goal:
   /// judging a turn the agent is already judging spends two models on one
   /// question and lets them disagree.
-  bool get isAppDriven => this == GoalOwner.app;
+  ///
+  /// It stays true for an owner whose driver has not landed. A goal nobody
+  /// advances is worse than one advanced by a weaker evaluator: it sits
+  /// `active` forever, having run exactly the turn that set it.
+  bool get isAppDriven => this == GoalOwner.app || !hasDriver;
 }
 
 /// A completion condition the assistant works toward across turns.
@@ -99,7 +120,7 @@ class ChatGoal {
     required this.condition,
     required this.status,
     required this.startedAt,
-    this.owner = GoalOwner.app,
+    this.agent,
     this.turnsEvaluated = 0,
     this.reason,
     this.endedAfter,
@@ -133,9 +154,30 @@ class ChatGoal {
   /// whatever is said next, ending up somewhere it never happened.
   final int? endedAfter;
 
-  /// Who advances this goal. Fixed when it is set, and never re-read from the
-  /// live agent afterwards — see [GoalOwner].
-  final GoalOwner owner;
+  /// The agent this goal was handed to, fixed when it was set.
+  ///
+  /// This is the **pin**: `chat_sessions_send.dart` prefers it over the project
+  /// or app-wide pick, so a goal keeps one agent for its whole run. Nothing
+  /// re-reads the live choice, because the live choice moves on its own —
+  /// switching grid, installing or removing an agent, or an overview that has
+  /// not landed yet all change who would answer, with nobody touching a picker.
+  /// A delegated goal cannot survive that: it lives inside one agent's session.
+  ///
+  /// Null only for a goal written before goals recorded this, which was by
+  /// definition one the app drove itself.
+  final AgentTool? agent;
+
+  /// Who advances this goal — derived, never stored beside [agent].
+  ///
+  /// Two fields that must agree is a bug waiting to be written, so there is
+  /// one: the agent decides the owner, and `/goal clear` releases both at once.
+  GoalOwner get owner => switch (agent) {
+    AgentTool.claude => GoalOwner.claude,
+    AgentTool.codex => GoalOwner.codex,
+    // Hermes ships a real `/goal`, but not on a route Grid can reach — see
+    // [GoalOwner.app]. Null is a goal from before this field existed.
+    AgentTool.hermes || null => GoalOwner.app,
+  };
 
   /// How long the agent says it has spent, when the agent says so.
   ///
@@ -186,7 +228,7 @@ class ChatGoal {
     condition: condition,
     status: status ?? this.status,
     startedAt: startedAt,
-    owner: owner,
+    agent: agent,
     turnsEvaluated: turnsEvaluated ?? this.turnsEvaluated,
     reason: reason ?? this.reason,
     endedAfter: clearEndedAfter ? null : (endedAfter ?? this.endedAfter),
@@ -199,7 +241,7 @@ class ChatGoal {
     'condition': condition,
     'status': status.name,
     'startedAt': startedAt.toUtc().toIso8601String(),
-    'owner': owner.name,
+    if (agent != null) 'agent': agent!.id,
     'turnsEvaluated': turnsEvaluated,
     if (reason != null) 'reason': reason,
     if (endedAfter != null) 'endedAfter': endedAfter,
@@ -232,12 +274,9 @@ class ChatGoal {
       (status) => status.name == raw['status'],
       orElse: () => GoalStatus.stalled,
     );
-    // Anything this app didn't write, and anything written before goals had an
-    // owner, is the app's own — that is what it was when it was saved.
-    final owner = GoalOwner.values.firstWhere(
-      (candidate) => candidate.name == raw['owner'],
-      orElse: () => GoalOwner.app,
-    );
+    // Unknown or absent reads back null, which resolves to GoalOwner.app —
+    // what a goal written before this field existed actually was.
+    final agent = agentToolById('${raw['agent']}');
     final turns = raw['turnsEvaluated'];
     final endedAfter = raw['endedAfter'];
     final elapsedSeconds = raw['elapsedSeconds'];
@@ -245,11 +284,13 @@ class ChatGoal {
     final tokenBudget = raw['tokenBudget'];
     return ChatGoal(
       condition: condition,
-      status: stored == GoalStatus.active && owner.isAppDriven
+      status:
+          stored == GoalStatus.active &&
+              (agent == null || agent == AgentTool.hermes)
           ? GoalStatus.stalled
           : stored,
       startedAt: startedAt,
-      owner: owner,
+      agent: agent,
       turnsEvaluated: turns is int && turns > 0 ? turns : 0,
       reason: raw['reason'] is String ? raw['reason'] as String : null,
       endedAfter: endedAfter is int && endedAfter > 0 ? endedAfter : null,

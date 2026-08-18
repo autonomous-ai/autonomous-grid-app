@@ -268,10 +268,24 @@ mixin _ChatSend on _ChatSessions {
     // Only for a turn an agent will answer: a picture goes to the grid's chat
     // API whoever is picked, so routing it would spend a relay call and up to
     // the router's whole timeout on an answer thrown away.
+    //
+    // A goal outranks all of it. Its agent is fixed when it is set
+    // ([ChatGoal.agent]) and honoured here rather than enforced at the pickers,
+    // because the effective agent moves with nobody touching one: switching
+    // grid, installing or removing an agent, or an overview that hasn't landed
+    // yet each re-resolve it. A delegated goal cannot survive being handed on —
+    // it lives inside one agent's own session — and the app's own loop was
+    // already meant to keep one agent per objective (`_sendGoalTurn`).
+    final goal = conversation.goal;
+    final pinnedByGoal = goal != null && !goal.hasEnded ? goal.agent : null;
     AgentTool agent =
+        pinnedByGoal ??
         continuedAgent ??
         ref.read(chatAgentForProjectProvider(conversation.projectId));
-    if (autoChosen && viaAgent && continuedAgent == null) {
+    if (autoChosen &&
+        viaAgent &&
+        continuedAgent == null &&
+        pinnedByGoal == null) {
       agent = await ref
           .read(autoAgentRouterProvider)
           .route(

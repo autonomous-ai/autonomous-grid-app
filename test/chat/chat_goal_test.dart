@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_goal.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 
@@ -9,12 +10,12 @@ ChatGoal _goal({
   int turnsEvaluated = 0,
   String? reason,
   int? endedAfter,
-  GoalOwner owner = GoalOwner.app,
+  AgentTool? agent,
 }) => ChatGoal(
   condition: 'the tests in test/auth pass',
   status: status,
   startedAt: _start,
-  owner: owner,
+  agent: agent,
   turnsEvaluated: turnsEvaluated,
   reason: reason,
   endedAfter: endedAfter,
@@ -180,15 +181,37 @@ void main() {
         endsWith('1 turn'),
       );
     });
+  });
 
-    test('a delegated goal counts no turns of its own — Grid judges none of '
-        'them, and "0 turns" beside a working goal reads as stuck', () {
-      final note = goalStatusNote(
-        _goal(turnsEvaluated: 3, owner: GoalOwner.claude),
-        _start,
-      );
-      expect(note, isNot(contains('turn')));
+  group('who drives a goal', () {
+    test('the agent decides the owner, so the two can never disagree', () {
+      expect(_goal(agent: AgentTool.claude).owner, GoalOwner.claude);
+      expect(_goal(agent: AgentTool.codex).owner, GoalOwner.codex);
+      expect(_goal(agent: AgentTool.hermes).owner, GoalOwner.app);
+      // Written before goals recorded their agent: the app drove it then.
+      expect(_goal().owner, GoalOwner.app);
     });
+
+    test('an owner whose driver has not landed is still driven by the app — a '
+        'goal nobody advances would sit active forever, having run only the '
+        'turn that set it', () {
+      for (final owner in GoalOwner.values) {
+        expect(
+          owner.isAppDriven,
+          isTrue,
+          reason: '$owner has no driver yet, so the app must keep judging it',
+        );
+      }
+    });
+
+    test(
+      'a goal only stops being the app\'s once something else drives it',
+      () {
+        for (final owner in GoalOwner.values) {
+          expect(owner.isAppDriven, !owner.hasDriver || owner == GoalOwner.app);
+        }
+      },
+    );
   });
 
   group('where it ended', () {
