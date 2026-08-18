@@ -159,7 +159,13 @@ class _CardHeader extends StatelessWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 150),
               child: Text(
-                nodeRoleSummary(node),
+                // How much this machine takes on at once. The model *count*
+                // used to sit here and has moved down to label the model field,
+                // where it names the thing it counts; concurrency has nowhere
+                // else to go and is the figure that decides whether a queue
+                // forms behind this card. `includeSingle` because a card is
+                // read beside other cards — see [nodeParallelLabel].
+                nodeParallelLabel(node, includeSingle: true),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.right,
@@ -424,8 +430,14 @@ class _CardDetails extends StatelessWidget {
         measured: storage.measured,
         hint: '',
       ),
+      // Labelled by what the machine serves ("1 chat model", "Image generation")
+      // rather than by its engine. The engine label was blank on every `external`
+      // node — the app's own generic engine resolves to empty, see
+      // [nodeEngineLabel] — which left a model id sitting under nothing at all.
+      // The count also has to say what it counts, and up in the header, beside a
+      // machine's name, it did not.
       (
-        label: nodeEngineLabel(node.engine),
+        label: nodeRoleSummary(node),
         value: (node.model ?? '').isEmpty ? kUnmeasured : node.model!,
         measured: (node.model ?? '').isNotEmpty,
         hint: '',
@@ -467,9 +479,9 @@ class _CardDetails extends StatelessWidget {
     // measure it.
     return Column(
       children: [
-        for (var i = 0; i < entries.length; i += 2) ...[
+        for (var i = 0; i < entries.length; i += _detailColumns) ...[
           if (i > 0) const SizedBox(height: 12),
-          _DetailRow(entries: entries.skip(i).take(2).toList()),
+          _DetailRow(entries: entries.skip(i).take(_detailColumns).toList()),
         ],
       ],
     );
@@ -479,6 +491,9 @@ class _CardDetails extends StatelessWidget {
 /// One field of the detail grid: what it is, what it reads, whether the node
 /// actually reported it, and anything worth adding on hover.
 typedef _Detail = ({String label, String value, bool measured, String hint});
+
+/// How many fields sit across the card — the builder slices the entries by it.
+const int _detailColumns = 2;
 
 class _DetailRow extends StatelessWidget {
   const _DetailRow({required this.entries});

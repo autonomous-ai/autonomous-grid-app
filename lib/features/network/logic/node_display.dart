@@ -175,14 +175,47 @@ String nodeMachineLine(OverviewNode node) {
 ///
 /// Empty when there is nothing to offer yet, so a node still coming up shows no
 /// line rather than a line saying nothing.
-String nodeServingLine(OverviewNode node) {
+///
+/// [includeSingleParallel] is passed through to [nodeParallelLabel] — see there
+/// for why one surface says "1 parallel" and another doesn't.
+String nodeServingLine(
+  OverviewNode node, {
+  bool includeSingleParallel = false,
+}) {
   final role = nodeRoleSummary(node);
-  final parallel = node.maxConcurrency;
+  final parallel = nodeParallelLabel(
+    node,
+    includeSingle: includeSingleParallel,
+  );
   return [
     if (role != 'No models yet') role,
-    // One at a time is every node's floor, so it reports nothing.
-    if (parallel != null && parallel > 1) '$parallel parallel',
+    if (parallel.isNotEmpty) parallel,
   ].join(' · ');
+}
+
+/// How many requests a machine takes at once — "16 parallel" — or empty when it
+/// reported none.
+///
+/// Its own function because the dashboard card shows it *alone*, beside the
+/// machine's name, while the node list shows it as the tail of
+/// [nodeServingLine]. Same words either way: one machine reading "16 parallel"
+/// in one place and "16 at once" in the other is a bug the eye catches.
+///
+/// Empty rather than a dash when the relay said nothing. This is prose beside a
+/// name, not a row in the metrics grid — a machine on an older provider that
+/// never sends the field should read as a plain machine, not as one with
+/// something missing.
+///
+/// [includeSingle] keeps a machine that takes one request at a time from going
+/// silent about it. One at a time is every node's floor, so on the panel's list
+/// — 332px wide, every character spent — saying so is noise. A dashboard card is
+/// the opposite case: it is read *beside* other cards, and among 16-way and
+/// 8-way boxes the machine that manages one is the row's whole point.
+String nodeParallelLabel(OverviewNode node, {bool includeSingle = false}) {
+  final parallel = node.maxConcurrency;
+  final floor = includeSingle ? 1 : 2;
+  if (parallel == null || parallel < floor) return '';
+  return '$parallel parallel';
 }
 
 /// What the machine is, in one phrase — "Apple M4 Pro", "NVIDIA GeForce RTX

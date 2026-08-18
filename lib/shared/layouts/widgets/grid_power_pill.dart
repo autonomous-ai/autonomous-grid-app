@@ -441,9 +441,17 @@ class _PillRow extends StatelessWidget {
         // opens the four token figures rather than the whole hardware panel —
         // and absent, not zero, when no node reported a rollup.
         //
-        // Output alone on the pill. It is the half where the time goes, so it is
-        // the half that says whether the grid is working; input runs an order of
-        // magnitude larger and would move the figure for reasons nobody acts on.
+        // Input alone on the pill, at the repo owner's call. It is the bigger of
+        // the two figures and the one that moves first when a grid gets busy —
+        // work arrives before it is answered. The trade-off is worth knowing:
+        // output is the half where a machine's *time* goes, so a grid reading a
+        // great deal and generating little now reads as busier on this bar than
+        // it is working. The panel behind the hover carries all four figures, so
+        // nothing is lost, only reordered.
+        //
+        // `freshInputTokens`, never `tokensIn`: the panel this expands into
+        // prints cache hits on their own row, and a pill totalling both would
+        // not add up to the rows it opens.
         if (power.answered case final answered?)
           _HoverTarget(
             kind: _PanelKind.tokens,
@@ -451,8 +459,8 @@ class _PillRow extends StatelessWidget {
             onEnter: onEnter,
             onExit: onExit,
             child: _Stat(
-              value: formatCount(answered.tokensOut),
-              unit: 'output${_windowSuffix(answered.windowSeconds)}',
+              value: formatCount(answered.freshInputTokens),
+              unit: 'input${_windowSuffix(answered.windowSeconds)}',
             ),
           ),
         _HoverTarget(

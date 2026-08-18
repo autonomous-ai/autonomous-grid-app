@@ -6,6 +6,8 @@ import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
 /// null, which is what a real relay sends for a machine that reports little.
 OverviewNode _node(
   String name, {
+  int? tokensIn,
+  int? tokensCached,
   int? tokensOut,
   int? requests,
   double? throughputTokS,
@@ -21,10 +23,16 @@ OverviewNode _node(
   platform: platform,
   models: models,
   model: model,
-  answered: tokensOut == null && requests == null
+  answered:
+      tokensIn == null &&
+          tokensCached == null &&
+          tokensOut == null &&
+          requests == null
       ? null
       : NodeAnswered(
           windowSeconds: 86400,
+          tokensIn: tokensIn ?? 0,
+          tokensCached: tokensCached ?? 0,
           tokensOut: tokensOut ?? 0,
           requests: requests ?? 0,
         ),
@@ -36,6 +44,28 @@ List<String> _names(List<OverviewNode> nodes) => [
 
 void main() {
   group('sortNodes', () {
+    test('ranks by what the machines were asked to read', () {
+      final sorted = sortNodes([
+        _node('quiet', tokensIn: 15200),
+        _node('busy', tokensIn: 1900000),
+        _node('middling', tokensIn: 161000),
+      ], NodeSortKey.inputTokens);
+
+      expect(_names(sorted), ['busy', 'middling', 'quiet']);
+    });
+
+    test('input ranks on fresh tokens, with cache hits left out', () {
+      // The cached share is billed separately and shown on its own row. Ranking
+      // on the raw `tokensIn` would put a node re-reading one cached prompt all
+      // day above one actually reading new work.
+      final sorted = sortNodes([
+        _node('mostly-cache', tokensIn: 1000000, tokensCached: 990000),
+        _node('real-work', tokensIn: 50000, tokensCached: 0),
+      ], NodeSortKey.inputTokens);
+
+      expect(_names(sorted), ['real-work', 'mostly-cache']);
+    });
+
     test('ranks the busiest machine first, so it opens on who is working', () {
       final sorted = sortNodes([
         _node('quiet', tokensOut: 98),
@@ -132,26 +162,35 @@ void main() {
       'mac',
       platform: 'macos-arm64',
       models: ['gemma-4-31b-it'],
+      tokensIn: 100,
       tokensOut: 10,
     );
     final linux = _node(
       'linux-box',
       platform: 'linux',
       models: ['gemma-4-31b-it', 'qwen/Qwen3.8-27B'],
+      tokensIn: 900,
       tokensOut: 90,
     );
     final windows = _node(
       'win-box',
       platform: 'windows',
       models: ['laguna-s-2.1'],
+      tokensIn: 500,
       tokensOut: 50,
     );
     final nodes = [mac, linux, windows];
 
-    test('shows everything, busiest first, with no filter set', () {
-      final shown = applyNodeDashboardView(nodes, const NodeDashboardView());
-
-      expect(_names(shown), ['linux-box', 'win-box', 'mac']);
+    test('opens on input tokens, so the busiest machine leads', () {
+      // The default the dashboard is read with, and it matches the one figure
+      // the top-bar pill shows — the two surfaces should not rank the same grid
+      // by different measures.
+      expect(const NodeDashboardView().sort, NodeSortKey.inputTokens);
+      expect(_names(applyNodeDashboardView(nodes, const NodeDashboardView())), [
+        'linux-box',
+        'win-box',
+        'mac',
+      ]);
     });
 
     test('keeps only the machines serving the chosen model', () {

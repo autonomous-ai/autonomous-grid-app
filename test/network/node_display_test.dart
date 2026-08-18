@@ -355,6 +355,41 @@ void main() {
     });
   });
 
+  group('nodeParallelLabel', () {
+    test('says how many requests the machine takes at once', () {
+      expect(nodeParallelLabel(_machine(concurrency: 16)), '16 parallel');
+    });
+
+    test('the list drops a 1, and a card asks for it back', () {
+      // On the panel's 332px row, saying every node's floor out loud is noise.
+      // A dashboard card is read *beside* other cards, and among 16-way and
+      // 8-way boxes the machine that manages one is the row's whole point.
+      expect(nodeParallelLabel(_machine(concurrency: 1)), '');
+      expect(
+        nodeParallelLabel(_machine(concurrency: 1), includeSingle: true),
+        '1 parallel',
+      );
+    });
+
+    test('a node that reported no concurrency says nothing either way', () {
+      // Not "— parallel": this is prose beside a machine's name, not a row in
+      // the metrics grid. A machine on an older provider that never sends the
+      // field should read as a plain machine, not one with something missing.
+      expect(nodeParallelLabel(_machine()), '');
+      expect(nodeParallelLabel(_machine(), includeSingle: true), '');
+    });
+
+    test('the serving line is built from it, so the two cannot drift', () {
+      expect(
+        nodeServingLine(
+          _machine(models: ['a'], concurrency: 16),
+          includeSingleParallel: true,
+        ),
+        '1 chat model · 16 parallel',
+      );
+    });
+  });
+
   group('a machine is named the way its owner would name it', () {
     // Built from the relay's own payload shape rather than the Dart constructor: these three
     // fields are produced by a CLI in another repo, and the only thing keeping the two sides

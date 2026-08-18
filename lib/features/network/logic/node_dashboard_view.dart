@@ -26,16 +26,28 @@ import 'node_display.dart'
 /// Each one answers a different question about the same fleet, which is why
 /// there is more than one: *output tokens* and *requests* both ask "who is
 /// carrying the grid" and disagree — a node with three enormous replies and one
-/// with three hundred short ones swap places between them. *Speed* asks how fast
-/// a machine answers rather than how much it answered, so an idle fast box ranks
-/// above a busy slow one. *Memory* asks what a machine could take on. *Name* asks
-/// nothing and is the one order that doesn't move under you while you read.
-enum NodeSortKey { outputTokens, requests, throughput, memory, name }
+/// with three hundred short ones swap places between them. *Input tokens* ranks
+/// by what the machines were asked to read rather than what they wrote, which is
+/// a different fleet again: a node summarising long documents reads far more
+/// than it writes. *Speed* asks how fast a machine answers rather than how much
+/// it answered, so an idle fast box ranks above a busy slow one. *Memory* asks
+/// what a machine could take on. *Name* asks nothing and is the one order that
+/// doesn't move under you while you read.
+/// Declaration order is menu order, and the default leads it.
+enum NodeSortKey {
+  inputTokens,
+  outputTokens,
+  requests,
+  throughput,
+  memory,
+  name,
+}
 
 /// The menu label for each order — the sort button prints this too, so the
 /// button and the ticked row can never word the same choice differently.
 String nodeSortLabel(NodeSortKey key) => switch (key) {
   NodeSortKey.outputTokens => 'Output tokens',
+  NodeSortKey.inputTokens => 'Input tokens',
   NodeSortKey.requests => 'Requests',
   NodeSortKey.throughput => 'Speed',
   NodeSortKey.memory => 'Memory',
@@ -46,6 +58,10 @@ String nodeSortLabel(NodeSortKey key) => switch (key) {
 /// window included, because "Output tokens" without it reads as all-time.
 String nodeSortDetail(NodeSortKey key) => switch (key) {
   NodeSortKey.outputTokens => 'Most tokens generated in the last 24h',
+  // "Read", not "received": the figure is fresh input, with prompt-cache hits
+  // counted separately — the same `freshInputTokens` the card's "Input · 24h"
+  // field and the pill's token panel print, so all three rank and read alike.
+  NodeSortKey.inputTokens => 'Most tokens read in the last 24h',
   NodeSortKey.requests => 'Most requests answered in the last 24h',
   NodeSortKey.throughput => 'Fastest measured decode rate',
   // Both words, because the cards print both: a machine's pool is "RAM" on
@@ -62,14 +78,16 @@ String nodeSortDetail(NodeSortKey key) => switch (key) {
 /// both need to read the sort and the filters as one answer.
 class NodeDashboardView {
   const NodeDashboardView({
-    this.sort = NodeSortKey.outputTokens,
+    this.sort = NodeSortKey.inputTokens,
     this.model,
     this.platform,
   });
 
-  /// The order the cards are laid out in. Defaults to output tokens: the
-  /// dashboard is opened to find out who is doing the work, so the machine doing
-  /// the most of it should not be somewhere in the middle of the third row.
+  /// The order the cards are laid out in. Defaults to input tokens: the
+  /// dashboard is opened to find out which machines are being worked, so the
+  /// busiest one should not be somewhere in the middle of the third row — and
+  /// input is the figure that moves first, since work arrives before it is
+  /// answered. The same choice the top-bar pill now makes for its one figure.
   final NodeSortKey sort;
 
   /// Show only machines serving this model, in [modelKey] form. Null shows all.
@@ -216,21 +234,39 @@ bool _matches(OverviewNode node, NodeDashboardView view) {
 /// Every order is total and stable: ties fall back to the name, so a dashboard
 /// polling every few seconds doesn't shuffle two equal machines past each other
 /// while someone is reading them.
-List<OverviewNode> sortNodes(List<OverviewNode> nodes, NodeSortKey key) {
-  if (key == NodeSortKey.memory) return sortNodesByPower(nodes);
-  final sorted = [...nodes];
-  if (key == NodeSortKey.name) {
-    sorted.sort(_byName);
-    return sorted;
-  }
-  final value = switch (key) {
-    NodeSortKey.outputTokens => (OverviewNode n) => n.answered?.tokensOut,
-    NodeSortKey.requests => (OverviewNode n) => n.answered?.requests,
-    _ => (OverviewNode n) => _throughput(n),
-  };
-  sorted.sort((a, b) => _byValueDesc(a, b, value));
-  return sorted;
-}
+/// Exhaustive over [NodeSortKey] with no `_` catch-all: an order added later has
+/// to be given a comparator here, rather than silently falling through to
+/// whichever one the wildcard happened to name.
+List<OverviewNode> sortNodes(List<OverviewNode> nodes, NodeSortKey key) =>
+    switch (key) {
+      // The order the grid's memory panel already puts machines in, reused
+      // rather than reimplemented so the dashboard and the pill can't drift.
+      NodeSortKey.memory => sortNodesByPower(nodes),
+      NodeSortKey.name => _sortedWith(nodes, _byName),
+      NodeSortKey.outputTokens => _sortedBy(
+        nodes,
+        (n) => n.answered?.tokensOut,
+      ),
+      // Fresh input, not `tokensIn`: the cached share is billed and shown
+      // separately, and ranking by the raw total would put a node that re-reads
+      // one cached prompt all day above one actually reading new work.
+      NodeSortKey.inputTokens => _sortedBy(
+        nodes,
+        (n) => n.answered?.freshInputTokens,
+      ),
+      NodeSortKey.requests => _sortedBy(nodes, (n) => n.answered?.requests),
+      NodeSortKey.throughput => _sortedBy(nodes, _throughput),
+    };
+
+List<OverviewNode> _sortedWith(
+  List<OverviewNode> nodes,
+  Comparator<OverviewNode> by,
+) => [...nodes]..sort(by);
+
+List<OverviewNode> _sortedBy(
+  List<OverviewNode> nodes,
+  num? Function(OverviewNode) of,
+) => _sortedWith(nodes, (a, b) => _byValueDesc(a, b, of));
 
 /// A node's decode rate, with a non-positive reading read as *unmeasured*.
 ///
