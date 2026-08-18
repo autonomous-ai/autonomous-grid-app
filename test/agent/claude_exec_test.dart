@@ -350,6 +350,47 @@ void main() {
     });
   });
 
+  group('a tool row says what it was about, not what it was called', () {
+    test(
+      'a sub-agent row carries the job it was given — the tool is `Agent` in '
+      'Claude Code 2.x, and titling only `Task` left every one of them '
+      'reading "Agent" with its description dropped',
+      () {
+        expect(
+          claudeToolLabel('Agent', const {
+            'description': 'Review the diff',
+            'subagent_type': 'code-reviewer',
+          }),
+          'Agent · Review the diff',
+        );
+        // The older name still answers, since the app pins no CLI version.
+        expect(
+          claudeToolLabel('Task', const {'description': 'Review the diff'}),
+          'Task · Review the diff',
+        );
+      },
+    );
+
+    test('a skill row names the skill that ran', () {
+      expect(
+        claudeToolLabel('Skill', const {
+          'skill': 'grid-web',
+          'args': 'flutter',
+        }),
+        'Skill · grid-web',
+      );
+    });
+
+    test('a connector row drops the wire identifier for the server and tool '
+        'behind it — a row spent entirely on `mcp__…__…` names nothing the '
+        'user chose', () {
+      expect(
+        claudeToolLabel('mcp__gitnexus__impact', const {'target': 'ChatStore'}),
+        'gitnexus · impact · ChatStore',
+      );
+    });
+  });
+
   group('answerToQuestions — the reply the pick goes back as', () {
     AgentQuestion q(
       String header,
