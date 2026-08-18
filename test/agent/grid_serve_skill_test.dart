@@ -178,6 +178,20 @@ void main() {
       );
     });
 
+    test('a stop that could not stop it exits with its own code, so the app '
+        'can tell a live service from a stop that never ran', () {
+      // Both were exit 1, which left the app guessing: clear the row and a
+      // live process is stranded, keep it and a dead one is a notice nothing
+      // can dismiss. The script is a raw string, so this is what pins the
+      // number the app matches on to the number the script returns.
+      expect(kGridServeScript, contains('return $kServeStillRunningExit'));
+      expect(
+        card(),
+        contains('Exit 3 means it is **still running**'),
+        reason: 'the agent reads the code too, and must not report a stop',
+      );
+    });
+
     test('a rewrite drops a stale script instead of leaving two copies the '
         'agent could run', () async {
       final dir = Directory('${tmp.path}/skills/grid-serve');
