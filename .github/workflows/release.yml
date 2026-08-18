@@ -208,6 +208,44 @@ jobs:
           cp -R ../autonomous-grid/dist/grid.dist "$APP/Contents/Resources/grid"
           chmod +x "$APP/Contents/Resources/grid/grid"
 
+      # An Intel Mac renders this app wrong under Impeller: a few times a second
+      # the whole content layer fails to rasterize and is replaced by fans of
+      # stretched geometry, while the sidebar beside it keeps drawing perfectly
+      # (reported 2026-08-17; the screen recording is the evidence — clean frame,
+      # garbage frame, clean frame, ~0.2s bursts at 1-2Hz). Skia is still the
+      # supported opt-out on macOS and the engine reads this key at launch, so
+      # the Intel DMG ships on Skia. Apple Silicon renders correctly and keeps
+      # Impeller — this deliberately does NOT touch that job.
+      #
+      # TODO(BE): a workaround, not a diagnosis, and it has a real cost — the DMG
+      # Intel users get now renders on a backend nothing we test runs on, so a
+      # Skia-only rendering bug would reach them unseen. Two things end it: the
+      # upstream Impeller bug being identified, or Flutter removing the opt-out,
+      # which its own docs say is coming. Re-check on every Flutter bump.
+      - name: Ship the Intel app on Skia, not Impeller (macOS Intel)
+        if: matrix.label == 'macOS-Intel'
+        working-directory: grid-app
+        run: |
+          set -euo pipefail
+          APP="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n1)"
+          [ -n "$APP" ] || { echo "built .app not found" >&2; exit 1; }
+          PLIST="$APP/Contents/Info.plist"
+          # Written here, before the signing step, so the signature covers it —
+          # editing an Info.plist after signing breaks the seal and macOS refuses
+          # to launch the app. Delete-then-Add rather than a plain replace: the
+          # key is absent from the source Info.plist, and `Set` fails on a key
+          # that doesn't exist yet.
+          /usr/libexec/PlistBuddy -c "Delete :FLTEnableImpeller" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :FLTEnableImpeller bool false" "$PLIST"
+          # Read it back. A build that silently kept Impeller looks exactly like a
+          # fix that didn't work, and that is a whole release cycle to find out.
+          got="$(/usr/libexec/PlistBuddy -c "Print :FLTEnableImpeller" "$PLIST")"
+          [ "$got" = "false" ] || {
+            echo "ERROR: FLTEnableImpeller is '$got', expected false" >&2
+            exit 1
+          }
+          echo ">>> Intel DMG renders on Skia (FLTEnableImpeller=false)"
+
       # Fail loudly HERE — before the slow sign+notarize — if anything in the bundle is
       # missing this job's target arch. Guards two real risks that would otherwise build
       # clean on the arm64 runner and only surface on a user's Mac:
