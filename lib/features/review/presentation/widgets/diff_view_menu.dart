@@ -11,7 +11,7 @@ import '../../logic/review_controller.dart';
 import '../../logic/review_file.dart';
 import '../../logic/review_snapshot.dart';
 import '../../logic/review_view_prefs.dart';
-import 'menu_row.dart';
+import '../../../../shared/widgets/menu_row.dart';
 
 /// The "…" menu: how the diff is drawn, and the one thing you can take away
 /// from it.

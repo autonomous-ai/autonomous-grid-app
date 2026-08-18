@@ -20,6 +20,7 @@ import '../agent_catalog.dart';
 import '../agent_changes.dart';
 import '../agent_prompt.dart';
 import '../agent_session_slots.dart';
+import '../agent_steering.dart';
 import '../agent_turn_log.dart';
 import '../agent_server_error.dart';
 import '../agent_permission_decision.dart';
@@ -208,6 +209,12 @@ class CodexChatSender implements ChatSender {
       resumeThreadId: resumeThreadId,
     );
 
+    // Anything typed in this chat while the turn runs goes into the turn itself
+    // (`turn/steer`), not into a queue behind it, and is recorded in the turn's
+    // timeline where it happened (see [AgentSteeringController]).
+    final steering = _ref.read(agentSteeringProvider.notifier);
+    steering.offer(chat, run.steer);
+
     final answer = StringBuffer();
     final updates = StreamController<ChatSendUpdate>();
     String? failure;
@@ -267,8 +274,10 @@ class CodexChatSender implements ChatSender {
       onDone: () async {
         await run.done;
         settled = true;
-        // The turn is over: a card left pinned would answer nobody.
+        // The turn is over: a card left pinned would answer nobody, and a
+        // message typed from here belongs to the next turn.
         _ref.read(agentPermissionsProvider.notifier).clear(chat);
+        steering.withdraw(chat);
         final reply = answer.toString().trim();
         final plan = _ref.read(agentRunProvider(chat)).plan;
         // A turn that announced a plan and stopped before finishing it is worth
@@ -319,6 +328,7 @@ class CodexChatSender implements ChatSender {
     // the done above (with [settled] set) and must not re-kill anything.
     updates.onCancel = () async {
       await events.cancel();
+      steering.withdraw(chat);
       if (settled) return;
       run.kill();
       log.finish(logId, error: 'stopped');

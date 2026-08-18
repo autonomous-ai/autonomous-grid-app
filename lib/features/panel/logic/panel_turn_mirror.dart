@@ -166,6 +166,13 @@ String _todoStatus(AgentPlanStatus status) => switch (status) {
 PanelTurnPart? _panelPart(TurnPart part, DateTime? since) => switch (part) {
   TurnText(:final text) => _textPart(text),
   TurnStep(:final step) => _stepPart(step, since),
+  // What the user typed into the turn from the desktop is dropped rather than
+  // mirrored: the wire has two kinds of part, text and step (see
+  // `docs/panel-protocol.md`), and sending it as text would put the user's own
+  // words on the device in the agent's voice. A third kind is a change both
+  // ends have to agree on, and this one belongs to the desk the panel sits on
+  // — not to the panel.
+  TurnSaid() => null,
 };
 
 PanelTurnPart? _textPart(String text) {
@@ -215,7 +222,7 @@ String clipPanelText(String text) {
   return '${text.substring(0, end)}…';
 }
 
-/// A `turn.parts` message for [projectId] that is guaranteed to fit one frame.
+/// A `turn.parts` message for [chatId] that is guaranteed to fit one frame.
 ///
 /// [kPanelTurnPartLimit] and [kPanelPartTextLimit] are the everyday rule; this
 /// is the guarantee, and the two are not the same thing. A frame **refuses** a
@@ -226,20 +233,20 @@ String clipPanelText(String text) {
 /// long line; dropping the *oldest* parts loses the least, for the same reason
 /// the cap keeps the newest ones.
 String panelTurnPartsMessage({
-  required String projectId,
+  required String chatId,
   required List<PanelTurnPart> parts,
   List<PanelTurnTodo> todos = const [],
 }) {
   var shown = parts;
   var payload = PanelOutbound.turnParts(
-    projectId: projectId,
+    chatId: chatId,
     parts: shown,
     todos: todos,
   );
   while (shown.isNotEmpty && utf8.encode(payload).length > kPanelMaxPayload) {
     shown = shown.sublist(1);
     payload = PanelOutbound.turnParts(
-      projectId: projectId,
+      chatId: chatId,
       parts: shown,
       todos: todos,
     );
@@ -249,7 +256,7 @@ String panelTurnPartsMessage({
   // it the loop above can run out of parts and still hand back a payload the
   // frame will refuse, which is a throw rather than a message the panel misses.
   if (utf8.encode(payload).length <= kPanelMaxPayload) return payload;
-  return PanelOutbound.turnParts(projectId: projectId, parts: shown);
+  return PanelOutbound.turnParts(chatId: chatId, parts: shown);
 }
 
 /// Turns the app's live chat state into the messages that tell a panel what is
@@ -261,8 +268,11 @@ String panelTurnPartsMessage({
 /// would carry the same 3 KB again for every streamed token. Nothing here is
 /// app state — dropping the whole object loses nothing but that memory.
 ///
-/// Keyed by **project**, because a project is what a tile is. Which chat inside
-/// it holds the turn is the desktop's business.
+/// Keyed by **chat**, because a chat is what a tile is. It was keyed by project
+/// until 2026-08-18, which forced a rule for picking one chat to speak for a
+/// project's whole timeline — and that rule was written when turns were
+/// serialized per project. `bf462afc` let every chat in a project answer at
+/// once, so the rule started dropping one of two live turns on the floor.
 class PanelTurnMirror {
   PanelTurnMirror();
 
@@ -275,13 +285,13 @@ class PanelTurnMirror {
   /// `_settle` it fired first, and the panel received the end of the turn before
   /// it was told the turn was still being read. Drained by [drainEnded] after
   /// the caller has pushed what this pass produced.
-  final _ended = <({String projectId, Conversation? chat})>[];
+  final _ended = <({String chatId, Conversation? chat})>[];
 
-  /// The chat holding each project's turn, as the panel last heard it.
-  final Map<String, String> _holding = {};
+  /// The chats the panel has been told are running.
+  final Set<String> _holding = {};
 
-  /// The last `turn.parts` payload sent per project, so an unchanged timeline
-  /// is not sent twice.
+  /// The last `turn.parts` payload sent per chat, so an unchanged timeline is
+  /// not sent twice.
   final Map<String, String> _sent = {};
 
   /// The turns that settled since this was last called, and forget them.
@@ -289,7 +299,7 @@ class PanelTurnMirror {
   /// Call it AFTER pushing what the same pass returned: a turn that worked was
   /// announced as `turn.summarizing`, and each of these is owed the `turn.done`
   /// that follows it.
-  List<({String projectId, Conversation? chat})> drainEnded() {
+  List<({String chatId, Conversation? chat})> drainEnded() {
     final ended = [..._ended];
     _ended.clear();
     return ended;
@@ -330,24 +340,23 @@ class PanelTurnMirror {
     required Map<String, AgentRun> runs,
     required bool partsOnStart,
   }) {
-    final holders = panelTurnHoldersOf(projects, chats);
+    final running = panelRunningChatsOf(projects, chats);
     final messages = <String>[];
 
-    // Settle first, so a project that hands its lane from one chat straight to
-    // the next reads as one turn ending and another beginning rather than as a
-    // timeline that suddenly changes its mind.
-    for (final projectId in _holding.keys.toList()) {
-      final held = _holding[projectId]!;
-      if (holders[projectId] == held) continue;
-      messages.add(_settle(projectId, held, chats));
-      _holding.remove(projectId);
-      _sent.remove(projectId);
+    // Settle first, so a chat that ends one turn and starts another in the same
+    // pass reads as an ending followed by a beginning rather than as a timeline
+    // that suddenly changes its mind.
+    for (final chatId in _holding.toList()) {
+      if (running.contains(chatId)) continue;
+      messages.add(_settle(chatId, chats));
+      _holding.remove(chatId);
+      _sent.remove(chatId);
     }
 
-    for (final MapEntry(key: projectId, value: chatId) in holders.entries) {
-      if (!_holding.containsKey(projectId)) {
-        _holding[projectId] = chatId;
-        messages.add(PanelOutbound.turnStarted(projectId));
+    for (final chatId in running) {
+      if (!_holding.contains(chatId)) {
+        _holding.add(chatId);
+        messages.add(PanelOutbound.turnStarted(chatId));
         // Not the timeline, on this change. `ChatSessionsController.send`
         // commits the user's turn and *then* clears the chat's run feed, so at
         // the instant a turn starts that feed still holds the previous turn's
@@ -365,16 +374,16 @@ class PanelTurnMirror {
       // `turn.started` says nothing the panel doesn't already know. A plan on
       // its own is worth sending: an agent that lays out its steps before it
       // runs one has said something the tile can show.
-      if (parts.isEmpty && todos.isEmpty && !_sent.containsKey(projectId)) {
+      if (parts.isEmpty && todos.isEmpty && !_sent.containsKey(chatId)) {
         continue;
       }
       final payload = panelTurnPartsMessage(
-        projectId: projectId,
+        chatId: chatId,
         parts: parts,
         todos: todos,
       );
-      if (_sent[projectId] == payload) continue;
-      _sent[projectId] = payload;
+      if (_sent[chatId] == payload) continue;
+      _sent[chatId] = payload;
       messages.add(payload);
     }
     return messages;
@@ -402,7 +411,7 @@ class PanelTurnMirror {
   /// A turn that FAILED ends immediately. The failure message *is* the outcome —
   /// there is nothing a model could add, and "Summarizing…" over a turn that
   /// already broke would delay the one thing worth saying.
-  String _settle(String projectId, String chatId, ChatSessionsState chats) {
+  String _settle(String chatId, ChatSessionsState chats) {
     final chat = panelChatById(chats, chatId);
     final failure = chats.errorFor(chatId);
     switch (panelRecapKindOf(failure: failure, conversation: chat)) {
@@ -412,46 +421,51 @@ class PanelTurnMirror {
         // turn — the tile would settle on a recap where it had just shown the
         // failure. Only what leaves as `turn.summarizing` is owed a close-out.
         return PanelOutbound.turnError(
-          projectId: projectId,
+          chatId: chatId,
           message: failure!.trim(),
         );
       case PanelRecapKind.done:
       case PanelRecapKind.stopped:
-        _ended.add((projectId: projectId, chat: chat));
-        return PanelOutbound.turnSummarizing(projectId);
+        _ended.add((chatId: chatId, chat: chat));
+        return PanelOutbound.turnSummarizing(chatId);
     }
   }
 }
 
-/// Which chat holds each project's turn right now, keyed by project.
+/// Every chat with a turn in flight right now, in the order the panel lists
+/// them.
 ///
-/// Projects the app doesn't list are skipped: the panel was never sent a tile
-/// for them, and a chat can outlive the project it was started in.
+/// Chats outside the projects the app lists are skipped: the panel was never
+/// sent a tile for them, and a chat can outlive the project it was started in.
 ///
-/// Shared rather than written twice. The panel speaks projects and the rest of
-/// the app speaks chats, so *every* message going out has to make this hop —
-/// turn state and permission questions alike — and a second copy of the rule
-/// would be the one that stopped agreeing about which chat a tile is showing.
-Map<String, String> panelTurnHoldersOf(
+/// **This used to return one chat per project**, and picking that one was a
+/// rule: "the chat actually running wins over one committed behind it, because
+/// turns are serialized per project, so a second chat in the same folder is
+/// waiting for the lane". `bf462afc` ("let every chat in a project answer at
+/// once") deleted the premise and left the rule standing, so two live turns in
+/// one folder overwrote each other and the panel drew whichever the iteration
+/// order happened to reach last. One tile per chat is what makes the question
+/// disappear rather than get a better answer.
+Set<String> panelRunningChatsOf(
   List<Project> projects,
   ChatSessionsState chats,
-) {
+) => {
+  for (final chatId in panelTileChatsOf(projects, chats))
+    if (panelTurnInFlight(chats, chatId)) chatId,
+};
+
+/// Every chat the panel has a tile for.
+///
+/// The one definition of "the panel knows about this chat", so the tiles, the
+/// turns and the permission cards cannot disagree about what exists. Chats
+/// outside the projects the app lists are skipped: no tile was ever sent for
+/// them, and a chat can outlive the project it was started in.
+Set<String> panelTileChatsOf(List<Project> projects, ChatSessionsState chats) {
   final known = {for (final project in projects) project.id};
-  final holders = <String, String>{};
-  for (final conversation in chats.live) {
-    final projectId = conversation.projectId;
-    if (projectId == null || !known.contains(projectId)) continue;
-    if (!panelTurnInFlight(chats, conversation.id)) continue;
-    // The chat actually running wins over one committed behind it. Turns are
-    // serialized per project, so a second chat in the same folder is waiting
-    // for the lane — and its (empty) timeline is not what is happening there.
-    if (holders.containsKey(projectId) &&
-        !chats.agentRunningIn(conversation.id)) {
-      continue;
-    }
-    holders[projectId] = conversation.id;
-  }
-  return holders;
+  return {
+    for (final conversation in chats.live)
+      if (known.contains(conversation.projectId)) conversation.id,
+  };
 }
 
 /// The conversation with [id], or null when it has been deleted under a turn.

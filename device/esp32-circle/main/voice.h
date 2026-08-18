@@ -33,12 +33,12 @@ void voice_init(void);
 // heard (docs/panel-protocol.md §2).
 typedef enum { VOICE_CMD_NONE = 0, VOICE_CMD_GOAL, VOICE_CMD_LOOP } voice_cmd_t;
 
-// Start capturing. `project_id` is the tile on screen, or NULL/"" from a screen that names no project —
+// Start capturing. `chat_id` is the tile on screen, or NULL/"" from a screen that names no project —
 // `voice.begin` then omits the field and grid-app has to route the transcript itself.
 //
 // Returns with the capture task running; nothing is sent yet. See the speech gate in voice.c for why
 // `voice.begin` does not go out until the microphone has actually heard something.
-void voice_start(const char *project_id, voice_cmd_t cmd);
+void voice_start(const char *chat_id, voice_cmd_t cmd);
 
 // Stop capturing and finish the turn. Non-blocking: the capture task drains what is left, sends
 // `voice.end` and then waits for the transcript on its own.

@@ -8,10 +8,14 @@ mixin _ChatSend on _ChatSessions {
   /// Send [message] in the open chat — or, when [into] names one, in that chat
   /// without bringing it to the front (how a queued follow-up goes out).
   ///
-  /// Typing while the open chat is still answering **queues** the message rather
-  /// than dropping it: an agent turn can run for minutes, and the follow-up
-  /// thought shouldn't have to be held in the user's head until it ends. The
-  /// queue drains one turn at a time as the chat frees up (see [_drainQueue]).
+  /// Typing while the open chat is still answering goes **into that answer**
+  /// where it can: an agent turn can run for minutes, and "actually, just look
+  /// at the main file" is worth nothing once the agent has read twenty. Every
+  /// agent this app drives takes a message mid-turn (see
+  /// [AgentSteeringController]), and the reply that lands covers both. What no
+  /// agent can take mid-turn — a picture, attached files, a reply coming from
+  /// the grid itself — is queued instead and drains one turn at a time as the
+  /// chat frees up (see [_steerRunningTurn] and [_drainQueue]).
   @override
   Future<void> send({
     required NetworkCredential network,
@@ -28,18 +32,22 @@ mixin _ChatSend on _ChatSessions {
     final text = message.trim();
     if (text.isEmpty) return;
 
-    if (into == null && state.sending) {
-      _enqueue(
-        QueuedTurn(
-          network: network,
-          model: model,
-          text: text,
-          modality: modality,
-          attachments: List.unmodifiable(attachments),
-          files: List.unmodifiable(files),
-          contexts: List.unmodifiable(contexts),
-        ),
+    final busy = into == null ? state.activeId : null;
+    if (busy != null && state.sending) {
+      final followUp = QueuedTurn(
+        network: network,
+        model: model,
+        text: text,
+        modality: modality,
+        attachments: List.unmodifiable(attachments),
+        files: List.unmodifiable(files),
+        contexts: List.unmodifiable(contexts),
       );
+      // Named rather than "the open chat" from here on: handing the message to
+      // the agent is a round trip, and the user may well have switched chats
+      // while it happened. It belongs to the conversation they typed it in.
+      if (await _steerRunningTurn(busy, followUp)) return;
+      _enqueue(busy, followUp);
       return;
     }
 
@@ -357,6 +365,11 @@ mixin _ChatSend on _ChatSessions {
     required Completer<void> done,
   }) {
     final id = conversation.id;
+    // Anything the assistant was still waiting to hear is overtaken by this: the
+    // question asked what to do next, and a turn going out *is* what to do next.
+    // Left standing, the card would offer to answer a decision the conversation
+    // has already made.
+    ref.read(agentQuestionsProvider.notifier).clear(id);
     // Time the turn from here, not from `send`: a turn can wait behind a queued
     // one, and "Working now" would otherwise report the wait as work.
     state = state.withTurnStarted(id, DateTime.now());
@@ -545,9 +558,14 @@ mixin _ChatSend on _ChatSessions {
             // structured partial of its own.
             final phase = state.phaseFor(id);
             final streamed = phase is SendStreaming ? phase.text.trim() : '';
+            // A turn the user spoke into leaves a record even when it produced
+            // no words of its own: what they typed mid-answer lives in the
+            // timeline and nowhere else, so dropping the message drops their
+            // words with it.
+            final spokenInto = hasSaid(ref.read(agentRunProvider(id)).parts);
             final kept =
                 partial ??
-                (streamed.isEmpty
+                (streamed.isEmpty && !spokenInto
                     ? null
                     : ChatMessage(role: ChatRole.assistant, text: streamed));
             if (kept == null) {
@@ -590,7 +608,7 @@ mixin _ChatSend on _ChatSessions {
     // Asked before the closing words are placed, so a turn with nothing to
     // interleave leaves the run untouched rather than filing prose against a
     // chat whose feed nobody will read.
-    if (!hasSteps(ref.read(agentRunProvider(id)).parts)) return const [];
+    if (!hasTimeline(ref.read(agentRunProvider(id)).parts)) return const [];
     // The closing words haven't been placed yet — only a step closes a passage,
     // and after the last one the agent went on talking.
     ref.read(agentRunsProvider.notifier).say(id, text);
@@ -794,7 +812,11 @@ mixin _ChatSend on _ChatSessions {
 
     final partial = phase is SendStreaming ? phase.text.trim() : '';
     final current = _find(id);
-    if (partial.isEmpty || current == null) {
+    // Same rule as a failed turn: what the user said into this one is in the
+    // timeline and nowhere else, so a turn they spoke into is kept even with
+    // nothing streamed behind it.
+    final spokenInto = hasSaid(ref.read(agentRunProvider(id)).parts);
+    if ((partial.isEmpty && !spokenInto) || current == null) {
       state = state.withPhase(id, const SendIdle());
       return;
     }

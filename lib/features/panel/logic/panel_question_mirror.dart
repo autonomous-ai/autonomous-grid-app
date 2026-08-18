@@ -55,24 +55,21 @@ AgentPermissionChoice? panelChoiceForAnswer(
   return null;
 }
 
-/// One question the panel has been shown: which chat it belongs to, and the id
-/// it will echo back.
-typedef PanelQuestion = ({String id, String chatId});
-
-/// Keeps the panel's permission cards in step with the window's, and remembers
-/// which chat each one came from.
+/// Keeps the panel's permission cards in step with the window's.
 ///
 /// Stateful for the same reason [PanelTurnMirror] is: the app's permissions are
 /// a map that is rebuilt on every change, and without a memory of what the
 /// panel was already shown the same card would go out again on every keystroke
-/// elsewhere in the app. The memory is also the only thing that can answer "who
-/// asked this?" when the panel replies — the reply carries the app's own opaque
-/// id and nothing else.
+/// elsewhere in the app.
 ///
-/// Keyed by **project**, because a question is drawn over a tile.
+/// Keyed by **chat**, because a question is drawn over a tile and a tile is a
+/// chat. It was keyed by project until 2026-08-18, which needed a second map to
+/// answer "who asked this?" when the panel replied — the panel named a project
+/// and the permission lived on a chat. The panel now names the chat, and both
+/// the map and the question disappear.
 class PanelQuestionMirror {
-  /// The question each project's panel card is showing.
-  final Map<String, PanelQuestion> _asked = {};
+  /// The id of the question each chat's panel card is showing.
+  final Map<String, String> _asked = {};
 
   /// What to say after the permissions, the chats or the projects moved.
   List<String> onChange({
@@ -80,30 +77,27 @@ class PanelQuestionMirror {
     required ChatSessionsState chats,
     required Map<String, AgentPermission> permissions,
   }) {
-    final holders = panelTurnHoldersOf(projects, chats);
+    final tiles = panelTileChatsOf(projects, chats);
     final messages = <String>[];
 
-    // Cancel first, so a project whose agent answers one question and asks the
+    // Cancel first, so a chat whose agent answers one question and asks the
     // next in the same breath reads as one card closing and another opening
     // rather than as a card that changed its mind.
-    for (final projectId in _asked.keys.toList()) {
-      final asked = _asked[projectId]!;
-      final chatId = holders[projectId];
-      final live = chatId == asked.chatId ? permissions[chatId] : null;
-      if (live != null && '${live.id}' == asked.id) continue;
-      _asked.remove(projectId);
-      messages.add(
-        PanelOutbound.questionCancel(projectId: projectId, id: asked.id),
-      );
+    for (final chatId in _asked.keys.toList()) {
+      final live = tiles.contains(chatId) ? permissions[chatId] : null;
+      if (live != null && '${live.id}' == _asked[chatId]) continue;
+      final id = _asked.remove(chatId)!;
+      messages.add(PanelOutbound.questionCancel(chatId: chatId, id: id));
     }
 
-    for (final MapEntry(key: projectId, value: chatId) in holders.entries) {
-      final request = permissions[chatId];
-      if (request == null) continue;
+    for (final MapEntry(key: chatId, value: request) in permissions.entries) {
+      // No tile, nowhere to draw it. A question for a chat the panel was never
+      // sent would be a card with no context on a 466px screen.
+      if (!tiles.contains(chatId)) continue;
       final id = '${request.id}';
-      if (_asked[projectId]?.id == id) continue;
-      _asked[projectId] = (id: id, chatId: chatId);
-      messages.add(_ask(projectId, request));
+      if (_asked[chatId] == id) continue;
+      _asked[chatId] = id;
+      messages.add(_ask(chatId, request));
     }
     return messages;
   }
@@ -122,15 +116,13 @@ class PanelQuestionMirror {
     return onChange(projects: projects, chats: chats, permissions: permissions);
   }
 
-  /// The chat a panel answer belongs to, or null when nothing is waiting on
-  /// that id — the two surfaces race by design, and the loser is discarded
-  /// silently rather than reported.
-  String? chatFor(String projectId, String id) {
-    final asked = _asked[projectId];
-    return asked != null && asked.id == id ? asked.chatId : null;
-  }
+  /// Whether the panel is still showing question [id] for [chatId].
+  ///
+  /// False once the window has answered it: the two surfaces race by design,
+  /// and the loser is discarded silently rather than reported.
+  bool isAsking(String chatId, String id) => _asked[chatId] == id;
 
-  String _ask(String projectId, AgentPermission request) {
+  String _ask(String chatId, AgentPermission request) {
     // The path for a file edit: the panel draws one line under the summary, and
     // for an edit the thing worth reading is which file, not the diff — a 466px
     // tile cannot show a diff and the window already is.
@@ -138,7 +130,7 @@ class PanelQuestionMirror {
       (request.command ?? request.path ?? '').trim(),
     );
     return PanelOutbound.question(
-      projectId: projectId,
+      chatId: chatId,
       id: '${request.id}',
       summary: clipPanelText(request.summary.trim()),
       command: detail.isEmpty ? null : detail,

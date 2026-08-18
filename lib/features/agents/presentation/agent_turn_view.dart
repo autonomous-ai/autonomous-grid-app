@@ -85,6 +85,8 @@ class _AgentTurnViewState extends ConsumerState<AgentTurnView> {
               // steps between them, the way it does on a plain reply.
               wrapSelection: false,
             )
+          else if (block case _Said(:final text))
+            _SaidRow(text: text)
           // Dropped from the list rather than kept as an empty box: a
           // zero-height child still takes its separator, so hiding the steps
           // left a 10px hole where each block had been.
@@ -123,6 +125,13 @@ class _Prose extends _Block {
   final String text;
 }
 
+/// What the user said into the turn, drawn where they said it.
+class _Said extends _Block {
+  const _Said(this.text);
+
+  final String text;
+}
+
 /// Steps that happened back to back with nothing said between them, drawn as one
 /// block so a burst of thirty file reads folds behind a single summary instead
 /// of thirty separate ones.
@@ -152,6 +161,12 @@ List<_Block> _blocksOf(List<TurnPart> parts) {
       case TurnText(:final text):
         flush();
         if (text.trim().isNotEmpty) blocks.add(_Prose(text));
+      case TurnSaid(:final text):
+        // Closes the run of steps before it for the same reason a passage does:
+        // the user spoke *after* that work, and the rows above are what they
+        // were watching when they did.
+        flush();
+        if (text.trim().isNotEmpty) blocks.add(_Said(text));
     }
   }
   flush();
@@ -271,6 +286,47 @@ class _RunSummary extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What the user typed while the turn was running, drawn inside it.
+///
+/// The same bubble their messages wear in the transcript, a size down and on the
+/// same side — so it reads as them speaking, here, without pretending to be a
+/// turn of its own. Where it sits *is* the information: the agent's next
+/// sentence is the answer to it.
+class _SaidRow extends StatelessWidget {
+  const _SaidRow({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerRight,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+      constraints: const BoxConstraints(maxWidth: 420),
+      decoration: BoxDecoration(
+        // Rule 1 again: no rim, depth from fill + shadow — `bubbleFill` alone is
+        // all but invisible against the pane (see [ChatBubble]).
+        color: AppGlass.bubbleFill,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(12),
+          topRight: Radius.circular(12),
+          bottomLeft: Radius.circular(12),
+          bottomRight: Radius.circular(5),
+        ),
+        boxShadow: AppGlass.cardShadow,
+      ),
+      // The same renderer their own bubble uses, so a message typed mid-answer
+      // reads exactly as it would have a turn later — and the turn's one
+      // selection region still runs straight through it (see [MessageContent]).
+      child: MessageContent(
+        text: text,
+        color: AppPalette.textPrimary,
+        wrapSelection: false,
+      ),
+    ),
+  );
 }
 
 /// A plain column of step rows — the shape shared by the short-block view and

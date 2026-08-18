@@ -42,7 +42,7 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
   /// with the logs is worth far more, and most people leave a default be — but
   /// *shown*, and readable in full before the send, because these logs carry
   /// file paths and command output, not just a version string.
-  bool _attachLogs = true;
+  final bool _attachLogs = true;
 
   /// What's wrong with the message, once the user has pressed Send. Null until
   /// then: a field that reddens on the first keystroke is a field people fight.

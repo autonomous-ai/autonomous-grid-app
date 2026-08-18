@@ -66,6 +66,9 @@ class _DeadSession implements HermesAcpSession {
   HermesAcpRun prompt(String text) => throw UnimplementedError();
 
   @override
+  Future<String?> steer(String text) async => 'no turn is running';
+
+  @override
   void answerPermission(Object requestId, String? optionId) {}
 
   @override

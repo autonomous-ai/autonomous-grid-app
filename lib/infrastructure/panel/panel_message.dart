@@ -17,7 +17,14 @@ import 'dart:convert';
 /// Separate from the framing version on purpose: adding a message is a change
 /// here, while changing the envelope is a change there, and conflating them
 /// forces a firmware reflash for what is only a new field.
-const int kPanelProtocolVersion = 1;
+///
+/// **2 since 2026-08-18**, when a tile stopped being a project and became a
+/// chat: every message keys on `chatId` and the list arrives as `chats`. It has
+/// to match `PANEL_PROTO_VERSION` in `device/esp32-circle/main/panel_client.h`
+/// — two numbers, hand-kept, in two languages. Bumping only the firmware's is
+/// exactly what happened first, and the panel then reported protocol 2 to an app
+/// still claiming 1, which is the mismatch this constant exists to catch.
+const int kPanelProtocolVersion = 2;
 
 /// How often the app says it is still here.
 ///
@@ -59,28 +66,28 @@ sealed class PanelInbound {
         protocol: _int(decoded['proto']) ?? 0,
         mac: _str(decoded['mac']) ?? '',
       ),
-      'projects.list' => const PanelProjectsRequested(),
+      'chats.list' => const PanelChatsRequested(),
       'turn.send' => PanelTurnRequested(
-        projectId: _str(decoded['projectId']) ?? '',
+        chatId: _str(decoded['chatId']) ?? '',
         text: _str(decoded['text']) ?? '',
       ),
       'turn.stop' => PanelStopRequested(
-        projectId: _str(decoded['projectId']) ?? '',
+        chatId: _str(decoded['chatId']) ?? '',
       ),
       'answer' => PanelAnswered(
-        projectId: _str(decoded['projectId']) ?? '',
+        chatId: _str(decoded['chatId']) ?? '',
         id: _str(decoded['id']) ?? '',
         optionId: _str(decoded['optionId']) ?? '',
       ),
       'voice.begin' => PanelVoiceBegin(
-        projectId: _str(decoded['projectId']),
+        chatId: _str(decoded['chatId']),
         command: PanelVoiceCommand.of(_str(decoded['cmd'])),
         lang: _str(decoded['lang']),
       ),
       'voice.end' => const PanelVoiceEnd(),
       'voice.confirm' => PanelVoiceConfirm(
         routeId: _str(decoded['routeId']) ?? '',
-        projectId: _str(decoded['projectId']) ?? '',
+        chatId: _str(decoded['chatId']) ?? '',
       ),
       'fw.accept' => const PanelFirmwareAccepted(),
       'fw.progress' => PanelFirmwareProgress(
@@ -120,15 +127,15 @@ class PanelHello extends PanelInbound {
 }
 
 /// "Send me the project list."
-class PanelProjectsRequested extends PanelInbound {
-  const PanelProjectsRequested();
+class PanelChatsRequested extends PanelInbound {
+  const PanelChatsRequested();
 }
 
 /// The user spoke or typed a turn on the panel.
 class PanelTurnRequested extends PanelInbound {
-  const PanelTurnRequested({required this.projectId, required this.text});
+  const PanelTurnRequested({required this.chatId, required this.text});
 
-  final String projectId;
+  final String chatId;
   final String text;
 }
 
@@ -137,9 +144,9 @@ class PanelTurnRequested extends PanelInbound {
 /// Carries the project because the panel can stop any of them, not just
 /// whichever one the desktop happens to have open.
 class PanelStopRequested extends PanelInbound {
-  const PanelStopRequested({required this.projectId});
+  const PanelStopRequested({required this.chatId});
 
-  final String projectId;
+  final String chatId;
 }
 
 /// The user answered a `question` on the panel.
@@ -150,12 +157,12 @@ class PanelStopRequested extends PanelInbound {
 /// request the app has already settled is dropped rather than reported.
 class PanelAnswered extends PanelInbound {
   const PanelAnswered({
-    required this.projectId,
+    required this.chatId,
     required this.id,
     required this.optionId,
   });
 
-  final String projectId;
+  final String chatId;
   final String id;
   final String optionId;
 }
@@ -197,17 +204,17 @@ enum PanelVoiceCommand {
 
 /// The user started speaking. PCM frames follow until [PanelVoiceEnd].
 ///
-/// [projectId] is the tile they were looking at, or null from a screen that is
+/// [chatId] is the tile they were looking at, or null from a screen that is
 /// not a project — which is what makes routing the transcript a real question
 /// rather than a lookup.
 class PanelVoiceBegin extends PanelInbound {
   const PanelVoiceBegin({
-    this.projectId,
+    this.chatId,
     this.command = PanelVoiceCommand.none,
     this.lang,
   });
 
-  final String? projectId;
+  final String? chatId;
 
   /// The modifier pill that started it, if any.
   final PanelVoiceCommand command;
@@ -228,10 +235,10 @@ class PanelVoiceEnd extends PanelInbound {
 
 /// The user picked which project a transcript belonged to.
 class PanelVoiceConfirm extends PanelInbound {
-  const PanelVoiceConfirm({required this.routeId, required this.projectId});
+  const PanelVoiceConfirm({required this.routeId, required this.chatId});
 
   final String routeId;
-  final String projectId;
+  final String chatId;
 }
 
 /// The panel is ready to be written to. Firmware frames follow.
@@ -311,15 +318,23 @@ enum PanelRecapKind {
   stopped,
 }
 
-/// One project as the panel shows it.
+/// One conversation as the panel shows it.
 ///
-/// A thin projection on purpose: the panel draws a tile, so it needs a name, a
-/// state and a line of recap — not the instructions, memory or path that make
-/// up a project in the app.
-class PanelProject {
-  const PanelProject({
+/// A thin projection on purpose: the panel draws a tile, so it needs a title, a
+/// state and a line of recap — not the transcript, the instructions or the path
+/// that make up a chat and its project in the app.
+///
+/// **A tile was a PROJECT until 2026-08-18**, and the change is not cosmetic. A
+/// project holds many chats, and since `bf462afc` every one of them can be
+/// answering at once — so one tile per project had to pick a chat to speak for
+/// the rest, and the panel could show only one of two turns running side by
+/// side. One tile per chat is also what the firmware was already shaped for:
+/// its carousel came from a reference that drew one tile per agent.
+class PanelChat {
+  const PanelChat({
     required this.id,
     required this.name,
+    this.project = '',
     this.agent,
     this.model,
     this.busy = false,
@@ -328,8 +343,17 @@ class PanelProject {
     this.recapKind,
   });
 
+  /// The conversation's id — the key every other message about this tile uses.
   final String id;
+
+  /// The chat's title, drawn as the tile's heading.
   final String name;
+
+  /// The project it lives in, by NAME rather than by id: this is the tile's
+  /// subtitle, the only thing telling two similarly-named chats apart, and the
+  /// panel has no project list to look an id up in.
+  final String project;
+
   final String? agent;
   final String? model;
   final bool busy;
@@ -347,13 +371,14 @@ class PanelProject {
   final String summary;
 
   /// How the turn behind [recap] ended, or null when there is no recap to
-  /// tint. Never sent for a project nobody has talked in yet: a kind with no
-  /// line under it is a colour with nothing to colour.
+  /// tint. Never sent for a chat nobody has spoken in yet: a kind with no line
+  /// under it is a colour with nothing to colour.
   final PanelRecapKind? recapKind;
 
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
+    if (project.isNotEmpty) 'project': project,
     if (agent != null) 'agent': agent,
     if (model != null) 'model': model,
     'busy': busy,
@@ -496,16 +521,16 @@ abstract final class PanelOutbound {
     'voiceLang': voiceLang,
   });
 
-  static String projects(List<PanelProject> projects) => jsonEncode({
-    't': 'projects',
-    'items': [for (final p in projects) p.toJson()],
+  static String chats(List<PanelChat> chats) => jsonEncode({
+    't': 'chats',
+    'items': [for (final chat in chats) chat.toJson()],
   });
 
-  static String projectUpdated(PanelProject project) =>
-      jsonEncode({'t': 'project.updated', 'item': project.toJson()});
+  static String chatUpdated(PanelChat chat) =>
+      jsonEncode({'t': 'chat.updated', 'item': chat.toJson()});
 
-  static String turnStarted(String projectId) =>
-      jsonEncode({'t': 'turn.started', 'projectId': projectId});
+  static String turnStarted(String chatId) =>
+      jsonEncode({'t': 'turn.started', 'chatId': chatId});
 
   /// The turn so far, as one ordered timeline.
   ///
@@ -527,18 +552,18 @@ abstract final class PanelOutbound {
   /// different fact from a plan with no steps in it, and is drawn as nothing at
   /// all rather than as an empty checklist.
   static String turnParts({
-    required String projectId,
+    required String chatId,
     required List<PanelTurnPart> parts,
     List<PanelTurnTodo> todos = const [],
   }) => jsonEncode({
     't': 'turn.parts',
-    'projectId': projectId,
+    'chatId': chatId,
     'parts': [for (final p in parts) p.toJson()],
     if (todos.isNotEmpty) 'todos': [for (final t in todos) t.toJson()],
   });
 
-  static String turnDone({required String projectId, required String recap}) =>
-      jsonEncode({'t': 'turn.done', 'projectId': projectId, 'recap': recap});
+  static String turnDone({required String chatId, required String recap}) =>
+      jsonEncode({'t': 'turn.done', 'chatId': chatId, 'recap': recap});
 
   /// The long form of the last `recap`, for the detail screen.
   ///
@@ -552,29 +577,29 @@ abstract final class PanelOutbound {
   /// already in until there is something true to replace it with. `turn.done`
   /// follows within seconds carrying the real headline — or the cheap one, if
   /// the model could not be reached.
-  static String turnSummarizing(String projectId) =>
-      jsonEncode({'t': 'turn.summarizing', 'projectId': projectId});
+  static String turnSummarizing(String chatId) =>
+      jsonEncode({'t': 'turn.summarizing', 'chatId': chatId});
 
   /// The paragraph behind the headline, for the detail screen.
   ///
   /// May be empty and then is not sent at all: a one-line turn earns a headline
   /// and nothing more, and inventing a body from it would be inventing.
-  static String summary({required String projectId, required String text}) =>
-      jsonEncode({'t': 'summary', 'projectId': projectId, 'text': text});
+  static String summary({required String chatId, required String text}) =>
+      jsonEncode({'t': 'summary', 'chatId': chatId, 'text': text});
 
   /// The agent has stopped mid-turn and wants permission.
   ///
   /// [options] is the whole set of answers, in the order the panel should draw
   /// them — never a fixed yes/no pair, because what the agent offered varies.
   static String question({
-    required String projectId,
+    required String chatId,
     required String id,
     required String summary,
     String? command,
     required List<PanelQuestionOption> options,
   }) => jsonEncode({
     't': 'question',
-    'projectId': projectId,
+    'chatId': chatId,
     'id': id,
     'summary': summary,
     'command': ?command,
@@ -588,9 +613,9 @@ abstract final class PanelOutbound {
   /// first cancels the other, and a panel that is never told holds a dead card
   /// forever.
   static String questionCancel({
-    required String projectId,
+    required String chatId,
     required String id,
-  }) => jsonEncode({'t': 'question.cancel', 'projectId': projectId, 'id': id});
+  }) => jsonEncode({'t': 'question.cancel', 'chatId': chatId, 'id': id});
 
   /// The heartbeat. Deliberately empty — it says the app is alive and nothing
   /// else, so a quiet link stays quiet.
@@ -604,13 +629,13 @@ abstract final class PanelOutbound {
   static String voiceTranscript({
     required String routeId,
     required String text,
-    String? projectId,
+    String? chatId,
     required bool needsConfirm,
   }) => jsonEncode({
     't': 'voice.transcript',
     'routeId': routeId,
     'text': text,
-    'projectId': ?projectId,
+    'chatId': ?chatId,
     'needsConfirm': needsConfirm,
   });
 
@@ -635,11 +660,11 @@ abstract final class PanelOutbound {
   });
 
   static String turnError({
-    required String projectId,
+    required String chatId,
     required String message,
   }) => jsonEncode({
     't': 'turn.error',
-    'projectId': projectId,
+    'chatId': chatId,
     'message': message,
   });
 }

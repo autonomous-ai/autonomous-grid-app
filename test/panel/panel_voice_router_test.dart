@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_state.dart';
+import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/panel/logic/panel_controller.dart';
 import 'package:grid_app/features/panel/logic/panel_voice_router.dart';
 import 'package:grid_app/features/projects/logic/project.dart';
@@ -63,10 +64,10 @@ void main() {
   group('reading the answer', () {
     test('a clean answer is taken as it stands', () {
       final decision = parsePanelRoute(
-        '{"projectId":"p-2","confidence":0.91,"reason":"money talk"}',
+        '{"chatId":"p-2","confidence":0.91,"reason":"money talk"}',
         candidates,
       );
-      expect(decision.projectId, 'p-2');
+      expect(decision.chatId, 'p-2');
       expect(decision.confidence, 0.91);
       expect(decision.reason, 'money talk');
       expect(decision.isConfident, isTrue);
@@ -77,17 +78,17 @@ void main() {
       () {
         final decision = parsePanelRoute(
           'Sure! Here you go:\n```json\n'
-          '{"projectId":"p-1","confidence":0.9,"reason":"api"}\n```',
+          '{"chatId":"p-1","confidence":0.9,"reason":"api"}\n```',
           candidates,
         );
-        expect(decision.projectId, 'p-1');
+        expect(decision.chatId, 'p-1');
       },
     );
 
     test('an answer that is not JSON at all resolves to the closest project, '
         'never to nothing — the caller is holding a sentence someone said', () {
       final decision = parsePanelRoute('I think the api one?', candidates);
-      expect(decision.projectId, 'p-1');
+      expect(decision.chatId, 'p-1');
       expect(decision.confidence, 0);
       expect(decision.isConfident, isFalse);
     });
@@ -97,10 +98,10 @@ void main() {
       'pick falls back — but its own uncertainty is kept, capped',
       () {
         final decision = parsePanelRoute(
-          '{"projectId":"p-99","confidence":0.95,"reason":"invented"}',
+          '{"chatId":"p-99","confidence":0.95,"reason":"invented"}',
           candidates,
         );
-        expect(decision.projectId, 'p-1');
+        expect(decision.chatId, 'p-1');
         expect(decision.confidence, 0.3);
         expect(
           decision.isConfident,
@@ -113,21 +114,21 @@ void main() {
     test('confidence outside 0..1, or written as a string, is still read', () {
       expect(
         parsePanelRoute(
-          '{"projectId":"p-1","confidence":7,"reason":"x"}',
+          '{"chatId":"p-1","confidence":7,"reason":"x"}',
           candidates,
         ).confidence,
         1,
       );
       expect(
         parsePanelRoute(
-          '{"projectId":"p-1","confidence":"0.5","reason":"x"}',
+          '{"chatId":"p-1","confidence":"0.5","reason":"x"}',
           candidates,
         ).confidence,
         0.5,
       );
       expect(
         parsePanelRoute(
-          '{"projectId":"p-1","confidence":-2,"reason":"x"}',
+          '{"chatId":"p-1","confidence":-2,"reason":"x"}',
           candidates,
         ).confidence,
         0,
@@ -136,7 +137,7 @@ void main() {
 
     test('a reason long enough to fill the screen is clipped', () {
       final decision = parsePanelRoute(
-        '{"projectId":"p-1","confidence":0.9,"reason":"${'x' * 400}"}',
+        '{"chatId":"p-1","confidence":0.9,"reason":"${'x' * 400}"}',
         candidates,
       );
       expect(decision.reason.length, 120);
@@ -210,17 +211,20 @@ void main() {
   });
 
   group('what a tile carries on a cold start', () {
-    Project project() => Project(
-      id: 'p-1',
-      name: 'payments-api',
-      path: '/tmp/api',
-      instructions: '',
-      memory: const [],
+    const project = Project(id: 'p-1', name: 'payments-api', path: '/tmp/api');
+    Conversation chat() => Conversation(
+      id: 'c-1',
+      title: 'Retry the webhook',
+      model: 'qwen',
+      createdAt: DateTime(2026, 8, 17),
+      updatedAt: DateTime(2026, 8, 17),
+      projectId: 'p-1',
     );
 
     test('the REMEMBERED headline and body, not one string drawn twice', () {
-      final tile = panelProjectFor(
-        project(),
+      final tile = panelChatFor(
+        chat(),
+        project,
         const ChatSessionsState(),
         PanelTurnRecord(
           recap: 'Retry guard shipped; all 42 tests pass',
@@ -241,8 +245,9 @@ void main() {
       'a remembered turn with no body sends none — the reader then says there '
       'is nothing more rather than repeating the headline',
       () {
-        final tile = panelProjectFor(
-          project(),
+        final tile = panelChatFor(
+          chat(),
+          project,
           const ChatSessionsState(),
           PanelTurnRecord(
             recap: 'Fixed the webhook retry loop',
@@ -257,8 +262,16 @@ void main() {
 
     test('nothing remembered falls back to the chat, which is what there is '
         'before any turn has been summarised', () {
-      final tile = panelProjectFor(project(), const ChatSessionsState());
+      final tile = panelChatFor(chat(), project, const ChatSessionsState());
       expect(tile.summary, isEmpty);
+    });
+
+    test('the tile is the CHAT — its title heads it and its project names the '
+        'folder underneath, so two chats in one folder are tellable apart', () {
+      final tile = panelChatFor(chat(), project, const ChatSessionsState());
+      expect(tile.id, 'c-1');
+      expect(tile.name, 'Retry the webhook');
+      expect(tile.project, 'payments-api');
     });
   });
 }

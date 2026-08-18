@@ -21,7 +21,10 @@ import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/agent_chat_scope.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
+import 'package:grid_app/features/agents/logic/agent_questions.dart';
+import 'package:grid_app/features/agents/logic/agent_steering.dart';
 import 'package:grid_app/features/agents/logic/auto_agent.dart';
 import 'package:grid_app/features/chat/logic/chat_scope.dart';
 import 'package:grid_app/features/playground/logic/playground_models.dart';
@@ -502,6 +505,76 @@ void main() {
       expect(reply.firstToken! <= reply.took!, isTrue);
     },
   );
+
+  group('a question the assistant asked over the composer', () {
+    /// The chat the card is over, with one question outstanding in it.
+    Future<({ProviderContainer container, String chatId})> asked(
+      Directory dir,
+    ) async {
+      final h = _harness(
+        dir,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'ok'),
+          ),
+        ],
+      );
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+      final chatId = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single
+          .id;
+      h.container.read(agentChatScopeProvider.notifier).show(chatId);
+      h.container.read(agentQuestionsProvider.notifier).ask(chatId, const [
+        AgentQuestion(
+          question: 'How often?',
+          header: 'Frequency',
+          multiSelect: false,
+          options: [AgentQuestionOption(label: 'Daily', description: '')],
+        ),
+      ]);
+      return (container: h.container, chatId: chatId);
+    }
+
+    test(
+      'the answer goes back as the next message — the tool call that asked '
+      'was closed by the CLI itself, so there is nothing left to reply to',
+      () async {
+        final h = await asked(tmp);
+
+        await h.container
+            .read(chatSessionsProvider.notifier)
+            .answerQuestions('Frequency: Daily');
+
+        expect(_userTurns(h.container, h.chatId).last, 'Frequency: Daily');
+      },
+    );
+
+    test('answering takes the card down at once, so a queued answer never '
+        'leaves the question sitting there unanswered', () async {
+      final h = await asked(tmp);
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .answerQuestions('Frequency: Daily');
+
+      expect(h.container.read(openChatQuestionsProvider), isEmpty);
+    });
+
+    test('saying something else instead takes it down too — the conversation '
+        'has moved past the decision the card was still offering', () async {
+      final h = await asked(tmp);
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'never mind');
+
+      expect(h.container.read(openChatQuestionsProvider), isEmpty);
+    });
+  });
 
   test('a reply that never streamed carries no first-word time, rather than '
       'one equal to the total', () async {
@@ -2386,6 +2459,187 @@ void main() {
   });
 
   group('a follow-up typed while the agent is still working', () {
+    test('goes into the answer being written, not into a queue behind it — a '
+        'correction is worth nothing once the work is done', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+
+      // What every agent sender does while its turn runs: leave a way in.
+      final steered = <String>[];
+      h.container.read(agentSteeringProvider.notifier).offer(id, (text) async {
+        steered.add(text);
+        return null;
+      });
+
+      unawaited(
+        chats.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'just look at the main file',
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(steered, ['just look at the main file']);
+      expect(h.container.read(chatSessionsProvider).queuedFor(id), isEmpty);
+      // Inside the turn that is running, not above it: a second user bubble over
+      // the whole reply would read as a question asked before the agent started,
+      // which is the opposite of what happened.
+      expect(_userTurns(h.container, id), ['first']);
+      expect(
+        h.container
+            .read(agentRunProvider(id))
+            .parts
+            .whereType<TurnSaid>()
+            .map((part) => part.text),
+        ['just look at the main file'],
+      );
+      // And the chat is still answering the same turn — nothing started a new one.
+      expect(h.container.read(chatSessionsProvider).sending, isTrue);
+
+      sender.emit(
+        id,
+        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
+      );
+      await sender.close(id);
+      await pumpEventQueue();
+
+      // It lands with the answer it changed, so reopening the chat next week
+      // still shows where it was said.
+      final reply = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .firstWhere((c) => c.id == id)
+          .messages
+          .last;
+      expect(reply.role, ChatRole.assistant);
+      expect(reply.parts.whereType<TurnSaid>().map((part) => part.text), [
+        'just look at the main file',
+      ]);
+    });
+
+    test('a turn that dies before saying anything still keeps what the user '
+        'said into it', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+      h.container
+          .read(agentSteeringProvider.notifier)
+          .offer(id, (text) async => null);
+
+      unawaited(
+        chats.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'and quickly',
+        ),
+      );
+      await pumpEventQueue();
+
+      sender.emit(id, const ChatSendFailure('Claude Code stopped.'));
+      await sender.close(id);
+      await pumpEventQueue();
+
+      final kept = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .firstWhere((c) => c.id == id)
+          .messages
+          .last;
+      expect(
+        kept.parts.whereType<TurnSaid>().map((part) => part.text),
+        ['and quickly'],
+        reason: 'it lives in the timeline and nowhere else',
+      );
+      expect(h.container.read(chatSessionsProvider).error, isNotNull);
+    });
+
+    test('waits in the queue when the agent will not take it, so a refused '
+        'message is never lost', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+      h.container
+          .read(agentSteeringProvider.notifier)
+          .offer(id, (text) async => 'The turn had already finished.');
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'second'),
+      );
+      await pumpEventQueue();
+
+      expect(
+        h.container.read(chatSessionsProvider).queuedFor(id).single.text,
+        'second',
+      );
+      expect(_userTurns(h.container, id), ['first']);
+    });
+
+    test('is queued the moment the turn lets go of the channel, so it goes out '
+        'as the next turn instead of vanishing', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+      final steering = h.container.read(agentSteeringProvider.notifier);
+      steering.offer(id, (text) async => null);
+      steering.withdraw(id);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'second'),
+      );
+      await pumpEventQueue();
+
+      expect(
+        h.container.read(chatSessionsProvider).queuedFor(id).single.text,
+        'second',
+      );
+    });
+
     test('is queued and sent when the turn finishes, instead of being '
         'dropped', () async {
       final sender = _PerChatSender();

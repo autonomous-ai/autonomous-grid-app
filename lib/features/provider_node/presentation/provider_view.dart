@@ -84,15 +84,20 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     final run = ref.watch(providerRunControllerProvider);
     final serving = ref.watch(servingEnginesProvider);
 
-    // Names the grid every sentence below is about, and switches it — but only
-    // in a developer build, where several grids are open at once and which one
-    // is selected is a thing to check. A shipped user has one grid and no Grids
-    // tab beside it, so the strip asks them to hold a distinction they never
-    // make. Hiding it no longer leaves the page nameless: this screen moved out
-    // of Settings into the app shell, so the top bar's grid pill sits above it
-    // and says which grid these sentences are about.
+    // Names the grid every sentence below is about, and switches it — for
+    // anyone whose account has more than one. This page says "this grid"
+    // throughout, and with two of them that sentence is ambiguous and there is
+    // nowhere else on the screen to change which one it means: the Grids tab is
+    // developer-only, the top bar's grid pill only reports, and the chat's
+    // grid+model picker is a screen away.
+    //
+    // A single-grid account has nothing to hold apart and nothing to switch to,
+    // so the strip would only ask them to carry a distinction they never make;
+    // it stays mounted in a developer build, where which grid is selected is a
+    // thing to check.
+    final grids = ref.watch(sessionProvider).networks;
     final children = <Widget>[
-      if (AppEnvironment.isDeveloperMode) ...[
+      if (grids.length > 1 || AppEnvironment.isDeveloperMode) ...[
         GridScopeBar(network: network),
         const SizedBox(height: 16),
       ],

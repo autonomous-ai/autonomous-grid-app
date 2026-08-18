@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_changes.dart';
+import 'package:grid_app/features/agents/logic/agent_chat_scope.dart';
 
 void main() {
   late Directory dir;
@@ -17,7 +18,7 @@ void main() {
   ProviderContainer open(String chatId) {
     final c = ProviderContainer();
     addTearDown(c.dispose);
-    c.read(agentChangesScopeProvider.notifier).show(chatId);
+    c.read(agentChatScopeProvider.notifier).show(chatId);
     c.read(agentChangesProvider.notifier).beginTurn(chatId);
     return c;
   }
@@ -107,7 +108,7 @@ void main() {
       'chat that asked for it, not the one on screen', () {
     final c = open('chat-1');
     // The user opens another conversation while the agent is still working.
-    c.read(agentChangesScopeProvider.notifier).show('chat-2');
+    c.read(agentChatScopeProvider.notifier).show('chat-2');
 
     c
         .read(agentChangesProvider.notifier)
@@ -122,7 +123,7 @@ void main() {
     expect(changesIn(c, 'chat-2'), isEmpty);
     // The chat on screen offers nothing to undo; going back to chat-1 does.
     expect(c.read(visibleAgentChangesProvider), isEmpty);
-    c.read(agentChangesScopeProvider.notifier).show('chat-1');
+    c.read(agentChatScopeProvider.notifier).show('chat-1');
     expect(c.read(visibleAgentChangesProvider), hasLength(1));
   });
 

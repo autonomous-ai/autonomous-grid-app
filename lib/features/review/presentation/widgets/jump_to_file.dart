@@ -9,7 +9,7 @@ import '../../logic/review_file.dart';
 import '../../logic/review_selection.dart';
 import '../../logic/review_snapshot.dart';
 import '../../logic/review_tree.dart';
-import 'menu_row.dart';
+import '../../../../shared/widgets/menu_row.dart';
 import 'review_mark.dart';
 import 'toolbar_popover.dart';
 

@@ -122,7 +122,14 @@ of noise.
 ## 2. Messages
 
 Type `0x01` payloads are UTF-8 JSON objects with a `"t"` discriminator. Vocabulary is grid-app's:
-a **project** is the working unit with a workspace, an **agent** is the runtime that answers in it.
+a **project** is the working unit with a workspace, a **chat** is one conversation inside it, and an
+**agent** is the runtime that answers.
+
+**A TILE IS A CHAT.** Every message below keys on `chatId`. It keyed on a project until 2026-08-18, and
+the change is not a rename: a project holds many chats and — since the app let every chat in a project
+answer at once — one tile per project had to elect a chat to speak for the rest, so of two live turns in
+one folder the panel drew one and the other did not exist. The tile carries `project` as a subtitle, so
+the folder is still on screen; it is no longer what the tile *is*.
 
 Unknown keys must be ignored. A missing key falls back to a zero value rather than failing the
 whole message — a peer with an extra field is not a broken peer.
@@ -133,32 +140,32 @@ whole message — a peer with an extra field is not a broken peer.
 |---|---|---|
 | `hello` | `fw` string, `proto` int, `mac` string | First thing after the port opens. `mac` is also the device's USB serial number, so the app can tell one panel from another before a byte is exchanged. |
 | `pong` | — | The answer to a `ping`. Empty: the arrival is the content, and it is the only thing that tells the app its port handle still reaches a running panel (below). |
-| `projects.list` | — | Send me the tiles. |
-| `turn.send` | `projectId`, `text` | The user asked for something. |
-| `turn.stop` | `projectId` | Interrupt that project's turn. The id travels because the panel can stop a project the desktop does not have open. |
-| `answer` | `projectId`, `id`, `optionId` | The user answered a `question`. `id` is echoed back verbatim — it is the app's, opaque here. |
+| `chats.list` | — | Send me the tiles. |
+| `turn.send` | `chatId`, `text` | The user asked for something. The chat must already exist — a tile is one, so there is nothing to create. |
+| `turn.stop` | `chatId` | Interrupt that chat's turn, and only that one. The id travels because the panel can stop a chat the desktop does not have open. |
+| `answer` | `chatId`, `id`, `optionId` | The user answered a `question`. `id` is echoed back verbatim — it is the app's, opaque here. |
 
 ### App → device
 
 | `t` | Fields |
 |---|---|
 | `welcome` | `proto` int, `app` string, `machine: {id, name}`, `voiceLang` |
-| `projects` | `items[]` of the project shape below |
-| `project.updated` | `item` — one project |
-| `turn.started` | `projectId` |
-| `turn.parts` | `projectId`, `parts[]`, `todos[]` — the turn so far as one ordered timeline (below) |
-| `turn.summarizing` | `projectId` — the work is over, the headline is being written (below) |
-| `turn.done` | `projectId`, `recap` — ≤15 words, and the end of the turn |
-| `turn.error` | `projectId`, `message` |
-| `summary` | `projectId`, `text` — ≤120 words, the body behind the headline (below) |
-| `question` | `projectId`, `id`, `summary`, `command?`, `options[]` (below) |
-| `question.cancel` | `projectId`, `id` |
+| `chats` | `items[]` of the tile shape below |
+| `chat.updated` | `item` — one tile |
+| `turn.started` | `chatId` |
+| `turn.parts` | `chatId`, `parts[]`, `todos[]` — the turn so far as one ordered timeline (below) |
+| `turn.summarizing` | `chatId` — the work is over, the headline is being written (below) |
+| `turn.done` | `chatId`, `recap` — ≤15 words, and the end of the turn |
+| `turn.error` | `chatId`, `message` |
+| `summary` | `chatId`, `text` — ≤120 words, the body behind the headline (below) |
+| `question` | `chatId`, `id`, `summary`, `command?`, `options[]` (below) |
+| `question.cancel` | `chatId`, `id` |
 | `ping` | — the heartbeat (below) |
 
 #### `turn.parts`
 
 ```json
-{ "t": "turn.parts", "projectId": "p-1",
+{ "t": "turn.parts", "chatId": "c-1",
   "parts": [
     { "k": "t", "text": "Reading the config" },
     { "k": "s", "label": "grep -n foo lib/", "status": "running",
@@ -243,22 +250,32 @@ empty plan and is drawn as nothing at all.
 > settles to not-started. Sharing one word between the two would make one of them wrong; a plan has
 > no equivalent of "ran, but never reported back".
 
-### The project shape
+### The tile shape
 
 ```json
-{ "id": "p-1", "name": "grid-app", "agent": "claude", "model": "auto", "busy": true,
-  "recap": "Retry guard shipped; all 42 tests pass", "recapKind": "done",
+{ "id": "c-1", "name": "Retry the webhook", "project": "grid-app", "agent": "claude", "model": "auto",
+  "busy": true, "recap": "Retry guard shipped; all 42 tests pass", "recapKind": "done",
   "summary": "I added an idempotency key before dispatch, so a timeout no longer replays the charge." }
 ```
 
-**`recap` and `summary` are the SAME PAIR the live turn sends** (below), remembered per project so a panel
+`id` is the CHAT's id and `name` its title; `project` is the folder's NAME, drawn under the title — an id
+would be useless here, the panel has no project list to look one up in. `project` is absent for a chat
+outside every project, and such chats **are not sent at all** today: the panel has never listed them, and
+a tile with no subtitle is the one row on the carousel that cannot say where its work would land.
+
+**Ordering is the app's sidebar order**, reused rather than re-invented: project by project in the order
+the app lists them, and inside each the order the rail draws (pinned first, then most recently talked in).
+Three surfaces answering "which chats matter, and in what order" differently is a bug nobody reports.
+
+**`recap` and `summary` are the SAME PAIR the live turn sends** (below), remembered per chat so a panel
 that has just been plugged in has both to draw. Sending only `recap` is what makes the tile and the reader
 show one string on every cold start — they are two zones, and one sentence in both reads as a bug in the
 reader. `summary` is absent until a model has written one, and the reader then says there is nothing more
 rather than repeating the headline.
 
-Deliberately thin. The panel draws a name, a state and one line of recap; a project in the app also
-has instructions, memory and a workspace path, and none of that belongs on a tile. `agent`, `model`,
+Deliberately thin. The panel draws a title, a folder, a state and one line of recap; a chat in the app
+also has a whole transcript, and its project has instructions, memory and a workspace path — none of
+that belongs on a tile. `agent`, `model`,
 `recap` and `recapKind` are omitted rather than sent as null when absent.
 
 `recapKind` tints the recap card — `done` · `failed` · `stopped`. It exists because a recap is one
@@ -271,13 +288,16 @@ turn that worked is the worse of the two mistakes.
 > ran anything* leaves no trace and arrives as `done`. Treat `stopped` as a hint worth tinting, not
 > as a fact worth asserting in words.
 
-**`agent` names the engine mark** the tile draws (`claude` · `codex` · `hermes` · `pi`). An agent id
-this build has no mark for is drawn with no mark rather than a placeholder — the row still reads.
+**`agent` names the engine mark** the tile draws (`claude` · `codex` · `hermes`). It is the agent that
+**answered this chat**, read off the last reply's stamp — not the one the project is configured with.
+Under Auto the grid picks per turn, so the two genuinely differ, and the tile should say who spoke. A
+chat nothing has answered yet falls back to the project's pick. An agent id this build has no mark for is
+drawn with no mark rather than a placeholder — the row still reads.
 
 ### Turn messages are unsolicited
 
 `turn.*` is **not** a reply to `turn.send`. The app pushes turn state for every turn in every
-project it has told the panel about — including turns started at the desktop keyboard, which the
+chat it has told the panel about — including turns started at the desktop keyboard, which the
 panel never asked for and is simply reporting. A reader that only expects them after its own
 `turn.send` will sit idle through most of what the machine actually does.
 
@@ -347,7 +367,7 @@ over a turn that already broke would delay the one thing worth saying. It is nev
 So the order is always `turn.done` first, `summary` maybe. A summary may never arrive — no model
 reachable, the call failed, the turn said nothing worth summarising — and the detail screen must read
 as "nothing more to show" rather than as loading forever. It may also arrive for a project whose tile
-has since moved on; it is keyed by `projectId` and describes **the turn that just ended**, so a
+has since moved on; it is keyed by `chatId` and describes **the turn that just ended**, so a
 reader should overwrite rather than append.
 
 A `summary` can follow **`turn.error` as well as `turn.done`** — a turn that failed halfway may still
@@ -359,7 +379,7 @@ An agent can stop mid-turn and ask permission — to run a command, to write a f
 place the user is already looking at, so it gets the question too.
 
 ```json
-{ "t": "question", "projectId": "p-1", "id": "q-7",
+{ "t": "question", "chatId": "c-1", "id": "q-7",
   "summary": "Delete the build folder",
   "command": "rm -rf build",
   "options": [ { "id": "allow_once", "label": "Allow" },
@@ -454,30 +474,34 @@ the CLI already has.
 
 | Direction | `t` | Fields |
 |---|---|---|
-| → app | `voice.begin` | `projectId` — **optional**, absent when the user spoke from a screen that names no project · `cmd` — **optional**, `"goal"` or `"loop"` · `lang` — `"en"` or `"vi"` |
+| → app | `voice.begin` | `chatId` — **optional**, absent when the user spoke from a screen that names no chat (the Overview) · `cmd` — **optional**, `"goal"` or `"loop"` · `lang` — `"en"` or `"vi"` |
 | → app | *(frames `0x02`)* | 16 kHz mono 16-bit PCM, in order |
 | → app | `voice.end` | — |
-| → device | `voice.transcript` | `routeId`, `text`, `projectId?`, `needsConfirm` |
+| → device | `voice.transcript` | `routeId`, `text`, `chatId?`, `needsConfirm` |
 | → device | `voice.error` | `message` — a sentence a person can act on |
-| → app | `voice.confirm` | `routeId`, `projectId` |
+| → app | `voice.confirm` | `routeId`, `chatId` |
 
 **Routing is the hard half, not transcription.** When `voice.begin` names a project the transcript
 goes there — nothing to decide. When it does not (the Overview names none), the app has to work it out,
 and a wrong answer dispatches someone's sentence into the wrong repository.
 
-It is decided by a **model**, not by "the project talked in most recently":
+It is decided by a **model**, not by "the chat talked in most recently":
 
 ```
-transcript + [ { id, name, last 3 headlines } … ]  →  { projectId, confidence, reason }
+transcript + [ { id, "<title> — <project>", last 3 headlines } … ]  →  { chatId, confidence, reason }
 ```
 
-- **The name carries most of the signal** — people name a project after the thing it is — and **what it
-  recently did breaks the ties** names leave ("api" and "api-v2"). That is why the app keeps each
-  project's last **three** headlines (`~/.grid/app/panel_recaps.json`): one turn is a skewed picture, and
-  a project whose last turn was "fixed a typo" would read as a typo project.
+- **The title carries most of the signal** — a chat is named after what it is about — and **what it
+  recently did breaks the ties** titles leave ("Fix login" and "Fix login again"). That is why the app
+  keeps each chat's last **three** headlines (`~/.grid/app/panel_recaps.json`): one turn is a skewed
+  picture, and a chat whose last turn was "fixed a typo" would read as a typo chat.
+- **The list is CUT to the twenty most recent**, and the prompt says so. One tile per chat means a
+  machine can have a hundred, and a hundred-line prompt is both a bill and a worse decision — long lists
+  are where a model starts matching on surface words. The front of the tile order is "talked in most
+  recently", which is where a spoken sentence belongs nearly every time.
 - **There is no "none" and no declining.** The sentence has already been said and transcribed; "I
   couldn't tell" leaves the user with nothing to do but say it again. A bad fit comes back as the
-  closest project with a low confidence, which is something the app can act on.
+  closest chat with a low confidence, which is something the app can act on.
 - **`confidence` decides whether anyone is asked.** At **0.85+** the app dispatches and sends
   `needsConfirm: false`. Below it — and for every failure, including an unreachable router — it falls
   back to its own guess and sends `needsConfirm: true`.
@@ -534,7 +558,7 @@ that checks:**
 |---|---|---|
 | `--timeout` on `grid stt transcribe` | **120 s** | `stt_client.dart` passes it explicitly; the CLI's own default is 30 s and was written for a clip of a few seconds |
 | `kPanelRouteDeadline` | **30 s** | how long a model gets to pick the project |
-| `REPLY_WAIT_MS` (panel) | **180 s** | how long the panel keeps saying it is waiting — **must exceed 120 + 30** |
+| `REPLY_WAIT_MS` (panel) | **180 s ceiling** | how long the panel keeps saying it is waiting. Sized to the clip — 20 s plus 0.3 s per second of audio — so a two-second press does not hold the screen for three minutes; the ceiling is what a ten-minute clip gets, and it **must exceed 120 + 30** |
 
 `VOICE_ROUTE_WAIT_MS` (180 s) covers the same wait for the "Sending…" overlay. Change one, read all four.
 This was already wrong once: the router's deadline went 12 s → 30 s on 2026-08-17 and put the worst case

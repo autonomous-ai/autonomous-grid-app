@@ -104,11 +104,37 @@ class CodexAppServerService implements CodexService {
   ).start();
 }
 
-/// The JSON-RPC ids this app sends. Fixed, because it only ever has three calls
-/// in flight and the replies are told apart by which one is outstanding.
+/// The JSON-RPC ids the handshake sends. Fixed, because the three of them run
+/// in order and the replies are told apart by which one is outstanding; a steer
+/// takes an id of its own from [_firstSteerId] up, since any number of those can
+/// arrive while the turn runs.
 const int _initializeId = 1;
 const int _threadId = 2;
 const int _turnId = 3;
+const int _firstSteerId = 4;
+
+/// The `turn/steer` call: text for the turn already in flight.
+///
+/// Pure, and unit-tested, for the same reason [codexAppServerArgs] is — the
+/// fields were read off the running binary (`codex-cli 0.144.6`, 2026-08-18: an
+/// empty `params` names each missing one in turn), and a build that renames one
+/// would otherwise refuse the message with nobody the wiser.
+///
+/// [turnId] is the turn the caller believes is running. Codex checks it and
+/// answers `activeTurnNotSteerable` rather than steering whatever turn happens
+/// to be current, which is what keeps a message typed during one turn out of the
+/// next one.
+Map<String, Object?> codexSteerParams({
+  required String threadId,
+  required String turnId,
+  required String text,
+}) => {
+  'threadId': threadId,
+  'expectedTurnId': turnId,
+  'input': [
+    {'type': 'text', 'text': text},
+  ],
+};
 
 class _CodexAppServerTurn {
   _CodexAppServerTurn({
@@ -142,6 +168,15 @@ class _CodexAppServerTurn {
   /// Approval requests still waiting on an answer, by their JSON-RPC id.
   final _pending = <Object, String>{};
 
+  /// Steers waiting on the server's yes or no, by the id they were sent with.
+  final _steers = <Object, Completer<String?>>{};
+  var _nextSteerId = _firstSteerId;
+
+  /// The thread and turn a steer has to name — known once the server has
+  /// confirmed each, and null before that (there is nothing to steer yet).
+  String? _thread;
+  String? _turn;
+
   Process? _process;
   IOSink? _stdin;
   Timer? _handshake;
@@ -172,6 +207,7 @@ class _CodexAppServerTurn {
       done: _done.future,
       kill: kill,
       answerPermission: answerPermission,
+      steer: steer,
     );
   }
 
@@ -242,6 +278,20 @@ class _CodexAppServerTurn {
   /// the turn is only ever as far along as the server has confirmed.
   void _onReply(Map<String, dynamic> decoded) {
     final error = decoded['error'];
+    // A refused steer is not a failed turn: the answer the user is watching
+    // carries on either way, so this reply goes back to whoever sent the
+    // message and no further.
+    final steered = _steers.remove(decoded['id']);
+    if (steered != null) {
+      if (!steered.isCompleted) {
+        steered.complete(
+          error is Map
+              ? '${error['message'] ?? 'Codex would not take the message.'}'
+              : null,
+        );
+      }
+      return;
+    }
     if (error is Map) {
       _fail('${error['message'] ?? 'Codex refused the request.'}');
       return;
@@ -258,10 +308,16 @@ class _CodexAppServerTurn {
           _fail('Codex started a conversation without naming it.');
           return;
         }
+        _thread = id;
         _events.add(CodexThreadStarted(id));
         _startTurn(id);
       case _turnId:
-        // The turn is under way; everything from here is a notification.
+        // The turn is under way; everything from here is a notification. Its id
+        // comes back with this reply and nowhere else the app reads, and a steer
+        // has to name it — see [codexSteerParams].
+        final turn = fields['turn'];
+        final id = turn is Map ? turn['id'] : null;
+        if (id is String && id.isNotEmpty) _turn = id;
         _turnStarted = true;
         _handshake?.cancel();
     }
@@ -320,6 +376,30 @@ class _CodexAppServerTurn {
     }
     _pending[id] = method;
     _events.add(CodexPermissionRequested(request));
+  }
+
+  /// Put a message in front of the model without stopping the turn.
+  ///
+  /// Refused — with a reason for the caller's log — while the handshake is still
+  /// running: there is no turn to steer until the server has named one, and
+  /// sending anyway would land the message in whatever ran next.
+  Future<String?> steer(String text) {
+    if (text.trim().isEmpty) return Future.value('Nothing to send.');
+    if (_inputClosed) return Future.value('The turn had already finished.');
+    final thread = _thread;
+    final turn = _turn;
+    if (thread == null || turn == null) {
+      return Future.value('Codex had not started the turn yet.');
+    }
+    final id = _nextSteerId++;
+    final answered = Completer<String?>();
+    _steers[id] = answered;
+    _call(
+      id,
+      'turn/steer',
+      codexSteerParams(threadId: thread, turnId: turn, text: text),
+    );
+    return answered.future;
   }
 
   void answerPermission(Object id, String? optionId) {
@@ -420,6 +500,12 @@ class _CodexAppServerTurn {
 
   void _finish() {
     _pending.clear();
+    // Nobody is left to answer a steer sent as the turn was ending — say so
+    // rather than leaving the caller waiting on a future that never completes.
+    for (final waiting in _steers.values) {
+      if (!waiting.isCompleted) waiting.complete('The turn ended first.');
+    }
+    _steers.clear();
     if (_done.isCompleted) return;
     _done.complete();
     if (!_events.isClosed) _events.close();
