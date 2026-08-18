@@ -246,6 +246,16 @@ const String kClaudeSubagentModelEnv = 'CLAUDE_CODE_SUBAGENT_MODEL';
 /// own maximum, so a value that's too generous is capped rather than obeyed.
 const String kClaudeCompactWindowEnv = 'CLAUDE_CODE_AUTO_COMPACT_WINDOW';
 
+/// The most output Claude Code may ask for in a single request.
+///
+/// The engine counts the reply against the same window as the prompt, and Claude
+/// Code otherwise reserves 32000 tokens for it — more than a grid model's window
+/// can spare above [kClaudeCompactWindowEnv], so a session compacted to that
+/// ceiling still drew a `400` for the reply alone (autonomous-grid-app#47).
+/// Capped to the room the ceiling leaves; the value is `kAgentReplyReserveTokens`
+/// and the two are the matched halves of one window.
+const String kClaudeMaxOutputTokensEnv = 'CLAUDE_CODE_MAX_OUTPUT_TOKENS';
+
 /// Keeps the skills bundled inside Claude Code out of the turn.
 ///
 /// `claude-api` is why: a reference for Anthropic's own API that the Skill tool
@@ -319,6 +329,10 @@ String claudeTierModel(String tier, List<String> models) => models.firstWhere(
 /// anything the grid serves. A chat turn always sends one — see
 /// `modelContextWindowProvider`, which falls back on `kAssumedContextWindow`
 /// rather than leaving the number to Claude Code's idea of an Anthropic model.
+/// [maxOutputTokens] caps the reply Claude Code reserves room for (see
+/// [kClaudeMaxOutputTokensEnv]) — passed with [compactWindow] as its matched
+/// half, and left off the terminal path for the same reason: no one model to
+/// size, and not the app's number to set in the user's own `settings.json`.
 /// [withoutBundledSkills] drops the skills shipped inside Claude Code (see
 /// [kClaudeDisableBundledSkillsEnv]). Off by default, and passed only by a chat
 /// turn: the guide and "Set up for me" write the user's **own** `settings.json`,
@@ -329,6 +343,7 @@ Map<String, String> claudeCodeEnv(
   String key,
   List<String> models, {
   int? compactWindow,
+  int? maxOutputTokens,
   bool withoutBundledSkills = false,
 }) {
   // Opus leads and sonnet takes the side work: the same split Claude Code makes
@@ -346,6 +361,8 @@ Map<String, String> claudeCodeEnv(
       tier.value: claudeTierModel(tier.key, models),
     if (compactWindow != null && compactWindow > 0)
       kClaudeCompactWindowEnv: '$compactWindow',
+    if (maxOutputTokens != null && maxOutputTokens > 0)
+      kClaudeMaxOutputTokensEnv: '$maxOutputTokens',
     // `1` — the value the setting's own documentation gives for it.
     if (withoutBundledSkills) kClaudeDisableBundledSkillsEnv: '1',
   };

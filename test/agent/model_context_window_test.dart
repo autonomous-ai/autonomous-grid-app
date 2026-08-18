@@ -77,6 +77,35 @@ void main() {
       // absorb that and an answer on top of it.
       expect(96000 - agentContextCeiling(96000), greaterThan(2013));
     });
+
+    test('a compacted session plus the reply it reserves stays under the '
+        'window — the reply, not the input alone, is what tipped #47 over', () {
+      for (final window in [
+        kAssumedContextWindow,
+        32768,
+        96000,
+        131072,
+        200000,
+        262144,
+      ]) {
+        expect(
+          agentContextCeiling(window) + kAgentReplyReserveTokens,
+          lessThanOrEqualTo(window),
+          reason: 'window $window leaves no room for the reply it reserves',
+        );
+      }
+    });
+
+    test('a tight window compacts sooner than four fifths, because a fifth of '
+        'it is under the reply reserve', () {
+      // A 32k model: four fifths (26214) would leave 6554 for a reply, under
+      // the 8192 reserved — so the ceiling drops to keep that room instead.
+      expect(agentContextCeiling(32768), lessThan(32768 * 4 ~/ 5));
+      expect(
+        32768 - agentContextCeiling(32768),
+        greaterThanOrEqualTo(kAgentReplyReserveTokens),
+      );
+    });
   });
 
   test('the chat is told what to do rather than shown a 400', () {
@@ -267,7 +296,7 @@ void main() {
 
     test('the assumption leaves an engine room for its own reply, like any '
         'other window', () {
-      expect(agentContextCeiling(kAssumedContextWindow), 52428);
+      expect(agentContextCeiling(kAssumedContextWindow), 49152);
     });
   });
 }
