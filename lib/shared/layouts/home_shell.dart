@@ -12,6 +12,7 @@ import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/git/logic/background_git_installer.dart';
 import '../../features/node_setup/logic/background_agent_controller.dart';
 import '../../features/node_setup/logic/background_model_controller.dart';
+import '../../features/provider_node/logic/auto_serve_controller.dart';
 import '../../features/scheduled/logic/task_delivery.dart';
 import '../../features/scheduled/logic/task_conversation_id.dart';
 import '../../features/scheduled/logic/task_unread_store.dart';
@@ -44,12 +45,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // Post-frame so we never mutate state during the first build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // Opening the app does NOT put this computer back to work. Serving costs
-      // the user's own GPU and battery, so it stays their decision, made on the
-      // Engines tab — an app that quietly starts an engine on every launch is
+      // Opening the app does NOT put this computer back to work by itself.
+      // Serving costs the user's own GPU and battery, so it stays their
+      // decision — an app that quietly starts an engine on every launch is
       // spending their machine without asking. An engine that outlived the app
       // is still adopted, just not started: ProviderView reconciles when the
       // Engines tab opens, so what the screen says stays true either way.
+      //
+      // The one exception is the box in the engine block that says "start this
+      // when Grid opens", off until ticked: that tick *is* the decision, for
+      // one named model on one named grid. Everything else about it stays
+      // timid — see [AutoServeStarter].
+      unawaited(ref.read(autoServeStarterProvider).startIfEnabled());
       // The heavy model download isn't part of first-run setup any more: kick it
       // off in the background so the user can chat while it lands, with its
       // progress in the top bar. No-ops when there's nothing to download.

@@ -11,6 +11,8 @@ import '../logic/model_manager_filter.dart';
 import '../logic/models_providers.dart';
 import '../logic/suggested_catalog.dart';
 import 'model_detail_panel.dart';
+import 'model_storage_footer.dart';
+import 'model_storage_panel.dart';
 
 enum _SortMode { recommended, trending, mostLiked, newest }
 
@@ -61,6 +63,30 @@ extension on _InstallFilter {
   };
 }
 
+/// What the right-hand pane is showing. A sealed type rather than a repoId plus
+/// a "storage?" flag: the two are exclusive, and the flag version let the
+/// auto-select below quietly steal the pane back the moment storage opened with
+/// no model chosen.
+sealed class _Pane {
+  const _Pane();
+}
+
+/// Nothing picked yet — the first suggestion replaces it as soon as it lands.
+class _NoPane extends _Pane {
+  const _NoPane();
+}
+
+/// One catalog model's versions.
+class _CatalogPane extends _Pane {
+  const _CatalogPane(this.repoId);
+  final String repoId;
+}
+
+/// What's already on this computer, and what it costs.
+class _StoragePane extends _Pane {
+  const _StoragePane();
+}
+
 class ModelManagerSplitView extends ConsumerStatefulWidget {
   const ModelManagerSplitView({super.key});
 
@@ -75,7 +101,14 @@ class ModelManagerSplitView extends ConsumerStatefulWidget {
 const _searchDebounce = Duration(milliseconds: 350);
 
 class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
-  String? _selectedRepoId;
+  _Pane _pane = const _NoPane();
+
+  /// The repo the sidebar draws as selected — none while storage is open, so
+  /// only one row in the column is ever bright.
+  String? get _selectedRepoId => switch (_pane) {
+    _CatalogPane(:final repoId) => repoId,
+    _ => null,
+  };
 
   /// What's in the search box right now, updated on every keystroke. Never hits
   /// the network by itself — it's here so picking a sort can send the term the
@@ -133,14 +166,14 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
 
   Future<void> _autoSelectFirst() async {
     final picks = await ref.read(suggestedCatalogProvider.future);
-    if (!mounted) return;
+    if (!mounted || _pane is! _NoPane) return;
     if (picks is SuggestReady && picks.ranked.isNotEmpty) {
       final first = picks.ranked.firstWhere(
         (m) => m.repoId != null && m.repoId!.isNotEmpty,
         orElse: () => picks.ranked.first,
       );
       if (first.repoId != null && mounted) {
-        setState(() => _selectedRepoId = first.repoId);
+        setState(() => _pane = _CatalogPane(first.repoId!));
       }
     }
   }
@@ -156,7 +189,7 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
       prev,
       next,
     ) {
-      if (_selectedRepoId != null) return;
+      if (_pane is! _NoPane) return;
       final value = next.asData?.value;
       if (value is SuggestReady && value.ranked.isNotEmpty) {
         final first = value.ranked.firstWhere(
@@ -164,7 +197,7 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
           orElse: () => value.ranked.first,
         );
         if (first.repoId != null) {
-          setState(() => _selectedRepoId = first.repoId);
+          setState(() => _pane = _CatalogPane(first.repoId!));
         }
       }
     });
@@ -183,14 +216,18 @@ class _ModelManagerSplitViewState extends ConsumerState<ModelManagerSplitView> {
             onQuery: _onQuery,
             onSort: _onSort,
             onInstall: (f) => setState(() => _install = f),
-            onSelect: (id) => setState(() => _selectedRepoId = id),
+            onSelect: (id) => setState(() => _pane = _CatalogPane(id)),
+            storageOpen: _pane is _StoragePane,
+            onStorage: () => setState(() => _pane = const _StoragePane()),
           ),
         ),
         VerticalDivider(width: 1, color: AppPalette.divider),
         Expanded(
-          child: _selectedRepoId == null
-              ? const _EmptyDetail()
-              : ModelDetailPanel(repoId: _selectedRepoId!),
+          child: switch (_pane) {
+            _StoragePane() => const ModelStoragePanel(),
+            _CatalogPane(:final repoId) => ModelDetailPanel(repoId: repoId),
+            _NoPane() => const _EmptyDetail(),
+          },
         ),
       ],
     );
@@ -208,6 +245,8 @@ class _Sidebar extends ConsumerWidget {
     required this.onSort,
     required this.onInstall,
     required this.onSelect,
+    required this.storageOpen,
+    required this.onStorage,
   });
 
   final AsyncValue<SuggestOutcome> suggestion;
@@ -219,6 +258,11 @@ class _Sidebar extends ConsumerWidget {
   final ValueChanged<_SortMode> onSort;
   final ValueChanged<_InstallFilter> onInstall;
   final ValueChanged<String> onSelect;
+
+  /// Whether the storage list is the pane on the right — the footer is the row
+  /// that reads as selected then, and no model does.
+  final bool storageOpen;
+  final VoidCallback onStorage;
 
   /// True when the device-fit suggestion came back with nothing to show, so the
   /// column falls back to the plain catalog list instead of an empty panel.
@@ -299,6 +343,7 @@ class _Sidebar extends ConsumerWidget {
               ? _suggestionBody(ref, listAsync)
               : _listBody(ref, listAsync),
         ),
+        ModelStorageFooter(selected: storageOpen, onTap: onStorage),
       ],
     );
   }

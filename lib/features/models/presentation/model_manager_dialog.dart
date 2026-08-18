@@ -43,9 +43,9 @@ class _ModelManagerDialog extends ConsumerWidget {
   }
 }
 
-/// Title + close. The downloaded/total count used to live here, but it's
-/// redundant with the "On this computer" section outside the dialog — the
-/// sidebar only needs the title.
+/// Title + close. The downloaded/total count doesn't live here: it belongs
+/// beside the models it counts, which is the storage strip at the foot of the
+/// sidebar — and there it is a way in, not a statistic.
 class _DialogHeader extends StatelessWidget {
   const _DialogHeader();
 

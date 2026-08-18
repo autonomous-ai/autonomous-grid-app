@@ -44,6 +44,11 @@ class DownloadingModel {
   final int bytesSoFar;
 
   double get gbSoFar => bytesSoFar / 1e9;
+
+  /// What the file is called on disk right now — [name] with the `.part`
+  /// back on. This is the name `grid rm` takes to delete a stalled
+  /// download.
+  String get fileName => '$name.part';
 }
 
 /// The in-progress downloads in [modelsDir]: every `*.part` the CLI hasn't
