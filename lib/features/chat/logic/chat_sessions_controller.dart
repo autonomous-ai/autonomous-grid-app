@@ -40,6 +40,7 @@ import 'commands/chat_loop.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
+import 'interrupted_turn.dart';
 
 /// Re-exported so every file that already imports the controller keeps seeing
 /// [ChatSessionsState] — moving the state out is not a change any caller has to
@@ -69,6 +70,10 @@ final chatSessionsProvider =
 /// hung. A seam over [kLoopTurnStall] so a test can shorten the wait instead of
 /// holding a stalled turn for the full hour.
 final loopTurnStallProvider = Provider<Duration>((ref) => kLoopTurnStall);
+
+/// How long a resumed loop waits before an overdue turn goes out. A seam over
+/// [kLoopResumeSettle] so a test doesn't hold the clock for the settle.
+final loopResumeSettleProvider = Provider<Duration>((ref) => kLoopResumeSettle);
 
 /// The gap a continuous loop leaves between turns. A seam over
 /// [kContinuousLoopGap] so a test can drive back-to-back turns without the
@@ -293,7 +298,6 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// desktop has open — on a desk with a panel on it, nobody is looking at the
   /// window.
   void stopChat(String id);
-
 }
 
 class ChatSessionsController extends _ChatSessions
@@ -354,11 +358,16 @@ class ChatSessionsController extends _ChatSessions
     if (_disposed) return;
     final known = {for (final c in state.conversations) c.id};
     final deleted = _deletedWhileLoading ?? const <String>{};
-    final merged = [
-      ...state.conversations,
+    // Only the chats being folded in are read for an interrupted turn: one
+    // already in memory is either mid-turn or newer than its file, and one the
+    // user deleted while the disk was being read must not be written back at
+    // all — saving a note onto it would put the file, and the chat, back.
+    final fresh = _closeInterruptedTurns([
       for (final c in saved)
         if (!known.contains(c.id) && !deleted.contains(c.id)) c,
-    ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    ]);
+    final merged = [...state.conversations, ...fresh]
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     _deletedWhileLoading = null;
     final opening = [
       for (final c in merged)
@@ -372,6 +381,42 @@ class ChatSessionsController extends _ChatSessions
           ? state.activeId
           : (opening.isEmpty ? null : opening.first.id),
     );
+    // Last, and only here: the history has to be in state before a loop can be
+    // found in it, and this is the one path that reads *this* computer's own
+    // chat folder (see [_stopForeignLoop] for the other one).
+    _resumeLoops();
+  }
+
+  /// Close off any turn that the app going away cut short.
+  ///
+  /// A turn only exists while the app runs, so quitting — or crashing, or a
+  /// rebuild during development — mid-turn leaves the user's own message as the
+  /// last thing in the chat and no answer to it, ever. Read back as-is that
+  /// prompt looks unasked: the next turn, a loop's or the user's, does the whole
+  /// task again from nothing. Marking it is what makes the interruption a fact
+  /// both readers of the transcript can see (see [kInterruptedTurnNote]).
+  ///
+  /// Written back to disk as it is marked, so it is done once rather than on
+  /// every launch, and so the note is part of the transcript the user scrolls.
+  List<Conversation> _closeInterruptedTurns(List<Conversation> saved) {
+    final closed = <Conversation>[];
+    for (final chat in saved) {
+      if (!wasTurnInterrupted(chat)) {
+        closed.add(chat);
+        continue;
+      }
+      final marked = markInterruptedTurn(chat);
+      _store.save(marked);
+      ref
+          .read(appLogProvider)
+          .info(
+            'chat',
+            'chat ${chat.id}: the app closed before the last turn answered — '
+                'marked it interrupted',
+          );
+      closed.add(marked);
+    }
+    return closed;
   }
 
   /// Re-read the chat folder and fold in whatever changed underneath us.
@@ -390,7 +435,7 @@ class ChatSessionsController extends _ChatSessions
     final byId = {for (final c in state.conversations) c.id: c};
     for (final c in saved) {
       if (state.sendingFor(c.id)) continue;
-      byId[c.id] = c;
+      byId[c.id] = _stopForeignLoop(c);
     }
     state = state.copyWith(
       loading: false,

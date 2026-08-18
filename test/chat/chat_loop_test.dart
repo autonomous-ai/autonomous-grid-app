@@ -122,13 +122,21 @@ void main() {
   });
 
   group('surviving a restart', () {
-    test('a loop running when the app closed comes back stopped — a timer '
-        're-armed at launch is a machine that talks to itself overnight', () {
+    test('a loop running when the app closed comes back running, with its '
+        'count intact — the app arms its timer again, and a loop that forgot '
+        'how far it had got would re-do the work from zero', () {
       final read = ChatLoop.fromJson(_loop(iterations: 3).toJson());
-      expect(read?.status, LoopStatus.stopped);
+      expect(read?.status, LoopStatus.running);
       expect(read?.prompt, 'check the deploy');
       expect(read?.iterations, 3);
       expect(read?.interval, const Duration(minutes: 5));
+    });
+
+    test('a loop the user stopped stays stopped, restart or not', () {
+      final read = ChatLoop.fromJson(
+        _loop(status: LoopStatus.stopped).toJson(),
+      );
+      expect(read?.status, LoopStatus.stopped);
     });
 
     test('a self-paced loop keeps having no interval', () {

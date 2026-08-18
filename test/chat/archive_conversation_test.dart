@@ -42,7 +42,13 @@ Conversation _chat({
   updatedAt: updatedAt ?? DateTime(2026, 1, 1),
   archivedAt: archivedAt,
   projectId: projectId,
-  messages: const [ChatMessage(role: ChatRole.user, text: 'hello')],
+  // An answered exchange, not a lone user message: a transcript that ends on
+  // the user is a turn that never came back, and launch closes those off with a
+  // note (see `markInterruptedTurn`) — which has nothing to do with archiving.
+  messages: const [
+    ChatMessage(role: ChatRole.user, text: 'hello'),
+    ChatMessage(role: ChatRole.assistant, text: 'hi'),
+  ],
 );
 
 void main() {
@@ -67,7 +73,7 @@ void main() {
       h.container.read(chatSessionsProvider.notifier).archiveConversation('a');
 
       final archived = h.container.read(chatSessionsProvider).archived.single;
-      expect(archived.messages.single.text, 'hello');
+      expect(archived.messages.map((m) => m.text), ['hello', 'hi']);
     });
 
     test('survives a reload — the flag is on disk, not in memory', () async {

@@ -44,6 +44,76 @@ mixin _ChatLoops on _ChatSessions {
     return null;
   }
 
+  /// Arm the timers of loops that were still running when the app last closed.
+  ///
+  /// The timers are in memory by nature, so before this a restart was the end
+  /// of a loop: the bar came back reading "Stopped repeating…" and the only way
+  /// on was `/loop` again, which starts a **new** loop — count back to zero,
+  /// prompt sent again on top of the work the killed turn had already done.
+  /// That is the 2026-08-18 log, where one restart made the same task get
+  /// planned twice.
+  ///
+  /// Resuming is bounded by everything a live loop is bounded by. The seven-day
+  /// ceiling is checked here, so a loop that ran out while the app was closed
+  /// comes back expired instead of getting one more turn. A beat that came due
+  /// in the meantime waits [loopResumeSettleProvider] rather than firing into a
+  /// launch that has not read the grid yet. And every resumed loop says so in
+  /// the log, because the turns it sends go out with nobody watching.
+  void _resumeLoops() {
+    final now = DateTime.now();
+    final settle = ref.read(loopResumeSettleProvider);
+    final log = ref.read(appLogProvider);
+    for (final chat in state.conversations) {
+      final loop = chat.loop;
+      if (loop == null || !loop.isRunning) continue;
+      if (loop.hasExpired(now)) {
+        log.info(
+          'chat',
+          'loop in ${chat.id} ran out its 7 days while the app was '
+              'closed: ${loop.prompt}',
+        );
+        _saveLoop(chat.id, loop.copyWith(status: LoopStatus.expired));
+        continue;
+      }
+      final due = loop.nextAt.difference(now);
+      final delay = due < settle ? settle : due;
+      // Seconds below the minute [loopIntervalLabel] rounds to: the common case
+      // here is an overdue loop waiting out the settle, and "after 0m" reads
+      // like a bug in the log that has to diagnose this.
+      final wait = delay.inMinutes < 1
+          ? '${delay.inSeconds}s'
+          : loopIntervalLabel(delay);
+      log.info(
+        'chat',
+        'resuming loop in ${chat.id} after $wait '
+            '(${loop.iterations} so far): ${loop.prompt}',
+      );
+      _armLoopTimer(chat.id, delay);
+    }
+  }
+
+  /// [chat] as it came from a copy of the history this app was not the one
+  /// writing — a restored cloud backup, an imported session — with a loop it
+  /// claims to be running marked stopped.
+  ///
+  /// A backup is a snapshot of another machine mid-run, and that machine holds
+  /// the timer. Adopting the claim here would either send every turn twice or
+  /// leave a bar counting down to a beat nothing is arming, and the difference
+  /// is invisible from this side. Written back to disk so the next launch
+  /// doesn't resume it either; starting it here is one line in the composer,
+  /// with the prompt still on the bar to copy.
+  Conversation _stopForeignLoop(Conversation chat) {
+    final loop = chat.loop;
+    if (loop == null || !loop.isRunning || _loopTimers.containsKey(chat.id)) {
+      return chat;
+    }
+    final stopped = chat.copyWith(
+      loop: loop.copyWith(status: LoopStatus.stopped),
+    );
+    _store.save(stopped);
+    return stopped;
+  }
+
   /// Stop the open chat's loop, if it has one.
   CommandOutcome _stopLoop() {
     final chat = state.active;
@@ -252,7 +322,7 @@ mixin _ChatLoops on _ChatSessions {
           ),
         )
         .timeout(
-          _paceTimeout,
+          kLoopPaceTimeout,
           onTimeout: () => (null, const ChatTransportError('pacing timed out')),
         );
     if (error != null || reply == null || reply.trim().isEmpty) {
@@ -266,10 +336,6 @@ mixin _ChatLoops on _ChatSessions {
     }
     return parseLoopDelay(reply);
   }
-
-  /// How long the pacer gets. It answers with a number; a slow one just means
-  /// the loop waits its default instead.
-  static const _paceTimeout = Duration(seconds: 20);
 
   void _armLoopTimer(String id, Duration delay) {
     _cancelLoopTimer(id);

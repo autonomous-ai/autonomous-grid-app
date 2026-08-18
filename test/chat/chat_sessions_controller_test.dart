@@ -14,6 +14,7 @@ import 'package:grid_app/features/chat/logic/commands/chat_goal.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
+import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
 import 'package:grid_app/features/agents/logic/agent_session_title.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
@@ -370,6 +371,7 @@ _harness(
   ChatTransport? grid,
   Duration? loopTurnStall,
   Duration? loopContinuousGap,
+  Duration? loopResumeSettle,
   SelectedNetwork Function()? selectedNetwork,
 }) {
   final store = ChatStore(directory: dir);
@@ -387,6 +389,10 @@ _harness(
       // Shrink the continuous gap so a test can drive back-to-back turns.
       if (loopContinuousGap != null)
         loopContinuousGapProvider.overrideWithValue(loopContinuousGap),
+      // Shrink the settle a resumed loop waits, so a test can watch the overdue
+      // beat go out without holding the clock for fifteen seconds.
+      if (loopResumeSettle != null)
+        loopResumeSettleProvider.overrideWithValue(loopResumeSettle),
       // [answering] stands in for whoever replies, for a test that cares about
       // the reply arriving over time rather than about who sent it.
       chatSenderProvider.overrideWithValue(answering ?? sender),
@@ -2819,6 +2825,100 @@ void main() {
 
       // Leave nothing armed behind the test.
       await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    /// A chat left on disk exactly as an app that was closed mid-loop leaves
+    /// one: a running loop, its next beat [dueIn] from now (negative = overdue),
+    /// and a transcript ending in the prompt whose answer never arrived.
+    void writeInterruptedLoop({
+      required Duration dueIn,
+      Duration ranFor = const Duration(hours: 1),
+    }) {
+      final now = DateTime.now();
+      String at(Duration ago) => now.subtract(ago).toUtc().toIso8601String();
+      File('${tmp.path}/1787020138395674.json').writeAsStringSync('''
+{"id":"1787020138395674","title":"Building","model":"qwen",
+ "createdAt":"${at(ranFor)}","updatedAt":"${at(const Duration(minutes: 30))}",
+ "messages":[{"role":"user","text":"keep building"}],
+ "loop":{"prompt":"keep building","intervalSeconds":300,
+  "startedAt":"${at(ranFor)}",
+  "nextAt":"${now.add(dueIn).toUtc().toIso8601String()}",
+  "status":"running","iterations":1}}
+''');
+    }
+
+    test('a loop still running when the app closed picks itself back up and '
+        'carries on counting — a restart used to end it, and setting it up '
+        'again was a new loop that re-did the work from zero', () async {
+      // 2026-08-18 in the log: the app was rebuilt mid-turn, the loop died with
+      // it, and `/loop` typed again sent the same prompt over the top of what
+      // the killed turn had already half done.
+      writeInterruptedLoop(dueIn: const Duration(minutes: -3));
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        loopResumeSettle: const Duration(milliseconds: 10),
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'carried on'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.restored;
+      // Poll real time: the settle has to actually elapse before the overdue
+      // beat goes out.
+      for (var i = 0; i < 100 && h.agent.history == null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(
+        _userTurns(h.container, chat.id).where((t) => t == 'keep building'),
+        hasLength(2),
+        reason: 'the resumed beat asks again, which is what a loop is',
+      );
+      expect(
+        chat.loop?.iterations,
+        2,
+        reason: 'it counts on from where it was rather than starting over',
+      );
+      // And the turn the restart killed is closed off, so what the agent reads
+      // is "that one was interrupted" rather than a prompt nobody answered.
+      expect(
+        h.agent.history?.map((m) => m.text),
+        contains(kInterruptedTurnNote),
+      );
+
+      // Leave nothing armed behind the test.
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    test('a loop whose seven days ran out while the app was closed comes back '
+        'expired instead of getting one more free turn', () async {
+      writeInterruptedLoop(
+        dueIn: const Duration(minutes: -3),
+        ranFor: const Duration(days: 8),
+      );
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        loopResumeSettle: const Duration(milliseconds: 10),
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'carried on'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.restored;
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.loop?.status, LoopStatus.expired);
+      expect(h.agent.history, isNull, reason: 'no turn went out');
     });
 
     test(
