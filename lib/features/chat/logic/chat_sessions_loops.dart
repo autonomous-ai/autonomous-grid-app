@@ -56,6 +56,29 @@ mixin _ChatLoops on _ChatSessions {
     return (message: 'Stopped repeating: ${loop.prompt}', failed: false);
   }
 
+  /// Take a finished loop off the chat, and off the screen.
+  ///
+  /// What the loop bar's Dismiss (and its ✕) do once the run is over. It has to
+  /// *remove* the loop rather than stop it again: the bar draws whenever the
+  /// chat has a loop at all, so dismissing by re-stopping an already stopped one
+  /// left the same bar sitting there — with no error anywhere, because nothing
+  /// had failed. It was also saved to disk, so it came back on the next launch.
+  ///
+  /// A running loop is never dropped this way: the bar is the only thing on
+  /// screen saying turns are still going out, and waving it away would leave
+  /// them going out in silence. Stop it first — which is what the bar offers
+  /// while it runs.
+  void dismissLoop() {
+    final chat = state.active;
+    final loop = chat?.loop;
+    if (chat == null || loop == null || loop.isRunning) return;
+    // Defensive: a stopped or expired loop has no timer left. One surviving here
+    // would fire into a chat with no loop to read and simply return, but a timer
+    // nobody owns is not a thing to leave running.
+    _cancelLoopTimer(chat.id);
+    _saveAndReplace(chat.copyWith(clearLoop: true));
+  }
+
   /// Drop the loop on chat [id] entirely — for `/clear`, and for a chat being
   /// deleted. Silent: the caller is already saying what happened.
   void _endLoop(String id) {
@@ -104,8 +127,11 @@ mixin _ChatLoops on _ChatSessions {
 
     ref
         .read(appLogProvider)
-        .info('chat', 'loop iteration ${loop.iterations + 1} in $id: '
-            '${loop.prompt}');
+        .info(
+          'chat',
+          'loop iteration ${loop.iterations + 1} in $id: '
+              '${loop.prompt}',
+        );
     // A loop runs unattended, and because the next beat is only armed once this
     // turn returns, a turn that never returns freezes the whole loop. But a turn
     // still emitting — streamed text, a status, a step — is working, not stuck,
@@ -144,11 +170,13 @@ mixin _ChatLoops on _ChatSessions {
       final since = _turnActivityAt[id] ?? DateTime.now();
       final remaining = window - DateTime.now().difference(since);
       if (remaining <= Duration.zero) {
-        ref.read(appLogProvider).warn(
-          'chat',
-          'loop turn in $id made no progress for ${loopIntervalLabel(window)} — '
-              'treating it as hung, stopping it and moving on',
-        );
+        ref
+            .read(appLogProvider)
+            .warn(
+              'chat',
+              'loop turn in $id made no progress for ${loopIntervalLabel(window)} — '
+                  'treating it as hung, stopping it and moving on',
+            );
         stopChat(id);
         return;
       }

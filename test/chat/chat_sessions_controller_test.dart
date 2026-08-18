@@ -425,7 +425,9 @@ _harness(
       ),
       // Approving a plan reads the current grid; keep it off the real home. A
       // test can pass its own to model the grid blinking out mid-loop.
-      selectedNetworkProvider.overrideWith(selectedNetwork ?? _FixedNetwork.new),
+      selectedNetworkProvider.overrideWith(
+        selectedNetwork ?? _FixedNetwork.new,
+      ),
       // What answers the one-shot calls — the goal's evaluator, `/compact`'s
       // summarizer. Absent unless a test cares, so nothing reaches a network.
       if (grid != null) ...[
@@ -2712,6 +2714,83 @@ void main() {
       }
     }
 
+    test('dismissing a stopped loop takes it off the chat — the bar draws '
+        'whenever a chat has a loop at all, so stopping an already stopped one '
+        'left it sitting there', () async {
+      final grid = _FakeClassifier('30\nNothing is pending.');
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'still building'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: '5m check the deploy',
+      ));
+      await settle();
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+
+      // Stopped, and still on the chat: that is what the bar reads to say so.
+      expect(
+        h.container.read(chatSessionsProvider).active?.loop?.isRunning,
+        isFalse,
+      );
+
+      chats.dismissLoop();
+
+      expect(
+        h.container.read(chatSessionsProvider).active?.loop,
+        isNull,
+        reason: 'the bar has nothing left to draw',
+      );
+      // And it stays gone: the loop was saved to disk, so a dismissal that only
+      // touched memory would put the bar back on the next launch.
+      final saved = await h.container.read(chatStoreProvider).loadAll();
+      expect(saved.single.loop, isNull);
+    });
+
+    test(
+      'a running loop is not dismissed out from under its own turns — the '
+      'bar is the only thing on screen saying they are still going out',
+      () async {
+        final grid = _FakeClassifier('30\nNothing is pending.');
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          grid: grid,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'still building'),
+            ),
+          ],
+        );
+        final chats = h.container.read(chatSessionsProvider.notifier);
+        await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+        await chats.runCommand((
+          command: ChatCommand.loop,
+          argument: '5m check the deploy',
+        ));
+        await settle();
+
+        chats.dismissLoop();
+
+        expect(
+          h.container.read(chatSessionsProvider).active?.loop?.isRunning,
+          isTrue,
+        );
+
+        // Leave nothing armed behind the test.
+        await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+      },
+    );
+
     test('the first run goes out at once — a loop that sits silent for five '
         'minutes after you set it reads as broken', () async {
       final grid = _FakeClassifier('30\nNothing is pending.');
@@ -2779,50 +2858,63 @@ void main() {
       },
     );
 
-    test('a turn that goes silent is treated as hung and stopped, so the loop '
-        'keeps its cadence instead of freezing overnight on one stuck turn',
-        () async {
-      // The bug: an agent turn hung for 4h46m and, because the next beat is only
-      // armed once the current turn returns, the whole loop sat frozen — "run
-      // all night" stopped dead after one iteration, with no log to say why.
-      final sender = _HangAfterFirstSender();
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        answering: sender,
-        loopTurnStall: const Duration(milliseconds: 100),
-        updates: const [],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      // Turn one answers and creates the chat.
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await settle();
+    test(
+      'a turn that goes silent is treated as hung and stopped, so the loop '
+      'keeps its cadence instead of freezing overnight on one stuck turn',
+      () async {
+        // The bug: an agent turn hung for 4h46m and, because the next beat is only
+        // armed once the current turn returns, the whole loop sat frozen — "run
+        // all night" stopped dead after one iteration, with no log to say why.
+        final sender = _HangAfterFirstSender();
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          answering: sender,
+          loopTurnStall: const Duration(milliseconds: 100),
+          updates: const [],
+        );
+        final chats = h.container.read(chatSessionsProvider.notifier);
+        // Turn one answers and creates the chat.
+        await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+        await settle();
 
-      // The loop's first iteration goes out to a turn that emits nothing, ever.
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: '5m check the deploy',
-      ));
+        // The loop's first iteration goes out to a turn that emits nothing, ever.
+        await chats.runCommand((
+          command: ChatCommand.loop,
+          argument: '5m check the deploy',
+        ));
 
-      // Poll real time: the 100ms stall window has to actually elapse.
-      for (var i = 0; i < 50 && !sender.hungCancelled; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      await settle();
+        // Poll real time: the 100ms stall window has to actually elapse.
+        for (var i = 0; i < 50 && !sender.hungCancelled; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        await settle();
 
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(sender.calls, 2, reason: 'the setup turn, then the loop iteration');
-      expect(sender.hungCancelled, isTrue, reason: 'the hung turn was stopped');
-      expect(
-        h.container.read(chatSessionsProvider).sendingFor(chat.id),
-        isFalse,
-        reason: 'the chat is idle again, not stuck answering forever',
-      );
-      expect(chat.loop?.iterations, 1, reason: 'the next beat was scheduled');
-      expect(chat.loop?.isRunning, isTrue);
+        final chat = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single;
+        expect(
+          sender.calls,
+          2,
+          reason: 'the setup turn, then the loop iteration',
+        );
+        expect(
+          sender.hungCancelled,
+          isTrue,
+          reason: 'the hung turn was stopped',
+        );
+        expect(
+          h.container.read(chatSessionsProvider).sendingFor(chat.id),
+          isFalse,
+          reason: 'the chat is idle again, not stuck answering forever',
+        );
+        expect(chat.loop?.iterations, 1, reason: 'the next beat was scheduled');
+        expect(chat.loop?.isRunning, isTrue);
 
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
+        await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+      },
+    );
 
     test('a turn that keeps streaming is left alone past the stall window — a '
         'long turn that is working is not a hang', () async {
@@ -2855,7 +2947,9 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
       sender.loopTurn!.add(
-        const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'done')),
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'done'),
+        ),
       );
       await sender.loopTurn!.close();
       await settle();
@@ -2939,8 +3033,11 @@ void main() {
       net.drop();
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
-      final loop =
-          h.container.read(chatSessionsProvider).conversations.single.loop;
+      final loop = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single
+          .loop;
       expect(
         loop?.isRunning,
         isTrue,
