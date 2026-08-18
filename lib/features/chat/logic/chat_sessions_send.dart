@@ -495,6 +495,20 @@ mixin _ChatSend on _ChatSessions {
             state = state.withPhase(id, SendStreaming(text));
           case ChatSendAgentSession(:final sessionId):
             agentSessionId = sessionId;
+          // A goal the agent is driving has been judged again and is still not
+          // met. Only the reason moves: the status is the agent's to change,
+          // and the condition is matched rather than written so a round
+          // belonging to a goal the user has since replaced is dropped instead
+          // of overwriting the new one's brief.
+          case ChatSendGoalProgress(:final condition, :final reason):
+            final goal = current.goal;
+            if (goal != null &&
+                !goal.hasEnded &&
+                goal.condition.trim() == condition.trim()) {
+              _saveAndReplace(
+                current.copyWith(goal: goal.copyWith(reason: reason)),
+              );
+            }
           case ChatSendSuccess(:final reply, :final outOfSteps):
             final messages = [...current.messages, stamp(reply)];
             final answered = current.copyWith(

@@ -226,6 +226,20 @@ class ClaudeStreamParser {
     Map<String, dynamic> block,
     String? parent,
   ) {
+    // …with one exception: a goal the CLI is driving reports its rounds here,
+    // as plain text rather than a tool result. It is the agent talking to
+    // itself, so it stays out of the transcript — but the app needs it to know
+    // the goal is still going and what the evaluator is asking for next.
+    if (block['type'] == 'text') {
+      final feedback = claudeGoalFeedback('${block['text'] ?? ''}');
+      if (feedback == null) return const [];
+      return [
+        ClaudeGoalNotMet(
+          condition: feedback.condition,
+          reason: feedback.reason,
+        ),
+      ];
+    }
     if (block['type'] != 'tool_result') return const [];
     final id = '${block['tool_use_id'] ?? ''}';
     final failed = block['is_error'] == true;
@@ -307,6 +321,41 @@ class ClaudeStreamParser {
 /// Null rather than zero when nothing parses, so a line from a build that words
 /// it differently leaves the last known figure standing instead of resetting it
 /// and calling a full session empty.
+/// The condition and reason inside one `Stop hook feedback:` message, or null
+/// when [text] is not one.
+///
+/// The CLI drives a `/goal` by refusing to let the turn stop and feeding its
+/// evaluator's verdict back in as a user message shaped like:
+///
+/// ```
+/// Stop hook feedback:
+/// [<condition>]: <why it is not met yet>
+/// ```
+///
+/// Reading this is how the app follows a goal it delegated: `goal_status`
+/// records exist only in the session's transcript file, never on stdout
+/// (measured on `claude` 2.1.233).
+///
+/// **Null on anything that doesn't match, deliberately.** This is an internal
+/// shape of another program, so a build that words it differently must cost the
+/// reason line and nothing else — never a turn, and never a wrong verdict. The
+/// condition is read to the *first* `]: `, which is wrong only for a condition
+/// that contains that exact sequence; the reason is then whatever follows, so
+/// even that mis-split still shows the user something true.
+({String condition, String reason})? claudeGoalFeedback(String text) {
+  const header = 'Stop hook feedback:';
+  final trimmed = text.trimLeft();
+  if (!trimmed.startsWith(header)) return null;
+  final body = trimmed.substring(header.length).trim();
+  if (!body.startsWith('[')) return null;
+  final split = body.indexOf(']: ');
+  if (split < 1) return null;
+  final condition = body.substring(1, split).trim();
+  final reason = body.substring(split + 3).trim();
+  if (condition.isEmpty || reason.isEmpty) return null;
+  return (condition: condition, reason: reason);
+}
+
 int? claudeContextTokens(Object? usage) {
   if (usage is! Map) return null;
   int field(String name) => (usage[name] as num?)?.toInt() ?? 0;

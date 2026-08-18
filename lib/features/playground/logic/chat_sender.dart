@@ -54,6 +54,24 @@ class ChatSendAgentSession extends ChatSendUpdate {
   final String sessionId;
 }
 
+/// A goal the **agent** is driving has been judged once more and is still not
+/// met — [reason] is its evaluator's latest word.
+///
+/// Only a delegated goal emits this ([GoalOwner]): where the app runs the loop
+/// itself it already has the verdict in hand. It arrives mid-turn, because a
+/// delegated goal runs many rounds inside one invocation, and the line under
+/// the composer is the only sign the user has that it is still moving.
+class ChatSendGoalProgress extends ChatSendUpdate {
+  const ChatSendGoalProgress({required this.condition, required this.reason});
+
+  /// What the agent restates the condition as. Compared with the goal the app
+  /// holds, so a round belonging to a goal the user has since replaced is
+  /// dropped rather than written over the new one.
+  final String condition;
+
+  final String reason;
+}
+
 /// The request finished; [reply] is the assistant turn to append (text for
 /// chat, media for a generation).
 class ChatSendSuccess extends ChatSendUpdate {

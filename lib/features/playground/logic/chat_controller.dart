@@ -88,6 +88,10 @@ class ChatController extends Notifier<ChatState> {
     _sub = updates.listen(
       (update) {
         switch (update) {
+          // The Playground has no goals — nothing here can set one, so a round
+          // of one belongs to no state this controller holds.
+          case ChatSendGoalProgress():
+            break;
           case ChatSendGenerating(:final progress, :final status):
             state = ChatState(
               messages: history,

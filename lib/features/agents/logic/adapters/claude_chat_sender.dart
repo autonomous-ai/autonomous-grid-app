@@ -548,6 +548,10 @@ class ClaudeChatSender implements ChatSender {
               grantKey: claudePermissionGrantKey(request),
               answer: (optionId) => run.answerPermission(request.id, optionId),
             );
+          case ClaudeGoalNotMet(:final condition, :final reason):
+            updates.add(
+              ChatSendGoalProgress(condition: condition, reason: reason),
+            );
           case ClaudeTurnCompleted():
             endedCleanly = true;
           // Kept per request, not per turn: an agentic turn calls the model
