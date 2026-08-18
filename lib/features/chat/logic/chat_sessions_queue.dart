@@ -20,9 +20,9 @@ mixin _ChatQueue on _ChatSessions {
   /// Hand [turn] to the answer already in flight in chat [id], instead of
   /// holding it back.
   ///
-  /// True when the agent took it — the message is appended to the transcript
-  /// there and then, because it is a real thing the user said in this
-  /// conversation and the agent has it. False leaves it to the queue.
+  /// True when the agent took it — and what the user said is written into the
+  /// turn's own timeline there and then, where they said it. False leaves it to
+  /// the queue.
   @override
   Future<bool> _steerRunningTurn(String id, QueuedTurn turn) async {
     // The channel into a running turn carries text: a picture, an attached file
@@ -40,31 +40,21 @@ mixin _ChatQueue on _ChatSessions {
         .steer(id, turn.text);
     if (!taken) return false;
 
-    // The chat was deleted while the message was going out. It reached the
-    // agent all the same, so this is not the queue's business either.
-    final chat = _find(id);
-    if (chat == null) return true;
-    // Under the question it follows, and above the answer still being written —
-    // which is the answer that will take it into account. The phase is left
-    // exactly as it was: this chat is still answering the same turn, and
-    // nothing here started a new one.
-    final said = await buildUserTurn(
-      text: turn.text,
-      attachments: const [],
-      outputsDir: ref.read(mediaOutputsDirProvider),
-    );
-    _commit(
-      chat.copyWith(
-        updatedAt: DateTime.now(),
-        messages: [...chat.messages, said],
-      ),
-      phase: state.phaseFor(id),
-    );
-    // Retry rewinds the transcript to the user turn it is repeating. This
-    // message is part of that turn now — the agent was given it — so the rewind
-    // has to stop after it rather than trim it off.
-    final retryable = _retryableTurns[id];
-    if (retryable != null) _retryableTurns[id] = retryable.withOneMore();
+    // Into the turn that is running, at the point it reached — after the
+    // sentence the agent had just written, before the one it writes next. Not
+    // appended to the transcript as a message of its own: that put it above the
+    // whole reply, which reads as a second question asked before the agent had
+    // started (see [TurnSaid]). It lands with the turn, in the message's own
+    // timeline, and the phase is left exactly as it was — this chat is still
+    // answering the same turn, and nothing here started a new one.
+    final phase = state.phaseFor(id);
+    ref
+        .read(agentRunsProvider.notifier)
+        .interject(
+          id,
+          turn.text,
+          answer: phase is SendStreaming ? phase.text : '',
+        );
     return true;
   }
 

@@ -23,6 +23,21 @@ class TurnText extends TurnPart {
   final String text;
 }
 
+/// Something the **user** said while the turn was running — a correction typed
+/// mid-answer and handed straight to the agent (see `AgentSteeringController`).
+///
+/// It belongs in the timeline rather than in the transcript as a message of its
+/// own, because that is where it happened: after the sentence the agent had just
+/// written, before the one it wrote next. Appended to the transcript instead, it
+/// sat above the whole reply — which reads as a second question asked before the
+/// agent had started, and was exactly the wrong account of a turn that was
+/// already minutes in.
+class TurnSaid extends TurnPart {
+  const TurnSaid(this.text);
+
+  final String text;
+}
+
 /// A step the agent ran, kept where it happened. The same [AgentActivity] the
 /// live feed draws, so a finished turn shows the rows the user watched go by
 /// rather than a second, tidier account of them.
@@ -43,6 +58,18 @@ List<AgentActivity> stepsOf(List<TurnPart> parts) => [
 /// sequence worth recording — its timeline would be the answer and nothing else,
 /// which is what [ChatMessage.text] already says.
 bool hasSteps(List<TurnPart> parts) => parts.any((part) => part is TurnStep);
+
+/// Whether the user spoke into this turn — see [TurnSaid].
+///
+/// Read where a turn that produced no words of its own would otherwise be
+/// dropped (a failure, a Stop): what they said is only in the timeline, so
+/// throwing the turn away throws their words away with it.
+bool hasSaid(List<TurnPart> parts) => parts.any((part) => part is TurnSaid);
+
+/// Whether [parts] is worth keeping with the message at all — steps to replay,
+/// or something the user said into the turn. Prose alone is not: the message's
+/// own text already carries it.
+bool hasTimeline(List<TurnPart> parts) => hasSteps(parts) || hasSaid(parts);
 
 /// [parts] with nothing left running — what a turn that has *ended* looks like.
 ///
@@ -108,6 +135,7 @@ String unsaidTail({required String said, required String answer}) {
 /// flat thing on disk.
 Map<String, Object?> turnPartToJson(TurnPart part) => switch (part) {
   TurnText(:final text) => {'kind': 'text', 'text': text},
+  TurnSaid(:final text) => {'kind': 'said', 'text': text},
   TurnStep(:final step) => {
     'kind': 'step',
     'id': step.id,
@@ -176,6 +204,10 @@ TurnPart? turnPartFromJson(Object? raw) {
       final text = raw['text'];
       if (text is! String || text.trim().isEmpty) return null;
       return TurnText(text);
+    case 'said':
+      final text = raw['text'];
+      if (text is! String || text.trim().isEmpty) return null;
+      return TurnSaid(text);
     case 'step':
       final label = raw['label'];
       if (label is! String || label.trim().isEmpty) return null;

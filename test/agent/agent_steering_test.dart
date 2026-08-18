@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/agents/logic/agent_steering.dart';
 import 'package:grid_app/infrastructure/cli/codex_app_server_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_steer.dart';
@@ -21,6 +22,55 @@ class _RecordingLog implements AppLog {
 }
 
 void main() {
+  group('what the user said mid-turn, in the turn', () {
+    test('is filed after what the agent had written by then, so it sits where '
+        'it was said and not under the whole answer', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final runs = container.read(agentRunsProvider.notifier);
+      runs.reset('chat-1');
+
+      // The agent has written its opening line; the user reads it and cuts in.
+      runs.interject(
+        'chat-1',
+        'just the main file',
+        answer: 'Reading the repo.',
+      );
+      // Then it carries on, and the rest of the answer lands after the turn.
+      runs.say('chat-1', 'Reading the repo.\n\nOnly the main file, then.');
+
+      expect(container.read(agentRunProvider('chat-1')).parts.map(_describe), [
+        'text:Reading the repo.',
+        'said:just the main file',
+        'text:Only the main file, then.',
+      ]);
+    });
+
+    test('an empty message is not a turn event', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(agentRunsProvider.notifier).interject('chat-1', '   ');
+
+      expect(container.read(agentRunProvider('chat-1')).parts, isEmpty);
+    });
+
+    test(
+      'survives being saved with the chat, and is worth saving even when the '
+      'turn ran no steps at all',
+      () {
+        const said = TurnSaid('just the main file');
+        final reloaded = turnPartFromJson(turnPartToJson(said));
+
+        expect(reloaded, isA<TurnSaid>());
+        expect((reloaded as TurnSaid).text, 'just the main file');
+        // A turn that only talked still has a timeline when the user spoke into
+        // it — otherwise their words are the one thing the message drops.
+        expect(hasTimeline([const TurnText('hi'), said]), isTrue);
+        expect(hasTimeline([const TurnText('hi')]), isFalse);
+      },
+    );
+  });
+
   group('the call that steers a running Codex turn', () {
     test('names the turn it means to steer, so a message typed during one turn '
         'cannot land in the next', () {
@@ -152,3 +202,11 @@ void main() {
     });
   });
 }
+
+/// One part as `kind:text`, so a timeline reads as an ordered list in a test
+/// failure rather than as three object hashes.
+String _describe(TurnPart part) => switch (part) {
+  TurnText(:final text) => 'text:$text',
+  TurnSaid(:final text) => 'said:$text',
+  TurnStep(:final step) => 'step:${step.label}',
+};

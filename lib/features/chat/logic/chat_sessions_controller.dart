@@ -98,14 +98,6 @@ class _RetryableTurn {
   /// may follow it after failure; retry trims to this point before sending.
   final int messageCount;
 
-  /// The same turn with one more message inside it — a follow-up the user
-  /// steered into it while it ran, which retry must keep rather than trim.
-  _RetryableTurn withOneMore() => _RetryableTurn(
-    messageCount: messageCount + 1,
-    attachments: attachments,
-    planTurn: planTurn,
-    continuedAgent: continuedAgent,
-  );
   final List<MediaAttachment> attachments;
   final bool planTurn;
   final AgentTool? continuedAgent;

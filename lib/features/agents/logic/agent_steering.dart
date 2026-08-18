@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/agent_turn_part.dart';
 import '../../../infrastructure/logging/app_log.dart';
 
 /// The way into a turn that is **already running**: something the user typed
@@ -48,26 +49,6 @@ final canSteerChatProvider = Provider.autoDispose.family<bool, String?>(
       chatId != null && ref.watch(agentSteeringProvider).contains(chatId),
 );
 
-/// Offer the turn running in [chat] to whatever the user types next.
-///
-/// [into] is the transport's own way in. [counted] is called for a message the
-/// agent takes, so the sender can move its mark of what the agent has already
-/// seen: the message is in the agent's session from that moment, and the next
-/// turn must not send it again as "context you missed".
-///
-/// Written once here because all three senders do exactly this, and three copies
-/// of a counter is three chances for one of them to drift.
-void offerSteering({
-  required Ref ref,
-  required String chat,
-  required AgentSteerChannel into,
-  required void Function() counted,
-}) => ref.read(agentSteeringProvider.notifier).offer(chat, (text) async {
-  final refused = await into(text);
-  if (refused == null) counted();
-  return refused;
-});
-
 class AgentSteeringController extends Notifier<Set<String>> {
   /// The way back to each running turn — held here rather than in the state so
   /// the UI can watch which chats are steerable without being able to reach the
@@ -82,6 +63,11 @@ class AgentSteeringController extends Notifier<Set<String>> {
 
   /// [chatId]'s turn is running and will take a message — called by the sender
   /// as the turn starts.
+  ///
+  /// The sender's own "what has the agent seen" count is deliberately left
+  /// alone: a message taken here goes into the turn's timeline, not into the
+  /// transcript as a message of its own (see [TurnSaid]), so there is nothing
+  /// extra for the next turn to skip.
   void offer(String chatId, AgentSteerChannel into) {
     _into[chatId] = into;
     state = Set.unmodifiable({...state, chatId});

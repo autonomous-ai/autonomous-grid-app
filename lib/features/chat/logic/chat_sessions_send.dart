@@ -558,9 +558,14 @@ mixin _ChatSend on _ChatSessions {
             // structured partial of its own.
             final phase = state.phaseFor(id);
             final streamed = phase is SendStreaming ? phase.text.trim() : '';
+            // A turn the user spoke into leaves a record even when it produced
+            // no words of its own: what they typed mid-answer lives in the
+            // timeline and nowhere else, so dropping the message drops their
+            // words with it.
+            final spokenInto = hasSaid(ref.read(agentRunProvider(id)).parts);
             final kept =
                 partial ??
-                (streamed.isEmpty
+                (streamed.isEmpty && !spokenInto
                     ? null
                     : ChatMessage(role: ChatRole.assistant, text: streamed));
             if (kept == null) {
@@ -603,7 +608,7 @@ mixin _ChatSend on _ChatSessions {
     // Asked before the closing words are placed, so a turn with nothing to
     // interleave leaves the run untouched rather than filing prose against a
     // chat whose feed nobody will read.
-    if (!hasSteps(ref.read(agentRunProvider(id)).parts)) return const [];
+    if (!hasTimeline(ref.read(agentRunProvider(id)).parts)) return const [];
     // The closing words haven't been placed yet — only a step closes a passage,
     // and after the last one the agent went on talking.
     ref.read(agentRunsProvider.notifier).say(id, text);
@@ -807,7 +812,11 @@ mixin _ChatSend on _ChatSessions {
 
     final partial = phase is SendStreaming ? phase.text.trim() : '';
     final current = _find(id);
-    if (partial.isEmpty || current == null) {
+    // Same rule as a failed turn: what the user said into this one is in the
+    // timeline and nowhere else, so a turn they spoke into is kept even with
+    // nothing streamed behind it.
+    final spokenInto = hasSaid(ref.read(agentRunProvider(id)).parts);
+    if ((partial.isEmpty && !spokenInto) || current == null) {
       state = state.withPhase(id, const SendIdle());
       return;
     }

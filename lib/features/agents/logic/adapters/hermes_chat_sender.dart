@@ -318,17 +318,10 @@ class HermesChatSender implements ChatSender {
 
     final run = session.prompt(text);
     // Anything typed in this chat while the turn runs goes into the turn itself
-    // (the adapter's `/steer`), not into a queue behind it — see
-    // [AgentSteeringController]. The seen count moves with it: the message is in
-    // Hermes's own history from here, so the next turn must not send it again as
-    // "context you missed".
+    // (the adapter's `/steer`), not into a queue behind it, and is recorded in
+    // the turn's timeline where it happened (see [AgentSteeringController]).
     final steering = _ref.read(agentSteeringProvider.notifier);
-    offerSteering(
-      ref: _ref,
-      chat: chat,
-      into: session.steer,
-      counted: () => live.seen++,
-    );
+    steering.offer(chat, session.steer);
 
     final answer = StringBuffer();
     final updates = StreamController<ChatSendUpdate>();

@@ -166,6 +166,13 @@ String _todoStatus(AgentPlanStatus status) => switch (status) {
 PanelTurnPart? _panelPart(TurnPart part, DateTime? since) => switch (part) {
   TurnText(:final text) => _textPart(text),
   TurnStep(:final step) => _stepPart(step, since),
+  // What the user typed into the turn from the desktop is dropped rather than
+  // mirrored: the wire has two kinds of part, text and step (see
+  // `docs/panel-protocol.md`), and sending it as text would put the user's own
+  // words on the device in the agent's voice. A third kind is a change both
+  // ends have to agree on, and this one belongs to the desk the panel sits on
+  // — not to the panel.
+  TurnSaid() => null,
 };
 
 PanelTurnPart? _textPart(String text) {

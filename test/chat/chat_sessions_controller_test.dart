@@ -2494,12 +2494,18 @@ void main() {
 
       expect(steered, ['just look at the main file']);
       expect(h.container.read(chatSessionsProvider).queuedFor(id), isEmpty);
-      // In the transcript straight away: the agent has it, so it is a thing the
-      // user said in this conversation and not a note waiting to be sent.
-      expect(_userTurns(h.container, id), [
-        'first',
-        'just look at the main file',
-      ]);
+      // Inside the turn that is running, not above it: a second user bubble over
+      // the whole reply would read as a question asked before the agent started,
+      // which is the opposite of what happened.
+      expect(_userTurns(h.container, id), ['first']);
+      expect(
+        h.container
+            .read(agentRunProvider(id))
+            .parts
+            .whereType<TurnSaid>()
+            .map((part) => part.text),
+        ['just look at the main file'],
+      );
       // And the chat is still answering the same turn — nothing started a new one.
       expect(h.container.read(chatSessionsProvider).sending, isTrue);
 
@@ -2510,10 +2516,65 @@ void main() {
       await sender.close(id);
       await pumpEventQueue();
 
-      expect(_userTurns(h.container, id), [
-        'first',
+      // It lands with the answer it changed, so reopening the chat next week
+      // still shows where it was said.
+      final reply = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .firstWhere((c) => c.id == id)
+          .messages
+          .last;
+      expect(reply.role, ChatRole.assistant);
+      expect(reply.parts.whereType<TurnSaid>().map((part) => part.text), [
         'just look at the main file',
       ]);
+    });
+
+    test('a turn that dies before saying anything still keeps what the user '
+        'said into it', () async {
+      final sender = _PerChatSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: const [],
+        answering: sender,
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      unawaited(
+        chats.send(network: _credential(), model: 'qwen', message: 'first'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final id = h.container.read(chatSessionsProvider).activeId!;
+      h.container
+          .read(agentSteeringProvider.notifier)
+          .offer(id, (text) async => null);
+
+      unawaited(
+        chats.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'and quickly',
+        ),
+      );
+      await pumpEventQueue();
+
+      sender.emit(id, const ChatSendFailure('Claude Code stopped.'));
+      await sender.close(id);
+      await pumpEventQueue();
+
+      final kept = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .firstWhere((c) => c.id == id)
+          .messages
+          .last;
+      expect(
+        kept.parts.whereType<TurnSaid>().map((part) => part.text),
+        ['and quickly'],
+        reason: 'it lives in the timeline and nowhere else',
+      );
+      expect(h.container.read(chatSessionsProvider).error, isNotNull);
     });
 
     test('waits in the queue when the agent will not take it, so a refused '
