@@ -562,7 +562,7 @@ mixin _ChatSend on _ChatSessions {
             // no words of its own: what they typed mid-answer lives in the
             // timeline and nowhere else, so dropping the message drops their
             // words with it.
-            final spokenInto = hasSaid(ref.read(agentRunProvider(id)).parts);
+            final spokenInto = ref.read(agentRunProvider(id)).spokenInto;
             final kept =
                 partial ??
                 (streamed.isEmpty && !spokenInto
@@ -608,7 +608,11 @@ mixin _ChatSend on _ChatSessions {
     // Asked before the closing words are placed, so a turn with nothing to
     // interleave leaves the run untouched rather than filing prose against a
     // chat whose feed nobody will read.
-    if (!hasTimeline(ref.read(agentRunProvider(id)).parts)) return const [];
+    // [AgentRun.spokenInto], not just the placed parts: a message still waiting
+    // for a seam is placed by the [AgentRuns.say] below, and reading the list
+    // before that would throw it away one line before it landed.
+    final run = ref.read(agentRunProvider(id));
+    if (!hasTimeline(run.parts) && !run.spokenInto) return const [];
     // The closing words haven't been placed yet — only a step closes a passage,
     // and after the last one the agent went on talking.
     ref.read(agentRunsProvider.notifier).say(id, text);
@@ -815,7 +819,7 @@ mixin _ChatSend on _ChatSessions {
     // Same rule as a failed turn: what the user said into this one is in the
     // timeline and nowhere else, so a turn they spoke into is kept even with
     // nothing streamed behind it.
-    final spokenInto = hasSaid(ref.read(agentRunProvider(id)).parts);
+    final spokenInto = ref.read(agentRunProvider(id)).spokenInto;
     if ((partial.isEmpty && !spokenInto) || current == null) {
       state = state.withPhase(id, const SendIdle());
       return;
