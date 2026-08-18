@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../../infrastructure/cli/host_environment.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import 'agent_catalog.dart';
 import 'grid_serve_skill.dart';
@@ -71,6 +73,21 @@ class ServedServicesStore {
 
   final Directory _dir;
 
+  /// The one record for [name] — `serve.py` names the file after the service.
+  File recordFile(String name) => File('${_dir.path}/$name.json');
+
+  /// Drop the record for [name], leaving its log where `logs <name>` finds it.
+  ///
+  /// The row is drawn from this file, so this is the app's own way out of one.
+  /// It exists because the skill's stop is not always able to remove it — an
+  /// older `serve.py` rewrote the record instead, and a machine with no `uv`
+  /// could not run the script at all — and either way the user was left
+  /// clicking Stop on a notice nothing could clear (issue #42).
+  Future<void> forget(String name) async {
+    final file = recordFile(name);
+    if (await file.exists()) await file.delete();
+  }
+
   Future<List<ServedService>> load() async {
     if (!await _dir.exists()) return const [];
     final services = <ServedService>[];
@@ -135,31 +152,126 @@ final servedServicesProvider = FutureProvider.autoDispose<List<ServiceStatus>>((
   ];
 });
 
-/// Stop [name] the way the skill would.
+/// What a stop attempt actually achieved.
+///
+/// Three outcomes rather than a bool, because "the stop ran" and "the thing is
+/// gone" are different facts and only the second one may take the row away.
+enum ServiceStopOutcome {
+  /// It was stopped, and its record went with it.
+  stopped,
+
+  /// The stop could not run, but nothing answers on the port — so the app
+  /// dropped the record itself rather than keep a notice for something that is
+  /// provably not there.
+  cleared,
+
+  /// It is still up. The row stays, and the user is told where to go.
+  stillRunning,
+}
+
+/// Stop [service] the way the skill would, and make sure its row cannot outlive
+/// it.
 ///
 /// Through `serve.py stop`, not by signalling the pid ourselves: which supervisor
 /// holds the process — launchd, screen, tmux, or nothing — is recorded by the
 /// script, and killing a launchd job's pid leaves launchd to restart it. Copying
 /// that logic into Dart would be a second implementation to keep in step.
 ///
-/// Returns whether the stop ran. False when the skill isn't installed anywhere
-/// the app can find, which the caller must say rather than pretending it worked.
-Future<bool> stopServedService(String name, {String? home}) async {
-  final script = _serveScript(home);
-  if (script == null) return false;
-  try {
-    final result = await Process.run(gridSkillUvPath(), [
-      'run',
-      '--no-project',
-      'python3',
-      script,
-      'stop',
-      name,
-    ]);
-    return result.exitCode == 0;
-  } on ProcessException {
-    return false;
+/// Then the **record**, not the exit code, decides what the user sees: that file
+/// is what the row is made of, and the script is not always able to remove it.
+/// An older `serve.py` rewrote it; a machine with no `uv` could not run the
+/// script at all. Both left a Stop button that looked like it did nothing, which
+/// is what a user reported twice (issue #42). So a stop that ran takes the
+/// record with it, and a stop that could not run still clears a service whose
+/// port is provably silent.
+///
+/// What keeps that honest is [ServiceStopOutcome.stillRunning]: a service that
+/// still answers keeps its row, and so does one with no port — its record is the
+/// only handle anything has on a process that may well be alive, and dropping it
+/// would strand the process instead of stopping it.
+Future<ServiceStopOutcome> stopServedService(
+  ServedService service, {
+  String? home,
+  ServedServicesStore? store,
+  AppLog? log,
+  Future<bool> Function(int port)? probePort,
+}) async {
+  final records = store ?? ServedServicesStore();
+  final run = await _runStopScript(service.name, home: home, log: log);
+  if (run == _StopRun.refused) return ServiceStopOutcome.stillRunning;
+  if (run == _StopRun.ok) {
+    await records.forget(service.name);
+    return ServiceStopOutcome.stopped;
   }
+  final port = service.port;
+  if (port == null || await (probePort ?? portAnswers)(port)) {
+    return ServiceStopOutcome.stillRunning;
+  }
+  await records.forget(service.name);
+  return ServiceStopOutcome.cleared;
+}
+
+/// What the script itself reported: it stopped the service, it refused because
+/// the service is still up, or it never got to say.
+enum _StopRun { ok, refused, unavailable }
+
+/// Run `serve.py stop <name>` and read what it said.
+///
+/// Every failure is logged raw as well as answered: a stop that quietly does
+/// nothing is exactly the bug this row keeps hitting, and a log that only
+/// repeats the sentence the user read diagnoses none of it (§6).
+Future<_StopRun> _runStopScript(
+  String name, {
+  required String? home,
+  required AppLog? log,
+}) async {
+  final script = _serveScript(home);
+  if (script == null) {
+    log?.warn('agent', 'stop $name: the grid-serve skill is not installed');
+    return _StopRun.unavailable;
+  }
+  final stop = _stopCommand(script, name);
+  if (stop == null) {
+    log?.warn('agent', 'stop $name: no uv and no python3 to run serve.py');
+    return _StopRun.unavailable;
+  }
+  try {
+    final result = await Process.run(stop.executable, stop.arguments);
+    if (result.exitCode == 0) return _StopRun.ok;
+    if (result.exitCode == kServeStillRunningExit) return _StopRun.refused;
+    // The humanised line the user reads diagnoses nothing on its own (§6).
+    log?.warn(
+      'agent',
+      'serve.py stop $name exited ${result.exitCode}: ${result.stderr}',
+    );
+    return _StopRun.unavailable;
+  } on ProcessException catch (error) {
+    log?.failure('agent', 'serve.py stop $name could not run', error: error);
+    return _StopRun.unavailable;
+  }
+}
+
+/// How to run `serve.py`: the pinned `uv` when it is really there, else any
+/// `python3` this machine has.
+///
+/// Null when it has neither. The script is stdlib-only and `uv` is not: the
+/// pinned copy arrives with Hermes, so on a Codex- or Claude-only machine
+/// [gridSkillUvPath] names a file that does not exist — every stop would throw
+/// on it, and the row would be one nothing could ever clear.
+({String executable, List<String> arguments})? _stopCommand(
+  String script,
+  String name,
+) {
+  final uv = gridSkillUvPath();
+  if (File(uv).existsSync()) {
+    return (
+      executable: uv,
+      arguments: ['run', '--no-project', 'python3', script, 'stop', name],
+    );
+  }
+  final python = HostEnvironment.findExecutable('python3');
+  if (python == null) return null;
+  return (executable: python, arguments: [script, 'stop', name]);
 }
 
 /// The `serve.py` from the app's own library copy of the skill — the same file
