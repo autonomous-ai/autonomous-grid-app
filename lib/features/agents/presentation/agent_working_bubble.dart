@@ -97,6 +97,24 @@ class AgentActivityFeed extends ConsumerWidget {
     for (final step in steps) {
       if (step.status == AgentActivityStatus.running) running = step;
     }
+    // A sub-agent's own step is not what the user is waiting on — the row that
+    // delegated the work is, and it has been open the whole time.
+    //
+    // This is what kept [_StillWorkingRow] off the screen for exactly the wait
+    // it exists for. The newest running step during a delegated stretch is
+    // always one of the sub-agent's, and each of those is short, so the row's
+    // clock restarted every few seconds and never reached the six it waits for.
+    // Reading the parent instead gives one clock that runs for as long as the
+    // delegation does, and it is the one that can name what it is waiting on.
+    final nested = running;
+    if (nested != null && nested.isNested) {
+      for (final step in steps) {
+        if (step.id == nested.parent) {
+          running = step;
+          break;
+        }
+      }
+    }
     // A final copy so the null check below promotes it: `running` is assigned
     // in the loop above and so stays nullable to the analyzer.
     final active = running;
@@ -190,15 +208,24 @@ const Duration _quietRunNotice = Duration(seconds: 6);
 ///
 /// A step running one of these is not a command taking its time: the agent has
 /// delegated, and what it delegated to writes its notes to *the agent*, not to
-/// the user — the Claude stream parser drops that prose on purpose, because
-/// folding it in left the reply switching voice mid-turn. So the screen can go
-/// quiet for minutes with nothing but tool rows on it, which reads as broken. It
-/// isn't; this row is what says so.
+/// the user — the Claude stream parser keeps that prose out of the reply on
+/// purpose, because folding it in left the answer switching voice mid-turn. It
+/// files the notes under the delegating row instead, so the work is on screen;
+/// what is still missing there is how long the wait has been, and how long a
+/// sub-agent runs is exactly what nothing else reports. That is this row.
 ///
 /// Measured, not imagined: a "review my codebase" turn handed the whole job to a
 /// Skill and sat there for seven minutes showing nine finished commands and no
 /// words at all. The agent was working the entire time.
-const _delegatingTools = {'Task': 'sub-agent', 'Skill': 'skill'};
+const _delegatingTools = {
+  // `Agent` is the name Claude Code 2.x uses and `Task` the one before it —
+  // measured on this machine's sessions, 31 `Agent` calls and no `Task` at all,
+  // so for as long as this map held only the old name the row below never once
+  // said what it was written to say.
+  'Agent': 'sub-agent',
+  'Task': 'sub-agent',
+  'Skill': 'skill',
+};
 
 /// A step that has been running long enough to be worth a word.
 ///
@@ -290,8 +317,8 @@ class _StillWorkingRowState extends State<_StillWorkingRow> {
     if (delegate == null) return row;
     return Tooltip(
       message:
-          'It works as its own assistant, so what it writes to itself is not '
-          'shown here. The answer arrives when it finishes.',
+          'It works as its own assistant. Its steps and notes are listed under '
+          'the row that started it; the answer arrives when it finishes.',
       child: row,
     );
   }

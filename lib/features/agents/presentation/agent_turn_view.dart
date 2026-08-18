@@ -11,6 +11,7 @@ import '../../../shared/widgets/pulse.dart';
 import '../../../shared/widgets/timeline_guide.dart';
 import '../../playground/presentation/message_content.dart';
 import '../logic/agent_run_fold.dart';
+import '../logic/agent_sub_run.dart';
 import '../logic/agent_providers.dart';
 import '../logic/agent_step_label.dart';
 
@@ -107,9 +108,21 @@ class _AgentTurnViewState extends ConsumerState<AgentTurnView> {
           else if (block case _Work(
             :final steps,
           ) when detail != AgentDetailMode.answer)
+            // Keyed by the step it opens on, so what the reader has folded or
+            // opened survives a passage landing above it — without one, the
+            // block is matched by position and a new paragraph resets every
+            // group in the turn.
             runIsFolded(steps.length)
-                ? _FoldedRun(steps: steps, detail: detail)
-                : _StepColumn(steps: steps, detail: detail),
+                ? _FoldedRun(
+                    key: ValueKey('run-${steps.first.id}'),
+                    steps: steps,
+                    detail: detail,
+                  )
+                : _StepColumn(
+                    key: ValueKey('run-${steps.first.id}'),
+                    steps: steps,
+                    detail: detail,
+                  ),
       ];
     }
     final blocks = [
@@ -168,7 +181,10 @@ List<_Block> _blocksOf(List<TurnPart> parts) {
   var running = <AgentActivity>[];
   void flush() {
     if (running.isEmpty) return;
-    blocks.add(_Work(List.unmodifiable(running)));
+    // Grouped here rather than in the view, so the fold below counts and cuts
+    // the same list the screen draws — a tail taken before grouping would open
+    // on whichever row happened to be last in arrival order.
+    blocks.add(_Work(List.unmodifiable(orderedBySubRun(running))));
     running = <AgentActivity>[];
   }
 
@@ -231,7 +247,7 @@ const double _rowInsetY = 7;
 /// that quietly shows eight of two thousand steps is a fold that has lied about
 /// what the assistant did.
 class _FoldedRun extends StatefulWidget {
-  const _FoldedRun({required this.steps, required this.detail});
+  const _FoldedRun({super.key, required this.steps, required this.detail});
 
   final List<AgentActivity> steps;
   final AgentDetailMode detail;
@@ -247,14 +263,16 @@ class _FoldedRunState extends State<_FoldedRun> {
   Widget build(BuildContext context) {
     final steps = widget.steps;
     final shown = visibleRunSteps(steps.length, open: _open);
-    final tail = steps.sublist(steps.length - shown);
+    // Not `length - shown`: a tail that opens on a nested row draws it branching
+    // off nothing. See [runTailStart].
+    final tail = steps.sublist(runTailStart(steps, shown));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         _RunSummary(
           total: steps.length,
-          shown: shown,
+          shown: tail.length,
           open: _open,
           onTap: () => setState(() => _open = !_open),
         ),
@@ -366,31 +384,184 @@ class _SaidRow extends StatelessWidget {
 /// quoted list. Each row paints its own segment; [_StepRow] is told whether the
 /// trunk arrives from above and carries on below, which is what stitches them
 /// into one stroke without anything here measuring a row.
-class _StepColumn extends StatelessWidget {
-  const _StepColumn({required this.steps, required this.detail});
+class _StepColumn extends StatefulWidget {
+  const _StepColumn({super.key, required this.steps, required this.detail});
 
   final List<AgentActivity> steps;
   final AgentDetailMode detail;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisSize: MainAxisSize.min,
-    // Keyed by the step's own id: a folded block shows a *sliding window* of the
-    // run when it was folded, so without a key Flutter matches rows by
-    // position and a payload the user had opened slides onto whichever step
-    // takes that slot next.
-    children: [
-      for (final (index, step) in steps.indexed)
-        _StepRow(
-          key: ValueKey(step.id),
-          step: step,
-          detail: detail,
-          first: index == 0,
-          last: index == steps.length - 1,
+  State<_StepColumn> createState() => _StepColumnState();
+}
+
+class _StepColumnState extends State<_StepColumn> {
+  /// The groups the user has taken a decision about, by the id of the row that
+  /// started each. A group that isn't in here follows its own run — see
+  /// [_groupIsOpen].
+  final _groups = <String, bool>{};
+
+  /// Whether a sub-agent's steps are on screen.
+  ///
+  /// The default is the whole point, and it is not one state but two: **open
+  /// while it works, folded once it has reported back**. A sub-agent runs for
+  /// minutes with nothing else on screen to say the turn is alive, so hiding its
+  /// steps then is hiding the only progress there is; afterwards those same rows
+  /// are twenty lines of someone else's working-out sitting between the reader
+  /// and the answer, and what they want from it is the one line saying how much
+  /// there was.
+  bool _groupIsOpen(SubRun run) => _groups[run.parentId] ?? !run.settled;
+
+  @override
+  Widget build(BuildContext context) {
+    final runs = subRunsOf(widget.steps);
+    final lines = <_Line>[];
+    for (final step in widget.steps) {
+      if (step.isNested) {
+        final run = runs[step.parent];
+        // Hidden with its group, not dropped: the fold above counts the whole
+        // run, so a group folded here still says how many steps it stands for.
+        if (run != null && !_groupIsOpen(run)) continue;
+        lines.add(_StepLine(step, null));
+        continue;
+      }
+      final run = runs[step.id];
+      // Handed to the row only while the work is still going: once it has
+      // reported back, the line under it is the summary, and a row still saying
+      // "working…" beside it would be the screen contradicting itself.
+      lines.add(_StepLine(step, run != null && run.settled ? null : run));
+      // Only once it has finished. While it is working, the row above carries a
+      // live line of its own and a second summary under it would say the same
+      // thing twice.
+      if (run != null && run.settled) {
+        lines.add(_GroupLine(run, open: _groupIsOpen(run)));
+      }
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      // Keyed by the step's own id: a folded block shows a *sliding window* of
+      // the run when it was folded, so without a key Flutter matches rows by
+      // position and a payload the user had opened slides onto whichever step
+      // takes that slot next.
+      children: [
+        for (final (index, line) in lines.indexed)
+          switch (line) {
+            _StepLine(:final step, :final run) => _StepRow(
+              key: ValueKey(step.id),
+              step: step,
+              run: run,
+              detail: widget.detail,
+              first: index == 0,
+              last: index == lines.length - 1,
+            ),
+            _GroupLine(:final run, :final open) => _SubRunRow(
+              key: ValueKey('group-${run.parentId}'),
+              run: run,
+              open: open,
+              onTap: () => setState(() => _groups[run.parentId] = !open),
+              first: index == 0,
+              last: index == lines.length - 1,
+            ),
+          },
+      ],
+    );
+  }
+}
+
+/// One drawn line of a step column: a step, or the summary standing in for a
+/// sub-agent's folded group.
+sealed class _Line {
+  const _Line();
+}
+
+class _StepLine extends _Line {
+  const _StepLine(this.step, this.run);
+
+  final AgentActivity step;
+
+  /// The work this row delegated, when it is the row that started a sub-agent.
+  final SubRun? run;
+}
+
+class _GroupLine extends _Line {
+  const _GroupLine(this.run, {required this.open});
+
+  final SubRun run;
+  final bool open;
+}
+
+/// The way back into a sub-agent's finished work: how many steps it ran, and a
+/// chevron that puts them back on screen.
+///
+/// Stepped in to where its group's rows sit and branching off the same trunk, so
+/// it reads as standing in for them rather than as a step of the agent's own.
+/// It is chrome about rows, not a row — [AppPalette.textFaint] at the size the
+/// run summary above the block already uses, which is what keeps a turn with
+/// three sub-agents in it from reading as three more things that happened.
+class _SubRunRow extends StatefulWidget {
+  const _SubRunRow({
+    super.key,
+    required this.run,
+    required this.open,
+    required this.onTap,
+    required this.first,
+    required this.last,
+  });
+
+  final SubRun run;
+  final bool open;
+  final VoidCallback onTap;
+  final bool first;
+  final bool last;
+
+  @override
+  State<_SubRunRow> createState() => _SubRunRowState();
+}
+
+class _SubRunRowState extends State<_SubRunRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final radius = BorderRadius.circular(AppCard.insetRadius);
+    return TimelineGuide(
+      role: TimelineRole.branch,
+      trunkX: _stepTrunkX,
+      nodeGap: _stepNodeGap,
+      armLength: _stepArmLength,
+      above: !widget.first,
+      below: !widget.last,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: widget.onTap,
+          // The row owns its own hover: the chevron is held back until the
+          // pointer is on it, and a parent that tracked this for it would leave
+          // the mark permanently dim.
+          onHover: (value) => setState(() => _hovered = value),
+          splashFactory: NoSplash.splashFactory,
+          hoverColor: AppSurface.hoverFill,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(_nestedInsetLeft, 5, 6, 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _Chevron(open: widget.open, dim: !_hovered && !widget.open),
+                const SizedBox(width: 6),
+                Text(
+                  subRunSummary(widget.run),
+                  style: TextStyle(fontSize: 11.5, color: AppPalette.textFaint),
+                ),
+              ],
+            ),
+          ),
         ),
-    ],
-  );
+      ),
+    );
+  }
 }
 
 /// The disclosure marker shared by the group summary and each step row — a
@@ -437,12 +608,19 @@ class _StepRow extends StatefulWidget {
   const _StepRow({
     super.key,
     required this.step,
+    required this.run,
     required this.detail,
     required this.first,
     required this.last,
   });
 
   final AgentActivity step;
+
+  /// The sub-agent this row started, when it is a delegating row and that work
+  /// is still going. Null on every ordinary step — and on a delegating row whose
+  /// sub-agent has reported back, which is summarised under the row instead.
+  final SubRun? run;
+
   final AgentDetailMode detail;
 
   /// Where this row sits in its run, which is all the guide line needs: the
@@ -522,6 +700,12 @@ class _StepRowState extends State<_StepRow> {
     // A running row ends in an ellipsis, so it reads as something happening even
     // where the spinner is off screen or the reader isn't looking at it.
     final trailing = step.status == AgentActivityStatus.running ? '…' : '';
+    // What the sub-agent under this row is doing, while it is doing it. A second
+    // line rather than more of the first: the row's own half is what the agent
+    // asked for and does not change for minutes, and appending to it would push
+    // the part that *is* changing off the end of the ellipsis.
+    final run = widget.run;
+    final progress = run == null ? '' : subRunProgress(run, widget.detail);
     final radius = BorderRadius.circular(AppCard.insetRadius);
 
     final row = Padding(
@@ -542,51 +726,76 @@ class _StepRowState extends State<_StepRow> {
           // Title and subject share one line and one ellipsis budget: the title
           // is short and never gives way, the subject takes what is left.
           Flexible(
-            child: RichText(
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              text: TextSpan(
-                // Both halves stay above the 4.5:1 floor (§11), computed on the
-                // transcript page: textPrimary 17.4:1 light / 18.2:1 dark,
-                // textSecondary 6.2:1 / 8.3:1. The subject — the command, the
-                // path, the query — is the *informative* half of the row and was
-                // drawn in textFaint, which measures 3.33:1 light and 3.86:1
-                // dark and fails. The hierarchy is carried by weight and by
-                // primary-against-secondary ink instead.
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppPalette.textPrimary,
-                  fontWeight: AppFont.medium,
-                ),
-                children: [
-                  TextSpan(text: about.isEmpty ? '$title$trailing' : title),
-                  if (about.isNotEmpty)
-                    TextSpan(
-                      text: '  $about$trailing',
-                      style: TextStyle(
-                        color: AppPalette.textSecondary,
-                        fontWeight: AppFont.regular,
-                        // A command line is a string the user copies, which is
-                        // the app's whole rule for mono (see [AppFont]) — and
-                        // the one place in this row where `l`/`1` and `0`/`O`
-                        // telling apart earns the slower read. Only the shell
-                        // family: a query, a file path in prose or a tool's
-                        // arguments are read, not pasted, and setting those in
-                        // mono turns the transcript into a terminal.
-                        //
-                        // A point smaller than the sans beside it because mono
-                        // sits optically larger at the same size; the payload
-                        // wells below use the same figure.
-                        fontFamily: family == AgentToolFamily.shell
-                            ? AppFont.mono
-                            : null,
-                        fontFamilyFallback: family == AgentToolFamily.shell
-                            ? AppFont.monoFallback
-                            : null,
-                        fontSize: family == AgentToolFamily.shell ? 12.5 : null,
-                      ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RichText(
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  text: TextSpan(
+                    // Both halves stay above the 4.5:1 floor (§11), computed on the
+                    // transcript page: textPrimary 17.4:1 light / 18.2:1 dark,
+                    // textSecondary 6.2:1 / 8.3:1. The subject — the command, the
+                    // path, the query — is the *informative* half of the row and was
+                    // drawn in textFaint, which measures 3.33:1 light and 3.86:1
+                    // dark and fails. The hierarchy is carried by weight and by
+                    // primary-against-secondary ink instead.
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppPalette.textPrimary,
+                      fontWeight: AppFont.medium,
                     ),
+                    children: [
+                      TextSpan(text: about.isEmpty ? '$title$trailing' : title),
+                      if (about.isNotEmpty)
+                        TextSpan(
+                          text: '  $about$trailing',
+                          style: TextStyle(
+                            color: AppPalette.textSecondary,
+                            fontWeight: AppFont.regular,
+                            // A command line is a string the user copies, which is
+                            // the app's whole rule for mono (see [AppFont]) — and
+                            // the one place in this row where `l`/`1` and `0`/`O`
+                            // telling apart earns the slower read. Only the shell
+                            // family: a query, a file path in prose or a tool's
+                            // arguments are read, not pasted, and setting those in
+                            // mono turns the transcript into a terminal.
+                            //
+                            // A point smaller than the sans beside it because mono
+                            // sits optically larger at the same size; the payload
+                            // wells below use the same figure.
+                            fontFamily: family == AgentToolFamily.shell
+                                ? AppFont.mono
+                                : null,
+                            fontFamilyFallback: family == AgentToolFamily.shell
+                                ? AppFont.monoFallback
+                                : null,
+                            fontSize: family == AgentToolFamily.shell
+                                ? 12.5
+                                : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (progress.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  // Secondary ink, not faint: this is the only line on screen
+                  // reporting a wait that can run for minutes, and `textFaint`
+                  // measures 3.33:1 light — under the floor §11 sets (the same
+                  // call the subject half of the row above documents).
+                  Text(
+                    progress,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.25,
+                      color: AppPalette.textSecondary,
+                    ),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
           if (canOpen) ...[
