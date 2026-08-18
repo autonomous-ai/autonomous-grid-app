@@ -203,6 +203,25 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
     );
   }
 
+  /// Put what the user said into the running turn, where they said it.
+  ///
+  /// [answer] is the agent's reply as it stands, and closes the passage before
+  /// the interjection exactly as a step does: what the agent had written by then
+  /// belongs *above* what the user typed, not under it. Without that, a
+  /// correction typed four paragraphs in would be filed after the fourth
+  /// paragraph *and* the fifth, since the fifth had not been placed yet.
+  void interject(String chatId, String text, {String answer = ''}) {
+    final said = text.trim();
+    if (said.isEmpty) return;
+    if (answer.isNotEmpty) say(chatId, answer);
+    // Read after [say], which rewrites the run.
+    final run = _run(chatId);
+    _write(
+      chatId,
+      run.copyWith(parts: List.unmodifiable([...run.parts, TurnSaid(said)])),
+    );
+  }
+
   /// Append [sources], skipping any url already collected this turn.
   void addSources(String chatId, List<WebSource> sources) {
     final run = _run(chatId);

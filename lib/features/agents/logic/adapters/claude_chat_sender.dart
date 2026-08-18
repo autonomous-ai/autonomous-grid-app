@@ -503,16 +503,10 @@ class ClaudeChatSender implements ChatSender {
 
     // Anything typed in this chat while the turn runs goes straight into it —
     // Claude reads it at its next tool boundary and changes course inside the
-    // same turn (see [AgentSteeringController]). The seen count moves with it:
-    // the message is in Claude's own session from here, so the next turn must
-    // not send it again as "context you missed".
+    // same turn, and it is recorded in the turn's timeline where it happened
+    // (see [AgentSteeringController]).
     final steering = _ref.read(agentSteeringProvider.notifier);
-    offerSteering(
-      ref: _ref,
-      chat: chat,
-      into: run.steer,
-      counted: () => slot.seen++,
-    );
+    steering.offer(chat, run.steer);
 
     final answer = StringBuffer();
     // The answer up to its last finished block — where the turn may be divided.

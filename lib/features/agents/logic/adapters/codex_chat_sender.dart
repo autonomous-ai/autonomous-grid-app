@@ -210,17 +210,10 @@ class CodexChatSender implements ChatSender {
     );
 
     // Anything typed in this chat while the turn runs goes into the turn itself
-    // (`turn/steer`), not into a queue behind it — see
-    // [AgentSteeringController]. The seen count moves with it: the message is in
-    // Codex's own thread from here, so the next turn must not send it again as
-    // "context you missed".
+    // (`turn/steer`), not into a queue behind it, and is recorded in the turn's
+    // timeline where it happened (see [AgentSteeringController]).
     final steering = _ref.read(agentSteeringProvider.notifier);
-    offerSteering(
-      ref: _ref,
-      chat: chat,
-      into: run.steer,
-      counted: () => slot.seen++,
-    );
+    steering.offer(chat, run.steer);
 
     final answer = StringBuffer();
     final updates = StreamController<ChatSendUpdate>();
