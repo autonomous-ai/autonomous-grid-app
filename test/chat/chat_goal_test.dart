@@ -48,6 +48,35 @@ void main() {
       );
     });
 
+    test('a word that merely starts with the verdict is not the verdict — '
+        'this is how "Metrics:" used to end a goal', () {
+      for (final head in const [
+        'Metrics: 3 of 5 checks pass',
+        'Method: ran the suite',
+        'Met? No — the file is still missing',
+        'METICULOUS review follows',
+      ]) {
+        expect(
+          parseGoalVerdict('$head\nStill working.').verdict,
+          GoalVerdict.notYet,
+          reason: head,
+        );
+      }
+    });
+
+    test('the verdict word survives the punctuation models put around it', () {
+      expect(parseGoalVerdict('MET.').verdict, GoalVerdict.met);
+      expect(parseGoalVerdict('**MET**').verdict, GoalVerdict.met);
+      expect(parseGoalVerdict('IMPOSSIBLE:').verdict, GoalVerdict.impossible);
+    });
+
+    test('a reason written on the verdict line is kept, not dropped for the '
+        'stock sentence', () {
+      final read = parseGoalVerdict('MET — the suite is green');
+      expect(read.verdict, GoalVerdict.met);
+      expect(read.reason, 'the suite is green');
+    });
+
     test('a verdict with no reason still says something, so the bar is never '
         'blank', () {
       expect(parseGoalVerdict('MET').reason, isNotEmpty);

@@ -229,13 +229,18 @@ class ChatGoal {
     // A goal that picks back up has not ended anywhere, and `?? this` cannot
     // say that.
     bool clearEndedAfter = false,
+
+    /// Same reason, for the line under the condition: a goal going back to work
+    /// must lose whatever stopped it, or the bar reads `Pursuing goal · the
+    /// turn failed: connection closed` while the turn is running fine.
+    bool clearReason = false,
   }) => ChatGoal(
     condition: condition,
     status: status ?? this.status,
     startedAt: startedAt,
     agent: agent,
     turnsEvaluated: turnsEvaluated ?? this.turnsEvaluated,
-    reason: reason ?? this.reason,
+    reason: clearReason ? null : (reason ?? this.reason),
     startedAfter: startedAfter,
     endedAfter: clearEndedAfter ? null : (endedAfter ?? this.endedAfter),
     elapsed: elapsed ?? this.elapsed,
@@ -348,17 +353,56 @@ enum GoalVerdict { met, notYet, impossible }
 /// that way is silently stopping work the user asked for.
 ({GoalVerdict verdict, String reason}) parseGoalVerdict(String reply) {
   final lines = reply.trim().split('\n');
-  final head = lines.isEmpty ? '' : lines.first.trim().toUpperCase();
-  final reason = lines.skip(1).join('\n').trim();
-  final verdict = switch (head) {
-    _ when head.startsWith('MET') => GoalVerdict.met,
-    _ when head.startsWith('IMPOSSIBLE') => GoalVerdict.impossible,
+  final head = lines.isEmpty ? '' : lines.first.trim();
+  final word = _verdictWord(head);
+  final verdict = switch (word) {
+    'MET' => GoalVerdict.met,
+    'IMPOSSIBLE' => GoalVerdict.impossible,
     _ => GoalVerdict.notYet,
   };
+  // Whatever else the first line carried is reason, not noise. A model that
+  // answers `MET — the suite is green` has put its explanation where the prompt
+  // asked for one word, and taking only the lines below left the bar showing a
+  // stock sentence instead of what was actually checked. The word itself is
+  // dropped only when it *is* one of the three; an off-format first line is
+  // prose, so all of it is kept.
+  final rest = _kVerdictWords.contains(word)
+      ? head
+            .replaceFirst(RegExp(r'^\S+\s*'), '')
+            .replaceFirst(RegExp(r'^[-—–:,.]+\s*'), '')
+      : head;
+  final reason = [rest, ...lines.skip(1)].join('\n').trim();
   return (
     verdict: verdict,
     reason: reason.isEmpty ? _fallbackReason(verdict) : reason,
   );
+}
+
+/// The three words the evaluator is asked to answer with.
+const _kVerdictWords = {'MET', 'IMPOSSIBLE', 'NOT_YET'};
+
+/// The first word of the evaluator's first line, as a verdict token.
+///
+/// **The whole word, never a prefix.** `startsWith('MET')` was how this read
+/// before, and it made `Metrics: 3 of 5 checks pass`, `Method: ran the suite`
+/// and `Met? No — the file is still missing` all mean the goal was reached. Two
+/// of those three say the opposite of what they were taken to say, and the cost
+/// of getting it wrong this way is the app quietly stopping work the user is
+/// still waiting on.
+///
+/// Trailing punctuation goes, because `MET.` and `**MET**` are the same verdict
+/// written by models with different habits. **`?` deliberately stays**: a
+/// question is not a verdict, so `Met?` falls through to "not yet" rather than
+/// ending the goal.
+String _verdictWord(String head) {
+  final first = head
+      .split(RegExp(r'\s+'))
+      .firstWhere((w) => w.isNotEmpty, orElse: () => '');
+  // `?` and `!` are kept where the rest of the punctuation is stripped, and
+  // that is the whole point of the class: `MET.` and `**MET**` are a verdict
+  // written by models with different habits, `Met?` is a question, and a
+  // question must not end a goal.
+  return first.toUpperCase().replaceAll(RegExp(r'^[^A-Z_?!]+|[^A-Z_?!]+$'), '');
 }
 
 String _fallbackReason(GoalVerdict verdict) => switch (verdict) {

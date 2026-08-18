@@ -168,11 +168,20 @@ mixin _ChatGoals on _ChatSessions {
     // A failed turn is not judged: the evaluator would be reading an error
     // message and would rightly say "not met", and the loop would repeat the
     // failure. Nine identical failures is not persistence.
+    // **Stalled, not impossible.** A dropped connection, a grid that went away,
+    // an agent that crashed — none of them say anything about the condition,
+    // and [GoalStatus.impossible] is terminal: it was the app announcing the
+    // goal could never be reached because the wifi blinked. Stalled says what
+    // is true (nobody is advancing it) and is picked back up the moment the
+    // user says anything, so the goal survives the outage that caused it.
+    //
+    // [GoalStatus.impossible] is left to the one thing that can judge it: the
+    // evaluator reading the transcript and saying IMPOSSIBLE.
     if (outcome.failure != null) {
       _saveGoal(
         id,
         goal.copyWith(
-          status: GoalStatus.impossible,
+          status: GoalStatus.stalled,
           reason: 'the turn failed: ${outcome.failure}',
         ),
       );
@@ -331,6 +340,12 @@ mixin _ChatGoals on _ChatSessions {
     final chat = _find(id);
     final network = ref.read(selectedNetworkProvider);
     if (chat == null || chat.goal?.isRunning != true) return;
+    // A turn is already running in this chat — the goal's next step would queue
+    // behind it and go out into a conversation that has moved on. `/loop` has
+    // guarded this since it was written (`chat_sessions_loops.dart`); the goal
+    // loop reached the same race from the other side, where a user message
+    // steered mid-turn settles the turn while the judgement is still reading.
+    if (state.sendingFor(id)) return;
     if (network == null) {
       _saveGoal(
         id,

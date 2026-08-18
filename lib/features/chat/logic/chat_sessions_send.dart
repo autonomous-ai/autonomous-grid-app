@@ -143,9 +143,32 @@ mixin _ChatSend on _ChatSessions {
     // A chat is named once — from its first message, until the agent replaces
     // that with a name for what it's actually about. Re-deriving on every turn
     // would drag it back to the first line the user typed ("hi") and undo that.
-    final conversation = withUser.title == kNewConversationTitle
+    final named = withUser.title == kNewConversationTitle
         ? withUser.copyWith(title: deriveConversationTitle(withUser.messages))
         : withUser;
+    // A stalled goal goes back to work when the user says something.
+    //
+    // Nothing else ever wrote [GoalStatus.active] except `/goal` itself, so
+    // every way a goal stalled — a turn stopped, a failed turn, three idle
+    // turns, no model to judge with — was permanent in practice while the bar
+    // said "Goal paused", which is a promise that it can start again. This is
+    // where it starts again, on the same footing as an archived chat un-filing
+    // itself the moment it is talked in (see [_commit]).
+    //
+    // [continuing] excludes the turns the *app* sends on the user's behalf —
+    // a carry-on, a loop beat, the goal's own next step. Reviving a goal the
+    // loop gave up on because a timer fired would put it straight back into
+    // whatever stopped it, with nobody watching.
+    final stalled = named.goal;
+    final conversation =
+        !continuing && stalled != null && stalled.status == GoalStatus.stalled
+        ? named.copyWith(
+            goal: stalled.copyWith(
+              status: GoalStatus.active,
+              clearReason: true,
+            ),
+          )
+        : named;
     // The send owns the open slot: make it active and clear any prior error. A
     // queued follow-up doesn't — it goes out into a chat the user may have left,
     // and nothing the app sends on its own may pull them back to it.
@@ -849,6 +872,17 @@ mixin _ChatSend on _ChatSessions {
     if (!state.sendingFor(id)) return;
     final phase = state.phaseFor(id);
     _cancel(id);
+    // Settle the goal too. [_cancel] tears the turn down without going through
+    // [_finish], so the `outcome == null` arm of [_judgeGoalTurn] — the one that
+    // stalls a goal whose turn was stopped — had never once run: pressing Stop
+    // left the goal reading "Pursuing goal" with nothing pursuing it, for good.
+    //
+    // Only from here, not from [_cancel] itself: the other three callers are a
+    // deleted chat and a disposing controller, and neither has a goal left to
+    // settle. A goal the *agent* owns is deliberately untouched — it is still
+    // armed inside that agent's session, and `/goal clear` is what ends it
+    // (see `_settleDelegatedGoal`).
+    unawaited(_judgeGoalTurn(id, null));
 
     final partial = phase is SendStreaming ? phase.text.trim() : '';
     final current = _find(id);
