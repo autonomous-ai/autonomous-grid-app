@@ -157,29 +157,48 @@ void main() {
       expect(goalStatusLine(null, _start), 'No goal set.');
     });
   });
-  group('the line under the composer while it runs', () {
+  group('the line above the composer while it runs', () {
     test('it names the condition, and stays short — the long form is what '
         '/goal prints when asked', () {
-      final note = goalStatusNote(_goal(turnsEvaluated: 3), _start);
+      final note = goalStatusNote(_goal(turnsEvaluated: 3));
       expect(note, contains('the tests in test/auth pass'));
       expect(note, contains('3 turns'));
-      // It carries the elapsed time — a goal has no ceiling, so how long it has
-      // been going is the number the user judges "let it keep running?" on, and
-      // it is what Codex's own goal bar puts there. Still no evaluator reason:
-      // that is the long form, which `/goal` prints when asked.
+      // No evaluator reason: that is the long form, which `/goal` prints when
+      // asked.
       expect(note, isNot(contains('two still fail')));
       expect(note.length, lessThan(goalBarLabel(_goal(), _start).length + 20));
     });
 
     test('a goal nothing has been judged on yet counts nothing', () {
-      expect(goalStatusNote(_goal(), _start), isNot(contains('0 turns')));
+      expect(goalStatusNote(_goal()), isNot(contains('0 turns')));
     });
 
     test('one judged turn is a turn, not turns', () {
-      expect(
-        goalStatusNote(_goal(turnsEvaluated: 1), _start),
-        endsWith('1 turn'),
-      );
+      final note = goalStatusNote(_goal(turnsEvaluated: 1));
+      expect(note, contains('1 turn'));
+      expect(note, isNot(contains('1 turns')));
+    });
+
+    test(
+      'it carries no clock — the strip only repaints when the goal changes, '
+      'so a time read here froze at 0s for the whole run and read as stuck',
+      () {
+        final note = goalStatusNote(_goal(turnsEvaluated: 2));
+        // No `12s` / `1m 51s` anywhere — matched as a pattern, because the
+        // condition itself is full of the letter.
+        expect(note, isNot(matches(RegExp(r'\d+\s*[smh]\b'))));
+        // It is still right where it is worked out on demand.
+        expect(
+          goalBarLabel(_goal(), _start.add(const Duration(seconds: 34))),
+          contains('34s'),
+        );
+      },
+    );
+
+    test('the emphasis in front of it says something is happening, and says so '
+        'differently once it is only being held', () {
+      expect(goalStatusLead(_goal()), 'Pursuing goal');
+      expect(goalStatusLead(_goal(status: GoalStatus.paused)), 'Goal held');
     });
   });
 

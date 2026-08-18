@@ -947,6 +947,18 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 builder: (_) =>
                                     ChatBubble(message: messages[i]),
                               ),
+                              // The turn that handed a goal over, marked once
+                              // under the user's own message.
+                              if (goal != null && goal.startedAfter == i + 1)
+                                TranscriptRow(
+                                  // Keyed on the turn, not on the goal: a goal
+                                  // object is replaced on every update, and an
+                                  // id that changed with it would move the
+                                  // scroll anchor under the reader each round.
+                                  scrollId: 'goal-sent-${messages[i]}',
+                                  cacheId: 'goal-sent-${messages[i]}',
+                                  builder: (_) => const GoalSentBadge(),
+                                ),
                               // Where the context was folded up. Drawn in the
                               // transcript rather than announced once and
                               // forgotten: the messages above it are still
@@ -1054,6 +1066,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               // line back.
                               const SaveSkillBar(),
                               const QueuedFollowUps(),
+                              // Above the composer, under everything that is
+                              // waiting on a decision: a goal is taking the
+                              // turns the user would otherwise be typing, so it
+                              // belongs in their line of sight rather than as a
+                              // footnote beneath the box. It stays one strip for
+                              // everything running, which is the part of the
+                              // under-the-composer version worth keeping.
+                              const ComposerStatus(),
                               if (slash != null)
                                 CommandSlashMenu(
                                   query: slash,
@@ -1156,11 +1176,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                     .read(chatSessionsProvider.notifier)
                                     .stop(),
                               ),
-                              // Under the composer, not above it: what is still
-                              // running is a footnote to what the user is
-                              // typing, and everything up there is something
-                              // waiting on them to decide.
-                              const ComposerStatus(),
                             ],
                           );
                         },

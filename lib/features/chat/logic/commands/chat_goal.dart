@@ -119,6 +119,7 @@ class ChatGoal {
     this.agent,
     this.turnsEvaluated = 0,
     this.reason,
+    this.startedAfter,
     this.endedAfter,
     this.elapsed,
     this.tokensUsed,
@@ -149,6 +150,14 @@ class ChatGoal {
   /// it the news would sit at the end of the transcript and slide down under
   /// whatever is said next, ending up somewhere it never happened.
   final int? endedAfter;
+
+  /// How many messages the chat held when the goal was set — the message that
+  /// opened it is the one before this.
+  ///
+  /// It marks that turn as the one the user handed over, which is worth saying
+  /// once and quietly: the turn reads as an ordinary question otherwise, and
+  /// nothing else in the transcript explains why the assistant kept going.
+  final int? startedAfter;
 
   /// The agent this goal was handed to, fixed when it was set.
   ///
@@ -227,6 +236,7 @@ class ChatGoal {
     agent: agent,
     turnsEvaluated: turnsEvaluated ?? this.turnsEvaluated,
     reason: reason ?? this.reason,
+    startedAfter: startedAfter,
     endedAfter: clearEndedAfter ? null : (endedAfter ?? this.endedAfter),
     elapsed: elapsed ?? this.elapsed,
     tokensUsed: tokensUsed ?? this.tokensUsed,
@@ -240,6 +250,7 @@ class ChatGoal {
     if (agent != null) 'agent': agent!.id,
     'turnsEvaluated': turnsEvaluated,
     if (reason != null) 'reason': reason,
+    if (startedAfter != null) 'startedAfter': startedAfter,
     if (endedAfter != null) 'endedAfter': endedAfter,
     if (elapsed != null) 'elapsedSeconds': elapsed!.inSeconds,
     if (tokensUsed != null) 'tokensUsed': tokensUsed,
@@ -274,6 +285,7 @@ class ChatGoal {
     // what a goal written before this field existed actually was.
     final agent = agentToolById('${raw['agent']}');
     final turns = raw['turnsEvaluated'];
+    final startedAfter = raw['startedAfter'];
     final endedAfter = raw['endedAfter'];
     final elapsedSeconds = raw['elapsedSeconds'];
     final tokensUsed = raw['tokensUsed'];
@@ -289,6 +301,9 @@ class ChatGoal {
       agent: agent,
       turnsEvaluated: turns is int && turns > 0 ? turns : 0,
       reason: raw['reason'] is String ? raw['reason'] as String : null,
+      startedAfter: startedAfter is int && startedAfter > 0
+          ? startedAfter
+          : null,
       endedAfter: endedAfter is int && endedAfter > 0 ? endedAfter : null,
       elapsed: elapsedSeconds is int && elapsedSeconds > 0
           ? Duration(seconds: elapsedSeconds)
@@ -467,24 +482,74 @@ String _compactCount(int value) {
 
 /// The one dim line the composer's status strip shows while a goal is running.
 ///
+/// **No clock.** The strip repaints when the goal *object* changes, and between
+/// two rounds it does not — so a time read from `DateTime.now()` here froze at
+/// whatever it was when the goal was set and sat there reading `0s` for the
+/// whole run. A number that never moves is worse than none: it says the thing
+/// is stuck. The elapsed time lives in [goalBarLabel] instead, computed on
+/// demand when `/goal` is asked, where it is always right.
+/// TODO(BE): to put it back the strip needs a ticker of its own (a one-second
+/// `Timer.periodic` while any note is running), not a fresher `now`.
+///
 /// Short on purpose: it sits under the composer for the whole run, next to
 /// whatever else is going on, and the long form — how long it has run, the
 /// evaluator's latest reason — is [goalBarLabel], which `/goal` prints on
 /// demand. What has to be there is what the user set and what it has cost.
-String goalStatusNote(ChatGoal goal, DateTime now) {
+String goalStatusNote(ChatGoal goal) {
   final turns = goal.turnsEvaluated;
   return [
-    goal.status == GoalStatus.paused
-        ? 'Goal held: ${goal.condition}'
-        : 'Goal: ${goal.condition}',
-    elapsedLabel(goal, now),
+    goal.condition,
     // Only the app's own loop judges turns; a delegated goal has none to count,
     // and printing "0 turns" beside one that is working would read as stuck.
     if (goal.owner.isAppDriven && turns > 0)
       '$turns ${turns == 1 ? 'turn' : 'turns'}',
     if (goal.tokensUsed != null) _tokens(goal),
-  ].join(' · ');
+  ].join(' • ');
 }
+
+/// The one short line the transcript shows once a goal is over.
+///
+/// Short on purpose, and short by contrast with what it replaced: this line used
+/// to carry the condition **and** the evaluator's whole reason, which ran 226px
+/// past the window in stripes. By the time a goal has ended the condition is
+/// already three lines up in the user's own message, and the reasoning is in the
+/// answer above it — repeating both says nothing and buries the one fact that is
+/// new, which is that it is done.
+///
+/// The long form is still one keystroke away: `/goal` prints [goalBarLabel].
+String goalEndedNote(ChatGoal goal) {
+  final took = goal.elapsed;
+  final took_ = took == null ? '' : ' in ${_span(took)}';
+  return switch (goal.status) {
+    // Never reached — a running goal has not ended and draws no line at all.
+    GoalStatus.active => 'Pursuing goal',
+    GoalStatus.met => 'Goal achieved$took_',
+    GoalStatus.impossible => 'Goal stopped — it cannot be met',
+    GoalStatus.stalled => 'Goal paused',
+    GoalStatus.paused => 'Goal held',
+    GoalStatus.blocked => 'Goal blocked',
+    GoalStatus.usageLimited => 'Goal paused — out of usage',
+    GoalStatus.budgetLimited => 'Goal paused — token budget spent',
+  };
+}
+
+/// `38s`, `2m 04s`, `1h 20m` — a finished span, so the minutes pad.
+String _span(Duration took) {
+  final seconds = took.inSeconds < 0 ? 0 : took.inSeconds;
+  if (seconds < 60) return '${seconds}s';
+  if (seconds < 3600) {
+    return '${seconds ~/ 60}m ${(seconds % 60).toString().padLeft(2, '0')}s';
+  }
+  return '${seconds ~/ 3600}h ${((seconds % 3600) ~/ 60)}m';
+}
+
+/// The two words in front of it — the strip's one bit of emphasis.
+///
+/// A verb, not a noun: "Pursuing goal" says something is happening on its own
+/// right now, which is the fact the user is deciding whether to let continue.
+/// "Goal" alone read as a label on a setting.
+String goalStatusLead(ChatGoal goal) =>
+    goal.status == GoalStatus.paused ? 'Goal held' : 'Pursuing goal';
 
 /// The status line `/goal` prints when it is asked rather than set.
 String goalStatusLine(ChatGoal? goal, DateTime now) {

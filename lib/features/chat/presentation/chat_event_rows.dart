@@ -32,9 +32,9 @@ class GoalEndedRow extends StatelessWidget {
   final ChatGoal goal;
 
   @override
-  Widget build(BuildContext context) => TranscriptEventRow(
+  Widget build(BuildContext context) => TranscriptSideNote(
     icon: switch (goal.status) {
-      GoalStatus.active => Icons.flag_rounded,
+      GoalStatus.active => Icons.ads_click,
       GoalStatus.met => Icons.check_circle_outline_rounded,
       GoalStatus.impossible => Icons.error_outline_rounded,
       GoalStatus.stalled ||
@@ -45,7 +45,23 @@ class GoalEndedRow extends StatelessWidget {
       GoalStatus.usageLimited ||
       GoalStatus.budgetLimited => Icons.hourglass_empty_rounded,
     },
-    label: goalBarLabel(goal, DateTime.now()),
+    label: goalEndedNote(goal),
+  );
+}
+
+/// The mark on the turn that handed a goal over.
+///
+/// Right-aligned under the user's own message, because that is whose act it
+/// was. It is said once, at the turn it happened, and never again — the strip
+/// above the composer is what says a goal is *still* running.
+class GoalSentBadge extends StatelessWidget {
+  const GoalSentBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) => const TranscriptSideNote(
+    icon: Icons.ads_click,
+    label: 'Sent as goal',
+    alignment: Alignment.centerRight,
   );
 }
 

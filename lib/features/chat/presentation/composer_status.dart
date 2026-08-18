@@ -38,18 +38,20 @@ class ComposerStatus extends ConsumerWidget {
       notes: [
         if (goal != null && !goal.hasEnded)
           StatusNote(
+            // A target with an arrow in it, not a flag: a flag is a place you
+            // arrive at, and this is the app taking shots at one on its own.
+            // Material has no arrow-in-bullseye, and this is the nearest it
+            // keeps — a ringed target struck from the lower right.
             icon: goal.status == GoalStatus.paused
                 ? Icons.pause_circle_outline_rounded
-                : Icons.flag_rounded,
-            label: goalStatusNote(goal, DateTime.now()),
+                : Icons.ads_click,
+            lead: goalStatusLead(goal),
+            label: goalStatusNote(goal),
             actions: [
-              // TODO(BE): a held goal wants Resume here as well —
-              // `thread/goal/set {status: "active"}` on the Codex driver. Only
-              // Codex can reach [GoalStatus.paused], so the button lands with
-              // that driver rather than shipping dead now.
-              TextButton(
+              StatusIconAction(
+                icon: Icons.delete_outline_rounded,
+                tooltip: 'Clear this goal',
                 onPressed: () => run(ChatCommand.goal, 'clear'),
-                child: const Text('Stop'),
               ),
             ],
           ),
@@ -58,9 +60,10 @@ class ComposerStatus extends ConsumerWidget {
             icon: Icons.repeat_rounded,
             label: loopStatusNote(loop, DateTime.now()),
             actions: [
-              TextButton(
+              StatusIconAction(
+                icon: Icons.stop_circle_outlined,
+                tooltip: 'Stop repeating',
                 onPressed: () => run(ChatCommand.loop, 'stop'),
-                child: const Text('Stop'),
               ),
             ],
           ),
