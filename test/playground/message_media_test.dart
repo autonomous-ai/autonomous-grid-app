@@ -127,6 +127,38 @@ void main() {
       expect(_mediaAt(segs, 0).kind, MediaKind.image);
       expect(_mediaAt(segs, 0).url, '/Users/me/Downloads/img_001.png');
     });
+
+    test('a base64 image embedded in the reply stays an image segment with its '
+        'data intact, so it can be drawn from memory rather than fetched', () {
+      // An agent embeds a screenshot inline; the whole image is the "url".
+      final segs = parseMessageSegments('here ![shot](data:image/png;base64,AQID)');
+      expect(_mediaAt(segs, 1).kind, MediaKind.image);
+      expect(_mediaAt(segs, 1).url, 'data:image/png;base64,AQID');
+      expect(decodeImageDataUri(_mediaAt(segs, 1).url), [1, 2, 3]);
+    });
+  });
+
+  group('decodeImageDataUri', () {
+    test('decodes the bytes of a base64 data image uri', () {
+      expect(decodeImageDataUri('data:image/png;base64,AQID'), [1, 2, 3]);
+      // The media type varies (jpeg, webp, gif) and the marker is case-blind.
+      expect(decodeImageDataUri('DATA:image/JPEG;base64,AQID'), [1, 2, 3]);
+    });
+
+    test('a network url is not a data uri and loads the usual way instead', () {
+      expect(decodeImageDataUri('https://x.com/a.png'), isNull);
+      expect(decodeImageDataUri('/Users/me/a.png'), isNull);
+    });
+
+    test('a malformed payload degrades to null rather than throwing mid-build', () {
+      // Not base64 (`*` is outside the alphabet) — the widget falls back to its
+      // failure state instead of the decode blowing up the whole message.
+      expect(decodeImageDataUri('data:image/png;base64,not*base64'), isNull);
+    });
+
+    test('a non-image data uri is left for the network path, not decoded here', () {
+      expect(decodeImageDataUri('data:text/plain;base64,AQID'), isNull);
+    });
   });
 
   group('local media helpers', () {
