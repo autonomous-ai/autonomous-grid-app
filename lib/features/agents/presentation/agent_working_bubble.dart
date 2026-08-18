@@ -125,7 +125,7 @@ class AgentActivityFeed extends ConsumerWidget {
           trailing: answer,
           pending: run.pendingSaid,
         ),
-      if (showSteps && plan.isNotEmpty) MessagePlan(entries: plan),
+      if (showSteps && plan.isNotEmpty) MessagePlan(entries: plan, live: true),
       if (sources.isNotEmpty) MessageSources(sources: sources),
     ];
     // The status line carries its own gap and sits outside the separated run
