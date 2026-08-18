@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/served_service.dart';
-import 'package:grid_app/features/agents/presentation/running_services_bar.dart';
+import 'package:grid_app/features/agents/presentation/running_service_notes.dart';
 
 void main() {
   late Directory tmp;
@@ -14,6 +14,14 @@ void main() {
 
   File record(String name, String json) =>
       File('${tmp.path}/$name.json')..writeAsStringSync(json);
+
+  ServedService service({int? port}) => ServedService(
+    name: 'web',
+    command: 'npm run dev',
+    directory: '/tmp',
+    startedAt: DateTime(2026, 8, 5),
+    port: port,
+  );
 
   group('reading what grid-serve left behind', () {
     test('a record becomes a row with somewhere to open', () async {
@@ -54,15 +62,74 @@ void main() {
     });
   });
 
-  group('what the row claims', () {
-    ServedService service({int? port}) => ServedService(
-      name: 'web',
-      command: 'npm run dev',
-      directory: '/tmp',
-      startedAt: DateTime(2026, 8, 5),
-      port: port,
+  group('a row the user can always get out of', () {
+    // No skill folder under this home, so the stop script is nowhere to be
+    // found — the same dead end as a machine with no `uv`, and offline.
+    Future<ServiceStopOutcome> stop(
+      ServedService service, {
+      required bool answering,
+    }) => stopServedService(
+      service,
+      home: tmp.path,
+      store: ServedServicesStore(directory: tmp),
+      probePort: (_) async => answering,
     );
 
+    test('a stop that cannot run still clears a service nothing is answering '
+        'for — the user clicked Stop three times on a notice no click could '
+        'remove (#42)', () async {
+      record('web', '{"name": "web", "port": 3100}');
+      final log = File('${tmp.path}/web.log')..writeAsStringSync('boot');
+
+      final outcome = await stop(service(port: 3100), answering: false);
+
+      expect(outcome, ServiceStopOutcome.cleared);
+      expect(File('${tmp.path}/web.json').existsSync(), isFalse);
+      // The log outlives the record, so `logs web` still explains what died.
+      expect(log.existsSync(), isTrue);
+    });
+
+    test('a service that is still answering keeps its row — clearing one that '
+        'is alive would hide it instead of stopping it', () async {
+      record('web', '{"name": "web", "port": 3100}');
+
+      final outcome = await stop(service(port: 3100), answering: true);
+
+      expect(outcome, ServiceStopOutcome.stillRunning);
+      expect(File('${tmp.path}/web.json').existsSync(), isTrue);
+    });
+
+    test('with no port there is no evidence, so the record stays: it is the '
+        'only handle anything has left on the process', () async {
+      record('worker', '{"name": "worker"}');
+
+      final outcome = await stop(service(), answering: false);
+
+      expect(outcome, ServiceStopOutcome.stillRunning);
+      expect(File('${tmp.path}/worker.json').existsSync(), isTrue);
+    });
+
+    test('forgetting a service drops its record and nothing else', () async {
+      record('web', '{"name": "web"}');
+      final log = File('${tmp.path}/web.log')..writeAsStringSync('boot');
+
+      await ServedServicesStore(directory: tmp).forget('web');
+
+      expect(File('${tmp.path}/web.json').existsSync(), isFalse);
+      expect(log.existsSync(), isTrue);
+      expect(await ServedServicesStore(directory: tmp).load(), isEmpty);
+    });
+
+    test('a failed stop says where the thing still is, not just that the click '
+        'failed', () {
+      final message = stopFailedMessage(service(port: 3100));
+
+      expect(message, contains('port 3100'));
+      expect(message, contains('terminal'));
+    });
+  });
+
+  group('what the row claims', () {
     test('only a port that answers is called running', () {
       expect(
         serviceLabel((service: service(port: 3000), answering: true)),

@@ -14,6 +14,16 @@ import '../../../shared/skills/agent_skill_home.dart';
 /// supervisor that has nothing to do with the agent's session, first try.
 const String kGridServeSkillName = 'grid-serve';
 
+/// The exit code `serve.py stop` uses for "it ran, and the service is still
+/// up".
+///
+/// Its own code because the app has to tell that apart from a stop that never
+/// happened: both were exit 1, so a script that could not run read exactly like
+/// a live service, and the app could not know whether the row it draws is still
+/// true. The script is a raw string below and cannot interpolate this, so
+/// `grid_serve_skill_test.dart` pins the two together.
+const int kServeStillRunningExit = 3;
+
 /// Where a started service's log and its record live — one folder the agent can
 /// point the user at, and the app can list later if it ever grows a UI for this.
 Directory gridServeStateDir() => GridPaths.servicesDir;
@@ -100,6 +110,8 @@ first lines of the log. **Read that output before you reply.**
 ```
 "$uvPath" run --no-project python3 "$serveScriptPath" stop <name>
 ```
+Exit 3 means it is **still running** — read its `logs`, say so, and don't tell
+the user it stopped.
 
 ## "Port already in use" — find out who, don't guess
 ```
@@ -171,7 +183,8 @@ Usage:
     serve.py port <port> [--release]
     serve.py run <name> --cmd "<command>" [--dir <dir>] [--timeout S]
 
-Exit codes: 0 ok, 1 the service isn't running (or died), 2 no supervisor found.
+Exit codes: 0 ok, 1 the service isn't running (or died), 2 no supervisor
+found, 3 `stop` ran and the service is still up.
 """
 
 import argparse
@@ -514,11 +527,14 @@ def cmd_stop(args):
     still = running_pid(record)
     if still:
         # Couldn't stop it: keep the record so the row stays honest and a retry
-        # still has a handle to the process.
+        # still has a handle to the process. Exit 3, not 1: the caller has to
+        # tell "still running" from "this stop never ran", and clearing the
+        # record on the wrong one either strands a live process or leaves a
+        # notice nothing can dismiss.
         record.pop("pid", None)
         save_record(record)
         print(f"{args.name} is still running (pid {still})", file=sys.stderr)
-        return 1
+        return 3
     # Stopped for good: drop the record so nothing keeps listing a service that
     # is gone. The app's running-services bar shows one row per record file, so a
     # kept record is a card whose Stop button looks like it did nothing (#42).

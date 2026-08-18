@@ -175,6 +175,23 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     );
   }
 
+  /// The chat `/goal` and `/loop` act on: the one that is open, or the compose
+  /// the user is standing in, started here and now.
+  ///
+  /// A chat is not saved until its first message, so either command typed into
+  /// a fresh composer used to be answered with "Open a chat first" — a refusal
+  /// to do something there was no reason not to do. As far as anything on
+  /// screen says the user *is* in a chat, and Claude Code takes both from the
+  /// first line of a session. The turn the command fires next is what fills the
+  /// chat in and names it.
+  Conversation _startedChat(String model) {
+    final open = state.active;
+    if (open != null) return open;
+    final started = _activeOrNew(model);
+    _commit(started, phase: const SendIdle(), makeActive: true);
+    return started;
+  }
+
   Conversation? _find(String id) {
     for (final c in state.conversations) {
       if (c.id == id) return c;
@@ -468,7 +485,15 @@ class ChatSessionsController extends _ChatSessions
   ///
   /// Returns the one line to tell the user, or null when the result is its own
   /// confirmation — a new chat opening says "new chat" better than a toast.
-  Future<CommandOutcome?> runCommand(ChatCommandCall call) async {
+  ///
+  /// [model] is what the composer is showing: what a chat that `/goal` or
+  /// `/loop` has to *start* will answer with. It defaults to none because the
+  /// callers with no composer to read — the status line's Stop buttons — only
+  /// ever run commands that act on a chat already open.
+  Future<CommandOutcome?> runCommand(
+    ChatCommandCall call, {
+    String model = '',
+  }) async {
     switch (call.command) {
       // Issue #13: a new chat *where the user is standing*. The project comes
       // from the open chat, or from the compose they are already in — dropping
@@ -496,13 +521,13 @@ class ChatSessionsController extends _ChatSessions
         if (kGoalClearWords.contains(argument.toLowerCase())) {
           return _clearGoal();
         }
-        return _setGoal(argument);
+        return _setGoal(argument, model);
       case ChatCommand.loop:
         final argument = call.argument;
         if (kGoalClearWords.contains(argument.toLowerCase())) {
           return _stopLoop();
         }
-        return _startLoop(argument);
+        return _startLoop(argument, model);
       case ChatCommand.compact:
         return _compact(call.argument);
     }

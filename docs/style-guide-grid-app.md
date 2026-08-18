@@ -375,7 +375,28 @@ reveals on hover (a delete button); `badge` is an always-visible mark (an unread
 dot). Calls `AppTheme.watch` because the rail is `const`. `SidebarSectionLabel` is
 the quiet, optionally-foldable group label above a set of rows.
 
-### 8.12 Feature-scoped tokens (the `OverlordTokens` pattern)
+### 8.12 Around the composer — decide above, status below, news in the transcript
+Three places, and which one a thing goes in is decided by what it is, not by who
+wrote it:
+- **Waiting on the user** → a `ComposerNoticeBar` *above* the composer (a plan to
+  approve, a turn that ran out of steps, a skill to save, an agent the grid swapped).
+  Bordered, one line, its actions on the right. This is the only kind that gets to
+  interrupt.
+- **Still running** → a `StatusNote` in the `ComposerStatusLine` *under* the
+  composer: no card, no shadow, no accent — faint text at 12px and quiet actions, at
+  most two rows plus "N more". A goal being worked toward, a repeating prompt, a
+  server the agent left running.
+- **Already happened** → a `TranscriptEventRow` **in the conversation**, at the turn
+  it happened on (`endedAfter` / `through` anchors it). Goal met, loop stopped,
+  context compacted.
+
+The rule exists because the app had it wrong: goal, loop and running servers each
+drew their own bordered card above the composer and stayed there until dismissed —
+up to four boxes between the transcript and the box you were typing in, none of them
+asking for anything. Claude Code and Codex both keep one quiet status line and put
+the news in the scroll; so does this.
+
+### 8.13 Feature-scoped tokens (the `OverlordTokens` pattern)
 When a feature has its own "look" (e.g. the telemetry dashboard: mono, teal "live",
 colour by load), collect those tokens in **one file scoped to the feature** — but
 **surfaces still come from `AppPalette`** so the feature sits flush with everything

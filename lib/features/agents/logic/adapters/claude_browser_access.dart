@@ -12,8 +12,9 @@ enum BrowserSetupStep {
   /// Open the Chrome Web Store page for Claude in Chrome.
   installExtension,
 
-  /// Run Claude Code once with the browser on, which is what puts the piece
-  /// Chrome talks to on disk. See `ChromeSetupController`.
+  /// Write the connection Chrome talks to again. The app already does this at
+  /// launch, so this is the retry for a machine where that didn't take — see
+  /// `ChromeSetupController`.
   connectChrome,
 }
 
@@ -120,8 +121,8 @@ BrowserAccess describeBrowserAccess({
     ),
     ChromeExtensionState.hostPending => (
       why:
-          'One step left: connect Claude Code to the Chrome you already use, '
-          'then quit Chrome and open it again.',
+          'One step left, and it is yours: open Chrome — quit and reopen it if '
+          'it is already running — so it picks up the connection Grid set up.',
       step: BrowserSetupStep.connectChrome,
     ),
     ChromeExtensionState.ready => null,

@@ -157,13 +157,11 @@ class Conversation {
     // A goal is *removed*, not merely changed, when the user clears it — which
     // the `?? this` idiom can't say.
     bool clearGoal = false,
+    // Only ever *set*: a loop that has stopped stays on the conversation, the
+    // way a compaction does. That is what draws the line saying it stopped at
+    // the point in the transcript where it did (`endedAfter`) — removing it
+    // would take the news out of the history with it.
     ChatLoop? loop,
-    // A loop is *removed* the same way a goal is, and for the same reason: once
-    // it has stopped, the bar reporting it is something the user waves away, and
-    // `?? this` cannot say "gone". Left un-clearable, a stopped loop sat on the
-    // conversation for good — the bar's own Dismiss re-stopped an already
-    // stopped loop and nothing on screen changed.
-    bool clearLoop = false,
     ChatCompaction? compaction,
     // Only ever *set*: a session that can be resumed goes on being resumable
     // until it is replaced by a newer one. It is dropped by the sender at the
@@ -187,7 +185,7 @@ class Conversation {
     approval: approval ?? this.approval,
     pinned: pinned ?? this.pinned,
     goal: clearGoal ? null : (goal ?? this.goal),
-    loop: clearLoop ? null : (loop ?? this.loop),
+    loop: loop ?? this.loop,
     compaction: compaction ?? this.compaction,
     resume: clearResume ? null : (resume ?? this.resume),
   );

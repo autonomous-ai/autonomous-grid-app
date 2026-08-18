@@ -6,15 +6,13 @@ part of 'chat_sessions_controller.dart';
 /// The rules are pure and live in `commands/chat_loop.dart`; this owns the
 /// timers, which are the part that must never outlive the thing they belong to.
 mixin _ChatLoops on _ChatSessions {
-  /// Start (or replace) the open chat's repeating prompt.
-  Future<CommandOutcome?> _startLoop(String argument) async {
-    final chat = state.active;
-    if (chat == null) {
-      return (
-        message: 'Open a chat first — a loop belongs to one conversation.',
-        failed: true,
-      );
-    }
+  /// Start (or replace) the repeating prompt of the chat on screen — starting
+  /// that chat if it is still a blank compose ([_startedChat]).
+  ///
+  /// Everything that can refuse is checked *before* the chat is started, so a
+  /// half-typed `/loop` or a missing grid leaves no empty conversation behind
+  /// in the sidebar.
+  Future<CommandOutcome?> _startLoop(String argument, String model) async {
     final request = parseLoopArgument(argument);
     if (request.prompt.isEmpty) {
       return (message: kLoopUsage, failed: true);
@@ -26,6 +24,7 @@ mixin _ChatLoops on _ChatSessions {
       );
     }
     final now = DateTime.now();
+    final chat = _startedChat(model);
     _saveLoop(
       chat.id,
       ChatLoop(
@@ -124,29 +123,6 @@ mixin _ChatLoops on _ChatSessions {
     _cancelLoopTimer(chat.id);
     _saveLoop(chat.id, loop.copyWith(status: LoopStatus.stopped));
     return (message: 'Stopped repeating: ${loop.prompt}', failed: false);
-  }
-
-  /// Take a finished loop off the chat, and off the screen.
-  ///
-  /// What the loop bar's Dismiss (and its ✕) do once the run is over. It has to
-  /// *remove* the loop rather than stop it again: the bar draws whenever the
-  /// chat has a loop at all, so dismissing by re-stopping an already stopped one
-  /// left the same bar sitting there — with no error anywhere, because nothing
-  /// had failed. It was also saved to disk, so it came back on the next launch.
-  ///
-  /// A running loop is never dropped this way: the bar is the only thing on
-  /// screen saying turns are still going out, and waving it away would leave
-  /// them going out in silence. Stop it first — which is what the bar offers
-  /// while it runs.
-  void dismissLoop() {
-    final chat = state.active;
-    final loop = chat?.loop;
-    if (chat == null || loop == null || loop.isRunning) return;
-    // Defensive: a stopped or expired loop has no timer left. One surviving here
-    // would fire into a chat with no loop to read and simply return, but a timer
-    // nobody owns is not a thing to leave running.
-    _cancelLoopTimer(chat.id);
-    _saveAndReplace(chat.copyWith(clearLoop: true));
   }
 
   /// Drop the loop on chat [id] entirely — for `/clear`, and for a chat being
@@ -351,6 +327,12 @@ mixin _ChatLoops on _ChatSessions {
   void _saveLoop(String id, ChatLoop loop) {
     final chat = _find(id);
     if (chat == null) return;
-    _saveAndReplace(chat.copyWith(loop: loop));
+    // Where it ended, stamped once, for the same reason a goal's is (see
+    // `_stampGoalEnd`): a loop that has stopped is news, and news belongs in
+    // the transcript at the point it happened.
+    final anchored = loop.isRunning || loop.endedAfter != null
+        ? loop
+        : loop.copyWith(endedAfter: chat.messages.length);
+    _saveAndReplace(chat.copyWith(loop: anchored));
   }
 }

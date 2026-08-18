@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 
 /// Reading the saved history is the one startup cost that grows with how long
 /// the app has been used: every chat is a file, and every file is read and
@@ -89,6 +90,75 @@ void main() {
       File('${dir.path}/broken.json').writeAsStringSync('{not json');
 
       expect(await store.loadAll(), hasLength(1));
+    },
+  );
+
+  /// A chat a `/loop` has been working in overnight. Measured on a real one:
+  /// 110 messages, 7,765 steps, 9 MB — and every commit rewrites the whole file.
+  Conversation loopChat({required int steps}) => Conversation(
+    id: 'loop',
+    title: 'A loop that has been running a while',
+    model: 'm',
+    createdAt: DateTime(2026, 1, 1),
+    updatedAt: DateTime(2026, 1, 2),
+    messages: [
+      for (var m = 0; m < 20; m++)
+        ChatMessage(
+          role: m.isEven ? ChatRole.user : ChatRole.assistant,
+          text: 'Turn $m of a long night.',
+          parts: [
+            for (var s = 0; s < steps ~/ 20; s++)
+              TurnStep(
+                AgentActivity(
+                  id: '$m-$s',
+                  kind: AgentActivityKind.command,
+                  label: 'Bash · rg -n "something" lib | head -20',
+                  status: AgentActivityStatus.done,
+                  tool: 'Bash',
+                  request: 'rg -n "something" lib | head -20' * 8,
+                  result: 'a few hundred bytes of output, as they all are' * 8,
+                ),
+              ),
+          ],
+        ),
+    ],
+  );
+
+  test('saving a huge chat does not hold up the caller — the encode and the '
+      'write happen off this isolate, which is the whole reason a /loop chat '
+      'stopped freezing the window on every turn', () async {
+    final store = ChatStore(directory: dir);
+    final chat = loopChat(steps: 4000);
+
+    final clock = Stopwatch()..start();
+    store.save(chat);
+    final queued = clock.elapsedMilliseconds;
+    await store.settled;
+    final written = clock.elapsedMilliseconds;
+
+    // A tripwire, not a benchmark: inline, this same write measured ~126 ms
+    // (98 encode + 28 flush) and grew with the chat. Queueing it is a map write.
+    expect(
+      queued,
+      lessThan(20),
+      reason: 'save() queued the write instead of doing it here ($queued ms)',
+    );
+    expect(written, greaterThanOrEqualTo(queued));
+
+    final loaded = await store.loadAll();
+    expect(loaded.single.messages.first.parts, hasLength(200));
+  });
+
+  test(
+    'two saves of the same chat in a breath write the newer one — a loop '
+    'commits twice per iteration and the older file is work with no reader',
+    () async {
+      final store = ChatStore(directory: dir);
+      store.save(loopChat(steps: 40));
+      store.save(loopChat(steps: 40).copyWith(title: 'Renamed while writing'));
+      await store.settled;
+
+      expect((await store.loadAll()).single.title, 'Renamed while writing');
     },
   );
 }

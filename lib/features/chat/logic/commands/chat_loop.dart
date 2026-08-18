@@ -28,6 +28,7 @@ class ChatLoop {
     this.iterations = 0,
     this.pacing,
     this.continuous = false,
+    this.endedAfter,
   });
 
   /// What is re-run each time, in the user's words.
@@ -55,6 +56,11 @@ class ChatLoop {
   /// runs until the user stops it or the seven-day ceiling, whichever is first.
   final bool continuous;
 
+  /// How many messages the chat held when the loop ended — where in the
+  /// transcript the line saying so is drawn (see [ChatGoal.endedAfter]). Null
+  /// while it runs.
+  final int? endedAfter;
+
   bool get isRunning => status == LoopStatus.running;
 
   bool get isContinuous => continuous;
@@ -69,6 +75,7 @@ class ChatLoop {
     DateTime? nextAt,
     int? iterations,
     String? pacing,
+    int? endedAfter,
   }) => ChatLoop(
     prompt: prompt,
     interval: interval,
@@ -78,6 +85,7 @@ class ChatLoop {
     iterations: iterations ?? this.iterations,
     pacing: pacing ?? this.pacing,
     continuous: continuous,
+    endedAfter: endedAfter ?? this.endedAfter,
   );
 
   Map<String, Object?> toJson() => {
@@ -89,6 +97,7 @@ class ChatLoop {
     'status': status.name,
     'iterations': iterations,
     if (pacing != null) 'pacing': pacing,
+    if (endedAfter != null) 'endedAfter': endedAfter,
   };
 
   /// Null for anything this app didn't write.
@@ -117,6 +126,7 @@ class ChatLoop {
       orElse: () => LoopStatus.stopped,
     );
     final iterations = raw['iterations'];
+    final endedAfter = raw['endedAfter'];
     return ChatLoop(
       prompt: prompt,
       interval: seconds is int && seconds > 0
@@ -128,6 +138,7 @@ class ChatLoop {
       iterations: iterations is int && iterations > 0 ? iterations : 0,
       pacing: raw['pacing'] is String ? raw['pacing'] as String : null,
       continuous: raw['continuous'] == true,
+      endedAfter: endedAfter is int && endedAfter > 0 ? endedAfter : null,
     );
   }
 }
@@ -299,6 +310,17 @@ String loopBarLabel(ChatLoop loop, DateTime now) => switch (loop.status) {
   LoopStatus.expired =>
     'Stopped after 7 days: ${loop.prompt}. Start it again if you still need it.',
 };
+
+/// The one dim line the composer's status strip shows while a loop runs.
+///
+/// The prompt first, because that is what the user recognises as theirs, then
+/// the two numbers that say it is alive: how many times it has run, and how long
+/// until the next one. The cadence and the pacer's reason stay in
+/// [loopBarLabel], which `/loop` prints when asked.
+String loopStatusNote(ChatLoop loop, DateTime now) => loop.isContinuous
+    ? 'Repeating: ${loop.prompt} · ${loop.iterations} so far'
+    : 'Repeating: ${loop.prompt} · ${loop.iterations} so far · '
+          'next in ${_untilNext(loop, now)}';
 
 String _cadence(ChatLoop loop) => loop.isSelfPaced
     ? 'at a pace it picks'

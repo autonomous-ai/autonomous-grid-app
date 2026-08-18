@@ -1,16 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/chrome_extension_probe.dart';
-import '../../../infrastructure/cli/claude_exec_service.dart';
+import '../../../infrastructure/cli/chrome_host_installer.dart';
 import '../../../infrastructure/logging/app_log.dart';
-import 'adapters/claude_browser.dart';
-import 'adapters/claude_chat_sender.dart';
+import 'adapters/claude_tool.dart';
 import 'agent_browser_controller.dart';
-import 'agent_providers.dart';
 
-/// How far the one-off "connect my own Chrome" step has got.
+/// How far the "connect my own Chrome" step has got.
 sealed class ChromeSetupState {
   const ChromeSetupState();
 }
@@ -20,8 +18,7 @@ final class ChromeSetupIdle extends ChromeSetupState {
   const ChromeSetupIdle();
 }
 
-/// Claude Code is running its browser-enabled turn — the run that installs the
-/// piece Chrome needs.
+/// The connection is being written.
 final class ChromeSetupRunning extends ChromeSetupState {
   const ChromeSetupRunning();
 }
@@ -39,32 +36,33 @@ final class ChromeSetupFailed extends ChromeSetupState {
   final String message;
 }
 
-/// A throwaway prompt: the answer is discarded, and the point of the run is the
-/// setup Claude Code does on its way to answering.
-const String _kSetupPrompt = 'Reply with the single word: ready';
+/// Why there is nothing to write on a machine with no installer. Both reasons
+/// end the same way for the user — no connection — so they share one sentence
+/// that is true of either, rather than a branch the card cannot act on.
+const String _whyUnavailable =
+    "Grid can't connect Chrome here: it needs Claude Code installed, on macOS "
+    'or Linux.';
 
-/// The alias to run it on. `claude --help` (2.1.183) documents `fable`, `opus`
-/// and `sonnet`; `haiku` is not among them, and an alias the binary rejects
-/// would fail this step for a reason that has nothing to do with the browser.
-/// The turn is one word long, so the smallest documented brain is enough.
-const String _kSetupModel = 'sonnet';
+/// Writes the connection, for the browsers this computer has.
+final chromeHostInstallerProvider = Provider<ChromeHostInstaller?>((ref) {
+  final binary = ref.watch(claudePathProvider);
+  if (binary == null || !ChromeHostInstaller.supported) return null;
+  return ChromeHostInstaller(claudeBinary: binary);
+});
 
-/// Long enough for a cold `claude` start on a busy machine, short enough that a
-/// wedged process doesn't leave a spinner running all afternoon.
-const Duration _kSetupTimeout = Duration(seconds: 90);
-
-/// Runs Claude Code once with `--chrome` so it installs the connection Chrome
-/// needs, then re-reads the disk to see whether it landed.
+/// Puts Claude Code's browser connection on disk — at launch, and again behind
+/// the card's own button.
 ///
-/// This is the piece that was missing, not a convenience: the app only passes
-/// `--chrome` on a turn it has already decided can reach the extension, and that
-/// decision requires the very file this run creates. Left alone the two wait for
-/// each other forever — a user could install the extension, see nothing change,
-/// and have no way in from inside the app.
+/// **It used to cost a turn.** The connection is two small files, and the only
+/// thing that wrote them was Claude Code's first `--chrome` run, so this app
+/// ran a throwaway prompt (`Reply with the single word: ready`) purely for the
+/// files it left behind: a model call, the user's own quota, and a wait, to
+/// write ~400 bytes. The Claude desktop app doesn't do that — it ships its host
+/// and refreshes its manifest every launch — and neither does this now.
 ///
-/// Deliberately user-initiated. It starts a process, spends a little of the
-/// user's own Claude quota, and is the kind of thing the app never does behind
-/// somebody's back.
+/// Because it is free and silent, it runs at launch (`ChromeConnectScope`)
+/// rather than waiting for somebody to find a button. The button stays for the
+/// one case launch can't cover: a computer whose disk said no.
 final chromeSetupProvider =
     NotifierProvider<ChromeSetupController, ChromeSetupState>(
       ChromeSetupController.new,
@@ -74,70 +72,55 @@ class ChromeSetupController extends Notifier<ChromeSetupState> {
   @override
   ChromeSetupState build() => const ChromeSetupIdle();
 
-  Future<void> connect() async {
+  /// Write the connection and re-read the machine.
+  ///
+  /// [announce] is false for the launch pass: a card that opened saying "quit
+  /// Chrome and open it again" to a user who never asked for a browser would be
+  /// nagging, so the launch pass changes what the lane *is* and lets the card
+  /// report that on its own. Pressing the button announces.
+  Future<void> connect({bool announce = true}) async {
     if (state is ChromeSetupRunning) return;
-    final service = ref.read(claudeExecServiceProvider);
-    if (service == null) {
-      state = const ChromeSetupFailed(
-        "Claude Code isn't installed on this computer yet.",
-      );
+    final installer = ref.read(chromeHostInstallerProvider);
+    if (installer == null) {
+      if (announce) state = const ChromeSetupFailed(_whyUnavailable);
       return;
     }
 
     state = const ChromeSetupRunning();
     final log = ref.read(appLogProvider);
+    final ChromeHostInstall install;
     try {
-      final run = service.run(
-        workdir: ref.read(agentWorkspaceDirProvider).path,
-        prompt: _kSetupPrompt,
-        model: _kSetupModel,
-        // The extension only talks to Claude Code's own sign-in, so the relay's
-        // credentials have to be gone from this run rather than overridden.
-        environment: const {},
-        dropEnvironment: kClaudeRelayEnvKeys,
-        chrome: true,
-      );
-      // Listened to, not ignored: an unread stream leaves the child blocked on
-      // a full stdout pipe, which would look exactly like a hung setup.
-      final drained = run.events.drain<void>();
-      await Future.wait([drained, run.done]).timeout(
-        _kSetupTimeout,
-        onTimeout: () {
-          run.kill();
-          throw TimeoutException('setup timed out', _kSetupTimeout);
-        },
-      );
-    } on ClaudeExecException catch (error) {
-      log.failure('agent', 'Chrome setup: ${error.message}');
-      state = ChromeSetupFailed(error.message);
-      return;
-    } on TimeoutException {
-      log.failure('agent', 'Chrome setup: Claude Code did not finish in time');
+      install = await installer.install();
+    } on FileSystemException catch (error) {
+      log.failure('agent', 'Chrome connect: ${error.message} ${error.path}');
       state = const ChromeSetupFailed(
-        'Claude Code took too long to answer. Try again in a moment.',
+        "Grid couldn't write the browser connection. Check that Chrome is "
+        'installed and try again.',
       );
       return;
     }
 
-    // The run's own answer proves nothing — what matters is whether the file
-    // Chrome reads is there now, so the verdict comes from the disk (§7).
-    ref.read(agentBrowserProvider).recheck();
-    if (ref.read(chromeExtensionStateProvider) != ChromeExtensionState.ready) {
-      log.failure(
-        'agent',
-        'Chrome setup: the browser connection is still not '
-            'on disk after a --chrome run',
-      );
-      state = const ChromeSetupFailed(
-        "Claude Code ran, but Chrome still isn't connected. Sign in to Claude "
-        'Code in a terminal, then try again.',
-      );
+    if (install.browsers.isEmpty) {
+      log.info('agent', 'Chrome connect: no Chromium browser on this computer');
+      state = announce
+          ? const ChromeSetupFailed(
+              'Grid found no Chrome on this computer to connect to.',
+            )
+          : const ChromeSetupIdle();
       return;
     }
+
+    // The verdict comes from the machine, not from the write: what decides the
+    // lane is a browser that has connected, and a browser restart is the one
+    // thing this step cannot do for the user (§7).
+    ref.read(agentBrowserProvider).recheck();
+    final wrote = install.changed
+        ? 'newly written — Chrome must restart'
+        : 'unchanged';
     log.info(
       'agent',
-      'Chrome setup: connection installed, Chrome must restart',
+      'Chrome connect: ${install.browsers.length} browser(s) set up, $wrote',
     );
-    state = const ChromeSetupDone();
+    state = announce ? const ChromeSetupDone() : const ChromeSetupIdle();
   }
 }
