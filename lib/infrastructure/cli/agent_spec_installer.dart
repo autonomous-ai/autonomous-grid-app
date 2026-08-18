@@ -52,23 +52,6 @@ class GithubReleaseBinary extends AgentInstallSpec {
   final bool linuxMusl;
 }
 
-/// Install an npm package with a private, pinned Node into `~/.grid` — how Pi
-/// installs. Pi ships only on npm, so the app fetches [nodeBuildFor]'s Node
-/// toolchain (hash-verified), unpacks it under `~/.grid/node`, then runs its own
-/// npm to install [package] with `--prefix ~/.grid` — the launcher lands in
-/// `~/.grid/bin`, already first on the augmented PATH. The same self-contained
-/// story as [UvToolInstall]: a private runtime under `~/.grid`, no system Node,
-/// no admin, and a directory removal uninstalls it.
-class NodeToolInstall extends AgentInstallSpec {
-  const NodeToolInstall({required this.package, required this.executable});
-
-  /// The npm package spec, version included (`@earendil-works/pi-coding-agent@0.84.1`).
-  final String package;
-
-  /// The launcher name npm writes into the prefix's bin (`pi`).
-  final String executable;
-}
-
 /// The argv for `uv tool install`. `--force` reinstalls in place, so install and
 /// upgrade are the same call; a repair passes `force: false` to keep the
 /// environment that's already there ([hermesAcpRepairArgs]). Pure and
@@ -112,8 +95,6 @@ class AgentSpecInstallerImpl implements AgentSpecInstaller {
         await _runUvTool(package, python, onLog);
       case GithubReleaseBinary():
         await _runReleaseBinary(spec, onLog);
-      case NodeToolInstall(:final package):
-        await _runNodeTool(package, onLog);
     }
   }
 
@@ -191,142 +172,6 @@ class AgentSpecInstallerImpl implements AgentSpecInstaller {
           'The ${spec.executable} archive had no ${spec.executable} binary.',
     );
   }
-
-  /// Fetch a private Node, then let its own npm install [package] into `~/.grid`.
-  Future<void> _runNodeTool(
-    String package,
-    void Function(String)? onLog,
-  ) async {
-    final node = await _ensureNode(onLog);
-    final npmCli = _npmCli(node);
-    final gridHome = GridPaths.home.path;
-    final env = {
-      ...Platform.environment,
-      // Node's own bin first, so anything npm shells out to finds the node it
-      // shipped with, then the augmented PATH the rest of the app uses.
-      'PATH': '${node.parent.path}$_pathSep${HostEnvironment.path()}',
-      // Keep npm's global root and its cache inside ~/.grid — Grid owns what Grid
-      // installed, and a directory removal uninstalls it. `--prefix` puts the
-      // launcher in `~/.grid/bin`, already first on the app's PATH.
-      'npm_config_prefix': gridHome,
-      'npm_config_cache': '$gridHome/.npm-cache',
-      'npm_config_update_notifier': 'false',
-      'npm_config_fund': 'false',
-      'npm_config_audit': 'false',
-    };
-    onLog?.call('Installing $package …');
-    await _stream(
-      node.path,
-      [
-        npmCli.path,
-        'install',
-        '-g',
-        '--prefix',
-        gridHome,
-        // No package of ours runs an install script, and one that did would be
-        // arbitrary code from npm running as the user, unasked, behind a
-        // background install. Pi installs and runs fine without them.
-        '--ignore-scripts',
-        package,
-      ],
-      env,
-      onLog,
-    );
-    // The launcher npm wrote is a JS file with a `#!/usr/bin/env node` shebang,
-    // so node must be reachable on the PATH the app hands Pi at run time. Put a
-    // copy of ours in `~/.grid/bin` (first on that PATH) so Pi runs without a
-    // system Node.
-    await _linkNodeIntoBin(node);
-  }
-
-  /// The pinned Node toolchain under `~/.grid/node`, downloaded on first use.
-  /// Idempotent — returns the `node` executable inside it. Node ships a whole
-  /// tree (npm, symlinks and all), so it is unpacked whole rather than through
-  /// [_fetchInto]'s single-binary path.
-  Future<File> _ensureNode(void Function(String)? onLog) async {
-    final nodeRoot = Directory('${GridPaths.home.path}/node');
-    final nodeBin = _nodeBinIn(nodeRoot);
-    if (await nodeBin.exists()) return nodeBin;
-
-    final target = agentPlatformTarget(Abi.current(), linuxMusl: false);
-    final build = target == null ? null : nodeBuildFor(target);
-    if (build == null) {
-      throw const AgentInstallException(
-        "This computer's platform has no Node build, so Pi can't be installed "
-        'here.',
-      );
-    }
-    onLog?.call('Downloading Node (Pi runs on it) …');
-    // Unpack inside ~/.grid so the final move is a same-filesystem rename that
-    // keeps Node's symlinks and executable bits intact (a cross-device copy
-    // would not).
-    final unpack = Directory('${GridPaths.home.path}/.node-unpack');
-    final tmp = await Directory.systemTemp.createTemp('grid-node-');
-    try {
-      final archive = await downloadToFile(Uri.parse(build.url), tmp);
-      await verifySha256(archive, build.sha256);
-      if (await unpack.exists()) await unpack.delete(recursive: true);
-      await extractArchive(archive, unpack);
-      // Node archives hold a single `node-<release>-<slug>/` top-level folder.
-      final tops = unpack.listSync().whereType<Directory>().toList();
-      if (tops.isEmpty) {
-        throw const AgentInstallException('The Node archive was empty.');
-      }
-      if (await nodeRoot.exists()) await nodeRoot.delete(recursive: true);
-      await tops.first.rename(nodeRoot.path);
-      return nodeBin;
-    } finally {
-      await tmp.delete(recursive: true);
-      if (await unpack.exists()) await unpack.delete(recursive: true);
-    }
-  }
-
-  /// The `node` executable inside a Node toolchain rooted at [root] — under
-  /// `bin/` on POSIX, at the root on Windows.
-  File _nodeBinIn(Directory root) => File(
-    Platform.isWindows ? '${root.path}/node.exe' : '${root.path}/bin/node',
-  );
-
-  /// The `npm-cli.js` shipped with the Node at [nodeBin] — `lib/node_modules`
-  /// on POSIX, `node_modules` on Windows.
-  File _npmCli(File nodeBin) {
-    final root = Platform.isWindows ? nodeBin.parent : nodeBin.parent.parent;
-    for (final rel in const [
-      'lib/node_modules/npm/bin/npm-cli.js',
-      'node_modules/npm/bin/npm-cli.js',
-    ]) {
-      final cli = File('${root.path}/$rel');
-      if (cli.existsSync()) return cli;
-    }
-    throw const AgentInstallException('The Node toolchain shipped no npm.');
-  }
-
-  /// Put the private `node` where the app's PATH finds it, so Pi's launcher
-  /// shebang resolves without a system Node. A link (single copy, tracks a
-  /// reinstall) with a real-copy fallback where links aren't available.
-  ///
-  /// TODO(BE): on Windows npm's `--prefix` writes the launcher to `~/.grid`
-  /// itself, not `~/.grid/bin`, so Pi isn't on the augmented PATH there yet —
-  /// wire the Windows launcher location before shipping Pi on Windows.
-  Future<void> _linkNodeIntoBin(File node) async {
-    await GridPaths.binDir.create(recursive: true);
-    final name = Platform.isWindows ? 'node.exe' : 'node';
-    final destPath = '${GridPaths.binDir.path}/$name';
-    final existingLink = Link(destPath);
-    if (await existingLink.exists()) {
-      await existingLink.delete();
-    } else if (await File(destPath).exists()) {
-      await File(destPath).delete();
-    }
-    try {
-      await Link(destPath).create(node.path);
-    } on FileSystemException {
-      await node.copy(destPath);
-      if (!Platform.isWindows) await Process.run('chmod', ['0755', destPath]);
-    }
-  }
-
-  static final String _pathSep = Platform.isWindows ? ';' : ':';
 
   /// Download [build], check it against its pinned hash, unpack it, and put the
   /// binary named [prefix] at [destination] — the whole path from a URL to

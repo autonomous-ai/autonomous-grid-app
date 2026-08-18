@@ -87,16 +87,19 @@ void main() {
       expect(read?.iterations, 4);
     });
 
-    test('the bar says it works continuously until stopped, with no countdown', () {
-      final label = loopBarLabel(
-        _loop(interval: null, continuous: true, iterations: 7),
-        _start,
-      );
-      expect(label, contains('Working continuously'));
-      expect(label, contains('7 so far'));
-      expect(label, contains('until you stop it'));
-      expect(label, isNot(contains('next in')));
-    });
+    test(
+      'the bar says it works continuously until stopped, with no countdown',
+      () {
+        final label = loopBarLabel(
+          _loop(interval: null, continuous: true, iterations: 7),
+          _start,
+        );
+        expect(label, contains('Working continuously'));
+        expect(label, contains('7 so far'));
+        expect(label, contains('until you stop it'));
+        expect(label, isNot(contains('next in')));
+      },
+    );
   });
 
   group('the pace a self-paced loop picks', () {

@@ -60,22 +60,9 @@ void main() {
       }
     });
 
-    test('Node has a hash-verified build for each (Pi runs on it)', () {
-      for (final abi in _desktopAbis) {
-        // Pi's Node is the gnu Linux build, so it resolves with linuxMusl false
-        // just like uv.
-        final target = agentPlatformTarget(abi, linuxMusl: false)!;
-        final build = nodeBuildFor(target);
-        expect(build, isNotNull, reason: 'no Node build for $target');
-        expect(build!.url, contains(kNodeRelease));
-        expect(build.sha256, hasLength(64));
-      }
-    });
-
     test('an unpinned target resolves to nothing, not a bad guess', () {
       expect(uvBuildFor('sparc-sun-solaris'), isNull);
       expect(codexBuildFor('sparc-sun-solaris'), isNull);
-      expect(nodeBuildFor('sparc-sun-solaris'), isNull);
     });
   });
 

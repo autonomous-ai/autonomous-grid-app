@@ -120,11 +120,7 @@ AgentTool heuristicRoute(String question, List<AgentTool> candidates) {
   if (candidates.length == 1) return candidates.first;
   final looksLikeCode = _kCodeHint.hasMatch(question.toLowerCase());
   if (looksLikeCode) {
-    for (final preferred in const [
-      AgentTool.claude,
-      AgentTool.codex,
-      AgentTool.pi,
-    ]) {
+    for (final preferred in const [AgentTool.claude, AgentTool.codex]) {
       if (candidates.contains(preferred)) return preferred;
     }
   }

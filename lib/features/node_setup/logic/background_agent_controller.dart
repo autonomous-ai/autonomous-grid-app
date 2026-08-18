@@ -15,7 +15,7 @@ final backgroundAgentInstallerProvider = Provider<BackgroundAgentInstaller>(
 ///
 /// This is the one place every agent installs the same way at startup — through
 /// [AgentInstaller], which knows the route for each (the app's own pinned,
-/// hash-verified recipes for Hermes, Codex and Pi; the vendor script for Claude
+/// hash-verified recipes for Hermes and Codex; the vendor script for Claude
 /// Code). The full-screen first-run installer only guarantees the chat
 /// assistant before letting the user in; the rest arrive here, so a machine set
 /// up before an agent joined the catalog tops itself up instead of sitting
@@ -27,11 +27,12 @@ final backgroundAgentInstallerProvider = Provider<BackgroundAgentInstaller>(
 /// anyone about. The Agents tab still offers Install, and each installer's own
 /// words go to the app log rather than nowhere.
 ///
-/// TODO(BE): "silent" now covers a **~350 MB** download on a machine that has
-/// none of them — Pi brings its own Node toolchain (~180 MB unpacked) on top of
-/// its packages, and this round fetches it on a metered connection without
-/// saying so. Either move Pi behind first use (its row already has Install) or
-/// let this round say what it is fetching.
+/// TODO(BE): "silent" still covers a sizeable download on a machine that has
+/// none of them — Codex alone unpacks to ~260 MB — fetched on a metered
+/// connection without saying so. Removing Pi took the largest share of it
+/// (its own Node toolchain, ~180 MB unpacked) but not the problem: either move
+/// the big one behind first use (its row already has Install) or let this round
+/// say what it is fetching.
 class BackgroundAgentInstaller {
   BackgroundAgentInstaller(this._ref);
 

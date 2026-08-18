@@ -20,7 +20,6 @@ import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
-import 'package:grid_app/features/agents/logic/adapters/pi_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/agents/logic/auto_agent.dart';
 import 'package:grid_app/features/chat/logic/chat_scope.dart';
@@ -410,7 +409,6 @@ _harness(
       ),
       codexPathProvider.overrideWithValue(null),
       claudePathProvider.overrideWithValue(null),
-      piPathProvider.overrideWithValue(null),
       // The grid a reply is stamped with — offline, like everything else here.
       // Without it, sending a turn would reach for the live overview.
       // Returned, not awaited: a turn reads the last snapshot as it goes out,
@@ -3172,7 +3170,6 @@ void main() {
           hermesPathProvider.overrideWithValue('/bin/hermes'),
           codexPathProvider.overrideWithValue('/bin/codex'),
           claudePathProvider.overrideWithValue(null),
-          piPathProvider.overrideWithValue(null),
           gridOverviewProvider.overrideWith((ref) => _overview()),
           gridServesAutoModelProvider.overrideWith((ref) => servesAuto),
           chatTransportProvider.overrideWithValue(grid),
@@ -3297,7 +3294,6 @@ void main() {
             hermesPathProvider.overrideWithValue('/bin/hermes'),
             codexPathProvider.overrideWithValue('/bin/codex'),
             claudePathProvider.overrideWithValue(null),
-            piPathProvider.overrideWithValue(null),
             gridOverviewProvider.overrideWith((ref) => _overview()),
             gridServesAutoModelProvider.overrideWith((ref) => true),
             chatTransportProvider.overrideWithValue(grid),
