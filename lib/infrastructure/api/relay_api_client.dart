@@ -60,6 +60,27 @@ class RelayUnavailable implements Exception {
       'RelayUnavailable(status: $statusCode${cause == null ? '' : ', $cause'})';
 }
 
+/// How long `GET /models` may take, end to end.
+///
+/// Generous on purpose. The relay answers this one in ~150ms, and the timeouts
+/// in the log were never it being slow: they fired while the app's own event
+/// loop was stalled, so a 3-second budget reported itself 9 seconds late. A
+/// budget that outlives a stall costs a healthy call nothing.
+///
+/// **The trade:** a relay that is genuinely unreachable now leaves the chat's
+/// model picker on its loading state for this long instead of three seconds.
+/// That is the right way round — the list is what the whole picker stands on,
+/// and "still asking" is honest where a fast empty answer was not.
+const _kModelsDeadline = Duration(seconds: 30);
+
+/// How long `GET /grid/overview` may take, end to end — its previous
+/// per-stage budgets added up to about this.
+const _kOverviewDeadline = Duration(seconds: 10);
+
+/// How long `GET /usage` may take, end to end — its previous per-stage
+/// budgets added up to about this.
+const _kUsageDeadline = Duration(seconds: 7);
+
 /// Real [RelayApiClient] over `dart:io` [HttpClient] — matching the rest of the
 /// app's HTTP (no `package:http`). Each call opens a short-lived client and
 /// always closes it.
@@ -74,9 +95,7 @@ class HttpRelayApiClient implements RelayApiClient {
     final body = await _get(
       Uri.parse('$baseUrl/models'),
       apiKey,
-      connect: const Duration(seconds: 2),
-      request: const Duration(seconds: 3),
-      response: const Duration(seconds: 4),
+      deadline: _kModelsDeadline,
     );
     final decoded = jsonDecode(body);
     if (decoded is! Map || decoded['data'] is! List) return const [];
@@ -95,9 +114,7 @@ class HttpRelayApiClient implements RelayApiClient {
     final body = await _get(
       Uri.parse('$baseUrl/grid/overview'),
       apiKey,
-      connect: const Duration(seconds: 3),
-      request: const Duration(seconds: 4),
-      response: const Duration(seconds: 6),
+      deadline: _kOverviewDeadline,
     );
     final decoded = jsonDecode(body);
     if (decoded is! Map) throw const RelayUnavailable();
@@ -120,9 +137,7 @@ class HttpRelayApiClient implements RelayApiClient {
       apiKey,
       // Tighter than the overview's: this runs on a timer while a turn is open,
       // and a caption that is late is worth less than one that never blocks.
-      connect: const Duration(seconds: 2),
-      request: const Duration(seconds: 3),
-      response: const Duration(seconds: 4),
+      deadline: _kUsageDeadline,
     );
     final decoded = jsonDecode(body);
     if (decoded is! Map || decoded['models'] is! List) return const [];
@@ -131,26 +146,28 @@ class HttpRelayApiClient implements RelayApiClient {
     ];
   }
 
-  /// Shared GET: bearer auth, per-stage timeouts, 2xx-or-throw, always closes the
-  /// client. A non-200 becomes [RelayUnavailable] with its status; any transport
-  /// error becomes [RelayUnavailable] with the [cause].
+  /// Shared GET: bearer auth, one deadline for the whole call, 200-or-throw,
+  /// always closes the client.
+  ///
+  /// **One budget, not three.** The stages used to be timed separately — the
+  /// connection, then the response headers, and the body not at all — which
+  /// made a failure report a number no caller had asked for: `TimeoutException
+  /// after 0:00:03` on a call the log had timed at nine seconds. It also left
+  /// the body unbounded, so a relay that sent headers and then went quiet hung
+  /// the call for as long as the socket stayed open. [deadline] now covers DNS,
+  /// TLS, headers and body together, so the number in the log is the budget the
+  /// endpoint was actually given.
+  ///
+  /// A non-200 becomes [RelayUnavailable] with its status; any transport error
+  /// becomes [RelayUnavailable] with the [cause].
   Future<String> _get(
     Uri url,
     String apiKey, {
-    required Duration connect,
-    required Duration request,
-    required Duration response,
+    required Duration deadline,
   }) async {
-    final client = HttpClient()..connectionTimeout = connect;
+    final client = HttpClient()..connectionTimeout = deadline;
     try {
-      final req = await client.getUrl(url).timeout(request);
-      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
-      final res = await req.close().timeout(response);
-      final body = await res.transform(utf8.decoder).join();
-      if (res.statusCode != 200) {
-        throw RelayUnavailable(statusCode: res.statusCode);
-      }
-      return body;
+      return await _read(client, url, apiKey).timeout(deadline);
     } on RelayUnavailable {
       rethrow;
     } on Object catch (e) {
@@ -158,6 +175,19 @@ class HttpRelayApiClient implements RelayApiClient {
     } finally {
       client.close(force: true);
     }
+  }
+
+  /// The request itself, with no clock of its own — [_get] owns the deadline,
+  /// and force-closing the client there is what cuts a read short.
+  Future<String> _read(HttpClient client, Uri url, String apiKey) async {
+    final req = await client.getUrl(url);
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+    final res = await req.close();
+    final body = await res.transform(utf8.decoder).join();
+    if (res.statusCode != 200) {
+      throw RelayUnavailable(statusCode: res.statusCode);
+    }
+    return body;
   }
 }
 
