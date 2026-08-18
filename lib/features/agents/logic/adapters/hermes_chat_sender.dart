@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../../infrastructure/cli/model_control_tokens.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -328,6 +329,12 @@ class HermesChatSender implements ChatSender {
     steering.offer(chat, session.steer);
 
     final answer = StringBuffer();
+    // What the agent has said, with any chat-template marker cut off it — a
+    // model served over the grid can overrun its stop token and carry on into a
+    // turn of its own invention (see [stripControlTokens]). Read through this
+    // rather than off the buffer, so the streamed reply, the saved one and the
+    // one a failed turn keeps are the same text.
+    String said() => stripControlTokens(answer.toString());
     final updates = StreamController<ChatSendUpdate>();
     var settled = false;
     // The two facts the stall check reads — see [agentTurnStalled]: whether
@@ -350,7 +357,7 @@ class HermesChatSender implements ChatSender {
     // instead of wiping the chat to a bare error line. Null when there's nothing
     // to keep.
     ChatMessage? partialReply() {
-      final text = answer.toString().trim();
+      final text = said().trim();
       final plan = _ref.read(agentRunProvider(chat)).plan;
       if (text.isEmpty && plan.isEmpty) return null;
       return ChatMessage(
@@ -393,7 +400,7 @@ class HermesChatSender implements ChatSender {
             if (isAgentWork(activity)) workedAtAll = true;
             // With what has been said so far, so the step lands *after* that
             // passage in the turn's timeline rather than under the whole answer.
-            runs.upsertStep(chat, activity, answer: answer.toString());
+            runs.upsertStep(chat, activity, answer: said());
           case HermesAcpPermission(:final request):
             // The agent has stopped and is waiting on the user; pause the idle
             // watch (their time isn't a hang) and re-arm it once they answer.
@@ -421,7 +428,7 @@ class HermesChatSender implements ChatSender {
           case HermesAcpMessage(:final text):
             armIdle();
             answer.write(text);
-            updates.add(ChatSendStreaming(answer.toString()));
+            updates.add(ChatSendStreaming(said()));
           case HermesAcpTurnEnded(
             endedCleanly: final clean,
             :final toolCalls,
@@ -442,7 +449,7 @@ class HermesChatSender implements ChatSender {
         permissions.clear(chat);
         steering.withdraw(chat);
 
-        final reply = answer.toString().trim();
+        final reply = said().trim();
         // Hermes answers with its own failure when the model won't take the turn
         // — a build that can't resolve the grid's named provider, the grid's
         // failed HTTP call, or its loop giving up on an empty/unparseable

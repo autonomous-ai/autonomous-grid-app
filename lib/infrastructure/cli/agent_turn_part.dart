@@ -1,4 +1,5 @@
 import 'agent_event.dart';
+import 'model_control_tokens.dart';
 
 /// One slice of an agent's turn, in the order it happened — a passage it wrote,
 /// or a step it ran.
@@ -203,7 +204,14 @@ TurnPart? turnPartFromJson(Object? raw) {
     case 'text':
       final text = raw['text'];
       if (text is! String || text.trim().isEmpty) return null;
-      return TurnText(text);
+      // Cut here as well as at the transports, because the transcripts written
+      // before they cut carry the markers on disk — a chat saved mid-August
+      // 2026 reopens with `<|im_start|>user` in the middle of it otherwise.
+      // Only the agent's own passages: what the *user* typed is theirs, and an
+      // app that quietly edits it is worse than one that shows an odd string.
+      final said = stripControlTokens(text);
+      if (said.trim().isEmpty) return null;
+      return TurnText(said);
     case 'said':
       final text = raw['text'];
       if (text is! String || text.trim().isEmpty) return null;

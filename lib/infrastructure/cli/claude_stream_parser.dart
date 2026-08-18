@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'agent_event.dart';
 import 'agent_question.dart';
 import 'claude_exec_event.dart';
+import 'model_control_tokens.dart';
 
 /// The tools Claude Code uses to change a file. Only these produce a
 /// [ClaudeFileWriteStarted] / [ClaudeFileWriteFinished] pair, so the chat offers
@@ -161,10 +162,14 @@ class ClaudeStreamParser {
         // A sub-agent's prose is not the answer. It is written *to* the agent
         // that asked for it — "I'll explore the codebase systematically" — and
         // folding it in left the reply switching voice (and language) mid-turn,
-        // with the agent's own sentence cut in half around it. What the
-        // sub-agent found still reaches the user: it is the `Agent` call's
-        // result, under that step's own row.
-        if (parent != null) return const [];
+        // with the agent's own sentence cut in half around it.
+        //
+        // It is still the only account of what a sub-agent is *doing*, though,
+        // and a delegated stretch can hold the screen for minutes. So it is kept
+        // as a step of that sub-agent's own rather than dropped: it lands in the
+        // group under the row that started it, where it reads as that agent's
+        // note, and nowhere near the reply.
+        if (parent != null) return _readNote(block, parent);
         final text = '${block['text'] ?? ''}';
         // The whole block is the authority for what the deltas were building.
         _partial.clear();
@@ -193,6 +198,31 @@ class ClaudeStreamParser {
       default:
         return const [];
     }
+  }
+
+  /// One passage a sub-agent wrote, as a step of its own.
+  ///
+  /// Filed as [AgentActivityKind.thinking] because that is what it is from the
+  /// user's side — working-out, not an answer — and because the feed already
+  /// draws that kind the right way: the whole passage goes behind the fold
+  /// rather than being clipped into a row, which a paragraph has to be.
+  ///
+  /// Shares [_thoughts] with the thinking rows and takes a prefix of its own, so
+  /// a note and a thought landing back to back cannot collide onto one feed row.
+  List<ClaudeExecEvent> _readNote(Map<String, dynamic> block, String parent) {
+    final note = '${block['text'] ?? ''}'.trim();
+    if (note.isEmpty) return const [];
+    return [
+      ClaudeActivityEvent(
+        AgentActivity(
+          id: 'note-$parent-${_thoughts++}',
+          kind: AgentActivityKind.thinking,
+          label: note,
+          status: AgentActivityStatus.done,
+          parent: parent,
+        ),
+      ),
+    ];
   }
 
   List<ClaudeExecEvent> _readToolUse(
@@ -320,10 +350,14 @@ class ClaudeStreamParser {
 
   /// The answer as it stands: every finished block, plus whatever of the current
   /// one has arrived.
-  String _answer() => [
-    ..._completed,
-    if (_partial.isNotEmpty) _partial.toString(),
-  ].join('\n\n');
+  /// Everything the agent has said this turn, as one passage.
+  ///
+  /// Cut at a chat-template marker if one arrived: a model served over the grid
+  /// can overrun its stop token, and what comes after is not the agent's — see
+  /// [stripControlTokens].
+  String _answer() => stripControlTokens(
+    [..._completed, if (_partial.isNotEmpty) _partial.toString()].join('\n\n'),
+  );
 
   /// The answer up to the last **finished** block — no half-written sentence.
   ///
@@ -332,7 +366,7 @@ class ClaudeStreamParser {
   /// sentence still being typed (a sub-agent's, most often), and cutting there
   /// splits the agent's own words mid-syllable — "…và chạ" above the step,
   /// "y vài ph" below it.
-  String _settled() => _completed.join('\n\n');
+  String _settled() => stripControlTokens(_completed.join('\n\n'));
 }
 
 /// How full the model's context was for one request, from that request's
