@@ -105,7 +105,7 @@ class _StepActions extends ConsumerWidget {
           const AppSpinner(size: SpinnerSize.small),
           const SizedBox(width: 9),
           Text(
-            'Connecting Chrome…',
+            'Setting Chrome up…',
             style: TextStyle(fontSize: 12, color: AppPalette.textSecondary),
           ),
         ],
@@ -121,9 +121,12 @@ class _StepActions extends ConsumerWidget {
             onPressed: () => openExternalUrl(kClaudeInChromeStoreUrl),
             child: const Text('Get the extension'),
           ),
-          BrowserSetupStep.connectChrome => FilledButton(
+          // A retry, not the step itself: `ChromeConnectScope` has already run
+          // this at launch, and what is left for the user is the restart the
+          // sentence above asks for.
+          BrowserSetupStep.connectChrome => OutlinedButton(
             onPressed: ref.read(chromeSetupProvider.notifier).connect,
-            child: const Text('Connect my Chrome'),
+            child: const Text('Set it up again'),
           ),
         },
         TextButton(
@@ -137,10 +140,9 @@ class _StepActions extends ConsumerWidget {
 
 /// How the connect step ended — the restart it now needs, or why it didn't take.
 ///
-/// Success is not silent here: the file lands on disk, the card flips to "works
-/// in your Chrome", and the browser still won't answer until Chrome is restarted
-/// (it reads this at startup). A card that only flipped would be lying by
-/// omission for one restart.
+/// Success is not silent here: the file lands on disk and the browser still
+/// won't answer until Chrome is restarted (it reads this at startup). A card
+/// that only flipped to green would be lying by omission for one restart.
 class _SetupOutcome extends ConsumerWidget {
   const _SetupOutcome();
 
@@ -152,8 +154,8 @@ class _SetupOutcome extends ConsumerWidget {
       ChromeSetupIdle() || ChromeSetupRunning() => const SizedBox.shrink(),
       ChromeSetupDone() => _Note(
         text:
-            'Connected. Quit Chrome and open it again — that is when it picks '
-            'this up.',
+            'The connection is in place. Quit Chrome and open it again — that '
+            'is when it picks this up.',
         color: AppPalette.online,
       ),
       ChromeSetupFailed(:final message) => _Note(

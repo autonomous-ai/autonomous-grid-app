@@ -10,10 +10,13 @@ import '../mcp_server.dart';
 /// opposite requirements, and neither covers both cases:
 ///
 /// - [extension] is the user's **own** Chrome — the windows and the logins they
-///   already have. Claude Code only talks to the extension when the session is
-///   signed in with a claude.ai account, so it is closed to any turn carrying
-///   the relay's `ANTHROPIC_*` credentials (Claude Code turns Chrome off for
-///   API-key sessions; older builds left it on and 403'd every call).
+///   already have. It is open whenever a browser is holding the bridge socket
+///   (`ChromeExtensionProbe`), and the connection behind that is written at
+///   launch (`ChromeHostInstaller`). Claude Code only talks to the extension
+///   when the session is signed in with a claude.ai account, so it is closed to
+///   any turn carrying the relay's `ANTHROPIC_*` credentials (Claude Code turns
+///   Chrome off for API-key sessions; older builds left it on and 403'd every
+///   call).
 /// - [cdp] is a browser this app starts and keeps, reached over the DevTools
 ///   protocol by an MCP server. It works with any model and any credential —
 ///   and it is a fresh profile, so it is signed in to nothing.
@@ -103,8 +106,8 @@ String _cdpReason({
       'the Claude in Chrome extension is not '
           'installed',
     ChromeExtensionState.hostPending =>
-      'Chrome has not been restarted since '
-          "Claude Code's browser host was installed",
+      'no browser has connected to the Chrome extension yet — Chrome has to '
+          'be restarted once after the connection was installed',
     ChromeExtensionState.ready => 'the extension is ready but was not chosen',
   };
 }
@@ -115,8 +118,8 @@ String _noneReason({required ChromeExtensionState extensionState}) =>
       ChromeExtensionState.missing =>
         'no Claude in Chrome extension and no browser this app can drive',
       ChromeExtensionState.hostPending =>
-        'the extension needs Chrome restarted, and no fallback browser is '
-            'available',
+        'no browser has connected to the extension yet, and no fallback '
+            'browser is available',
       ChromeExtensionState.ready =>
         'the extension is installed but this model cannot use it, and no '
             'fallback browser is available',

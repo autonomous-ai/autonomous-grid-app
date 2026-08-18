@@ -11,6 +11,7 @@ import 'app/panel_scope.dart';
 import 'app/single_instance.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
+import 'features/agents/presentation/chrome_connect_scope.dart';
 import 'features/connectors/presentation/connector_refresh_scope.dart';
 import 'features/skills/presentation/grid_skills_scope.dart';
 import 'infrastructure/logging/app_log.dart';
@@ -121,9 +122,14 @@ Future<void> main() async {
       // whether or not the screen that manages them was ever opened.
       // The panel is the same shape of thing: it is plugged into the desk, and
       // it answers whatever the window happens to be showing.
+      // So is the browser: the Chrome connection is the agent's, and it has to
+      // exist before the turn that wants it, not after somebody goes looking
+      // for a button.
       child: const ConnectorRefreshScope(
         child: GridSkillsScope(
-          child: PanelScope(child: NotificationScope(child: GridApp())),
+          child: ChromeConnectScope(
+            child: PanelScope(child: NotificationScope(child: GridApp())),
+          ),
         ),
       ),
     ),

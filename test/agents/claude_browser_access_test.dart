@@ -36,13 +36,13 @@ void main() {
       expect(access.detail, contains('Claude in Chrome'));
     });
 
-    test('an extension with no connection on disk offers to make it — the app '
-        'is the only thing that can, and it never did', () {
+    test('an extension no browser has connected yet asks for the one thing the '
+        'app cannot do — the restart — and keeps the retry beside it', () {
       final access = accessWith(
         extensionState: ChromeExtensionState.hostPending,
       );
       expect(access.step, BrowserSetupStep.connectChrome);
-      expect(access.detail, contains('quit Chrome'));
+      expect(access.detail, contains('open Chrome'));
     });
 
     test('a grid model is told to switch model, and offered no button the card '
