@@ -13,6 +13,7 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../infrastructure/state/panel_recap_store.dart';
 import '../../../shared/app_info.dart';
+import '../../../shared/layouts/shell_state.dart';
 import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_providers.dart';
 import '../../auth/logic/session_controller.dart';
@@ -20,6 +21,7 @@ import '../../chat/logic/chat_sessions_controller.dart';
 import '../../chat/logic/conversation.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
+import '../../projects/logic/selected_project.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import 'panel_firmware_updater.dart';
 import 'panel_project_mirror.dart';
@@ -646,6 +648,10 @@ class PanelController {
     final chats = _ref.read(chatSessionsProvider.notifier);
     try {
       if (target != null) {
+        // Opened BEFORE the send, not after. `send(into:)` deliberately leaves
+        // the window where it is — that is right for a queued follow-up — so
+        // without this the reply streams into a chat nobody is looking at.
+        _showInWindow(projectId, target.id);
         await chats.send(
           network: network,
           model: model,
@@ -656,11 +662,10 @@ class PanelController {
       }
       // A project nobody has talked in yet has no chat to send into, and a
       // chat is not saved until its first message — so it has to be composed
-      // first. This does open it in the window, unlike every other send the
-      // app makes on its own: the user did ask for this, just from the other
-      // side of the desk, and a reply landing in a chat the window never shows
-      // is a reply they have to go hunting for.
+      // first. `newChat` already makes that compose the open one; the rest of
+      // the window still has to follow it.
       chats.newChat(projectId: projectId);
+      _showInWindow(projectId, null);
       await chats.send(network: network, model: model, message: text);
     } on Object catch (e) {
       _log.warn('panel', 'Panel turn in $projectId could not start: $e');
@@ -669,6 +674,31 @@ class PanelController {
         "That couldn't be started here. Open Grid to see.",
       );
     }
+  }
+
+  /// Point the window at the turn the panel just started.
+  ///
+  /// The user asked for this — from the other side of the desk, but they asked
+  /// — and a turn they cannot find is a turn they will start again. The panel
+  /// says what happened in fifteen words; the window is where the actual work
+  /// is legible, and on a desk with a panel on it the window is very often
+  /// showing some other project entirely.
+  ///
+  /// All three, because any one alone leaves the window half-moved: the chat is
+  /// what the reply streams into, the rail is what the Projects screen dresses
+  /// itself for, and the section is which of those is on screen at all —
+  /// [ShellSectionController.select] also brings the window back from Code,
+  /// where "go to Chat" would otherwise change something nobody can see.
+  ///
+  /// **Not** a window raise. The person is looking at the panel, quite possibly
+  /// with another app in front; stealing the screen because they spoke would be
+  /// a worse trade than making them click Grid when they turn back to it.
+  void _showInWindow(String projectId, String? chatId) {
+    if (chatId != null) {
+      _ref.read(chatSessionsProvider.notifier).select(chatId);
+    }
+    _ref.read(selectedProjectIdProvider.notifier).select(projectId);
+    _ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
   }
 
   /// The project's chats, most recently used first.
