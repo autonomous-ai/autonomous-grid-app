@@ -1,15 +1,71 @@
 part of 'chat_sessions_controller.dart';
 
-/// What the user typed while the chat was still answering. An agent turn can
-/// run for minutes, so a follow-up waits here instead of being dropped, and
-/// goes out one at a time as the chat frees up.
+/// What the user typed while the chat was still answering.
+///
+/// It goes **into** the answer being written wherever it can: an agent turn can
+/// run for minutes, and a correction that only arrives after it has finished is
+/// a correction to work already done. See [_steerRunningTurn], and
+/// [AgentSteeringController] for how each agent takes one.
+///
+/// The queue is what's left when it can't — a picture, a turn with files
+/// attached, an agent that refused, or a reply coming from the grid itself
+/// rather than an agent. Those wait here and go out one at a time as the chat
+/// frees up.
 mixin _ChatQueue on _ChatSessions {
-  /// Hold [turn] until the open chat has finished answering.
+  /// Hold [turn] until chat [id] has finished answering.
   @override
-  void _enqueue(QueuedTurn turn) {
-    final id = state.activeId;
-    if (id == null) return;
-    state = state.withQueue(id, [...state.queuedFor(id), turn]);
+  void _enqueue(String id, QueuedTurn turn) =>
+      state = state.withQueue(id, [...state.queuedFor(id), turn]);
+
+  /// Hand [turn] to the answer already in flight in chat [id], instead of
+  /// holding it back.
+  ///
+  /// True when the agent took it — the message is appended to the transcript
+  /// there and then, because it is a real thing the user said in this
+  /// conversation and the agent has it. False leaves it to the queue.
+  @override
+  Future<bool> _steerRunningTurn(String id, QueuedTurn turn) async {
+    // The channel into a running turn carries text: a picture, an attached file
+    // or a piece of context is a different request shape, and belongs to a turn
+    // of its own.
+    if (turn.modality != PlaygroundModality.text) return false;
+    if (turn.attachments.isNotEmpty ||
+        turn.files.isNotEmpty ||
+        turn.contexts.isNotEmpty) {
+      return false;
+    }
+    if (!ref.read(agentSteeringProvider).contains(id)) return false;
+    final taken = await ref
+        .read(agentSteeringProvider.notifier)
+        .steer(id, turn.text);
+    if (!taken) return false;
+
+    // The chat was deleted while the message was going out. It reached the
+    // agent all the same, so this is not the queue's business either.
+    final chat = _find(id);
+    if (chat == null) return true;
+    // Under the question it follows, and above the answer still being written —
+    // which is the answer that will take it into account. The phase is left
+    // exactly as it was: this chat is still answering the same turn, and
+    // nothing here started a new one.
+    final said = await buildUserTurn(
+      text: turn.text,
+      attachments: const [],
+      outputsDir: ref.read(mediaOutputsDirProvider),
+    );
+    _commit(
+      chat.copyWith(
+        updatedAt: DateTime.now(),
+        messages: [...chat.messages, said],
+      ),
+      phase: state.phaseFor(id),
+    );
+    // Retry rewinds the transcript to the user turn it is repeating. This
+    // message is part of that turn now — the agent was given it — so the rewind
+    // has to stop after it rather than trim it off.
+    final retryable = _retryableTurns[id];
+    if (retryable != null) _retryableTurns[id] = retryable.withOneMore();
+    return true;
   }
 
   /// Drop the follow-up at [index] in the chat [id] — the user changed their

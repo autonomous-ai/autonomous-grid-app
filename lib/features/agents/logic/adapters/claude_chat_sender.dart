@@ -29,6 +29,7 @@ import '../agent_prompt.dart';
 import '../agent_providers.dart';
 import '../agent_permission_decision.dart';
 import '../agent_session_grants.dart';
+import '../agent_steering.dart';
 import '../agent_permissions.dart';
 import '../agent_server_error.dart';
 import '../agent_session_slots.dart';
@@ -500,6 +501,19 @@ class ClaudeChatSender implements ChatSender {
           dropEnvironment: dropEnvironment,
         );
 
+    // Anything typed in this chat while the turn runs goes straight into it —
+    // Claude reads it at its next tool boundary and changes course inside the
+    // same turn (see [AgentSteeringController]). The seen count moves with it:
+    // the message is in Claude's own session from here, so the next turn must
+    // not send it again as "context you missed".
+    final steering = _ref.read(agentSteeringProvider.notifier);
+    offerSteering(
+      ref: _ref,
+      chat: chat,
+      into: run.steer,
+      counted: () => slot.seen++,
+    );
+
     final answer = StringBuffer();
     // The answer up to its last finished block — where the turn may be divided.
     // See [ClaudeMessageEvent.settled].
@@ -587,8 +601,9 @@ class ClaudeChatSender implements ChatSender {
         await run.done;
         settled = true;
         // The turn is over: a card left pinned would be a button that answers
-        // nobody.
+        // nobody, and a message typed from here belongs to the next turn.
         _ref.read(agentPermissionsProvider.notifier).clear(chat);
+        steering.withdraw(chat);
         final reply = answer.toString().trim();
         final plan = _ref.read(agentRunProvider(chat)).plan;
         // A turn that announced a plan and stopped before finishing it is worth
@@ -640,6 +655,7 @@ class ClaudeChatSender implements ChatSender {
     updates.onCancel = () async {
       await events.cancel();
       _ref.read(agentPermissionsProvider.notifier).clear(chat);
+      steering.withdraw(chat);
       if (settled) return;
       run.kill();
       log.finish(logId, error: 'stopped');

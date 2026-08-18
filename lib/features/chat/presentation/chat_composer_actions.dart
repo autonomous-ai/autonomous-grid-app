@@ -5,6 +5,7 @@ class _Actions extends StatelessWidget {
     required this.canAttach,
     required this.sending,
     required this.canSend,
+    required this.busySendTooltip,
     required this.approvalPicker,
     this.agentPicker,
     required this.modelPicker,
@@ -18,6 +19,10 @@ class _Actions extends StatelessWidget {
   final bool canAttach;
   final bool sending;
   final bool canSend;
+
+  /// What Send promises while a turn is still running — see
+  /// [ComposerSection.busySendTooltip].
+  final String busySendTooltip;
 
   /// What the assistant may do to this computer — null when nothing on this turn
   /// can touch it (a picture goes to the grid, which has no filesystem), so the
@@ -117,7 +122,7 @@ class _Actions extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 // Stop only gets its own button when Send has been taken over
-                // by a follow-up waiting to be queued; the rest of the time the
+                // by a follow-up going out mid-answer; the rest of the time the
                 // one round button is both.
                 if (sending && canSend) ...[
                   ComposerStopButton(onStop: onStop),
@@ -126,6 +131,7 @@ class _Actions extends StatelessWidget {
                 ComposerSendButton(
                   sending: sending,
                   canSend: canSend,
+                  busyTooltip: busySendTooltip,
                   onSend: onSend,
                   onStop: onStop,
                 ),

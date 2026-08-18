@@ -21,6 +21,7 @@ import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_status.dart';
+import '../../agents/logic/agent_steering.dart';
 import '../../agents/logic/auto_agent_router.dart';
 import '../../network/logic/node_display.dart' show kAutoModelId;
 import '../../auth/logic/session_controller.dart';
@@ -96,6 +97,15 @@ class _RetryableTurn {
   /// The transcript length after the user turn was committed. A partial answer
   /// may follow it after failure; retry trims to this point before sending.
   final int messageCount;
+
+  /// The same turn with one more message inside it — a follow-up the user
+  /// steered into it while it ran, which retry must keep rather than trim.
+  _RetryableTurn withOneMore() => _RetryableTurn(
+    messageCount: messageCount + 1,
+    attachments: attachments,
+    planTurn: planTurn,
+    continuedAgent: continuedAgent,
+  );
   final List<MediaAttachment> attachments;
   final bool planTurn;
   final AgentTool? continuedAgent;
@@ -282,7 +292,10 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   });
 
   /// Hold a turn typed while the chat was busy — [_ChatQueue].
-  void _enqueue(QueuedTurn turn);
+  void _enqueue(String id, QueuedTurn turn);
+
+  /// Put a turn typed mid-answer into the answer itself — [_ChatQueue].
+  Future<bool> _steerRunningTurn(String id, QueuedTurn turn);
 
   /// Send the next held turn, if any — [_ChatQueue].
   bool _drainQueue(String id);

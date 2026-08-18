@@ -39,6 +39,7 @@ class ComposerSection extends StatelessWidget {
     required this.needsImage,
     required this.sending,
     required this.canSend,
+    required this.busySendTooltip,
     required this.error,
     this.errorAction,
     required this.approvalPicker,
@@ -74,6 +75,13 @@ class ComposerSection extends StatelessWidget {
   final bool needsImage;
   final bool sending;
   final bool canSend;
+
+  /// What Send says it will do while a turn is still running — the truth differs
+  /// by chat: a message can go **into** the answer being written, or wait for it
+  /// (see `canSteerChatProvider`), and a button that promised the wrong one
+  /// would be the app misreporting what pressing it does.
+  final String busySendTooltip;
+
   final String? error;
 
   /// A way out of [error], shown beside it — e.g. handing the chat to another
@@ -191,9 +199,10 @@ class ComposerSection extends StatelessWidget {
                   focusNode: focusNode,
                   minLines: 1,
                   maxLines: 6,
-                  // Deliberately *not* disabled while a turn runs: what the user
-                  // types now is queued behind it. Locking the box was what made
-                  // a follow-up thought something to hold in your head for the
+                  // Deliberately *not* disabled while a turn runs: what the
+                  // user types now goes into the answer being written (or, when
+                  // it can't, queues behind it). Locking the box was what made a
+                  // follow-up thought something to hold in your head for the
                   // minutes an agent turn can take.
                   enabled: true,
                   keyboardType: TextInputType.multiline,
@@ -211,6 +220,7 @@ class ComposerSection extends StatelessWidget {
                 ),
               ),
               _Actions(
+                busySendTooltip: busySendTooltip,
                 // Room for either kind: the one button attaches both, so it
                 // stays live until the message is full of pictures *and* files.
                 canAttach:

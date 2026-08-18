@@ -76,16 +76,28 @@ class ComposerIconButton extends StatelessWidget {
 /// the transcript already shows the work in flight is what frees this button to
 /// be an action instead of a progress light.
 ///
-/// With one exception, which is the whole point of the follow-up queue: once
-/// there is something typed, this goes back to being Send — the message joins
-/// the queue instead of going out now — and Stop moves to [ComposerStopButton]
-/// beside it. Both actions stay reachable; neither is hidden behind clearing the
-/// box.
+/// With one exception, which is the whole point of being able to type mid-turn:
+/// once there is something typed, this goes back to being Send — the message
+/// goes to the agent, or waits, rather than the turn ending — and Stop moves to
+/// [ComposerStopButton] beside it. Both actions stay reachable; neither is
+/// hidden behind clearing the box.
 ///
 /// [busyTooltip] is what the hover says while a turn runs and there is something
-/// typed: the chat queues it behind the answer, and Code cannot ("Send when this
-/// answer finishes" against a project that takes one task at a time), so each
-/// says what pressing it will really do.
+/// typed, and it differs by where the button sits: the chat hands the message to
+/// the agent answering (or queues it when it can't — see `canSteerChatProvider`),
+/// and Code cannot ("Send when this answer finishes" against a project that takes
+/// one task at a time), so each says what pressing it will really do.
+/// What Send promises while an agent turn is running and the chat can reach it:
+/// the message goes to the assistant now, and the answer being written takes it
+/// into account.
+const String kSendIntoAnswerTooltip =
+    'Send now — the assistant reads this '
+    'while it works';
+
+/// And when it can't be reached — a picture, attached files, a reply coming from
+/// the grid itself — the message waits, and says so.
+const String kSendAfterAnswerTooltip = 'Send when this answer finishes';
+
 class ComposerSendButton extends StatelessWidget {
   const ComposerSendButton({
     super.key,
@@ -93,7 +105,7 @@ class ComposerSendButton extends StatelessWidget {
     required this.canSend,
     required this.onSend,
     required this.onStop,
-    this.busyTooltip = 'Send when this answer finishes',
+    this.busyTooltip = kSendAfterAnswerTooltip,
   });
 
   final bool sending;

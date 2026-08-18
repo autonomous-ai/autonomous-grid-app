@@ -18,6 +18,7 @@ import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../agent_changes.dart';
 import '../agent_server_error.dart';
 import '../agent_permissions.dart';
+import '../agent_steering.dart';
 import '../agent_prompt.dart';
 import 'hermes_grid_link.dart';
 import 'hermes_tool.dart';
@@ -316,6 +317,19 @@ class HermesChatSender implements ChatSender {
     );
 
     final run = session.prompt(text);
+    // Anything typed in this chat while the turn runs goes into the turn itself
+    // (the adapter's `/steer`), not into a queue behind it — see
+    // [AgentSteeringController]. The seen count moves with it: the message is in
+    // Hermes's own history from here, so the next turn must not send it again as
+    // "context you missed".
+    final steering = _ref.read(agentSteeringProvider.notifier);
+    offerSteering(
+      ref: _ref,
+      chat: chat,
+      into: session.steer,
+      counted: () => live.seen++,
+    );
+
     final answer = StringBuffer();
     final updates = StreamController<ChatSendUpdate>();
     var settled = false;
@@ -426,8 +440,10 @@ class HermesChatSender implements ChatSender {
         settled = true;
         idle?.cancel();
         // Nothing is waiting on an answer once the turn is over — a card left
-        // pinned in the chat would be a button that does nothing.
+        // pinned in the chat would be a button that does nothing, and a message
+        // typed from here belongs to the next turn.
         permissions.clear(chat);
+        steering.withdraw(chat);
 
         final reply = answer.toString().trim();
         // Hermes answers with its own failure when the model won't take the turn
@@ -546,6 +562,7 @@ class HermesChatSender implements ChatSender {
     updates.onCancel = () async {
       idle?.cancel();
       await events.cancel();
+      steering.withdraw(chat);
       if (settled) return;
       permissions.clear(chat);
       run.kill();

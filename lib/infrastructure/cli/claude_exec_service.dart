@@ -34,6 +34,7 @@ class ClaudeExecRun {
     required this.done,
     required this.kill,
     required this.answerPermission,
+    required this.steer,
   });
 
   final Stream<ClaudeExecEvent> events;
@@ -45,6 +46,18 @@ class ClaudeExecRun {
   /// calling it twice, or for a request the turn has already moved past, does
   /// nothing.
   final void Function(Object id, String? optionId) answerPermission;
+
+  /// Hand the running turn something the user typed while it was working.
+  ///
+  /// Null back means Claude took it; anything else is the raw reason it didn't,
+  /// for the caller to log. It does **not** interrupt: measured against
+  /// `claude 2.1.183` on 2026-08-18, a `user` message written mid-turn is
+  /// delivered at the next tool boundary and the model changes course inside
+  /// the same turn — one `result`, not two — so the work already done is kept.
+  /// Arriving after the turn's last tool call, it runs as the next turn in the
+  /// same session instead — and the app is still reading, so that answer lands
+  /// in the same reply rather than going nowhere.
+  final Future<String?> Function(String text) steer;
 }
 
 /// Drives Claude Code as a chat agent over `claude -p`. Behind an interface so
@@ -304,6 +317,7 @@ class _ClaudeExecTurn {
       done: _done.future,
       kill: kill,
       answerPermission: answerPermission,
+      steer: steer,
     );
   }
 
@@ -395,6 +409,19 @@ class _ClaudeExecTurn {
         input: input,
       ),
     );
+  }
+
+  /// Put a message in front of the model without stopping the turn — the same
+  /// envelope the turn was opened with, on the stdin it is still listening to.
+  ///
+  /// The one thing that can refuse it is a turn that has already ended: the
+  /// answer landing closes stdin ([_endInput]), and writing to a dead pipe would
+  /// lose the message rather than queue it.
+  Future<String?> steer(String text) async {
+    if (text.trim().isEmpty) return 'Nothing to send.';
+    if (_inputClosed) return 'The turn had already finished.';
+    _send(claudeUserMessage(text));
+    return _inputClosed ? 'Claude Code stopped reading its input.' : null;
   }
 
   void _send(Map<String, Object?> message) {

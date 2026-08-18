@@ -98,6 +98,7 @@ class CodexRun {
     required this.done,
     required this.kill,
     required this.answerPermission,
+    required this.steer,
   });
 
   final Stream<CodexEvent> events;
@@ -108,6 +109,15 @@ class CodexRun {
   /// allow, or null to refuse. The turn is stopped until this is called, and
   /// answering one twice does nothing.
   final void Function(Object id, String? optionId) answerPermission;
+
+  /// Hand the running turn something the user typed while it was working.
+  ///
+  /// Null back means Codex took it; anything else is the raw reason it didn't,
+  /// for the caller to log. It does **not** interrupt: measured against
+  /// `codex-cli 0.144.6` on 2026-08-18, `turn/steer` puts the text into the turn
+  /// already in flight (it arrives as a `userMessage` item under the same turn
+  /// id) rather than starting a second one, so the work already done is kept.
+  final Future<String?> Function(String text) steer;
 }
 
 /// Drives Codex as a chat agent. Behind an interface so the sender is tested

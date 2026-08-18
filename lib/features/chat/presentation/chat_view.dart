@@ -51,6 +51,8 @@ import '../logic/conversation.dart';
 import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
 import 'queued_follow_ups.dart';
+import '../../../shared/widgets/composer_buttons.dart';
+import '../../agents/logic/agent_steering.dart';
 import 'agent_handover_bar.dart';
 import 'agent_questions_card.dart';
 import 'file_mention_menu.dart';
@@ -741,6 +743,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final active = ref.watch(chatSessionsProvider.select((s) => s.active));
     final activeId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
     final sending = ref.watch(chatSessionsProvider.select((s) => s.sending));
+    // Whether a message typed right now reaches the agent mid-answer or waits
+    // for the next turn — the two are different promises, and Send says which.
+    final steerable = ref.watch(canSteerChatProvider(activeId));
     final error = ref.watch(chatSessionsProvider.select((s) => s.error));
     final openProject = ref.watch(openChatProjectProvider);
     final options = ref.watch(playgroundModelsProvider);
@@ -1087,6 +1092,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 needsImage: needsImage,
                                 sending: sending,
                                 canSend: canSend,
+                                busySendTooltip: steerable
+                                    ? kSendIntoAnswerTooltip
+                                    : kSendAfterAnswerTooltip,
                                 error: error,
                                 // Retry reuses the committed turn, including
                                 // its picture, after the user picks a model
