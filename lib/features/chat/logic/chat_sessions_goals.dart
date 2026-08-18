@@ -42,6 +42,9 @@ mixin _ChatGoals on _ChatSessions {
       status: GoalStatus.active,
       startedAt: DateTime.now(),
       agent: ref.read(chatAgentForProjectProvider(chat.projectId)),
+      // The turn that opens the goal is the one being sent right now, so it is
+      // the message after the ones already here.
+      startedAfter: chat.messages.length + 1,
     );
     _saveGoal(chat.id, goal);
     // The transcript keeps the user's own words; the wire carries the command.
@@ -75,26 +78,65 @@ mixin _ChatGoals on _ChatSessions {
     // survives `--resume` and captures even an unrelated prompt — so Stop has to
     // reach the agent, and it is the only way out (there is no turn ceiling).
     if (goal.owner == GoalOwner.claude) {
-      // Not through [_sendGoalTurn]: that one refuses to send unless a goal is
-      // running, and the whole point here is that this one is being taken away
-      // in the same breath. It would race its own teardown and send nothing.
-      final network = ref.read(selectedNetworkProvider);
-      if (network != null) {
-        unawaited(
-          send(
-            network: network,
-            model: chat.model,
-            message: 'Stop working toward that goal.',
-            into: chat.id,
-            planFirst: false,
-            continuing: true,
-            agentCommand: kClaudeGoalClear,
-          ),
-        );
-      }
+      unawaited(_tellClaude(chat, kClaudeGoalClear));
     }
     _saveAndReplace(chat.copyWith(clearGoal: true));
     return (message: 'Goal cleared: ${goal.condition}', failed: false);
+  }
+
+  // TODO(BE): Hold / Resume was built here and taken out again on 2026-08-18.
+  // Hold worked cleanly — it stops the process and clears the goal on the
+  // agent's side, leaving nothing in the transcript. **Resume is what could not
+  // be done honestly**, and the blocker is `AgentSessionSlots.planTurn`: it only
+  // continues a session when `history.length > live.seen`, so a resume that
+  // appends no message opens a *fresh* session — arming the goal somewhere the
+  // old, still-armed session cannot hear. Appending one instead put a duplicate
+  // copy of the condition in the transcript on every press (five of them, in the
+  // report that ended this). Running it silently is worse again: `/goal <cond>`
+  // sets *and runs* the whole loop in one invocation, so the files would change
+  // with nothing on screen to say why.
+  //
+  // The shape that would work is an assistant-only turn: no user bubble, the
+  // session id taken from `Conversation.resume` rather than from the slot, and
+  // the reply streamed and committed as usual. That needs a second dispatch path
+  // through the send spine, which is shared by all three agents — worth doing
+  // deliberately, not as a patch on a button.
+
+  /// Stop what the agent is doing and take its goal away — quietly.
+  ///
+  /// **Only ever for stopping.** Arming a goal this way would set it *and run
+  /// it*, in one invocation, with nothing appended to the conversation to show
+  /// what happened.
+  ///
+  /// **The stop is the half that matters, and leaving it out is a bug that ships
+  /// as "Pause doesn't work".** Claude Code arms its goal as a Stop hook inside
+  /// the *running process*: clearing the goal writes the session file, which the
+  /// process that is already going never re-reads. So a `/goal clear` on its own
+  /// pauses nothing — the turn in flight finishes its remaining rounds and the
+  /// user watches it carry on after pressing the button.
+  ///
+  /// Order: kill the turn, then clear, then the caller records the new state.
+  /// Clearing first would leave a live process still looping against a goal
+  /// nothing on screen admits to.
+  ///
+  /// Not through [_sendGoalTurn]: that refuses to send unless a goal is running,
+  /// and every caller is changing exactly that in the same breath.
+  Future<void> _tellClaude(Conversation chat, String command) async {
+    final wasRunning = state.sendingFor(chat.id);
+    if (wasRunning) {
+      stopChat(chat.id);
+      // One beat before spawning `--resume` on the same session: the kill is
+      // asynchronous, and two `claude` processes writing one session transcript
+      // is a race worth not taking for a delay nobody can perceive.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    if (_disposed) return;
+    await runClaudeSessionCommand(
+      ref,
+      resume: _find(chat.id)?.resume ?? chat.resume,
+      model: chat.model,
+      command: command,
+    );
   }
 
   /// Judge the turn that just ended in chat [id], and start the next one if the
@@ -332,6 +374,13 @@ mixin _ChatGoals on _ChatSessions {
   ChatGoal _stampGoalEnd(ChatGoal goal, Conversation chat) {
     if (goal.isRunning) return goal.copyWith(clearEndedAfter: true);
     if (goal.endedAfter != null) return goal;
-    return goal.copyWith(endedAfter: chat.messages.length);
+    return goal.copyWith(
+      endedAfter: chat.messages.length,
+      // How long it took, frozen here. Worked out at paint time instead it
+      // would keep climbing after the goal was over — "achieved in 38s" would
+      // read 4m the next time the chat was opened. Codex reports its own
+      // figure on the wire, and that one wins.
+      elapsed: goal.elapsed ?? DateTime.now().difference(goal.startedAt),
+    );
   }
 }

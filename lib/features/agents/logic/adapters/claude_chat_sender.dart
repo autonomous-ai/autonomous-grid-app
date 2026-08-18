@@ -66,6 +66,57 @@ const String kClaudeGoalClear = '/goal clear';
 /// the id) — and so a chat that compacts twice doesn't grow two.
 const String _compactStepId = 'compact-session';
 
+/// Run one of Claude Code's own commands against a session, changing that
+/// session and **nothing else**.
+///
+/// Pausing or clearing a goal is not a turn: it says nothing, it asks nothing,
+/// and it must leave no trace in the conversation. Routed through `send()` it
+/// left two messages behind every time — the sentence the app made up to carry
+/// the command, and the CLI's "Goal cleared: …" answering it — so a chat the
+/// user paused twice read like an argument with itself.
+///
+/// It also cannot go through `send()` for a second reason: a turn that appends
+/// nothing to the transcript is a turn `AgentSessionSlots.planTurn` sees no new
+/// messages for, so it would open a **fresh session** — and clear the goal in a
+/// session that never had one, leaving the armed one running.
+///
+/// Best effort by design. Every failure path returns quietly: the app-side
+/// state has already been recorded by the caller, and a command that could not
+/// be delivered must not also throw away what the user asked for.
+Future<void> runClaudeSessionCommand(
+  Ref ref, {
+  required AgentResumePoint? resume,
+  required String model,
+  required String command,
+}) async {
+  final service = ref.read(claudeExecServiceProvider);
+  final log = ref.read(appLogProvider);
+  if (service == null || resume == null) return;
+  if (resume.agent != AgentTool.claude.id) return;
+  final workdir = resume.workdir ?? ref.read(agentWorkspaceDirProvider).path;
+  try {
+    final run = service.run(
+      workdir: workdir,
+      prompt: command,
+      model: model,
+      environment: const {},
+      resumeSessionId: resume.sessionId,
+    );
+    await for (final event in run.events) {
+      // A local command runs no tools, so this should never fire — but an
+      // unanswered request stops the process dead, and nobody is watching this
+      // one. A no costs the command; silence would cost the process.
+      if (event case ClaudePermissionRequested(:final request)) {
+        run.answerPermission(request.id, null);
+      }
+    }
+    await run.done;
+    log.info('agent', 'ran $command on the session');
+  } on Object catch (error) {
+    log.failure('agent', "couldn't run $command on the session: $error");
+  }
+}
+
 /// The Claude Code exec seam, or null when Claude Code is absent.
 final claudeExecServiceProvider = Provider<ClaudeExecService?>((ref) {
   final path = ref.watch(claudePathProvider);
