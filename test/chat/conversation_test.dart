@@ -14,6 +14,7 @@ Conversation _conversation({
   List<ChatMessage> messages = const [],
   String? projectId,
   DateTime? archivedAt,
+  String? documentPath,
 }) {
   final at = updatedAt ?? DateTime(2026, 1, 1, 12);
   return Conversation(
@@ -25,6 +26,7 @@ Conversation _conversation({
     messages: messages,
     projectId: projectId,
     archivedAt: archivedAt,
+    documentPath: documentPath,
   );
 }
 
@@ -446,6 +448,32 @@ void main() {
       // A file from before pinning existed reads as unpinned rather than
       // throwing.
       expect(Conversation.fromJson(chat('u').toJson()).pinned, isFalse);
+    });
+  });
+
+  group('the document a chat belongs to', () {
+    test('survives a restart, so the sidebar row still opens its file', () {
+      final paired = _conversation(
+        documentPath: '/Users/me/Documents/Report.docx',
+      );
+
+      final read = Conversation.fromJson(paired.toJson());
+
+      expect(read.documentPath, '/Users/me/Documents/Report.docx');
+    });
+
+    test('an ordinary chat writes no field, and one saved before Docs existed '
+        'reads as ordinary rather than as a chat with no file', () {
+      final plain = _conversation();
+      expect(plain.toJson().containsKey('documentPath'), isFalse);
+      expect(Conversation.fromJson(plain.toJson()).documentPath, isNull);
+    });
+
+    test('an empty path reads as no document — a chat that opened Docs and '
+        'then found nothing to show would be worse than a plain chat', () {
+      final json = _conversation().toJson()..['documentPath'] = '';
+
+      expect(Conversation.fromJson(json).documentPath, isNull);
     });
   });
 

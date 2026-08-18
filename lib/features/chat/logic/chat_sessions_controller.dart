@@ -881,6 +881,19 @@ class ChatSessionsController extends _ChatSessions
     _saveAndReplace(linked);
   }
 
+  /// Make [id] the conversation for the document at [path] — Docs pairs one
+  /// chat with one file, and this is where that pairing is written down.
+  ///
+  /// A no-op when the chat is missing or already carries a document, because
+  /// the pairing is made once: a chat that belongs to a file goes on belonging
+  /// to it (see [Conversation.documentPath]). Leaves `updatedAt` alone for the
+  /// reason [linkToProject] does — pairing a chat isn't talking in it.
+  void linkToDocument(String id, String path) {
+    final existing = _find(id);
+    if (existing == null || existing.documentPath != null) return;
+    _saveAndReplace(existing.copyWith(documentPath: path));
+  }
+
   /// Approve the plan the agent just proposed: carry it out. The execute turn
   /// continues the same session (so the agent already has the plan in context)
   /// with the planning flag off, so it runs asking per action rather than

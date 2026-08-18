@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../../features/command_palette/presentation/command_palette.dart';
 import '../../../features/provider_node/logic/serving_engines_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
+import '../office_entry.dart';
 import '../shell_state.dart';
 import 'sidebar_account.dart';
 
@@ -196,9 +198,10 @@ class _MiniHomeRail extends ConsumerWidget {
             MiniRailItem(
               icon: target.thinIcon,
               tooltip: target.label,
-              selected: section == target,
-              onTap: () =>
-                  ref.read(shellSectionProvider.notifier).select(target),
+              // Unmarked, like the wide rail's row and for the same reason:
+              // this is the button that starts a document, not the place a
+              // document is. See [SidebarOfficeGroup].
+              onTap: () => unawaited(enterOfficeApp(context, ref, target)),
             ),
         for (final target in kSidebarSections)
           MiniRailItem(

@@ -29,6 +29,7 @@ class Conversation {
     this.loop,
     this.compaction,
     this.resume,
+    this.documentPath,
   });
 
   final String id;
@@ -125,6 +126,21 @@ class Conversation {
   /// message.
   final AgentResumePoint? resume;
 
+  /// The document in Docs this chat belongs to, or null for an ordinary chat.
+  ///
+  /// Docs pairs one conversation with one file: the chat beside a document is
+  /// *that document's* chat, so "make the heading shorter" a week later still
+  /// means the heading in this file. It is also what makes the row in the
+  /// sidebar work — clicking a chat with a path here opens Docs with the file
+  /// on the right, not the Chat screen with a conversation about a document
+  /// nobody can see.
+  ///
+  /// Persisted, and that is the whole reason it lives on the conversation
+  /// rather than in a map beside it: the pairing used to be session state, so
+  /// quitting the app left a sidebar full of chats named after files that no
+  /// longer opened any.
+  final String? documentPath;
+
   /// True when this chat is hidden from the sidebar, the tray and ⌘K.
   bool get isArchived => archivedAt != null;
 
@@ -171,6 +187,10 @@ class Conversation {
     // nothing at all.
     AgentResumePoint? resume,
     bool clearResume = false,
+    // Only ever *set*, like [projectId]: a chat started beside a document goes
+    // on being that document's chat. There is no gesture that unpairs them —
+    // the way to a conversation about something else is a new chat.
+    String? documentPath,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -188,6 +208,7 @@ class Conversation {
     loop: loop ?? this.loop,
     compaction: compaction ?? this.compaction,
     resume: clearResume ? null : (resume ?? this.resume),
+    documentPath: documentPath ?? this.documentPath,
   );
 
   Map<String, dynamic> toJson() => {
@@ -221,6 +242,9 @@ class Conversation {
     // Same rule again: absent means "start a fresh session", which is what
     // every chat saved before this field existed did.
     if (resume != null) 'resume': resume!.toJson(),
+    // Same rule once more: absent means an ordinary chat, which is what every
+    // conversation written before Docs existed is.
+    if (documentPath != null) 'documentPath': documentPath,
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -267,6 +291,13 @@ class Conversation {
       // A point that won't parse reads as none, which costs a replay — the same
       // thing that happens to every chat written before this existed.
       resume: AgentResumePoint.fromJson(json['resume']),
+      // An empty string reads as none: a chat paired with "" would open Docs
+      // and then fail to find a file, which is worse than an ordinary chat.
+      documentPath:
+          json['documentPath'] is String &&
+              (json['documentPath'] as String).isNotEmpty
+          ? json['documentPath'] as String
+          : null,
       messages: [
         if (rawMessages is List)
           for (final m in rawMessages)

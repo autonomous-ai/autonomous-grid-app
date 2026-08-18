@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../../shared/layouts/shell_state.dart';
+import '../../../shared/layouts/reveal_chat.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/labeled_field.dart';
@@ -63,10 +63,7 @@ class _ArchivedChatsViewState extends ConsumerState<ArchivedChatsView> {
   /// Open an archived chat to read it. It stays archived — reading is not
   /// restoring, and a chat that un-filed itself just because the user looked at
   /// it would make this screen impossible to review.
-  void _open(Conversation chat) {
-    ref.read(chatSessionsProvider.notifier).select(chat.id);
-    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-  }
+  void _open(Conversation chat) => openChat(ref, chat.id);
 
   Future<void> _delete(Conversation chat) async {
     final ok = await confirmDeleteChat(context, chat);

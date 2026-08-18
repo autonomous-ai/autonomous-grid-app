@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../theme/app_theme.dart';
+import '../office_entry.dart';
 import '../shell_state.dart';
 import 'sidebar_item.dart';
 
@@ -14,8 +17,16 @@ import 'sidebar_item.dart';
 /// already answers to, so the sidebar has one way of holding rows inside a row.
 ///
 /// It opens itself whenever the section on screen is one of its own
-/// ([kOfficeSections]): arriving in Docs from ⌘K with the group collapsed would
-/// leave the rail showing no trace of where the user is.
+/// ([kOfficeSections]), so the door the user came through stays where they can
+/// reach it — arriving in Docs from ⌘K with the group collapsed would hide it.
+///
+/// **Its rows are actions, not places, so none of them is ever marked.** Docs
+/// works the way New chat above it does: pressing it clears the desk and starts
+/// a conversation for whatever document comes next, and pressing it again does
+/// that again. What marks where the user *is* is the chat's own row under
+/// Chats — one document, one conversation, one lit row. Marking this row too
+/// would light the rail twice for one screen and would promise that pressing it
+/// returns you to what is already open, which is the one thing it does not do.
 class SidebarOfficeGroup extends ConsumerStatefulWidget {
   const SidebarOfficeGroup({super.key});
 
@@ -51,9 +62,9 @@ class _SidebarOfficeGroupState extends ConsumerState<SidebarOfficeGroup> {
           trailingWidth: 20,
           trailing: _Chevron(open: open),
           // Toggles what the user asked for — but while one of its rows *is* the
-          // screen on display the group stays open regardless: collapsing it
-          // then would hide the rail's only lit row and leave the user with no
-          // mark of where they are.
+          // screen on display the group stays open regardless: folding the door
+          // away while the user is standing in the room leaves them nothing to
+          // press to start the next document.
           onTap: () => setState(() => _opened = !open),
         ),
         if (open)
@@ -66,9 +77,12 @@ class _SidebarOfficeGroupState extends ConsumerState<SidebarOfficeGroup> {
               padding: const EdgeInsets.only(left: 28),
               child: SidebarItem(
                 label: target.label,
-                selected: section == target,
-                onTap: () =>
-                    ref.read(shellSectionProvider.notifier).select(target),
+                // Unmarked on purpose — see the class doc.
+                //
+                // Not a plain `select` either: entering Docs clears the desk
+                // and starts a conversation for whatever document comes next.
+                // See [enterOfficeApp].
+                onTap: () => unawaited(enterOfficeApp(context, ref, target)),
               ),
             ),
       ],

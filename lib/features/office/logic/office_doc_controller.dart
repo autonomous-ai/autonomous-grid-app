@@ -137,6 +137,19 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     await open(path);
   }
 
+  /// Put the desk back to empty — no document, nothing watched.
+  ///
+  /// Unsaved edits go with it, and this controller does not ask: the one caller
+  /// is the rail's Docs row, which asks with a dialog first (it has the build
+  /// context to do that and this does not).
+  void close() {
+    _folderWatch?.close();
+    _folderWatch = null;
+    _baseline = null;
+    state = const OfficeDocEmpty();
+    _noDocumentToPair();
+  }
+
   /// Open the document at [path], replacing whatever is on screen.
   ///
   /// Unsaved edits in the current document are the caller's problem to ask about
@@ -167,6 +180,7 @@ class OfficeDocController extends Notifier<OfficeDocState> {
             .read(appLogProvider)
             .failure('office', 'open failed: $path', error: error);
         state = OfficeDocFailed(message, path: path);
+        _noDocumentToPair();
       case _ReadOk(:final bytes):
         final docx = DocxFile.open(bytes);
         if (docx == null) {
@@ -183,6 +197,7 @@ class OfficeDocController extends Notifier<OfficeDocState> {
             'incomplete will not open either.',
             path: path,
           );
+          _noDocumentToPair();
           return;
         }
         _baseline = docx;
@@ -207,6 +222,12 @@ class OfficeDocController extends Notifier<OfficeDocState> {
         }
     }
   }
+
+  /// Nothing is on the desk any more, so nothing is waiting to be paired with a
+  /// conversation — drop any claim, or the next thing the user types would be
+  /// filed under a document that isn't open.
+  void _noDocumentToPair() =>
+      ref.read(officeDocChatProvider.notifier).cancelClaim();
 
   /// The open document's file has just been written by somebody else.
   ///

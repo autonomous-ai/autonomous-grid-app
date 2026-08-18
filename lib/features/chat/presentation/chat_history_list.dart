@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/layouts/reveal_chat.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/layouts/widgets/rail_section_header.dart';
 import '../../../shared/layouts/widgets/sidebar_item.dart';
@@ -421,8 +422,13 @@ class _ChatRow extends ConsumerWidget {
     final isOpen = ref.watch(
       chatSessionsProvider.select((s) => s.activeId == chat.id),
     );
-    final inChat = ref.watch(shellSectionProvider) == ShellSection.chat;
-    final selected = isOpen && inChat;
+    // Docs shows the open chat too — in the column beside the document — so a
+    // document's row is lit there for the same reason a chat's row is lit in
+    // Chat: it is the conversation on screen.
+    final section = ref.watch(shellSectionProvider);
+    final onScreen =
+        section == ShellSection.chat || section == ShellSection.officeDocs;
+    final selected = isOpen && onScreen;
     // A reply is coming into this chat — shown on whichever chat is working,
     // open or in the background, now that several can be in flight at once.
     // Selecting on the bool (not the raw phase) keeps the row from rebuilding on
@@ -455,8 +461,12 @@ class _ChatRow extends ConsumerWidget {
       child: ChatHoverPreview(
         title: chat.title,
         updatedAt: chat.updatedAt,
-        place: project?.name ?? 'Chats',
-        placeIcon: project != null
+        // Where this conversation lives, and for a document's chat that is
+        // Docs — the same answer the page glyph in its row gives, in words.
+        place: chat.documentPath != null ? 'Docs' : project?.name ?? 'Chats',
+        placeIcon: chat.documentPath != null
+            ? LucideIcons.fileText300
+            : project != null
             ? LucideIcons.folder300
             : LucideIcons.messageSquare300,
         child: SidebarItem(
@@ -466,20 +476,36 @@ class _ChatRow extends ConsumerWidget {
           // the pointer instead of leaving the ellipsis to be argued with.
           revealLabelOnHover: true,
           selected: selected,
-          // Muted-accent so it reads as "new" without competing with the selected
-          // row's bright rail; hidden the instant the chat is opened (read). A
-          // pinned chat marks itself when there's nothing more urgent to say —
-          // otherwise the top of the rail is a group with no explanation for why
-          // those rows are there.
+          // One slot, three things a row might have to say — in the order they
+          // stop mattering.
+          //
+          // Unread first, muted-accent so it reads as "new" without competing
+          // with the selected row's bright rail; hidden the instant the chat is
+          // opened (read).
+          //
+          // Then the page glyph, on a chat that belongs to a document. It is
+          // the app's own mark for a document (the Docs row wears it, and so
+          // does the bar above the page), and it is the one badge here that
+          // says what the row *does*: this one opens Docs with a file beside
+          // the conversation, not the Chat screen.
+          //
+          // Then the pin, when there is nothing more urgent to say — otherwise
+          // the top of the rail is a group with no explanation for why those
+          // rows are there.
           badge: unread
               ? const StatusDot(color: AppPalette.accent, size: 7)
+              : chat.documentPath != null
+              ? Icon(
+                  LucideIcons.fileText300,
+                  size: 12,
+                  color: AppPalette.textFaint,
+                )
               : chat.pinned
               ? Icon(LucideIcons.pin300, size: 11, color: AppPalette.textFaint)
               : null,
-          onTap: () {
-            controller.select(chat.id);
-            ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-          },
+          // A chat started beside a document opens Docs, with that document on
+          // the right — see [openChat]. Everything else opens Chat, as before.
+          onTap: () => openChat(ref, chat.id),
           // While a reply is coming in, the row shows a live cue instead of the
           // actions — you can't archive mid-reply anyway, and a pulsing cue says
           // "still working" at a glance without hovering. Idle, the row hands

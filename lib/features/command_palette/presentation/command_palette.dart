@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/layouts/office_entry.dart';
+import '../../../shared/layouts/reveal_chat.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
@@ -140,8 +144,9 @@ void runCommand(BuildContext context, WidgetRef ref, CommandItem item) {
   final shell = ref.read(shellSectionProvider.notifier);
   switch (item) {
     case OpenChatCommand(:final chat):
-      ref.read(chatSessionsProvider.notifier).select(chat.id);
-      shell.select(ShellSection.chat);
+      // A chat belonging to a document opens Docs, with the file beside it —
+      // see [openChat].
+      openChat(ref, chat.id);
     case NewChatCommand(:final project):
       ref.read(chatSessionsProvider.notifier).newChat(projectId: project?.id);
       shell.select(ShellSection.chat);
@@ -155,7 +160,10 @@ void runCommand(BuildContext context, WidgetRef ref, CommandItem item) {
     case SendFeedbackCommand():
       showFeedbackDialog(context);
     case GoToCommand(:final section):
-      shell.select(section);
+      // Office apps arrive the way the rail's rows arrive — Docs with a clean
+      // desk and a conversation waiting for a document. [enterOfficeApp] plain
+      // `select`s everything else.
+      unawaited(enterOfficeApp(context, ref, section));
   }
 }
 
