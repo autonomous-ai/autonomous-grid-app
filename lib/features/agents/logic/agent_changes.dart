@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../shared/file_changes.dart';
+import 'agent_chat_scope.dart';
 
 /// One file the agent changed in a conversation — enough to show the change and
 /// put it back the way it was.
@@ -34,28 +35,6 @@ class AgentChange {
       AgentChange(path: path, before: before, after: after ?? this.after);
 }
 
-/// The conversation the chat is showing, so the undo bar and its dialog speak
-/// for that chat alone.
-///
-/// Published by the chat screen rather than derived here: which conversation is
-/// open is the chat feature's fact, and the agent feature only needs to be told.
-/// Null before any chat is on screen.
-final agentChangesScopeProvider =
-    NotifierProvider<AgentChangesScopeController, String?>(
-      AgentChangesScopeController.new,
-    );
-
-class AgentChangesScopeController extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  /// The user is now looking at [chatId] (null when no conversation is open).
-  void show(String? chatId) {
-    if (state == chatId) return;
-    state = chatId;
-  }
-}
-
 /// The files the agent has changed, per conversation, and can still put back.
 ///
 /// Every edit the agent makes — whether the user approved it or Full access let
@@ -73,7 +52,7 @@ final agentChangesProvider =
 /// What the agent changed in the conversation on screen — what the bar counts
 /// and the dialog lists. Empty for a chat whose agent hasn't touched anything.
 final visibleAgentChangesProvider = Provider<List<AgentChange>>((ref) {
-  final chatId = ref.watch(agentChangesScopeProvider);
+  final chatId = ref.watch(agentChatScopeProvider);
   if (chatId == null) return const [];
   return ref.watch(agentChangesProvider)[chatId] ?? const [];
 });
@@ -86,7 +65,7 @@ final visibleAgentChangesProvider = Provider<List<AgentChange>>((ref) {
 /// Review surface offers as its narrowest scope. Empty before the first turn
 /// makes an edit.
 final lastTurnAgentPathsProvider = Provider<Set<String>>((ref) {
-  final chatId = ref.watch(agentChangesScopeProvider);
+  final chatId = ref.watch(agentChatScopeProvider);
   if (chatId == null) return const {};
   final changes = ref.watch(agentChangesProvider)[chatId] ?? const [];
   final from = ref.watch(agentChangesProvider.notifier).turnStartIn(chatId);
@@ -183,7 +162,7 @@ class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
   /// only one whose changes are ever offered. Returns null on success, else a
   /// line to show the user.
   Future<String?> revert(AgentChange change) async {
-    final chatId = ref.read(agentChangesScopeProvider);
+    final chatId = ref.read(agentChatScopeProvider);
     if (chatId == null) return null;
     final error = await _restore(change);
     if (error != null) return error;
@@ -197,7 +176,7 @@ class AgentChangesController extends Notifier<Map<String, List<AgentChange>>> {
   /// Undo every change recorded in the conversation on screen. Returns null when
   /// all succeeded, else how many couldn't be put back (the rest still were).
   Future<String?> revertAll() async {
-    final chatId = ref.read(agentChangesScopeProvider);
+    final chatId = ref.read(agentChatScopeProvider);
     if (chatId == null) return null;
     final failures = <String>[];
     final remaining = <AgentChange>[];

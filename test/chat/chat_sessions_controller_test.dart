@@ -21,7 +21,9 @@ import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/agent_chat_scope.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
+import 'package:grid_app/features/agents/logic/agent_questions.dart';
 import 'package:grid_app/features/agents/logic/auto_agent.dart';
 import 'package:grid_app/features/chat/logic/chat_scope.dart';
 import 'package:grid_app/features/playground/logic/playground_models.dart';
@@ -502,6 +504,76 @@ void main() {
       expect(reply.firstToken! <= reply.took!, isTrue);
     },
   );
+
+  group('a question the assistant asked over the composer', () {
+    /// The chat the card is over, with one question outstanding in it.
+    Future<({ProviderContainer container, String chatId})> asked(
+      Directory dir,
+    ) async {
+      final h = _harness(
+        dir,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'ok'),
+          ),
+        ],
+      );
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+      final chatId = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single
+          .id;
+      h.container.read(agentChatScopeProvider.notifier).show(chatId);
+      h.container.read(agentQuestionsProvider.notifier).ask(chatId, const [
+        AgentQuestion(
+          question: 'How often?',
+          header: 'Frequency',
+          multiSelect: false,
+          options: [AgentQuestionOption(label: 'Daily', description: '')],
+        ),
+      ]);
+      return (container: h.container, chatId: chatId);
+    }
+
+    test(
+      'the answer goes back as the next message — the tool call that asked '
+      'was closed by the CLI itself, so there is nothing left to reply to',
+      () async {
+        final h = await asked(tmp);
+
+        await h.container
+            .read(chatSessionsProvider.notifier)
+            .answerQuestions('Frequency: Daily');
+
+        expect(_userTurns(h.container, h.chatId).last, 'Frequency: Daily');
+      },
+    );
+
+    test('answering takes the card down at once, so a queued answer never '
+        'leaves the question sitting there unanswered', () async {
+      final h = await asked(tmp);
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .answerQuestions('Frequency: Daily');
+
+      expect(h.container.read(openChatQuestionsProvider), isEmpty);
+    });
+
+    test('saying something else instead takes it down too — the conversation '
+        'has moved past the decision the card was still offering', () async {
+      final h = await asked(tmp);
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'never mind');
+
+      expect(h.container.read(openChatQuestionsProvider), isEmpty);
+    });
+  });
 
   test('a reply that never streamed carries no first-word time, rather than '
       'one equal to the total', () async {

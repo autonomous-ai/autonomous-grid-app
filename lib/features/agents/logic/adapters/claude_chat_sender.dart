@@ -24,6 +24,7 @@ import '../../../playground/logic/playground_request.dart';
 import '../agent_catalog.dart';
 import '../agent_changes.dart';
 import '../agent_model_support.dart';
+import '../agent_questions.dart';
 import '../agent_prompt.dart';
 import '../agent_providers.dart';
 import '../agent_permission_decision.dart';
@@ -533,6 +534,12 @@ class ClaudeChatSender implements ChatSender {
             runs.upsertStep(chat, activity, answer: settledText);
           case ClaudePlanEvent(:final entries):
             runs.setPlan(chat, entries);
+          // Put to the user over the composer. The turn does not wait for it —
+          // the CLI already answered the call itself (see [ClaudeQuestionsEvent])
+          // — so this races the rest of the turn on purpose: the answer goes
+          // back as the next message, whenever they get to it.
+          case ClaudeQuestionsEvent(:final questions):
+            _ref.read(agentQuestionsProvider.notifier).ask(chat, questions);
           case ClaudeFileWriteStarted(:final path):
             workedAtAll = true;
             before[path] = readTextFileNow(path);
