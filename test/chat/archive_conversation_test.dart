@@ -23,7 +23,21 @@ Future<({ProviderContainer container, Directory dir})> _harness(
     overrides: [chatStoreProvider.overrideWithValue(store)],
   );
   addTearDown(container.dispose);
-  addTearDown(() => dir.deleteSync(recursive: true));
+  // Retried, and asynchronous: chats are persisted off the UI isolate, so a
+  // file can land between this directory being listed and being removed and
+  // the delete fails with ENOTEMPTY — against whichever test ran next, which
+  // is what made it look like a bug somewhere else entirely.
+  addTearDown(() async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await dir.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        if (attempt >= 4) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+    }
+  });
   await container.read(chatSessionsProvider.notifier).restored;
   return (container: container, dir: dir);
 }

@@ -474,7 +474,23 @@ void main() {
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('grid_chat_test');
   });
-  tearDown(() => tmp.delete(recursive: true));
+  // Retried, because this races the last conversation write of the test that
+  // just ran. Chats are persisted **off the UI isolate**, so one can land
+  // between the directory being listed and being removed, and the delete fails
+  // with ENOTEMPTY — reported against whichever test happened to be next, which
+  // is what made this look like a routing bug. The harness losing a race with
+  // its own fixture, not the app losing one.
+  tearDown(() async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await tmp.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        if (attempt >= 4) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+    }
+  });
 
   test(
     'a streamed reply is timed twice — when it started answering and when '
