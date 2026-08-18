@@ -6,8 +6,9 @@ import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/code/code_highlight.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/code_text_scope.dart';
+import '../../../shared/widgets/pulse.dart';
+import '../../../shared/widgets/timeline_guide.dart';
 import '../../playground/presentation/message_content.dart';
 import '../logic/agent_providers.dart';
 import '../logic/agent_step_label.dart';
@@ -89,7 +90,7 @@ class _AgentTurnViewState extends ConsumerState<AgentTurnView> {
           else if (block case _Work(
             :final steps,
           ) when detail != AgentDetailMode.answer)
-            AgentStepList(steps: steps, detail: detail),
+            _StepColumn(steps: steps, detail: detail),
       ];
     }
     final blocks = [..._blocks!, ?widget.trailing];
@@ -154,64 +155,59 @@ List<_Block> _blocksOf(List<TurnPart> parts) {
   return blocks;
 }
 
-/// A block of steps: shown in full when there are few, or folded behind a
-/// tappable summary of what the run did when there are many.
+/// The step row's own geometry, and the guide's read off it.
 ///
-/// **Folded is one row.** Not one row and the last five — a fold that answers a
-/// click by leaving five rows behind reads as a fold that didn't work, which is
-/// exactly how it read. The summary line is the whole of it.
+/// [_stepIconSize] is the tool glyph; [_rowInsetLeft] is where a top-level row's
+/// box starts. The trunk runs dead centre of the glyph — *derived*, not typed,
+/// so moving either moves the line with it rather than leaving it pointing at
+/// nothing (the same rule the rail's `_trunkX` follows).
+const double _stepIconSize = 14;
+const double _rowInsetLeft = 6;
+const double _stepTrunkX = _rowInsetLeft + _stepIconSize / 2;
+
+/// Where a sub-agent's row starts, and how far the arm reaches towards it.
 ///
-/// What changes with the run's state is the *default*, not what folding does:
-/// open while the agent is still working, so the steps go by where they can be
-/// watched; folded the moment the turn lands, so a finished turn is one line in
-/// the transcript instead of forty. An explicit click always wins over both.
+/// The arm stops 2px short of the row's box for the reason the rail's does:
+/// touching the hover fill makes the guide read as part of the row rather than
+/// as the thing holding it.
+const double _nestedInsetLeft = 22;
+const double _stepArmLength = _nestedInsetLeft - _stepTrunkX - 2;
+
+/// How wide a berth the trunk gives the tool glyph it runs through.
 ///
-/// The choice is per block, and per run: this widget lives only as long as the
-/// block it draws, so the next turn gets a fresh, default view rather than
-/// inheriting the last one's.
-class AgentStepList extends StatefulWidget {
-  const AgentStepList({super.key, required this.steps, required this.detail});
+/// Half the glyph plus 4px of clearance, which is the margin the rail's own
+/// node gap leaves around a folder icon — any tighter and the line reads as
+/// striking the glyph out rather than passing behind it.
+const double _stepNodeGap = _stepIconSize / 2 + 4;
 
-  final List<AgentActivity> steps;
-  final AgentDetailMode detail;
-
-  @override
-  State<AgentStepList> createState() => _AgentStepListState();
-}
-
-class _AgentStepListState extends State<AgentStepList> {
-  /// The user's explicit open/closed choice, or null to follow the default
-  /// (folded once the block is long).
-  bool? _expanded;
-
-  @override
-  Widget build(BuildContext context) {
-    final steps = widget.steps;
-    if (steps.length <= kFoldedStepLimit) {
-      return _StepColumn(steps: steps, detail: widget.detail);
-    }
-
-    // Open while it works, folded once it is done — until the user says
-    // otherwise, after which their choice stands for the life of this block.
-    final live = aggregateActivityStatus(steps) == AgentActivityStatus.running;
-    final expanded = _expanded ?? live;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _StepsHeader(
-          steps: steps,
-          expanded: expanded,
-          onTap: () => setState(() => _expanded = !expanded),
-        ),
-        if (expanded) _StepColumn(steps: steps, detail: widget.detail),
-      ],
-    );
-  }
-}
+/// The air above and below a step row.
+///
+/// Taller than a dense list wants, and that is the point: what is left of the
+/// trunk between two nodes is the row's height less twice [_stepNodeGap], so at
+/// the 4px this used to carry the line came out as 2px ticks either side of each
+/// glyph — a dotted line, not a run. This leaves enough that the eye follows one
+/// stroke from the first step to the last.
+const double _rowInsetY = 7;
 
 /// A plain column of step rows — the shape shared by the short-block view and
 /// the expanded long-block view.
+///
+/// **The guide line is what makes a run read as one.** Rows alone are four
+/// facts that happen to be stacked; a line down their left edge is the thing
+/// that says they are one stretch of work between two sentences, and it holds
+/// even when the block runs past the height of the window.
+///
+/// Drawn with [AppPalette.guide], not [AppPalette.divider]: this is the same
+/// device as the sidebar's project tree, down to sharing [TimelineGuide] with
+/// it, and the token exists because a line the eye *follows* breaks into stray
+/// ticks at a separator's weight. It is not a rim, so §0 rule 1 is untouched —
+/// nothing here encloses a surface.
+///
+/// The line runs **through** each row's tool glyph rather than down the block's
+/// left edge, so a step reads as a node on the run instead of an item in a
+/// quoted list. Each row paints its own segment; [_StepRow] is told whether the
+/// trunk arrives from above and carries on below, which is what stitches them
+/// into one stroke without anything here measuring a row.
 class _StepColumn extends StatelessWidget {
   const _StepColumn({required this.steps, required this.detail});
 
@@ -227,80 +223,16 @@ class _StepColumn extends StatelessWidget {
     // position and a payload the user had opened slides onto whichever step
     // takes that slot next.
     children: [
-      for (final step in steps)
-        _StepRow(key: ValueKey(step.id), step: step, detail: detail),
+      for (final (index, step) in steps.indexed)
+        _StepRow(
+          key: ValueKey(step.id),
+          step: step,
+          detail: detail,
+          first: index == 0,
+          last: index == steps.length - 1,
+        ),
     ],
   );
-}
-
-/// The tappable summary row for a folded block: its overall status, what the run
-/// did in words, and a chevron that flips as it opens.
-class _StepsHeader extends StatelessWidget {
-  const _StepsHeader({
-    required this.steps,
-    required this.expanded,
-    required this.onTap,
-  });
-
-  final List<AgentActivity> steps;
-  final bool expanded;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    // Reads AppSurface.hoverFill from inside a lazy transcript — §0 rule 4.
-    AppTheme.watch(context);
-    final theme = Theme.of(context);
-    final radius = BorderRadius.circular(AppCard.insetRadius);
-    // What the run did, not how many rows it has: standing in for the steps
-    // while they are hidden, "8 steps" says only that something happened.
-    final summary = describeStepRun(steps);
-    return Semantics(
-      button: true,
-      label: expanded ? 'Hide steps' : 'Show all ${steps.length} steps',
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: radius,
-        child: InkWell(
-          borderRadius: radius,
-          onTap: onTap,
-          // A menu-style click, not the app's Android ripple spreading across the
-          // row; the hover wash is the whole feedback.
-          splashFactory: NoSplash.splashFactory,
-          hoverColor: AppSurface.hoverFill,
-          child: Padding(
-            // No left inset, so the summary's status dot lines up with the step
-            // rows' dots below it (they start at the column's left edge); a touch
-            // on the right just keeps the hover wash off the chevron.
-            padding: const EdgeInsets.fromLTRB(0, 3, 6, 3),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AgentStepStatusDot(status: aggregateActivityStatus(steps)),
-                const SizedBox(width: 8),
-                // A run that did five kinds of thing spells all five out, which
-                // on a narrow window is longer than the column — it gives way
-                // rather than overflowing (§4).
-                Flexible(
-                  child: Text(
-                    summary,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: AppFont.medium,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                _Chevron(open: expanded),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// The disclosure marker shared by the group summary and each step row — a
@@ -344,10 +276,24 @@ class _Chevron extends StatelessWidget {
 /// things; the fill is spent on the payload instead, which is the part that
 /// needs to be told apart from the prose around it.
 class _StepRow extends StatefulWidget {
-  const _StepRow({super.key, required this.step, required this.detail});
+  const _StepRow({
+    super.key,
+    required this.step,
+    required this.detail,
+    required this.first,
+    required this.last,
+  });
 
   final AgentActivity step;
   final AgentDetailMode detail;
+
+  /// Where this row sits in its run, which is all the guide line needs: the
+  /// trunk arrives from above on every row but the first and carries on below
+  /// on every row but the last. Passed in rather than worked out here — a row
+  /// cannot see its siblings, and a line that guessed would dangle off both
+  /// ends of every block.
+  final bool first;
+  final bool last;
 
   @override
   State<_StepRow> createState() => _StepRowState();
@@ -364,11 +310,40 @@ class _StepRowState extends State<_StepRow> {
     AppTheme.watch(context);
     final theme = Theme.of(context);
     final step = widget.step;
-    final icon = switch (step.kind) {
-      AgentActivityKind.command => Icons.terminal,
-      AgentActivityKind.web => Icons.public,
-      AgentActivityKind.tool => Icons.build_outlined,
-      AgentActivityKind.thinking => Icons.psychology_outlined,
+    // By what the step *did*, not by which of the four kinds carried it. Kind
+    // has only `tool` for everything that isn't a shell call, a web look-up or a
+    // thought — so reading a file, editing one, searching, spawning a sub-agent
+    // and every MCP call all drew the same wrench, and a column of eight rows
+    // showed eight identical glyphs. The family is the one the summary line
+    // counts with, so the icon and the words can't drift apart.
+    final family = agentToolFamily(step);
+    final icon = switch (family) {
+      AgentToolFamily.read => LucideIcons.fileText300,
+      AgentToolFamily.write => LucideIcons.filePlus300,
+      AgentToolFamily.edit => LucideIcons.filePen300,
+      AgentToolFamily.search => LucideIcons.search300,
+      AgentToolFamily.list => LucideIcons.folder300,
+      // The one glyph in this set with a box around it, and deliberately: a bare
+      // `terminal` is a chevron and an underscore floating in space, which at
+      // 14px and 300 weight reads as two stray marks rather than a mark. Shell
+      // is also the one step that *runs* something on this computer, so the row
+      // it is on being the one with a solid silhouette is the right emphasis.
+      AgentToolFamily.shell => LucideIcons.squareTerminal300,
+      AgentToolFamily.web => LucideIcons.globe300,
+      AgentToolFamily.fetch => LucideIcons.link300,
+      AgentToolFamily.subAgent => LucideIcons.listTree300,
+      AgentToolFamily.todo => LucideIcons.listChecks300,
+      // The glyphs the shell already files these under — Connectors is `cable`
+      // in the sidebar and Skills is a sparkle — so a row in the transcript
+      // points at the screen that manages the thing it just used.
+      AgentToolFamily.mcp => LucideIcons.cable300,
+      // The *singular* sparkle, where the nav row uses the plural at 18px.
+      // Three stars of three sizes need the room: at the 14px a step row gives
+      // them they close up into a smudge, and a smudge is not a mark. Same
+      // family, so the two still read as the same thing.
+      AgentToolFamily.skill => LucideIcons.sparkle300,
+      AgentToolFamily.think => LucideIcons.brain300,
+      AgentToolFamily.other => LucideIcons.wrench300,
     };
     // A thought's whole text *is* its payload — it has no arguments, and the
     // label would otherwise be a paragraph clipped into one line.
@@ -396,12 +371,15 @@ class _StepRowState extends State<_StepRow> {
       // so a delegated file read reads as that agent's work rather than as the
       // main one's. The nesting is the only thing that says so — the rows are
       // otherwise identical, because the work is.
-      padding: EdgeInsets.fromLTRB(step.isNested ? 22 : 6, 4, 6, 4),
+      padding: EdgeInsets.fromLTRB(
+        step.isNested ? _nestedInsetLeft : _rowInsetLeft,
+        _rowInsetY,
+        6,
+        _rowInsetY,
+      ),
       child: Row(
         children: [
-          AgentStepStatusDot(status: step.status),
-          const SizedBox(width: 8),
-          Icon(icon, size: 14, color: theme.colorScheme.onSurfaceVariant),
+          _StepGlyph(icon: icon, status: step.status),
           const SizedBox(width: 8),
           // Title and subject share one line and one ellipsis budget: the title
           // is short and never gives way, the subject takes what is left.
@@ -429,6 +407,24 @@ class _StepRowState extends State<_StepRow> {
                       style: TextStyle(
                         color: AppPalette.textSecondary,
                         fontWeight: AppFont.regular,
+                        // A command line is a string the user copies, which is
+                        // the app's whole rule for mono (see [AppFont]) — and
+                        // the one place in this row where `l`/`1` and `0`/`O`
+                        // telling apart earns the slower read. Only the shell
+                        // family: a query, a file path in prose or a tool's
+                        // arguments are read, not pasted, and setting those in
+                        // mono turns the transcript into a terminal.
+                        //
+                        // A point smaller than the sans beside it because mono
+                        // sits optically larger at the same size; the payload
+                        // wells below use the same figure.
+                        fontFamily: family == AgentToolFamily.shell
+                            ? AppFont.mono
+                            : null,
+                        fontFamilyFallback: family == AgentToolFamily.shell
+                            ? AppFont.monoFallback
+                            : null,
+                        fontSize: family == AgentToolFamily.shell ? 12.5 : null,
                       ),
                     ),
                 ],
@@ -447,65 +443,138 @@ class _StepRowState extends State<_StepRow> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!canOpen)
-          row
-        else
-          Material(
-            color: Colors.transparent,
-            borderRadius: radius,
-            child: InkWell(
-              borderRadius: radius,
-              onTap: () => setState(() => _open = !_open),
-              onHover: (value) => setState(() => _hovered = value),
-              splashFactory: NoSplash.splashFactory,
-              hoverColor: AppSurface.hoverFill,
-              child: row,
-            ),
-          ),
+        // The trunk carries on below this row whenever there is anything left to
+        // reach: another step, or this row's own opened payload. Without the
+        // second half the line stopped dead at a row the user expanded, which
+        // reads as the run having ended there.
+        TimelineGuide(
+          role: step.isNested ? TimelineRole.branch : TimelineRole.node,
+          trunkX: _stepTrunkX,
+          nodeGap: _stepNodeGap,
+          armLength: _stepArmLength,
+          above: !widget.first,
+          below: !widget.last || _open,
+          child: !canOpen
+              ? row
+              : Material(
+                  color: Colors.transparent,
+                  borderRadius: radius,
+                  child: InkWell(
+                    borderRadius: radius,
+                    onTap: () => setState(() => _open = !_open),
+                    onHover: (value) => setState(() => _hovered = value),
+                    splashFactory: NoSplash.splashFactory,
+                    hoverColor: AppSurface.hoverFill,
+                    child: row,
+                  ),
+                ),
+        ),
         // Height animates so a long payload unrolls rather than jumping the
         // transcript out from under whatever the user was reading.
         AnimatedSize(
           duration: AppMotion.fold,
           curve: Curves.easeOutCubic,
           alignment: Alignment.topCenter,
+          // The trunk crosses the payload's band too — a line that stopped at
+          // the row and picked up again under the payload would read as two
+          // runs with a gap, which is what an opened step would look like from
+          // across the transcript. Nothing to break around down here, so it
+          // simply passes [TimelineRole.through].
           child: !_open
               ? const SizedBox(width: double.infinity)
-              : Padding(
-                  padding: const EdgeInsets.fromLTRB(28, 2, 0, 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (thought.isNotEmpty)
-                        _PayloadWell(label: 'Thought', text: thought)
-                      else ...[
-                        if (step.request case final request?)
-                          _PayloadWell(
-                            label: 'Request',
-                            text: request,
-                            // A shell step's request is the command line; every
-                            // other tool's is the arguments object the agent
-                            // sent. Both are read faster in the transcript's own
-                            // code colours.
-                            code: step.kind == AgentActivityKind.command
-                                ? 'bash'
-                                : (request.startsWith('{') ? 'json' : ''),
-                          ),
-                        if (step.result case final result?) ...[
-                          if (step.request != null) const SizedBox(height: 4),
-                          _PayloadWell(
-                            label: step.status == AgentActivityStatus.failed
-                                ? 'Error'
-                                : 'Result',
-                            text: result,
-                          ),
+              : TimelineGuide(
+                  role: TimelineRole.through,
+                  trunkX: _stepTrunkX,
+                  below: !widget.last,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 2, 0, 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (thought.isNotEmpty)
+                          _PayloadWell(label: 'Thought', text: thought)
+                        else ...[
+                          if (step.request case final request?)
+                            _PayloadWell(
+                              label: 'Request',
+                              text: request,
+                              // A shell step's request is the command line; every
+                              // other tool's is the arguments object the agent
+                              // sent. Both are read faster in the transcript's own
+                              // code colours.
+                              code: step.kind == AgentActivityKind.command
+                                  ? 'bash'
+                                  : (request.startsWith('{') ? 'json' : ''),
+                            ),
+                          if (step.result case final result?) ...[
+                            if (step.request != null) const SizedBox(height: 4),
+                            _PayloadWell(
+                              label: step.status == AgentActivityStatus.failed
+                                  ? 'Error'
+                                  : 'Result',
+                              text: result,
+                            ),
+                          ],
                         ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// The tool's glyph, carrying the step's outcome in its colour.
+///
+/// One mark, not two. A tick beside every row said only "this one worked", which
+/// on a run where everything works is a column of identical green — and it cost
+/// the glyph that says *what the step did* its place on the line the guide runs
+/// through. Failure is the thing worth seeing, so it is the thing that changes
+/// colour; success is the quiet default.
+///
+/// **Outcome is deliberately not in the colour.** A tick on every row said only
+/// "this one worked", which on a run where everything works is a column of
+/// identical green; and a red glyph turned an ordinary retry — an agent probing
+/// a path, finding it missing, trying the next one — into a wall of alarm down a
+/// turn that was going fine. What a step *is* survives being read at a glance;
+/// how it went is a detail, and it keeps its place in the fold, where the
+/// payload well is labelled `Error` and carries the reason.
+///
+/// [AppPalette.textSecondary], the same ink as the subject beside it: **6.0:1
+/// light and 7.7:1 dark** against the transcript page, so the glyph clears the
+/// *text* floor in both themes rather than the 3:1 an icon could have got away
+/// with. The Material `onSurfaceVariant` this used to read resolves to these
+/// exact two values (`#62615B` / `#A8A8A2`), so it is the same colour said in
+/// the app's own vocabulary — and one that can't drift if the scheme is retuned
+/// for something else. It also retires a real failure: the `unknown` branch drew
+/// `textFaint`, which measures 3.33:1 in light and misses the floor outright.
+///
+/// A running step breathes instead: the row is a node on the guide line, so
+/// swapping its glyph for a spinner would break the line at whichever row
+/// happened to be live. Motion, not hue — the one signal a finished transcript
+/// has no use for and a working one needs.
+class _StepGlyph extends StatelessWidget {
+  const _StepGlyph({required this.icon, required this.status});
+
+  final IconData icon;
+  final AgentActivityStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final glyph = Icon(
+      icon,
+      size: _stepIconSize,
+      color: AppPalette.textSecondary,
+    );
+    if (status != AgentActivityStatus.running) return glyph;
+    return Pulse(
+      builder: (context, t, child) =>
+          Opacity(opacity: 0.35 + 0.65 * t, child: child),
+      child: glyph,
     );
   }
 }
@@ -628,39 +697,5 @@ class _PayloadText extends StatelessWidget {
     return spans == null
         ? Text(text, style: base)
         : Text.rich(spans, style: base);
-  }
-}
-
-/// A per-step status glyph: a spinner while running, a check when done, an
-/// error mark when it failed.
-class AgentStepStatusDot extends StatelessWidget {
-  const AgentStepStatusDot({super.key, required this.status});
-
-  final AgentActivityStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // rebuild on theme flip — reads AppPalette.online
-    switch (status) {
-      case AgentActivityStatus.running:
-        return const AppSpinner(size: SpinnerSize.small);
-      case AgentActivityStatus.done:
-        return Icon(Icons.check_circle, size: 14, color: AppPalette.online);
-      case AgentActivityStatus.failed:
-        return Icon(
-          Icons.error_outline,
-          size: 14,
-          color: Theme.of(context).colorScheme.error,
-        );
-      // Neither a tick nor an error mark: the step never said how it went, and
-      // an outline circle is the shape of that — visibly *not* the check beside
-      // it, without accusing anything. See [AgentActivityStatus.unknown].
-      case AgentActivityStatus.unknown:
-        return Icon(
-          Icons.circle_outlined,
-          size: 13,
-          color: AppPalette.textFaint,
-        );
-    }
   }
 }

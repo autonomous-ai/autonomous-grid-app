@@ -228,6 +228,10 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
       state = Map.unmodifiable({...state, chatId: run});
 }
 
+/// **TODO(BE): uncalled from `lib/` since 2026-08-17**, when the step fold that
+/// asked it "did any of these fail?" was removed. Its tests still run, so this
+/// won't rot silently — but it answers a question nothing is asking.
+///
 /// The single status that stands for a whole run of [steps] — for the one-line
 /// summary a long, folded run shows instead of every row.
 ///
@@ -249,27 +253,3 @@ AgentActivityStatus aggregateActivityStatus(List<AgentActivity> steps) {
   }
   return AgentActivityStatus.done;
 }
-
-/// The length past which a run of steps gets a summary line it can fold into.
-///
-/// A short run reads at a glance and is left alone; a long one — an agent that
-/// opens three dozen files before it says a word — would otherwise push the
-/// answer, the plan and the "Thinking…" line off the screen entirely.
-///
-/// There used to be a `foldedActivitySteps` beside this, which kept the latest
-/// five rows on screen *while folded*. It was written when folding was the only
-/// way to keep a live run from swallowing the answer, and it is gone now that
-/// folding shows one row and a long run folds itself the moment it finishes: a
-/// fold that leaves five rows behind reads as a fold that didn't work.
-///
-/// **Three, measured.** At five this almost never fired: across the 8,172 runs
-/// in this machine's imported Claude history the median run is *one* step, 94%
-/// are three or fewer, and only 3% ran past five — so the fold was a feature
-/// nobody saw. Three is where it starts paying: it folds 7% of runs and takes
-/// 13,922 drawn rows down to 10,688, while a pair of steps — the shape of
-/// nearly every run — still reads at a glance, which is what this limit is for.
-///
-/// It only changes *finished* turns. A live run is expanded regardless
-/// (`_expanded ?? live` in `AgentStepList`), so nothing folds under the user
-/// while they are watching it work.
-const int kFoldedStepLimit = 3;

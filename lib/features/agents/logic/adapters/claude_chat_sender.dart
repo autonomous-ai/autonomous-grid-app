@@ -23,6 +23,7 @@ import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
 import '../agent_catalog.dart';
 import '../agent_changes.dart';
+import '../agent_model_support.dart';
 import '../agent_prompt.dart';
 import '../agent_providers.dart';
 import '../agent_permission_decision.dart';
@@ -198,6 +199,18 @@ class ClaudeChatSender implements ChatSender {
         ? kClaudeRelayEnvKeys
         : const <String>{};
 
+    // Whether to take away Claude Code's server-side web tools for this turn.
+    //
+    // They are the provider's to run, so whatever answers the request has to
+    // understand them. On the extension lane that is Anthropic itself; on a
+    // `claude:*` seat it is Claude Code behind the relay — both keep them. A
+    // grid model does not: the relay has no chat-completions equivalent to
+    // translate them into and refuses the **whole request**, so asking for
+    // today's weather spent a step on `400 Unsupported tool type:
+    // web_search_20250305` before the agent fell back to the `grid-web` skill.
+    // Denied up front, the fallback is simply the route.
+    final withoutServerWebTools = !onExtension && !isClaudeSeatModel(model);
+
     // Make room *before* the turn, not after the refusal.
     //
     // The same ceiling already rides in [environment] for Claude Code's own
@@ -217,6 +230,7 @@ class ClaudeChatSender implements ChatSender {
         sessionId: session,
         mcpConfigPath: mcpConfigPath,
         chrome: onExtension,
+        withoutServerWebTools: withoutServerWebTools,
         dropEnvironment: dropEnvironment,
         chat: chat,
         slot: turn.slot,
@@ -241,6 +255,7 @@ class ClaudeChatSender implements ChatSender {
       chat: chat,
       mcpConfigPath: mcpConfigPath,
       chrome: onExtension,
+      withoutServerWebTools: withoutServerWebTools,
       dropEnvironment: dropEnvironment,
       approval: mode,
     );
@@ -271,6 +286,7 @@ class ClaudeChatSender implements ChatSender {
     required String sessionId,
     required String? mcpConfigPath,
     required bool chrome,
+    required bool withoutServerWebTools,
     required Set<String> dropEnvironment,
     required String chat,
     required AgentSessionSlot slot,
@@ -304,6 +320,7 @@ class ClaudeChatSender implements ChatSender {
         resumeSessionId: sessionId,
         mcpConfigPath: mcpConfigPath,
         chrome: chrome,
+        withoutServerWebTools: withoutServerWebTools,
         dropEnvironment: dropEnvironment,
       );
       await for (final event in run.events) {
@@ -440,6 +457,7 @@ class ClaudeChatSender implements ChatSender {
     required String chat,
     required String? mcpConfigPath,
     required bool chrome,
+    required bool withoutServerWebTools,
     required Set<String> dropEnvironment,
     required AgentApprovalMode approval,
   }) {
@@ -458,6 +476,7 @@ class ClaudeChatSender implements ChatSender {
             resumeSessionId: resumeSessionId,
             mcpConfigPath: mcpConfigPath,
             chrome: chrome,
+            withoutServerWebTools: withoutServerWebTools,
           ),
         ],
         workdir: workdir,
@@ -475,6 +494,7 @@ class ClaudeChatSender implements ChatSender {
           environment: environment,
           resumeSessionId: resumeSessionId,
           mcpConfigPath: mcpConfigPath,
+          withoutServerWebTools: withoutServerWebTools,
           chrome: chrome,
           dropEnvironment: dropEnvironment,
         );

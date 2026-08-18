@@ -162,9 +162,25 @@ class AgentActivityFeed extends ConsumerWidget {
 
 /// How long one step may run before the feed says so out loud.
 ///
-/// Long enough that an ordinary step never trips it — a command or a file read
-/// is seconds — and short enough to arrive before the user starts wondering.
-const Duration _quietRunNotice = Duration(seconds: 20);
+/// Long enough that an ordinary step never trips it — a local command or a file
+/// read is under a second — and short enough to arrive before the user starts
+/// wondering.
+///
+/// **Six, down from twenty** (2026-08-17). Twenty was set against local work,
+/// where the only steps that ran long were the ones a person expects to: a build,
+/// a test suite. It misses the shape a grid turn actually has. Measured on the
+/// weather turns in this machine's history, the agent's first *words* land after
+/// six tool calls — every one of them a network fetch of ten to thirty seconds —
+/// so the screen held a static list and a model caption for the better part of a
+/// minute with nothing saying anything was alive. The user read that as stuck,
+/// which is the exact bar the second sentence above sets and twenty seconds does
+/// not clear.
+///
+/// Nothing else covers it. The model behind a grid turn emits **no reasoning
+/// blocks at all** — not one `thinking` step appears across those transcripts —
+/// so there is no inner monologue to print in the gap, and the agent's own
+/// narration is the thing that arrives too late to fill it.
+const Duration _quietRunNotice = Duration(seconds: 6);
 
 /// The tools that hand the work to something else.
 ///
