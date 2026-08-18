@@ -27,19 +27,28 @@ static const char *TAG = "voice";
 #define CHUNK      1280
 #define CHUNK_MS   ((CHUNK / 2) * 1000 / AUDIO_SAMPLE_RATE)
 
-// The record buffer. 2 MB, the reference's number, and PSRAM because internal RAM is the scarce one here
-// (the framing layer alone already spends ~16 KB of it).
+// The record buffer: a RING, 2 MB, in PSRAM because internal RAM is the scarce one here (the framing
+// layer alone already spends ~16 KB of it).
 //
-// ⚠️ 2 MB holds ~131 s at the reference's 8 kHz and ~65 s at this firmware's 16 kHz. That halving is the
-// price of hearing Vietnamese properly (see AUDIO_SAMPLE_RATE) and it is worth stating rather than
-// leaving the reader to divide: one minute of speech is the cap, which is far past anything a person
-// says to a desk panel in one press.
+// ⚠️ 2 MB IS NOT HOW LONG YOU MAY SPEAK. It is how far the SENDER may fall behind. Bytes are freed the
+// moment they go out, so what the ring has to hold is the backlog, not the recording — 10 minutes of
+// audio is 19.2 MB and this board has 8 MB of PSRAM in total, so holding an utterance whole was never
+// on the table. The length of a capture is decided by time, in ui_screens.c's VOICE_MAX_MS.
+//
+// This was NOT true until 2026-08-18, and the bug is worth keeping written down because it did not look
+// like one: the buffer was linear and `s_sent` only ever counted, so nothing was ever reclaimed and
+// capture stopped at 2 MB = 65 s. The 60-second cap the whole product carried was a number chosen to sit
+// just under that, and it read as a considered limit at every level above it — including in the
+// normative protocol doc, which explained it in terms of user experience.
 //
 // WHY BUFFER AT ALL when the link is a cable that never drops? Because the microphone must not wait for
 // the sender. The I2S DMA is shallow; a write that blocks for the host's 100 ms timeout while the mic
 // keeps producing overruns it and the dropped samples are live speech. Capture appends here at a fixed
-// 32 KB/s and the sender drains behind it, so a slow moment on the port costs latency instead of words.
+// 32 KB/s and the sender drains behind it at up to 6x that (DRAIN_CHUNKS_PER_TURN), so a slow moment on
+// the port costs latency instead of words, and the backlog only grows while the host is not reading.
 #define BUF_MAX     (2 * 1024 * 1024)
+// What the ring holds in seconds — the stall this firmware can absorb before it has to stop, NOT a
+// recording length. Only ever used in the log line that reports exactly that.
 #define BUF_SECONDS (BUF_MAX / (AUDIO_SAMPLE_RATE * 2))
 
 // THE SPEECH GATE. A cheap energy check, and the one thing standing between a pocket brush against the
@@ -72,10 +81,21 @@ static const char *TAG = "voice";
 // How long the panel waits for grid-app to answer `voice.end` before it stops claiming to be listening.
 //
 // There is no reply timeout in the protocol and there should not be one — this is a screen deciding how
-// long to keep a promise, not a message layer deciding a peer is dead. Transcription of a minute of
-// audio on a desktop is seconds; 30 s is long enough that a slow machine still lands, and short enough
-// that a person is not left looking at "Transcribing…" wondering whether to press it again.
-#define REPLY_WAIT_MS 30000
+// long to keep a promise, not a message layer deciding a peer is dead.
+//
+// ⚠️ IT IS A SUM, NOT A FEELING, and it has to stay larger than the app's own worst case:
+//
+//     grid-app STT timeout (120 s, stt_client.dart)  +  router deadline (30 s, panel_voice_router.dart)
+//     = 150 s   <   REPLY_WAIT_MS
+//
+// Change any one of the three and read all three. They live in two repositories with nothing between
+// them that checks — and this was already wrong once, on 2026-08-17: the router's deadline went 12 s ->
+// 30 s, which put the worst case at ~34 s against a 30 s wait here, so the panel could say "No answer
+// from the computer" seconds before the answer arrived and the turn started anyway.
+//
+// The old value assumed "transcription of a minute of audio on a desktop is seconds". A capture may now
+// be ten minutes and 19 MB, which is an upload as well as a transcription.
+#define REPLY_WAIT_MS 180000
 
 // The capture task's stack. INTERNAL RAM, which is what a plain xTaskCreate gives on this IDF, and the
 // reference records why that matters: a flash write disables the cache, PSRAM is unreadable while it is
@@ -154,9 +174,17 @@ static bool drain(int max_chunks)
 {
     for (int done = 0; s_sent < s_len; done++) {
         if (max_chunks >= 0 && done >= max_chunks) break;
-        size_t n = s_len - s_sent;
+        size_t n = s_len - s_sent;                 // the backlog, in bytes
         if (n > CHUNK) n = CHUNK;
-        if (!panel_client_send_pcm(s_buf + s_sent, n)) return false;
+        // Where those bytes actually sit. s_sent and s_len stay CUMULATIVE — the log, the telemetry and
+        // the "how much did we send" arithmetic all read them as totals — and only the position wraps.
+        const size_t at     = s_sent % BUF_MAX;
+        const size_t to_end = BUF_MAX - at;
+        // A frame never straddles the seam; the one at the wrap is simply shorter. Nothing on the wire
+        // carries a duration (docs/panel-protocol.md §3 — the frame is bytes and a rate agreed in the
+        // protocol), so a short frame is not a special case for anyone downstream.
+        if (n > to_end) n = to_end;
+        if (!panel_client_send_pcm(s_buf + at, n)) return false;
         s_sent += n;
     }
     return true;
@@ -205,13 +233,33 @@ static void voice_task(void *arg)
         int n = audio_capture_read(tmp, CHUNK);
         if (n <= 0) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
 
-        if (s_buf && s_len + (size_t)n <= BUF_MAX) {
-            memcpy(s_buf + s_len, tmp, (size_t)n);
+        // Room is measured against the BACKLOG, not against everything captured — that one word is the
+        // difference between a minute and ten.
+        const size_t backlog = s_len - s_sent;
+        if (s_buf && backlog + (size_t)n <= BUF_MAX) {
+            const size_t at    = s_len % BUF_MAX;
+            const size_t to_end = BUF_MAX - at;
+            const size_t first = (size_t)n < to_end ? (size_t)n : to_end;
+            memcpy(s_buf + at, tmp, first);
+            // The tail of a chunk that crossed the seam. Two memcpys rather than one, once per 1.6 MB of
+            // speech — the alternative is a buffer sized to the longest possible utterance, which is the
+            // thing this board does not have the RAM for.
+            if (first < (size_t)n) memcpy(s_buf, tmp + first, (size_t)n - first);
             s_len += (size_t)n;
         } else {
-            // Out of room, or there was never any room. Either way stop and send what there is rather
-            // than silently recording over the start of the sentence.
-            ESP_LOGW(TAG, "record buffer full at %us — stopping", (unsigned)BUF_SECONDS);
+            // The SENDER fell behind — which is a different failure from "the recording got too long",
+            // and it is the only way to reach this line now that sent bytes are reclaimed. Reaching it
+            // means the host stopped reading for ~BUF_SECONDS while the mic kept going. Stop and send
+            // what there is rather than overwriting the start of the sentence.
+            //
+            // There was never any room is the other case, and it lands here too: voice_init's 2 MB
+            // allocation failed at boot and s_buf is NULL.
+            if (s_buf) {
+                ESP_LOGW(TAG, "the computer stopped reading and %us of audio is waiting — stopping",
+                         (unsigned)BUF_SECONDS);
+            } else {
+                ESP_LOGW(TAG, "there is no record buffer — stopping");
+            }
             break;
         }
         gate_feed(tmp, n);

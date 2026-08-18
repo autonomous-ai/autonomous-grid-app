@@ -104,9 +104,20 @@ void main() {
       expect(capture.toWav().sublist(kWavHeaderBytes), [1, 2, 3, 4, 5, 6]);
     });
 
-    test('a minute of speech fits under the ceiling, so the bound is a guard '
-        'rather than a limit anyone meets', () {
-      expect(kPanelVoiceMaxBytes, 60 * kPanelVoiceSampleRate * 2);
+    test('the ceiling is ten minutes of speech — the same allowance the panel '
+        'draws, so neither half cuts a recording the other would have taken', () {
+      expect(kPanelVoiceMaxBytes, 600 * kPanelVoiceSampleRate * 2);
+    });
+
+    test('a full capture still fits the 25 MiB the control plane accepts, or '
+        'the server refuses a recording somebody has just finished making', () {
+      // MAX_AUDIO_BYTES in autonomous-grid-be/grid_networks/transcription.py.
+      // Duplicated here because nothing links the two repositories, and the
+      // failure it guards is the worst-timed one there is: HTTP 413 after ten
+      // minutes of speech. At 16 kHz the server's ceiling is ~13.6 minutes, so
+      // this is the assertion that breaks if the sample rate is ever raised
+      // without lowering the cap.
+      expect(kPanelVoiceMaxBytes, lessThan(25 * 1024 * 1024));
     });
   });
 

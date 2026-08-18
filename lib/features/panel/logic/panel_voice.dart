@@ -5,15 +5,27 @@ import '../../../infrastructure/panel/panel_message.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../projects/logic/project.dart';
 
-/// The most audio one capture may hold — sixty seconds at 16 kHz, 16-bit mono.
+/// The most audio one capture may hold — ten minutes at 16 kHz, 16-bit mono,
+/// which is 19.2 MB.
 ///
-/// A bound on damage, not a target: nobody dictates a minute into a 480px tile.
-/// `voice.end` is a single message on a cable, and the panel reboots, the cable
-/// is nudged, a frame is dropped — any of which leaves a capture open with
-/// nothing left to close it. Without a ceiling that buffer grows for as long as
-/// the panel stays plugged in, which is a leak that only shows up on the day
-/// someone leaves the desk mid-sentence.
-const int kPanelVoiceMaxBytes = 60 * kPanelVoiceSampleRate * 2;
+/// A bound on damage, not a target. `voice.end` is a single message on a cable,
+/// and the panel reboots, the cable is nudged, a frame is dropped — any of which
+/// leaves a capture open with nothing left to close it. Without a ceiling that
+/// buffer grows for as long as the panel stays plugged in, which is a leak that
+/// only shows up on the day someone leaves the desk mid-sentence.
+///
+/// **Ten rather than one** (2026-08-18) because the minute was never a decision
+/// about speech: the panel's record buffer was linear rather than a ring, so it
+/// filled at 65 s and 60 was the number that fit underneath. Over a cable there
+/// is no reason to accept less than the reference firmware does over WiFi.
+///
+/// ⚠️ **This number is bounded from above by the server**, which refuses a clip
+/// over 25 MiB (`MAX_AUDIO_BYTES`, autonomous-grid-be). The invariant is
+/// `seconds * rate * 2 < 25 MiB` — at 16 kHz the ceiling is ~13.6 minutes, and
+/// raising [kPanelVoiceSampleRate] without lowering this returns HTTP 413 to
+/// somebody who has just spoken for ten minutes. Asserted in
+/// `test/panel/panel_voice_test.dart`.
+const int kPanelVoiceMaxBytes = 600 * kPanelVoiceSampleRate * 2;
 
 /// How long a capture may stay open before the app finishes it itself.
 ///
@@ -23,7 +35,7 @@ const int kPanelVoiceMaxBytes = 60 * kPanelVoiceSampleRate * 2;
 /// and cannot see this app. Deliberately longer than the byte cap allows, so a
 /// capture that filled up is closed by the bytes and this only ever fires for a
 /// panel that went quiet.
-const Duration kPanelVoiceOpenLimit = Duration(seconds: 75);
+const Duration kPanelVoiceOpenLimit = Duration(seconds: 660);
 
 /// How many guessed transcripts wait for a `voice.confirm` at once.
 ///

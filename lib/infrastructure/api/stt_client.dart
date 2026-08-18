@@ -77,9 +77,19 @@ class GridCliSttClient implements SttClient {
 
   final GridCliService _service;
 
-  /// A little past the CLI's own httpx timeout (cli/stt.py's `--timeout`, default 30s) so
-  /// the CLI's own timeout message wins the race instead of a generic "command timed out."
-  static const _timeout = Duration(seconds: 35);
+  /// How long the CLI is given to upload the clip and get an answer, passed to it
+  /// explicitly as `--timeout`.
+  ///
+  /// **The flag is passed rather than left at its default**, which is 30s
+  /// (`cli/stt.py`) and was written for a clip of a few seconds. A panel capture
+  /// may now be ten minutes — 19.2 MB to upload before the transcriber has heard
+  /// a word of it — and a timeout that fires there loses a recording somebody has
+  /// already finished making, which is the worst moment to lose one.
+  static const _cliTimeout = Duration(seconds: 120);
+
+  /// A little past [_cliTimeout] so the CLI's own timeout message wins the race
+  /// instead of a generic "command timed out."
+  static const _timeout = Duration(seconds: 125);
 
   @override
   Future<SttResult> transcribe({
@@ -92,6 +102,8 @@ class GridCliSttClient implements SttClient {
       audioPath,
       '--lang',
       lang,
+      '--timeout',
+      '${_cliTimeout.inSeconds}',
     ], timeout: _timeout);
     if (!result.ok) return SttFailure(_messageFor(result));
     return SttSuccess(result.stdout.trim());

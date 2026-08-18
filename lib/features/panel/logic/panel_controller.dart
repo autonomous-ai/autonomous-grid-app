@@ -729,8 +729,9 @@ class PanelController {
     final capture = _voice;
     if (capture == null) return;
     capture.add(chunk);
-    // Finished here rather than waited for: the ceiling is a minute of speech,
-    // so a capture that reaches it is one whose `voice.end` is not coming.
+    // Finished here rather than waited for. The panel stops its own microphone
+    // at the same ten minutes, so a capture that reaches the ceiling here is one
+    // whose `voice.end` is not coming.
     if (capture.isFull) unawaited(_finishVoice());
   }
 
@@ -758,7 +759,7 @@ class PanelController {
       _log.warn(
         'panel',
         'A voice capture filled its $kPanelVoiceMaxBytes-byte ceiling; '
-            'everything after the first minute was dropped',
+            'everything after the first ten minutes was dropped',
       );
     }
     final client = _ref.read(sttClientProvider);

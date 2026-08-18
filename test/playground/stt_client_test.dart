@@ -3,7 +3,19 @@ import 'package:grid_app/infrastructure/api/stt_client.dart';
 import 'package:grid_app/infrastructure/cli/fake_grid_cli_service.dart';
 import 'package:grid_app/infrastructure/cli/grid_cli_service.dart';
 
-const _args = ['stt', 'transcribe', '/tmp/voice.wav', '--lang', 'en'];
+// The exact command, `--timeout` included. The flag is not decoration: the CLI's
+// own default is 30s, written for a clip of a few seconds, and a panel capture may
+// be ten minutes and 19 MB. Leaving it off loses a recording somebody has already
+// finished making.
+const _args = [
+  'stt',
+  'transcribe',
+  '/tmp/voice.wav',
+  '--lang',
+  'en',
+  '--timeout',
+  '120',
+];
 
 void main() {
   test(

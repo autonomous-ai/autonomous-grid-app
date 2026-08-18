@@ -188,17 +188,32 @@ static lv_obj_t *s_voice_goal_lbl; // that label (kept under its original name; 
 // Three plain buttons rather than a value held between taps: each starts a recording in its own mode, so
 // nothing survives a turn and there is no state to fall back from.
 static uint32_t s_voice_start_ms;   // lv_tick at capture start → drives the cap below
-// SIXTY SECONDS, and the device must draw the same number the app enforces. grid-app stops accepting
-// audio at 60 s of PCM (kPanelVoiceMaxBytes) and closes a capture it has heard nothing more about at 75 s
-// — the second is a backstop for a `voice.end` that never arrived, not a second cap. A device that
-// offered the reference firmware's ten minutes would let someone talk into a recording that ended without
-// saying so, which is the one failure a voice UI cannot recover from. The mockup still says 10 minutes;
-// docs/panel-protocol.md is the normative one and it says 60 s.
-#define VOICE_MAX_MS 60000u
+// TEN MINUTES, and the device must draw the same number the app enforces: grid-app stops accepting audio
+// at 600 s of PCM (kPanelVoiceMaxBytes) and closes a capture it has heard nothing more about at 660 s
+// (kPanelVoiceOpenLimit) — the second is a backstop for a `voice.end` that never arrived, not a second cap.
+//
+// This was 60 s until 2026-08-18, and what it was really measuring was voice.c's record buffer: that
+// buffer was linear rather than a ring, so nothing was reclaimed as it was sent and capture died at 2 MB
+// = 65 s. 60 was a number tucked under 65. It then got explained upward — this comment used to argue the
+// cap in terms of user experience ("a device that offered ten minutes would let someone talk into a
+// recording that ended without saying so"), and docs/panel-protocol.md said the same thing normatively.
+// The reasoning was sound and the premise was a bug. voice.c's ring is what makes 600 s honest: the
+// panel now streams continuously and the buffer only has to hold the SENDER's backlog.
+//
+// ⚠️ A capture at this length is 19.2 MB of WAV, and the control plane refuses anything over 25 MB
+// (MAX_AUDIO_BYTES). The invariant is `seconds x sample-rate x 2 < 25 MiB` — at 16 kHz that is a ceiling
+// of ~13.6 minutes, so raising AUDIO_SAMPLE_RATE without lowering this returns HTTP 413 to somebody who
+// has just finished speaking for ten minutes.
+#define VOICE_MAX_MS 600000u
 static uint32_t s_voice_max_ms = VOICE_MAX_MS;
-// Silence auto-stop, DISABLED. Flip to 1 to bring it back: a recording that never crossed voice.c's speech
-// gate within VOICE_SILENCE_MS was discarded, so an accidental Voice press could not sit recording. It
-// matters much less now that the cap is 60 s rather than the reference's ten minutes.
+// Silence auto-stop, DISABLED — and now a deliberate choice rather than a cheap one (2026-08-18). A
+// recording that never crossed voice.c's speech gate within VOICE_SILENCE_MS used to be discarded, so an
+// accidental Voice press could not sit there recording. Flip to 1 to bring it back.
+//
+// What it costs while it is off: a press nobody meant now records for TEN MINUTES rather than one, keeps
+// the screen awake for all of it, and hands grid-app a 19 MB clip to upload to a paid transcriber. The
+// old note here said this "matters much less now that the cap is 60 s" — that half is no longer true and
+// is why the sentence is rewritten rather than left.
 #define VOICE_SILENCE_AUTOSTOP 0
 #define VOICE_SILENCE_MS 15000u
 static void ui_voice_discard_silent(void);   // fwd: silent auto-abort teardown (defined below)
@@ -207,8 +222,12 @@ static void ui_voice_discard_silent(void);   // fwd: silent auto-abort teardown 
 // choosing an agent — so the user sees it working instead of the UI snapping back to a static Overview.
 static bool s_voice_routing;
 static uint32_t s_voice_route_ms;   // lv_tick when the upload finished (routing wait begins) → routing watchdog
-#define VOICE_ROUTE_WAIT_MS 60000   // release the loading overlay if the router never answers (STT of a long
-                                    // ramble buffer + the voice_route RPC — generous for ~10-min recordings)
+// Release the loading overlay if the router never answers. Sized against the same sum as voice.c's
+// REPLY_WAIT_MS — grid-app's STT timeout (120 s) plus its router deadline (30 s) — because this overlay
+// is covering exactly that wait. The 60 s it inherited was described as "generous for ~10-min
+// recordings", which was true of the reference's own transcription path and never of this one: here a
+// 10-minute capture is a 19 MB upload followed by a model call, and only then the routing decision.
+#define VOICE_ROUTE_WAIT_MS 180000
 // Notification centre: a top "bell + unread count" pill + a pull-down drawer listing recent done events.
 #define NOTIF_MAX 8
 #define NOTIF_DEBUG_SEED 0   // set 1 to seed fake notifications at boot for testing the drawer redesign
@@ -839,11 +858,12 @@ static void busy_dots_tick(lv_timer_t *t)
         if (ui_voice_is_recording() && voice_active() && !voice_recording()) {
             voice_icon_apply(VIC_SEND);
         }
-        // Watchdog: stop the capture at the cap. SIXTY SECONDS — the same number grid-app enforces, so the
+        // Watchdog: stop the capture at the cap. TEN MINUTES — the same number grid-app enforces, so the
         // panel never draws a longer allowance than the app will accept (see VOICE_MAX_MS).
         if (ui_voice_is_recording() && lv_tick_elaps(s_voice_start_ms) > s_voice_max_ms) ui_voice_stop();
         // Silence gate (off — see VOICE_SILENCE_AUTOSTOP): a press with no speech in the first 15s used to be
-        // discarded here. Only the 60-second cap above stops a forgotten recording now.
+        // discarded here. Only the ten-minute cap above stops a forgotten recording now, which is ten times
+        // the recording it used to be.
         else if (VOICE_SILENCE_AUTOSTOP && ui_voice_is_recording()
                  && lv_tick_elaps(s_voice_start_ms) > VOICE_SILENCE_MS && !voice_heard())
             ui_voice_discard_silent();
@@ -5058,7 +5078,7 @@ static void voice_start_impl(voice_cmd_t cmd)
     // Show the mic indicator (red) — it's hidden whenever we're not recording. Clear the active tile's
     // processing row + hide STOP (the mic owns the bottom-center spot while recording).
     display_lock();
-    s_voice_start_ms = lv_tick_get();             // arm the 60 s cap (busy_dots_tick)
+    s_voice_start_ms = lv_tick_get();             // arm the VOICE_MAX_MS cap (busy_dots_tick)
     s_voice_max_ms = VOICE_MAX_MS;
     s_voice_routing = route;                       // route (Overview) voice → hold the loading overlay past upload
     s_voice_route_ms = 0;                          // (armed at upload-complete in busy_dots_tick)

@@ -511,11 +511,46 @@ that has never heard of a modifier simply omits it.
 > so the next person does not have to find out by pressing it. **The panel's job ends at `cmd`** —
 > what the prefix comes to mean is the app's business, and it can change without reflashing anything.
 
-**The cap is 60 seconds**, and the device must draw the same number the app enforces. The app stops
-accepting audio at 60 s of PCM (`kPanelVoiceMaxBytes`) and closes a capture it has heard nothing more
-about at 75 s (`kPanelVoiceOpenLimit`) — the second is a backstop for a `voice.end` that never
-arrived, not a second cap. A device that offers longer lets someone talk into a recording that ended
-without saying so, which is the one failure a voice UI cannot recover from.
+**The cap is 600 seconds — ten minutes**, and the device must draw the same number the app enforces. The
+app stops accepting audio at 600 s of PCM (`kPanelVoiceMaxBytes`) and closes a capture it has heard
+nothing more about at 660 s (`kPanelVoiceOpenLimit`) — the second is a backstop for a `voice.end` that
+never arrived, not a second cap. A device that offers longer than the app accepts lets someone talk into
+a recording that ended without saying so, which is the one failure a voice UI cannot recover from.
+
+> **This said 60 seconds until 2026-08-18, and the reason was a bug rather than a decision.** The panel's
+> record buffer was linear rather than a ring: `s_sent` counted what had gone out but never reclaimed the
+> space, so capture died at 2 MB = 65 s and 60 was a number tucked underneath it. That limit then got
+> explained upward — this paragraph used to justify it in terms of what a voice UI can recover from, and
+> the firmware carried the same sentence. The argument was sound; the premise was a defect. Recorded here
+> so nobody restores 60 believing it was ever chosen.
+>
+> The panel streams while it records, so the ring only has to hold the **sender's backlog** — which is
+> what makes ten minutes possible on a board with 8 MB of PSRAM against a 19.2 MB recording.
+
+**Three numbers on this path are one sum, and they live in three repositories with nothing between them
+that checks:**
+
+| | | |
+|---|---|---|
+| `--timeout` on `grid stt transcribe` | **120 s** | `stt_client.dart` passes it explicitly; the CLI's own default is 30 s and was written for a clip of a few seconds |
+| `kPanelRouteDeadline` | **30 s** | how long a model gets to pick the project |
+| `REPLY_WAIT_MS` (panel) | **180 s** | how long the panel keeps saying it is waiting — **must exceed 120 + 30** |
+
+`VOICE_ROUTE_WAIT_MS` (180 s) covers the same wait for the "Sending…" overlay. Change one, read all four.
+This was already wrong once: the router's deadline went 12 s → 30 s on 2026-08-17 and put the worst case
+at ~34 s against a 30 s wait, so the panel could report *"No answer from the computer"* seconds before
+the answer landed and the turn started anyway.
+
+⚠️ **The upper bound is the server, not the panel.** The control plane refuses a clip over **25 MiB**
+(`MAX_AUDIO_BYTES`, `autonomous-grid-be/grid_networks/transcription.py`), and the invariant is:
+
+```
+seconds × sample-rate × 2  <  25 MiB
+```
+
+At 16 kHz that is a ceiling of ~13.6 minutes, and ten minutes spends 19.2 MB of it. **Raising the sample
+rate without lowering the cap returns HTTP 413 to somebody who has just spoken for ten minutes** — the
+worst possible moment to discover a limit. `test/panel/panel_voice_test.dart` asserts it.
 
 ### Firmware update
 
