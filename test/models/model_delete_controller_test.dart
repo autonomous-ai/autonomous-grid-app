@@ -99,32 +99,4 @@ void main() {
       isA<ModelDeleteFailed>(),
     );
   });
-
-  group('isModelInUse', () {
-    test('exact gguf match — the in-session built-in serve', () {
-      expect(
-        isModelInUse(
-          'Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
-          'Qwen3.6-35B-A3B-UD-IQ3_S.gguf',
-        ),
-        isTrue,
-      );
-    });
-
-    test('advertised-name prefix match — an engine adopted on restart', () {
-      expect(
-        isModelInUse('Qwen3.6-35B-A3B-UD-IQ3_S.gguf', 'Qwen3.6-35B-A3B'),
-        isTrue,
-      );
-    });
-
-    test('a different model is not in use', () {
-      expect(isModelInUse('llama3.gguf', 'Qwen3.6-35B-A3B'), isFalse);
-    });
-
-    test('nothing serving means nothing in use', () {
-      expect(isModelInUse('llama3.gguf', null), isFalse);
-      expect(isModelInUse('llama3.gguf', ''), isFalse);
-    });
-  });
 }

@@ -5,6 +5,7 @@ import '../../../infrastructure/cli/parsers/model_context.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import 'model_group.dart';
+import 'model_storage.dart';
 
 /// GGUF models found under `~/.grid/models/`. Invalidate to rescan.
 final localModelsProvider = Provider<List<LocalModel>>((ref) {
@@ -25,6 +26,16 @@ final downloadingModelsProvider = Provider<List<DownloadingModel>>((ref) {
 /// consistent — one model, one row, one action.
 final modelGroupsProvider = Provider<List<ModelGroup>>((ref) {
   return groupLocalModels(ref.watch(localModelsProvider));
+});
+
+/// Everything taking up space under `~/.grid/models`, biggest first — finished
+/// models and the leftovers of downloads that stopped, which the storage list
+/// deletes through the same path. Rebuilds whenever either scan is invalidated.
+final storedItemsProvider = Provider<List<StoredItem>>((ref) {
+  return storedItems(
+    groups: ref.watch(modelGroupsProvider),
+    partials: ref.watch(downloadingModelsProvider),
+  );
 });
 
 /// Maximum context length (tokens) the given local model supports, read from

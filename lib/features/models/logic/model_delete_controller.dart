@@ -30,10 +30,12 @@ class ModelDeleteFailed extends ModelDeleteState {
 
 /// Removes a downloaded model via `grid rm <file>`, then rescans
 /// `~/.grid/models`. A split model is several files, so [delete] takes every
-/// file backing one model and removes them together. This is the only mutation
-/// path — the store reads, the CLI deletes the files. Callers must first ensure
-/// the model isn't being served (see [servingModelProvider] / [isModelInUse]);
-/// this controller doesn't re-check, so the guard stays in one place at the UI
+/// file backing one model and removes them together — as does the wreck of a
+/// download that stopped partway, whose `.part` `grid rm` deletes like any
+/// other file under the models folder. This is the only mutation path — the
+/// store reads, the CLI deletes the files. Callers must first ensure the model
+/// isn't being served (see [servingModelProvider] / [isModelInUse]); this
+/// controller doesn't re-check, so the guard stays in one place at the UI
 /// boundary.
 class ModelDeleteController extends Notifier<ModelDeleteState> {
   @override
@@ -63,7 +65,7 @@ class ModelDeleteController extends Notifier<ModelDeleteState> {
       final result = await service.run(['rm', file, '--yes']);
       if (!result.ok) {
         // Rescan so the list reflects whatever was already removed.
-        ref.invalidate(localModelsProvider);
+        _rescan();
         state = ModelDeleteFailed(
           label: label,
           message: "Couldn't delete this model. Please try again.",
@@ -72,24 +74,23 @@ class ModelDeleteController extends Notifier<ModelDeleteState> {
       }
     }
 
-    ref.invalidate(localModelsProvider);
+    _rescan();
     state = const ModelDeleteIdle();
     return true;
   }
-}
 
-/// True when [modelName] (a local gguf filename) matches what the running engine
-/// is serving. Exact for an in-session built-in serve (we pass the gguf name as
-/// `--serve`); a lenient substring match otherwise, so an engine adopted on
-/// restart — whose record stores the advertised name, a prefix of the filename —
-/// still counts. Biased toward "in use" so we never delete a model that's live.
-bool isModelInUse(String modelName, String? servingModel) {
-  if (servingModel == null || servingModel.trim().isEmpty) return false;
-  final name = modelName.toLowerCase();
-  for (final part in servingModel.split(',')) {
-    final m = part.trim().toLowerCase();
-    if (m.isEmpty) continue;
-    if (name == m || name.contains(m) || m.contains(name)) return true;
+  /// Drops a failure the user has already read, so reopening the list doesn't
+  /// greet them with an error about something that is no longer happening.
+  /// Only clears [ModelDeleteFailed]: idle and deleting both describe something
+  /// real that a dismissal must not overwrite.
+  void clearFailure() {
+    if (state is ModelDeleteFailed) state = const ModelDeleteIdle();
   }
-  return false;
+
+  /// Re-reads the models folder. Both lists, because a delete may have removed
+  /// a finished `.gguf` or the `.part` of one that never finished.
+  void _rescan() {
+    ref.invalidate(localModelsProvider);
+    ref.invalidate(downloadingModelsProvider);
+  }
 }
