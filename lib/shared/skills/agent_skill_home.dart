@@ -2,6 +2,7 @@ import 'dart:io';
 
 import '../../core/grid_paths.dart';
 import '../../features/agents/logic/agent_catalog.dart';
+import '../../infrastructure/cli/host_environment.dart';
 
 /// The app's agent-neutral skills store under [home] — `~/.grid/skills`.
 ///
@@ -33,8 +34,7 @@ enum SkillSource {
   store('Library'),
   hermes('Hermes'),
   codex('Codex'),
-  claude('Claude Code'),
-  pi('Pi');
+  claude('Claude Code');
 
   const SkillSource(this.label);
 
@@ -46,8 +46,6 @@ enum SkillSource {
     SkillSource.hermes => Directory('$home/.hermes/skills'),
     SkillSource.codex => Directory('$home/.codex/skills'),
     SkillSource.claude => Directory('$home/.claude/skills'),
-    // Pi keeps its skills a level down, under its agent config dir.
-    SkillSource.pi => Directory('$home/.pi/agent/skills'),
   };
 
   /// The agent this folder belongs to, or null for the library.
@@ -56,7 +54,6 @@ enum SkillSource {
     SkillSource.hermes => AgentTool.hermes,
     SkillSource.codex => AgentTool.codex,
     SkillSource.claude => AgentTool.claude,
-    SkillSource.pi => AgentTool.pi,
   };
 }
 
@@ -71,7 +68,6 @@ const List<SkillSource> kSkillTabs = [
   SkillSource.hermes,
   SkillSource.codex,
   SkillSource.claude,
-  SkillSource.pi,
 ];
 
 /// The assistants the Skills screen manages — [kSkillTabs] as agents.
@@ -99,16 +95,36 @@ Directory agentSkillCopy(
   AgentTool.hermes => Directory('${SkillSource.hermes.root(home).path}/$slug'),
   AgentTool.codex => Directory('${SkillSource.codex.root(home).path}/$slug'),
   AgentTool.claude => Directory('${SkillSource.claude.root(home).path}/$slug'),
-  AgentTool.pi => Directory('${SkillSource.pi.root(home).path}/$slug'),
 };
 
-/// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,
-/// which every agent can already reach.
+/// The `uv` every Grid skill drives — the pinned copy in `~/.grid/bin` when it
+/// is there, else whichever `uv` this machine already has.
 ///
-/// Spelled once here so a skill never depends on a `uv` being on PATH — the GUI's
-/// minimal PATH is exactly what broke other tooling before — and so two skills
-/// can't disagree about which interpreter they run on.
-String gridSkillUvPath() => '${GridPaths.binDir.path}/uv';
+/// Spelled once here so two skills can't disagree about which interpreter they
+/// run on, and always resolved to an **absolute path**: a card that named a bare
+/// `uv` would depend on the child's PATH, and a GUI's minimal PATH is exactly
+/// what broke other tooling before.
+///
+/// **The pinned copy is not always there.** It arrives with `UvToolInstall`,
+/// which only runs when Hermes is installed through the app — so a machine
+/// running Claude Code, Codex or Pi and no Hermes has no `~/.grid/bin/uv`, and
+/// every skill card written for it named a file that does not exist. What the
+/// user saw was `grid-web` reaching for the network and dying on
+/// `exit code 127 … no such file or directory`, immediately after Claude Code's
+/// own `WebSearch` had already failed — two dead ends in a row on a question
+/// that had a perfectly good answer.
+///
+/// [HostEnvironment.findExecutable] is the fallback rather than a second guessed
+/// path because it searches the *augmented* PATH, which already leads with
+/// `~/.grid/bin` and then `~/.local/bin` (where `uv tool install` puts it). So
+/// the pinned copy still wins when it exists, and nothing here has to know the
+/// list of places a `uv` can live.
+///
+/// Falls back to the pinned path when there is no `uv` at all. Naming where it
+/// *should* be beats naming nothing: the skill fails either way, and this way
+/// the error says which file to go and install.
+String gridSkillUvPath() =>
+    HostEnvironment.findExecutable('uv') ?? '${GridPaths.binDir.path}/uv';
 
 /// A skill on disk: the `SKILL.md` card the agent reads to know *when* to reach
 /// for it, plus the files it runs when it does.

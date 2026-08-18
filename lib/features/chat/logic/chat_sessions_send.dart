@@ -360,6 +360,10 @@ mixin _ChatSend on _ChatSessions {
     // Time the turn from here, not from `send`: a turn can wait behind a queued
     // one, and "Working now" would otherwise report the wait as work.
     state = state.withTurnStarted(id, DateTime.now());
+    // The loop's stall watchdog reads this to tell a working turn from a hung
+    // one — start the clock now, so a turn that hasn't emitted a thing yet still
+    // looks alive until its first stall window, not stale the moment it began.
+    _turnActivityAt[id] = DateTime.now();
     // Say this chat has an agent running, and which one — what the sidebar
     // marks, what "Working now" names, and what `stop` releases — and mark where
     // this turn's file changes begin, so "what did it just do?" answers for this
@@ -456,6 +460,10 @@ mixin _ChatSend on _ChatSessions {
     String? agentSessionId;
     _subs[id] = updates.listen(
       (update) {
+        // Any update is a sign of life — a streamed chunk, a status, a session
+        // id. The loop's stall watchdog reads this: a turn still emitting is
+        // working, however long it runs, and only silence is a hang.
+        _turnActivityAt[id] = DateTime.now();
         // The conversation may have been deleted mid-flight — drop the update
         // rather than resurrect it.
         final current = _find(id);
@@ -746,8 +754,8 @@ mixin _ChatSend on _ChatSessions {
       : ref.read(chatSenderProvider);
 
   /// Stop the **open** chat's in-flight reply. A reply streaming in another chat
-  /// is left running — see [stopChat], which this is the composer's shorthand
-  /// for.
+  /// is left running — this is the Stop button, and it means the one the user is
+  /// looking at. The composer's shorthand for [stopChat].
   void stop() {
     final id = state.activeId;
     if (id != null) stopChat(id);
@@ -771,10 +779,14 @@ mixin _ChatSend on _ChatSessions {
   /// they usually stop *because* they've read enough of it. Nothing streamed yet
   /// (the agent still thinking) means there's nothing to keep.
   ///
-  /// Takes the chat by id rather than acting on the open one, because it is
-  /// reached from "Working now" as well as the composer: a turn several projects
-  /// away is exactly the one a user stops from there, and it must not bring that
-  /// chat to the front to do it (see [_commit], which leaves the open chat put).
+  /// Takes the chat by id rather than acting on the open one, because three
+  /// callers reach it and only one of them is the composer. "Working now" stops
+  /// a turn several projects away, and the Grid Panel stops a *project* the
+  /// desktop may not have open at all — on a desk with a panel on it, nobody is
+  /// looking at the window. Neither may bring that chat to the front to do it
+  /// (see [_commit], which leaves the open chat put), and a chat that isn't in
+  /// flight is a no-op.
+  @override
   void stopChat(String id) {
     if (!state.sendingFor(id)) return;
     final phase = state.phaseFor(id);

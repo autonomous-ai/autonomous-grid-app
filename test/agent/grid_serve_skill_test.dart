@@ -165,6 +165,19 @@ void main() {
       expect(hermes.readAsStringSync(), contains('name: grid-serve'));
     });
 
+    test('a successful stop drops the record, so the app stops listing a '
+        'service that is gone — the Stop that looked like it did nothing '
+        '(#42)', () {
+      // The running-services bar shows one row per <name>.json, so a stop that
+      // rewrites the record instead of removing it leaves a card no click can
+      // clear. Guard the fix: stop deletes the record file (the log stays, so
+      // `logs <name>` still works without a record).
+      expect(
+        kGridServeScript,
+        contains('record_path(args.name).unlink(missing_ok=True)'),
+      );
+    });
+
     test('a rewrite drops a stale script instead of leaving two copies the '
         'agent could run', () async {
       final dir = Directory('${tmp.path}/skills/grid-serve');

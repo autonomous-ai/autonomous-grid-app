@@ -12,6 +12,11 @@ import 'agent_providers.dart';
 /// Hermes stops waiting after a minute and takes silence as no; the app answers
 /// a few seconds earlier so the outcome the user sees is the one that actually
 /// happened, rather than a card that quietly stops meaning anything.
+///
+/// Claude Code and Codex have no deadline of their own — they would wait all
+/// day — so for them this *is* the deadline, and it is the app's choice rather
+/// than the agent's. The card counts down in front of the user, so a no that
+/// comes from a clock is one they watched arrive.
 const Duration kAgentPermissionTimeout = Duration(seconds: 55);
 
 /// Overridable so tests don't sit through the wait.

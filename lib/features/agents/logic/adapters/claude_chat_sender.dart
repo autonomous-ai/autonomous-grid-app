@@ -7,6 +7,8 @@ import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/cli/claude_exec_event.dart';
 import '../../../../infrastructure/cli/claude_exec_service.dart';
+import '../../../../infrastructure/cli/claude_permission.dart';
+import '../../../../infrastructure/cli/text_file.dart';
 import '../../../../infrastructure/cli/chrome_bridge_service.dart';
 import '../../../../infrastructure/cli/chrome_extension_probe.dart';
 import '../../../../infrastructure/cli/command_log.dart';
@@ -21,8 +23,12 @@ import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
 import '../agent_catalog.dart';
 import '../agent_changes.dart';
+import '../agent_model_support.dart';
 import '../agent_prompt.dart';
 import '../agent_providers.dart';
+import '../agent_permission_decision.dart';
+import '../agent_session_grants.dart';
+import '../agent_permissions.dart';
 import '../agent_server_error.dart';
 import '../agent_session_slots.dart';
 import '../agent_turn_log.dart';
@@ -103,8 +109,6 @@ class ClaudeChatSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
-    // Claude Code is driven one-shot per turn; the app has no channel to
-    // answer a permission prompt on, so nothing here can constrain it.
     AgentApprovalMode? approval,
     AgentResumePoint? resume,
   }) async* {
@@ -128,6 +132,16 @@ class ClaudeChatSender implements ChatSender {
     final chat = conversationId ?? '';
     _ref.read(agentRunsProvider.notifier).reset(chat);
 
+    // This turn runs under the mode its *chat* was set to when Send was pressed
+    // — switching the mode takes effect on the next message. Plan mode has two
+    // shapes, exactly as it does for Hermes: the planning turn is forced
+    // read-only (it must touch nothing), and the execute turn that follows an
+    // approval carries the plan out asking per action, so `plan` maps to `ask`.
+    final chosen = approval ?? _ref.read(chatPrefsProvider).approval;
+    final mode = planFirst
+        ? AgentApprovalMode.readOnly
+        : (chosen == AgentApprovalMode.plan ? AgentApprovalMode.ask : chosen);
+
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final turn = _slots.planTurn(
       key: '${network.networkId}|$model|$conversationId|$root',
@@ -140,6 +154,11 @@ class ClaudeChatSender implements ChatSender {
       adopt: _adoptable(resume, root),
     );
     final prompt = planFirst ? withPlanPreamble(turn.text) : turn.text;
+    // A conversation starting over carries none of the last one's standing
+    // yeses — the chat that gave them is gone.
+    if (turn.freshStart) {
+      _ref.read(agentSessionGrantsProvider.notifier).clear(chat);
+    }
 
     // How much of the model Claude Code may fill before it summarizes — what
     // the grid advertises, what an engine taught, or the assumption the app
@@ -180,6 +199,18 @@ class ClaudeChatSender implements ChatSender {
         ? kClaudeRelayEnvKeys
         : const <String>{};
 
+    // Whether to take away Claude Code's server-side web tools for this turn.
+    //
+    // They are the provider's to run, so whatever answers the request has to
+    // understand them. On the extension lane that is Anthropic itself; on a
+    // `claude:*` seat it is Claude Code behind the relay — both keep them. A
+    // grid model does not: the relay has no chat-completions equivalent to
+    // translate them into and refuses the **whole request**, so asking for
+    // today's weather spent a step on `400 Unsupported tool type:
+    // web_search_20250305` before the agent fell back to the `grid-web` skill.
+    // Denied up front, the fallback is simply the route.
+    final withoutServerWebTools = !onExtension && !isClaudeSeatModel(model);
+
     // Make room *before* the turn, not after the refusal.
     //
     // The same ceiling already rides in [environment] for Claude Code's own
@@ -199,6 +230,7 @@ class ClaudeChatSender implements ChatSender {
         sessionId: session,
         mcpConfigPath: mcpConfigPath,
         chrome: onExtension,
+        withoutServerWebTools: withoutServerWebTools,
         dropEnvironment: dropEnvironment,
         chat: chat,
         slot: turn.slot,
@@ -223,7 +255,9 @@ class ClaudeChatSender implements ChatSender {
       chat: chat,
       mcpConfigPath: mcpConfigPath,
       chrome: onExtension,
+      withoutServerWebTools: withoutServerWebTools,
       dropEnvironment: dropEnvironment,
+      approval: mode,
     );
   }
 
@@ -252,6 +286,7 @@ class ClaudeChatSender implements ChatSender {
     required String sessionId,
     required String? mcpConfigPath,
     required bool chrome,
+    required bool withoutServerWebTools,
     required Set<String> dropEnvironment,
     required String chat,
     required AgentSessionSlot slot,
@@ -285,6 +320,7 @@ class ClaudeChatSender implements ChatSender {
         resumeSessionId: sessionId,
         mcpConfigPath: mcpConfigPath,
         chrome: chrome,
+        withoutServerWebTools: withoutServerWebTools,
         dropEnvironment: dropEnvironment,
       );
       await for (final event in run.events) {
@@ -300,6 +336,12 @@ class ClaudeChatSender implements ChatSender {
             slot.sessionId = sessionId;
           case ClaudeTurnFailed(:final message):
             failure = message;
+          // Summarizing calls no tools, so this should never fire — but an
+          // unanswered request stops the turn dead, and this one has no user
+          // watching it. A no here costs a summary; silence would cost the
+          // whole conversation, waiting on a card nobody can see.
+          case ClaudePermissionRequested(:final request):
+            run.answerPermission(request.id, null);
           default:
         }
       }
@@ -415,7 +457,9 @@ class ClaudeChatSender implements ChatSender {
     required String chat,
     required String? mcpConfigPath,
     required bool chrome,
+    required bool withoutServerWebTools,
     required Set<String> dropEnvironment,
+    required AgentApprovalMode approval,
   }) {
     final runs = _ref.read(agentRunsProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
@@ -432,6 +476,7 @@ class ClaudeChatSender implements ChatSender {
             resumeSessionId: resumeSessionId,
             mcpConfigPath: mcpConfigPath,
             chrome: chrome,
+            withoutServerWebTools: withoutServerWebTools,
           ),
         ],
         workdir: workdir,
@@ -449,6 +494,7 @@ class ClaudeChatSender implements ChatSender {
           environment: environment,
           resumeSessionId: resumeSessionId,
           mcpConfigPath: mcpConfigPath,
+          withoutServerWebTools: withoutServerWebTools,
           chrome: chrome,
           dropEnvironment: dropEnvironment,
         );
@@ -489,9 +535,19 @@ class ClaudeChatSender implements ChatSender {
             runs.setPlan(chat, entries);
           case ClaudeFileWriteStarted(:final path):
             workedAtAll = true;
-            before[path] = _readNow(path);
+            before[path] = readTextFileNow(path);
           case ClaudeFileWriteFinished(:final path):
             _recordChange(chat, path, before.remove(path));
+          case ClaudePermissionRequested(:final request):
+            decideAgentPermission(
+              ref: _ref,
+              agent: 'claude',
+              chat: chat,
+              request: request,
+              approval: approval,
+              grantKey: claudePermissionGrantKey(request),
+              answer: (optionId) => run.answerPermission(request.id, optionId),
+            );
           case ClaudeTurnCompleted():
             endedCleanly = true;
           // Kept per request, not per turn: an agentic turn calls the model
@@ -523,6 +579,9 @@ class ClaudeChatSender implements ChatSender {
       onDone: () async {
         await run.done;
         settled = true;
+        // The turn is over: a card left pinned would be a button that answers
+        // nobody.
+        _ref.read(agentPermissionsProvider.notifier).clear(chat);
         final reply = answer.toString().trim();
         final plan = _ref.read(agentRunProvider(chat)).plan;
         // A turn that announced a plan and stopped before finishing it is worth
@@ -573,29 +632,12 @@ class ClaudeChatSender implements ChatSender {
     // the done above (with [settled] set) and must not re-kill anything.
     updates.onCancel = () async {
       await events.cancel();
+      _ref.read(agentPermissionsProvider.notifier).clear(chat);
       if (settled) return;
       run.kill();
       log.finish(logId, error: 'stopped');
     };
     return updates.stream;
-  }
-
-  /// What [path] holds right now, or null when it isn't there — which is what
-  /// tells a fresh file from an overwrite, and so an undo that deletes from one
-  /// that restores.
-  ///
-  /// Synchronous on purpose: it runs while the tool call is being announced, and
-  /// an `await` here would let the write land first and read back its own result
-  /// as the "before".
-  static String? _readNow(String path) {
-    try {
-      final file = File(path);
-      return file.existsSync() ? file.readAsStringSync() : null;
-    } on FileSystemException {
-      // Unreadable (binary, permissions): no honest "before" rather than a
-      // claim that the file was empty.
-      return null;
-    }
   }
 
   /// Record a landed write so the chat can offer to open — and undo — what the

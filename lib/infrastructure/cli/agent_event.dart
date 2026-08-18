@@ -37,6 +37,7 @@ class AgentActivity {
     this.request,
     this.result,
     this.parent,
+    this.startedAt,
   });
 
   final String id;
@@ -77,8 +78,33 @@ class AgentActivity {
   /// sub-agent reading thirty files reads as the agent doing it.
   final String? parent;
 
+  /// When this step began, or null on a step nobody has stamped.
+  ///
+  /// Stamped once, by [AgentRuns.upsertStep], and never moved afterwards: the
+  /// two halves of a step arrive as separate events, and re-stamping on the
+  /// closing one would say the step started when it finished. Not persisted —
+  /// a saved transcript's steps are all over, and "how long did that take" is
+  /// a question about a turn you are watching.
+  final DateTime? startedAt;
+
   /// Whether this step belongs to a sub-agent rather than to the agent itself.
   bool get isNested => parent != null;
+
+  /// This step stamped as having begun at [when], keeping a stamp it already
+  /// carries — a row that is already running did not start again.
+  AgentActivity begunAt(DateTime when) => startedAt != null
+      ? this
+      : AgentActivity(
+          id: id,
+          kind: kind,
+          label: label,
+          status: status,
+          tool: tool,
+          request: request,
+          result: result,
+          parent: parent,
+          startedAt: when,
+        );
 
   /// Whether there is anything to show if the user opens this row.
   bool get hasPayload =>
@@ -101,6 +127,7 @@ class AgentActivity {
     request: request,
     result: clipToolPayload(result) ?? this.result,
     parent: parent,
+    startedAt: startedAt,
   );
 }
 

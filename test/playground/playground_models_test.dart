@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/playground/logic/playground_models.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
@@ -85,18 +86,30 @@ void main() {
       expect(options.map((o) => o.id).toList(), ['a', 'b']);
     });
 
-    test('carries vision for a text model the overview says can read images',
-        () {
-      final options = playgroundOptionsFrom(const [
-        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
-        OverviewModel(id: 'deepseek-v4', vision: false),
-      ], const [], vision: visionByModel(const [
-        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
-        OverviewModel(id: 'deepseek-v4', vision: false),
-      ]));
-      expect(options.firstWhere((o) => o.id == 'qwen2.5-vl-7b').vision, isTrue);
-      expect(options.firstWhere((o) => o.id == 'deepseek-v4').vision, isFalse);
-    });
+    test(
+      'carries vision for a text model the overview says can read images',
+      () {
+        final options = playgroundOptionsFrom(
+          const [
+            OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+            OverviewModel(id: 'deepseek-v4', vision: false),
+          ],
+          const [],
+          vision: visionByModel(const [
+            OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+            OverviewModel(id: 'deepseek-v4', vision: false),
+          ]),
+        );
+        expect(
+          options.firstWhere((o) => o.id == 'qwen2.5-vl-7b').vision,
+          isTrue,
+        );
+        expect(
+          options.firstWhere((o) => o.id == 'deepseek-v4').vision,
+          isFalse,
+        );
+      },
+    );
 
     test('defaults vision to false for a model the overview does not name', () {
       final options = playgroundOptionsFrom(const [
@@ -111,28 +124,31 @@ void main() {
         OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
         OverviewModel(id: 'deepseek-v4'),
       ]);
-      expect(byModel, {
-        'qwen2.5-vl-7b': true,
-      });
+      expect(byModel, {'qwen2.5-vl-7b': true});
     });
 
     test("the auto router can read images when any chat model can", () {
-      final options = playgroundOptionsFrom(const [
-        OverviewModel(id: 'auto'),
-        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
-      ], const [], vision: visionByModel(const [
-        OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
-      ]));
+      final options = playgroundOptionsFrom(
+        const [
+          OverviewModel(id: 'auto'),
+          OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+        ],
+        const [],
+        vision: visionByModel(const [
+          OverviewModel(id: 'qwen2.5-vl-7b', vision: true),
+        ]),
+      );
       expect(options.firstWhere((o) => o.id == 'auto').vision, isTrue);
     });
 
     test("the auto router stays text-only when no chat model reads images", () {
-      final options = playgroundOptionsFrom(const [
-        OverviewModel(id: 'auto'),
-        OverviewModel(id: 'deepseek-v4'),
-      ], const [], vision: visionByModel(const [
-        OverviewModel(id: 'deepseek-v4', vision: false),
-      ]));
+      final options = playgroundOptionsFrom(
+        const [OverviewModel(id: 'auto'), OverviewModel(id: 'deepseek-v4')],
+        const [],
+        vision: visionByModel(const [
+          OverviewModel(id: 'deepseek-v4', vision: false),
+        ]),
+      );
       expect(options.firstWhere((o) => o.id == 'auto').vision, isFalse);
     });
 
@@ -154,5 +170,61 @@ void main() {
     });
     expect(node.model, 'comfyui:image_generation');
     expect(node.models, ['comfyui:image_generation', 'comfyui:image_editing']);
+  });
+
+  group('lacksFirstAnswer — what the chat hides its transcript for', () {
+    test('a read that has never landed is not knowing', () {
+      expect(lacksFirstAnswer(const AsyncLoading<List<String>>()), isTrue);
+    });
+
+    test('a first read that FAILED is not knowing either — the relay times out '
+        'routinely, and reading that as a settled empty list is what replaced '
+        'a live conversation with "no engine is running yet"', () {
+      const failed = AsyncError<List<String>>('timed out', StackTrace.empty);
+      expect(
+        failed.isLoading,
+        isFalse,
+        reason: 'not loading — that is the trap',
+      );
+      expect(lacksFirstAnswer(failed), isTrue);
+    });
+
+    test('an answer of "nothing" IS knowing — the brand new grid that really '
+        'has no engine still gets the screen that guides it', () {
+      expect(lacksFirstAnswer(const AsyncData<List<String>>([])), isFalse);
+    });
+
+    test('a refresh failing over a list we already have leaves us knowing, so '
+        'the chat does not blink out on every failed poll', () async {
+      // Through a real container rather than a hand-built AsyncValue: what this
+      // rests on is Riverpod carrying the last answer through a failed re-read,
+      // and asserting that against a state we assembled ourselves would only
+      // prove we can assemble it.
+      var failing = false;
+      final models = FutureProvider<List<String>>(
+        // No auto-retry: it would refetch under the assertion and the state
+        // being measured would be whichever attempt won the race.
+        retry: (_, _) => null,
+        (ref) async {
+          if (failing) throw StateError('timed out');
+          return const ['qwen'];
+        },
+      );
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      await container.read(models.future);
+      expect(lacksFirstAnswer(container.read(models)), isFalse);
+
+      failing = true;
+      container.invalidate(models);
+      await expectLater(container.read(models.future), throwsStateError);
+
+      expect(
+        lacksFirstAnswer(container.read(models)),
+        isFalse,
+        reason: 'the list we already have is still what the grid last said',
+      );
+    });
   });
 }

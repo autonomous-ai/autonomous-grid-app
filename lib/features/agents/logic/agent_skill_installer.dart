@@ -49,12 +49,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // backend.
   BuiltinGridSkill(
     name: kGridWebSkillName,
-    agents: const {
-      AgentTool.hermes,
-      AgentTool.codex,
-      AgentTool.claude,
-      AgentTool.pi,
-    },
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridWebSkillFiles,
   ),
   // What this machine has, and what to use instead of the GNU tools it doesn't:
@@ -62,12 +57,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // rediscovering that `timeout`/`gh`/`rg` aren't here.
   BuiltinGridSkill(
     name: kGridHostSkillName,
-    agents: const {
-      AgentTool.hermes,
-      AgentTool.codex,
-      AgentTool.claude,
-      AgentTool.pi,
-    },
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridHostSkillFiles,
   ),
   // Starting a dev server is the same job for every agent, and each runs its
@@ -82,32 +72,17 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // voice.
   BuiltinGridSkill(
     name: kGridResearchSkillName,
-    agents: const {
-      AgentTool.hermes,
-      AgentTool.codex,
-      AgentTool.claude,
-      AgentTool.pi,
-    },
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridResearchSkillFiles,
   ),
   BuiltinGridSkill(
     name: kGridChartSkillName,
-    agents: const {
-      AgentTool.hermes,
-      AgentTool.codex,
-      AgentTool.claude,
-      AgentTool.pi,
-    },
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridChartSkillFiles,
   ),
   BuiltinGridSkill(
     name: kGridServeSkillName,
-    agents: const {
-      AgentTool.hermes,
-      AgentTool.codex,
-      AgentTool.claude,
-      AgentTool.pi,
-    },
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridServeSkillFiles,
   ),
 ];

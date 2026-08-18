@@ -266,10 +266,11 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
       for (final tool in AgentTool.values)
         if (ref.watch(agentInstalledProvider(tool))) tool,
     ];
-    // Auto is offered only when there's a real choice to make — two or more
-    // installed agents. With one, "let the grid pick" would always pick it, so
-    // the row would be a longer way to say what a single agent already says.
-    final offerAuto = installed.length > 1;
+    // Auto is offered only in a developer build ([autoAgentIsOffered]), and
+    // only when there's a real choice to make — two or more installed agents.
+    // With one, "let the grid pick" would always pick it, so the row would be a
+    // longer way to say what a single agent already says.
+    final offerAuto = autoAgentIsOffered && installed.length > 1;
     // Where the pick will be remembered, said out loud: in a project the choice
     // is that project's and changes nothing anywhere else, which is the whole
     // point of it — and it explains why the agent changed when they switched.

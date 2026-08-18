@@ -43,6 +43,7 @@ class AgentRun {
     this.said = '',
     this.sources = const [],
     this.plan = const [],
+    this.startedAt,
   });
 
   /// Nothing running (or nothing said yet) — what a chat with no turn reads as.
@@ -75,16 +76,29 @@ class AgentRun {
   /// delta.
   final List<AgentPlanEntry> plan;
 
+  /// When this turn began — t=0 for everything in [parts].
+  ///
+  /// It belongs here rather than beside the chat's send phase because this is
+  /// the object the steps live in: anything measuring a step against the turn
+  /// reads both ends of the subtraction off one value, and a second clock kept
+  /// somewhere else could only ever start disagreeing with this one. Stamped by
+  /// [AgentRuns.reset], which is the one call every agent turn makes before it
+  /// does anything else. Null for a run nobody started that way — a step raised
+  /// from outside a turn's stream, or a chat that has never run one.
+  final DateTime? startedAt;
+
   AgentRun copyWith({
     List<TurnPart>? parts,
     String? said,
     List<WebSource>? sources,
     List<AgentPlanEntry>? plan,
+    DateTime? startedAt,
   }) => AgentRun(
     parts: parts ?? this.parts,
     said: said ?? this.said,
     sources: sources ?? this.sources,
     plan: plan ?? this.plan,
+    startedAt: startedAt ?? this.startedAt,
   );
 }
 
@@ -116,7 +130,12 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
   /// its "working" bubble the instant the send is committed, and that bubble
   /// reads this. Clearing it only once the stream reached the turn body — after
   /// that setup await — left the last turn's steps on screen for the whole wait.
-  void reset(String chatId) => _write(chatId, AgentRun.empty);
+  /// Also where the turn's clock starts ([AgentRun.startedAt]): this call is
+  /// the first thing an agent send makes, before the setup it awaits, so it is
+  /// the earliest honest answer to "when did this turn begin" — and the panel
+  /// measures every step against it.
+  void reset(String chatId) =>
+      _write(chatId, AgentRun(startedAt: DateTime.now()));
 
   /// Drop [chatId] entirely — for a conversation that has been deleted, so its
   /// feed doesn't sit in memory for the rest of the run.
@@ -146,9 +165,17 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
     final parts = _run(chatId).parts;
     final next = [...parts];
     if (existing == -1) {
-      next.add(TurnStep(activity));
+      next.add(TurnStep(activity.begunAt(DateTime.now())));
     } else {
-      next[existing] = TurnStep(activity);
+      // The row's *original* stamp, not now: this event is the result landing
+      // on a step that has been running for a while, and the transport builds a
+      // fresh [AgentActivity] for it. Taking the new object's time would move
+      // the step's start to the moment it ended, and the panel's clock — which
+      // counts from that stamp — would read zero on everything that finished.
+      final began = (parts[existing] as TurnStep).step.startedAt;
+      next[existing] = TurnStep(
+        began == null ? activity : activity.begunAt(began),
+      );
     }
     _write(chatId, _run(chatId).copyWith(parts: List.unmodifiable(next)));
   }
@@ -201,6 +228,10 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
       state = Map.unmodifiable({...state, chatId: run});
 }
 
+/// **TODO(BE): uncalled from `lib/` since 2026-08-17**, when the step fold that
+/// asked it "did any of these fail?" was removed. Its tests still run, so this
+/// won't rot silently — but it answers a question nothing is asking.
+///
 /// The single status that stands for a whole run of [steps] — for the one-line
 /// summary a long, folded run shows instead of every row.
 ///
@@ -222,27 +253,3 @@ AgentActivityStatus aggregateActivityStatus(List<AgentActivity> steps) {
   }
   return AgentActivityStatus.done;
 }
-
-/// The length past which a run of steps gets a summary line it can fold into.
-///
-/// A short run reads at a glance and is left alone; a long one — an agent that
-/// opens three dozen files before it says a word — would otherwise push the
-/// answer, the plan and the "Thinking…" line off the screen entirely.
-///
-/// There used to be a `foldedActivitySteps` beside this, which kept the latest
-/// five rows on screen *while folded*. It was written when folding was the only
-/// way to keep a live run from swallowing the answer, and it is gone now that
-/// folding shows one row and a long run folds itself the moment it finishes: a
-/// fold that leaves five rows behind reads as a fold that didn't work.
-///
-/// **Three, measured.** At five this almost never fired: across the 8,172 runs
-/// in this machine's imported Claude history the median run is *one* step, 94%
-/// are three or fewer, and only 3% ran past five — so the fold was a feature
-/// nobody saw. Three is where it starts paying: it folds 7% of runs and takes
-/// 13,922 drawn rows down to 10,688, while a pair of steps — the shape of
-/// nearly every run — still reads at a glance, which is what this limit is for.
-///
-/// It only changes *finished* turns. A live run is expanded regardless
-/// (`_expanded ?? live` in `AgentStepList`), so nothing folds under the user
-/// while they are watching it work.
-const int kFoldedStepLimit = 3;

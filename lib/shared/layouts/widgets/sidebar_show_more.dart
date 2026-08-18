@@ -3,27 +3,42 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import 'sidebar_item.dart';
 
-/// How many rows a sidebar section shows before the rest sit behind "Show more",
-/// and how many more each click reveals.
+/// How many rows a sidebar section shows before the rest sit behind "Show more".
+///
+/// Small on purpose: the rail is a way back to the chat you were just in, and a
+/// section that opens at twenty rows buries the three that matter under
+/// seventeen that don't.
 ///
 /// One number for every section in the rail — the project list, a project's
 /// chats, and the loose chats — so the rail never grows a second,
 /// differently-sized page.
-const int kSidebarPageSize = 5;
+const int kSidebarFirstPage = 5;
 
-/// How many rows a section shows once it has been paged open [pages] times.
+/// How many more rows each click of "Show more" reveals.
 ///
-/// A function rather than `shown += kSidebarPageSize` at each call site, so the
-/// three sections can't drift apart and so the count is always clamped to what's
+/// **Bigger than the first page, deliberately.** The two answer different
+/// questions. The first page is what the rail volunteers, so it stays short;
+/// a click is someone saying "I don't see it, show me more", and answering that
+/// five at a time makes them click four times to reach a chat from last week.
+/// Whoever asked has already told you they want a longer list.
+const int kSidebarNextPage = 10;
+
+/// How many rows a section shows once it has been paged open [pages] times:
+/// [kSidebarFirstPage], then [kSidebarNextPage] more for every click after.
+///
+/// A function rather than the arithmetic at each call site, so the three
+/// sections can't drift apart and so the count is always clamped to what's
 /// actually there: a section expanded past a list that later shrank (a chat
 /// archived, a project removed) must not keep claiming there's more to see.
 int sidebarPageCount(int pages, int total) {
-  final shown = kSidebarPageSize * pages;
+  final shown = pages <= 1
+      ? kSidebarFirstPage
+      : kSidebarFirstPage + kSidebarNextPage * (pages - 1);
   return shown < total ? shown : total;
 }
 
 /// The row that closes a truncated sidebar section: quiet text that reveals the
-/// next [kSidebarPageSize] rows, and stops being built once the list is fully
+/// next [kSidebarNextPage] rows, and stops being built once the list is fully
 /// shown.
 ///
 /// Deliberately lighter than a [SidebarItem] — shorter, smaller, faint until you

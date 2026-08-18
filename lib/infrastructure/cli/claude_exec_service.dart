@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'claude_exec_event.dart';
+import 'claude_permission.dart';
 import 'claude_stream_parser.dart';
 import 'host_environment.dart';
+import 'text_file.dart';
 
 /// Thrown when a Claude Code turn can't even start (the binary won't launch).
 class ClaudeExecException implements Exception {
@@ -31,11 +33,18 @@ class ClaudeExecRun {
     required this.events,
     required this.done,
     required this.kill,
+    required this.answerPermission,
   });
 
   final Stream<ClaudeExecEvent> events;
   final Future<void> done;
   final void Function() kill;
+
+  /// Answer a [ClaudePermissionRequested] by the id it carried: an option id to
+  /// allow, or null to refuse. The turn is stopped until this is called — and
+  /// calling it twice, or for a request the turn has already moved past, does
+  /// nothing.
+  final void Function(Object id, String? optionId) answerPermission;
 }
 
 /// Drives Claude Code as a chat agent over `claude -p`. Behind an interface so
@@ -54,6 +63,9 @@ abstract interface class ClaudeExecService {
   /// an `ANTHROPIC_*` (a developer running from a terminal that exported one),
   /// and a turn that has to reach Claude Code's own sign-in — the browser
   /// extension refuses any other — needs them gone rather than overwritten.
+  ///
+  /// [withoutServerWebTools] takes away [kClaudeServerWebTools] for a turn whose
+  /// endpoint can't serve them.
   ClaudeExecRun run({
     required String workdir,
     required String prompt,
@@ -62,28 +74,31 @@ abstract interface class ClaudeExecService {
     String? resumeSessionId,
     String? mcpConfigPath,
     bool chrome = false,
+    bool withoutServerWebTools = false,
     Set<String> dropEnvironment = const {},
   });
 }
 
-/// How much of this computer a Claude Code turn may touch.
+/// How much of this computer a Claude Code turn may touch **before it asks**.
 ///
-/// TODO(BE): `bypassPermissions` is exactly what it says — Claude writes files
-/// and runs commands **anywhere on this machine, with nobody asked first**.
-/// `claude -p` is non-interactive and has no per-action approval channel (the
-/// thing Hermes gets over ACP), so there is no card, no prompt and no stopping
-/// it mid-command; the only limits left are the ones the OS puts on the user
-/// account. Chosen deliberately, to match what Codex already gets here — but it
-/// is the widest grant in the app, so it is named here rather than buried in an
-/// argv string. `acceptEdits` is the one-word change that would take shell
-/// commands back out of it.
+/// `default` is Claude Code's own gate: reading, searching and looking things up
+/// run unattended; running a command or changing a file stops and asks. The
+/// asking is what `--permission-prompt-tool` turns on — without it this mode is
+/// a silent no, and with `bypassPermissions` (what shipped here until
+/// 2026-08-18) there was no gate at all: Claude wrote files and ran commands
+/// anywhere on this machine with nobody asked first, because `claude -p` was
+/// driven one-shot and the app had no channel to answer on. It has one now (see
+/// [kClaudePermissionPromptTool]), so the widest grant in the app is gone.
+///
+/// What the user chose in the composer is applied on top, by the same policy
+/// that governs Hermes: `decideHermesPermission` answers the request itself for
+/// look-don't-touch and full-access, and puts it to the user in between.
 ///
 /// TODO(BE): a turn on the browser extension lane runs under this too, and the
-/// browser it drives is the user's own — every site they are signed in to,
-/// clicked and typed into with nobody asked first. Claude Code's site-level
-/// permissions (managed inside the extension) are the only gate left, and this
-/// app neither sets nor reads them.
-const String kClaudePermissionMode = 'bypassPermissions';
+/// browser it drives is the user's own — every site they are signed in to.
+/// Claude Code's site-level permissions (managed inside the extension) are the
+/// only gate there, and this app neither sets nor reads them.
+const String kClaudePermissionMode = 'default';
 
 // Removed 2026-08-04: `kClaudeToolSearchPrompt`, an `--append-system-prompt`
 // telling the model its MCP tools were hidden behind `ToolSearch`.
@@ -102,6 +117,24 @@ const String kClaudePermissionMode = 'bypassPermissions';
 // finished its handshake — and left behind it a paragraph telling every model
 // something untrue about its own tools.
 
+/// Claude Code's two **server-side** web tools — the ones the model provider
+/// runs, not the CLI, so they arrive at the endpoint as tool *types* the other
+/// end has to recognise.
+///
+/// Anthropic's own API does. A relay translating Anthropic Messages into a grid
+/// model's chat-completions has nothing to translate them into, and refuses the
+/// whole request rather than the tool: `API Error: 400 Unsupported tool type:
+/// web_search_20250305`, which fails the turn's step and tells the user nothing
+/// they can act on.
+///
+/// `WebSearch` is the one measured (2026-08-17, a grid model over the relay).
+/// `WebFetch` rides with it because it is the same kind of tool under the same
+/// versioned naming (`web_fetch_…`), so a relay that can't serve one almost
+/// certainly can't serve the other — and being wrong about it costs little,
+/// since the `grid-web` skill Grid installs covers searching *and* reading a
+/// page, and that is the route the agent takes instead.
+const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
+
 /// The argv for one turn: a fresh `claude -p`, or `--resume <id>` to continue a
 /// session.
 ///
@@ -115,7 +148,10 @@ const String kClaudePermissionMode = 'bypassPermissions';
 ///   chat's picker is the user's live choice, and a flag beats a file nobody can
 ///   see.
 /// - The prompt goes on **stdin**, not in argv, so a long replayed history can't
-///   overflow an argv limit.
+///   overflow an argv limit — and as JSON (`--input-format stream-json`) rather
+///   than plain text, because the same pipe carries this app's answers to
+///   `--permission-prompt-tool`. Text-mode stdin is one-way, and one-way stdin
+///   is why every turn used to run with nobody asked first.
 /// - `--mcp-config` with `--strict-mcp-config` narrows the turn to the app's own
 ///   connectors. See [ClaudeTurnMcpConfig] for why, and why [mcpConfigPath] is
 ///   nullable: a path that doesn't exist aborts the turn outright, so a failed
@@ -124,22 +160,33 @@ const String kClaudePermissionMode = 'bypassPermissions';
 ///   default because it is only ever right for one lane: the flag costs context
 ///   on every turn that carries it, and a turn holding the relay's credentials
 ///   cannot use the extension at all (see [ClaudeBrowserLane]).
+/// - `--disallowedTools` takes away the web tools a grid model can't serve —
+///   see [withoutServerWebTools]. It is **variadic**, so it swallows every
+///   following token until the next `--flag`: safe here because the prompt goes
+///   on stdin and this argv carries no positionals, and it stays safe only as
+///   long as that holds.
 List<String> claudeExecArgs({
   required String model,
   String? resumeSessionId,
   String? mcpConfigPath,
   bool chrome = false,
+  bool withoutServerWebTools = false,
 }) => [
   '-p',
+  '--input-format',
+  'stream-json',
   '--output-format',
   'stream-json',
   '--include-partial-messages',
   '--verbose',
   '--permission-mode',
   kClaudePermissionMode,
+  '--permission-prompt-tool',
+  kClaudePermissionPromptTool,
   '--model',
   model,
   if (chrome) '--chrome',
+  if (withoutServerWebTools) ...['--disallowedTools', ...kClaudeServerWebTools],
   if (mcpConfigPath != null) ...[
     '--mcp-config',
     mcpConfigPath,
@@ -164,6 +211,7 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
     String? resumeSessionId,
     String? mcpConfigPath,
     bool chrome = false,
+    bool withoutServerWebTools = false,
     Set<String> dropEnvironment = const {},
   }) => _ClaudeExecTurn(
     path: _path,
@@ -174,6 +222,7 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
     resumeSessionId: resumeSessionId,
     mcpConfigPath: mcpConfigPath,
     chrome: chrome,
+    withoutServerWebTools: withoutServerWebTools,
     dropEnvironment: dropEnvironment,
   ).start();
 }
@@ -188,6 +237,7 @@ class _ClaudeExecTurn {
     required this.resumeSessionId,
     required this.mcpConfigPath,
     required this.chrome,
+    required this.withoutServerWebTools,
     required this.dropEnvironment,
   });
 
@@ -199,6 +249,7 @@ class _ClaudeExecTurn {
   final String? resumeSessionId;
   final String? mcpConfigPath;
   final bool chrome;
+  final bool withoutServerWebTools;
   final Set<String> dropEnvironment;
 
   final _events = StreamController<ClaudeExecEvent>();
@@ -206,7 +257,15 @@ class _ClaudeExecTurn {
   final _parser = ClaudeStreamParser();
 
   Process? _process;
+  IOSink? _stdin;
+  var _inputClosed = false;
   var _killed = false;
+
+  /// The tool input of every permission request still waiting on an answer, by
+  /// the id it arrived with. Kept because a yes has to echo the input back, and
+  /// dropped as soon as one is answered — so a second answer to the same request
+  /// (a card clicked as the turn ends) writes nothing.
+  final _pending = <Object, Map<String, Object?>>{};
 
   /// The last few stderr lines, to quote back when the process dies before it
   /// says anything useful on stdout.
@@ -231,6 +290,7 @@ class _ClaudeExecTurn {
         resumeSessionId: resumeSessionId,
         mcpConfigPath: mcpConfigPath,
         chrome: chrome,
+        withoutServerWebTools: withoutServerWebTools,
       ),
       workingDirectory: workdir,
       environment: {
@@ -243,6 +303,7 @@ class _ClaudeExecTurn {
       events: _events.stream,
       done: _done.future,
       kill: kill,
+      answerPermission: answerPermission,
     );
   }
 
@@ -252,9 +313,12 @@ class _ClaudeExecTurn {
       return;
     }
     _process = process;
-    process.stdin
-      ..write(prompt)
-      ..close();
+    _stdin = process.stdin;
+    // The handshake the CLI's own SDK opens with, then the turn's prompt. stdin
+    // stays **open** afterwards: it is the only way back to a turn that stops to
+    // ask, and closing it here is what made every turn one-way.
+    _send(claudeInitializeRequest());
+    _send(claudeUserMessage(prompt));
 
     process.stdout
         .transform(utf8.decoder)
@@ -288,9 +352,72 @@ class _ClaudeExecTurn {
     if (_events.isClosed) return;
     final decoded = _tryDecode(line);
     if (decoded == null) return;
+    if (_readControl(decoded)) return;
     for (final event in _parser.read(decoded)) {
       _note(event);
       _events.add(event);
+    }
+  }
+
+  /// The control channel — everything that isn't the turn talking.
+  ///
+  /// A `can_use_tool` request stops the turn dead until it is answered, so it
+  /// goes straight to the chat. The rest (the reply to our own handshake, a
+  /// request the CLI cancelled, a subtype a later build adds) is swallowed:
+  /// returning true keeps it away from the stream parser, which reads content,
+  /// not protocol.
+  bool _readControl(Map<String, dynamic> decoded) {
+    final type = decoded['type'];
+    if (type is! String || !type.startsWith('control_')) return false;
+    final request = parseClaudePermission(decoded, readBefore: readTextFileNow);
+    if (request != null) {
+      final input = decoded['request'];
+      final tool = input is Map ? input['input'] : null;
+      _pending[request.id] = {
+        if (tool is Map)
+          for (final entry in tool.entries) '${entry.key}': entry.value,
+      };
+      _events.add(ClaudePermissionRequested(request));
+    }
+    return true;
+  }
+
+  /// Answer a request the turn is blocked on. Unknown id: already answered, or
+  /// belonged to a turn that has since ended — either way there is nobody left
+  /// waiting, so this says nothing rather than writing to a dead pipe.
+  void answerPermission(Object id, String? optionId) {
+    final input = _pending.remove(id);
+    if (input == null) return;
+    _send(
+      claudePermissionResponse(
+        requestId: '$id',
+        optionId: optionId,
+        input: input,
+      ),
+    );
+  }
+
+  void _send(Map<String, Object?> message) {
+    if (_inputClosed) return;
+    try {
+      _stdin?.writeln(jsonEncode(message));
+    } on StateError {
+      // The process died between the check and the write; its exit is already
+      // on its way through [_onExit] and carries the real account.
+      _inputClosed = true;
+    }
+  }
+
+  /// Let the process go. With stdin held open it would sit waiting for another
+  /// message long after the answer landed, so the turn's own ending closes it.
+  void _endInput() {
+    if (_inputClosed) return;
+    _inputClosed = true;
+    _pending.clear();
+    try {
+      _stdin?.close();
+    } on StateError {
+      // Already gone.
     }
   }
 
@@ -302,8 +429,10 @@ class _ClaudeExecTurn {
       case ClaudeTurnFailed():
         _spoke = true;
         _failed = true;
+        _endInput();
       case ClaudeTurnCompleted():
         _completed = true;
+        _endInput();
       // A step, a plan, a file about to be written, the session id: work in
       // progress, not a word on how the turn ends.
       default:
@@ -333,11 +462,13 @@ class _ClaudeExecTurn {
 
   void kill() {
     _killed = true;
+    _endInput();
     _process?.kill();
     _finish();
   }
 
   void _finish() {
+    _pending.clear();
     if (_done.isCompleted) return;
     _done.complete();
     if (!_events.isClosed) _events.close();

@@ -4,7 +4,6 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import 'adapters/claude_chat_sender.dart';
 import 'adapters/codex_chat_sender.dart';
 import 'adapters/hermes_chat_sender.dart';
-import 'adapters/pi_chat_sender.dart';
 import '../../chat/logic/chat_scope.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_models.dart';
@@ -146,6 +145,5 @@ final agentChatSenderProvider = Provider.family<ChatSender, AgentTool>(
     AgentTool.codex => ref.watch(codexChatSenderProvider),
     AgentTool.claude => ref.watch(claudeChatSenderProvider),
     AgentTool.hermes => ref.watch(hermesChatSenderProvider),
-    AgentTool.pi => ref.watch(piChatSenderProvider),
   },
 );

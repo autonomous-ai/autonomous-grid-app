@@ -4,7 +4,6 @@ import '../../../infrastructure/cli/hermes_version_service.dart';
 import 'adapters/claude_tool.dart';
 import 'adapters/codex_tool.dart';
 import 'adapters/hermes_tool.dart';
-import 'adapters/pi_tool.dart';
 import 'agent_catalog.dart';
 
 /// Whether [tool] is installed on this computer, keyed by the agent so a row
@@ -14,7 +13,6 @@ final agentInstalledProvider = Provider.family<bool, AgentTool>((ref, tool) {
     AgentTool.hermes => ref.watch(hermesInstalledProvider),
     AgentTool.codex => ref.watch(codexInstalledProvider),
     AgentTool.claude => ref.watch(claudeInstalledProvider),
-    AgentTool.pi => ref.watch(piInstalledProvider),
   };
 });
 
@@ -38,7 +36,6 @@ final agentVersionProvider = FutureProvider.family<String?, AgentTool>((
     AgentTool.hermes => ref.watch(hermesVersionProvider.future),
     AgentTool.codex => ref.watch(codexVersionProvider.future),
     AgentTool.claude => ref.watch(claudeVersionProvider.future),
-    AgentTool.pi => ref.watch(piVersionProvider.future),
   };
 });
 
@@ -61,9 +58,6 @@ void reprobeAgent(Ref ref, AgentTool tool) {
     case AgentTool.claude:
       ref.invalidate(claudePathProvider);
       ref.invalidate(claudeVersionProvider);
-    case AgentTool.pi:
-      ref.invalidate(piPathProvider);
-      ref.invalidate(piVersionProvider);
   }
 }
 

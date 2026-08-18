@@ -241,7 +241,6 @@ void main() {
         AgentTool.hermes,
         AgentTool.codex,
         AgentTool.claude,
-        AgentTool.pi,
       ]);
       expect(kChatAgent, AgentTool.hermes);
     });
@@ -251,7 +250,6 @@ void main() {
       expect(AgentTool.hermes.installSpec, isA<UvToolInstall>());
       expect(AgentTool.codex.installSpec, isA<GithubReleaseBinary>());
       expect(AgentTool.claude.installSpec, isNull);
-      expect(AgentTool.pi.installSpec, isA<NodeToolInstall>());
     });
   });
 

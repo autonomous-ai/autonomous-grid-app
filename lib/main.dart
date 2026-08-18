@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'app/grid_app.dart';
 import 'app/notification_scope.dart';
+import 'app/panel_scope.dart';
 import 'app/single_instance.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
@@ -118,8 +119,12 @@ Future<void> main() async {
       // Both wrap the app rather than sitting inside it, and for the same
       // reason: tokens and skills are the agent's, and the agent answers chats
       // whether or not the screen that manages them was ever opened.
+      // The panel is the same shape of thing: it is plugged into the desk, and
+      // it answers whatever the window happens to be showing.
       child: const ConnectorRefreshScope(
-        child: GridSkillsScope(child: NotificationScope(child: GridApp())),
+        child: GridSkillsScope(
+          child: PanelScope(child: NotificationScope(child: GridApp())),
+        ),
       ),
     ),
   );

@@ -11,6 +11,13 @@ import '../logic/commands/chat_loop.dart';
 /// A loop sends turns with nobody watching, so it has to be visible and it has
 /// to be one click from stopping — the countdown is there so the user can see
 /// what is about to happen before it happens.
+///
+/// Two states, two different actions, and the difference is the whole of it: a
+/// **running** loop can only be stopped (the bar stays, now reading "Stopped
+/// repeating…", so the stop is confirmed on screen), while a **finished** one
+/// can be waved away — which drops it from the chat rather than stopping it a
+/// second time. Both buttons used to do the second thing, so Dismiss and ✕ both
+/// looked broken: nothing failed, nothing changed.
 class LoopBar extends ConsumerWidget {
   const LoopBar({super.key});
 
@@ -19,6 +26,8 @@ class LoopBar extends ConsumerWidget {
     final loop = ref.watch(chatSessionsProvider.select((s) => s.active?.loop));
     if (loop == null) return const SizedBox.shrink();
     final controller = ref.read(chatSessionsProvider.notifier);
+    // `/loop stop` is the same act typed into the composer; going through
+    // [runCommand] keeps one path rather than two that can drift.
     void stop() =>
         controller.runCommand((command: ChatCommand.loop, argument: 'stop'));
 
@@ -27,13 +36,13 @@ class LoopBar extends ConsumerWidget {
       label: loopBarLabel(loop, DateTime.now()),
       actions: [
         TextButton(
-          onPressed: stop,
+          onPressed: loop.isRunning ? stop : controller.dismissLoop,
           child: Text(loop.isRunning ? 'Stop' : 'Dismiss'),
         ),
       ],
       // Not while it runs: waving it away would leave the turns coming with
       // nothing on screen saying so.
-      onDismiss: loop.isRunning ? null : stop,
+      onDismiss: loop.isRunning ? null : controller.dismissLoop,
     );
   }
 }

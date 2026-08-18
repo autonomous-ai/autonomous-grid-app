@@ -127,6 +127,7 @@ class _FakeExec implements ClaudeExecService {
     String? resumeSessionId,
     String? mcpConfigPath,
     bool chrome = false,
+    bool withoutServerWebTools = false,
     Set<String> dropEnvironment = const {},
   }) {
     lastChrome = chrome;
@@ -137,6 +138,7 @@ class _FakeExec implements ClaudeExecService {
       events: const Stream<ClaudeExecEvent>.empty(),
       done: Future<void>.value(),
       kill: () {},
+      answerPermission: (_, _) {},
     );
   }
 }

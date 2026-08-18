@@ -227,3 +227,11 @@ String? _byId(List<HermesPermissionOption> options, String optionId) {
 }
 
 String _string(Object? raw) => raw is String ? raw : '';
+
+/// The ACP tool-kind name for a request raised by an agent that doesn't speak
+/// ACP, so [decideHermesPermission] can judge it by the same rule.
+String agentPermissionToolKind(AgentPermissionKind kind) => switch (kind) {
+  AgentPermissionKind.command => 'execute',
+  AgentPermissionKind.edit => 'edit',
+  AgentPermissionKind.other => 'other',
+};

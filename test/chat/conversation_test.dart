@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_title.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
+import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
@@ -445,6 +446,56 @@ void main() {
       // A file from before pinning existed reads as unpinned rather than
       // throwing.
       expect(Conversation.fromJson(chat('u').toJson()).pinned, isFalse);
+    });
+  });
+
+  group('a turn the app went away in the middle of', () {
+    test('a transcript ending in the user is a turn that never came back', () {
+      final cut = _conversation(
+        messages: const [ChatMessage(role: ChatRole.user, text: 'keep going')],
+      );
+      expect(wasTurnInterrupted(cut), isTrue);
+    });
+
+    test(
+      'an answered turn is not interrupted, and neither is an empty chat',
+      () {
+        final answered = _conversation(
+          messages: const [
+            ChatMessage(role: ChatRole.user, text: 'keep going'),
+            ChatMessage(role: ChatRole.assistant, text: 'done'),
+          ],
+        );
+        expect(wasTurnInterrupted(answered), isFalse);
+        expect(wasTurnInterrupted(_conversation()), isFalse);
+      },
+    );
+
+    test('marking it closes the turn off, so the next one reads an '
+        'interruption instead of a prompt nobody answered', () {
+      final marked = markInterruptedTurn(
+        _conversation(
+          messages: const [
+            ChatMessage(role: ChatRole.user, text: 'keep going'),
+          ],
+        ),
+      );
+      expect(marked.messages.last.role, ChatRole.assistant);
+      expect(marked.messages.last.text, kInterruptedTurnNote);
+      // What the user typed is untouched: the note is added, never a rewrite.
+      expect(marked.messages.first.text, 'keep going');
+    });
+
+    test('marking twice is not two notes — every launch reads the same '
+        'history, and only the first one found an open turn', () {
+      final once = markInterruptedTurn(
+        _conversation(
+          messages: const [
+            ChatMessage(role: ChatRole.user, text: 'keep going'),
+          ],
+        ),
+      );
+      expect(wasTurnInterrupted(once), isFalse);
     });
   });
 }

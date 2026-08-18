@@ -41,6 +41,30 @@ void main() {
     await container.read(chatSessionsProvider.notifier).restored;
   }
 
+  test("a restored backup's running loop comes back stopped — the machine it "
+      'was backed up from holds that timer, and adopting the claim here would '
+      'send every turn of it twice', () async {
+    await settled();
+    File('${dir.path}/1786441404424597.json').writeAsStringSync('''
+{"id":"1786441404424597","title":"Building","model":"auto",
+ "createdAt":"2026-08-11T09:45:00.000Z","updatedAt":"2026-08-11T09:45:28.746Z",
+ "messages":[{"role":"user","text":"hi"},{"role":"assistant","text":"ok"}],
+ "loop":{"prompt":"keep building","intervalSeconds":300,
+  "startedAt":"2026-08-11T09:45:00.000Z","nextAt":"2026-08-11T09:50:00.000Z",
+  "status":"running","iterations":4}}
+''');
+
+    await container.read(chatSessionsProvider.notifier).reloadFromDisk();
+
+    final chat = container.read(chatSessionsProvider).conversations.single;
+    expect(chat.loop?.isRunning, isFalse);
+    expect(chat.loop?.prompt, 'keep building');
+    // Written back, so the next launch doesn't resume someone else's loop
+    // either.
+    final saved = await container.read(chatStoreProvider).loadAll();
+    expect(saved.single.loop?.isRunning, isFalse);
+  });
+
   test('a chat written to the folder afterwards shows up on reload', () async {
     await settled();
     expect(container.read(chatSessionsProvider).conversations, isEmpty);

@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
-import 'package:grid_app/features/agents/logic/adapters/pi_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_grid_support.dart';
 import 'package:grid_app/features/agents/logic/auto_agent.dart';
@@ -13,12 +12,7 @@ import 'package:grid_app/features/playground/logic/playground_models.dart';
 import 'package:grid_app/infrastructure/api/chat_transport.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
-const _all = [
-  AgentTool.hermes,
-  AgentTool.codex,
-  AgentTool.claude,
-  AgentTool.pi,
-];
+const _all = [AgentTool.hermes, AgentTool.codex, AgentTool.claude];
 
 NetworkCredential _credential() => const NetworkCredential(
   networkId: 'net',
@@ -97,7 +91,6 @@ ProviderContainer _routerContainer({
       claudeInstalledProvider.overrideWithValue(
         !missing.contains(AgentTool.claude),
       ),
-      piInstalledProvider.overrideWithValue(!missing.contains(AgentTool.pi)),
       agentRunsOnGridProvider.overrideWith(
         (ref, tool) => !blocked.contains(tool),
       ),
@@ -314,7 +307,6 @@ void main() {
     test('an agent this machine or this grid cannot run is out', () {
       final container = _routerContainer(
         transport: _FakeClassifier(reply: 'codex'),
-        missing: {AgentTool.pi},
         blocked: {AgentTool.codex},
       );
       expect(container.read(autoAgentCandidatesProvider('auto')), const [
@@ -328,7 +320,7 @@ void main() {
       // failure than the one the composer already explains.
       final container = _routerContainer(
         transport: _FakeClassifier(reply: 'codex'),
-        missing: {AgentTool.hermes, AgentTool.claude, AgentTool.pi},
+        missing: {AgentTool.hermes, AgentTool.claude},
       );
       expect(container.read(autoAgentCandidatesProvider('claude:opus')), const [
         AgentTool.codex,

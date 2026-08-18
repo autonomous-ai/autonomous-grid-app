@@ -1,0 +1,20 @@
+# Partition table for the 16MB flash on the ESP32-S3-Touch-AMOLED-1.75.
+#
+# DUAL OTA, and it is the protocol that requires it, not a habit: docs/panel-protocol.md §2 says the
+# device verifies the sha256 of what it actually WROTE and keeps running the old image on a mismatch.
+# Two app slots are what makes "keeps running the old image" possible — a failed update then costs a
+# reboot and nothing else. Paired with CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE, which reverts an image
+# that never confirms itself; this panel has no network and no recovery mode, so an image that does not
+# boot is a device that needs a person, a cable and esptool.
+#
+# The OFFSETS are byte-identical to the reference firmware's on this same board — moving a partition is
+# the one edit here that can brick a unit mid-transition. nvs holds what the DEVICE decides and no app
+# can tell it: its own brightness, the voice language someone picked on the Settings page, and the salted
+# hash of the screen-lock pattern (device_prefs.c). Erasing it costs those three and nothing else, which
+# is why device_prefs_init is allowed to erase it rather than refuse to boot.
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x6000
+otadata,  data, ota,     0xf000,   0x2000
+phy_init, data, phy,     0x11000,  0x1000
+ota_0,    app,  ota_0,   0x20000,  0x7E0000
+ota_1,    app,  ota_1,   0x800000, 0x7E0000

@@ -4,7 +4,6 @@ import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
-import 'package:grid_app/features/agents/logic/adapters/pi_tool.dart';
 import 'package:grid_app/features/models/logic/engine_status.dart';
 import 'package:grid_app/features/node_setup/logic/background_agent_controller.dart';
 import 'package:grid_app/features/node_setup/logic/media_status.dart';
@@ -66,7 +65,6 @@ ProviderContainer _container(
       hermesPathProvider.overrideWith((_) => null),
       codexPathProvider.overrideWith((_) => null),
       claudePathProvider.overrideWith((_) => null),
-      piPathProvider.overrideWith((_) => null),
     ],
   );
   addTearDown(container.dispose);
@@ -85,10 +83,9 @@ void main() {
 
     await container.read(backgroundAgentInstallerProvider).startIfNeeded();
 
-    // Codex through its release binary and Pi through its Node recipe, Claude
-    // Code through its vendor installer — all in the one background round.
+    // Codex through its release binary, Claude Code through its vendor
+    // installer — both in the one background round.
     expect(specs.ran.any((s) => s is GithubReleaseBinary), isTrue); // Codex
-    expect(specs.ran.any((s) => s is NodeToolInstall), isTrue); // Pi
     expect(claude.upgrades, [false]);
   });
 
@@ -122,8 +119,8 @@ void main() {
       await installer.startIfNeeded();
       await installer.startIfNeeded();
 
-      // Codex and Pi, once each — not four times across two asks.
-      expect(specs.ran, hasLength(2));
+      // Codex once — not twice across two asks.
+      expect(specs.ran, hasLength(1));
       expect(claude.upgrades, [false]); // Claude Code fetched once, not twice.
     },
   );

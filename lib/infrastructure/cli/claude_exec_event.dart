@@ -125,3 +125,15 @@ class ClaudeTurnFailed extends ClaudeExecEvent {
 class ClaudeTurnCompleted extends ClaudeExecEvent {
   const ClaudeTurnCompleted();
 }
+
+/// Claude Code has stopped, mid-turn, and won't go on until this is answered.
+///
+/// The request reaches the chat as the same [AgentPermission] Hermes raises over
+/// ACP, so one card and one policy serve both agents. Answering happens through
+/// [ClaudeExecRun.answerPermission]; the turn stays blocked until it does, and a
+/// turn that ends with one outstanding leaves nobody to answer — the sender
+/// clears it.
+class ClaudePermissionRequested extends ClaudeExecEvent {
+  const ClaudePermissionRequested(this.request);
+  final AgentPermission request;
+}

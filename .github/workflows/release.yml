@@ -53,7 +53,7 @@ env:
   # is reachable without auth (a private repo's release assets 404 for anyone
   # without repo access — including the client's Sparkle). Must be a public repo
   # with at least one commit; CI cross-publishes to it with GRID_DOWNLOADS_TOKEN.
-  DOWNLOADS_REPO: autonomous-ecm/autonomous-grid-app-downloads
+  DOWNLOADS_REPO: autonomous-ai/autonomous-grid-app-downloads
 
 jobs:
   build:
@@ -139,6 +139,20 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          # PINNED, and it has to stay pinned. `channel: stable` alone builds
+          # each tag with whatever stable happened to be current that day, so the
+          # binary users get runs an engine nobody here has ever launched. That
+          # is not hypothetical: Flutter 3.47.0 reached stable on 2026-08-12,
+          # v0.3.41 was tagged on the 14th, and every release from then on
+          # shipped a rendering engine (Dart 3.13.0) two minor versions ahead of
+          # the 3.44.4 the team develops on — which is exactly when users started
+          # reporting the UI tearing itself apart on both Intel and Apple
+          # Silicon, while the same commit built locally was clean.
+          #
+          # So: this number is the version the fix was verified on. Moving it is
+          # a deliberate act — bump it, run the app from a release build, and
+          # look at it, in the same change.
+          flutter-version: 3.44.4
           channel: stable
           cache: true
 

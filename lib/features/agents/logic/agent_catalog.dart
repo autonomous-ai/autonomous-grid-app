@@ -42,15 +42,6 @@ enum AgentTool {
         'Careful reasoning over a codebase, larger refactors, explaining and '
         'reviewing code, and long multi-step engineering tasks. Strong at '
         'planning a change before making it.',
-  ),
-  pi(
-    id: 'pi',
-    name: 'Pi',
-    tagline: 'A minimal terminal coding harness.',
-    iconAsset: 'assets/agents/pi_icon.png',
-    strengths:
-        'Small, fast coding tasks in a terminal — a quick edit, a one-off '
-        'command — when a lighter harness is enough.',
   );
 
   const AgentTool({
@@ -83,16 +74,14 @@ enum AgentTool {
   /// Whether a conversation with this agent survives the app being quit.
   ///
   /// True for the two that run one process per turn and keep the conversation
-  /// in a file of their own, resumed by id: `claude --resume <id>` and
-  /// `codex exec resume <id>`. Their sessions outlive both the process that
+  /// in a file of their own, resumed by id: `claude --resume <id>` and Codex's
+  /// own thread id. Their sessions outlive both the process that
   /// made them and this app, which is what lets a chat pick one back up — and
   /// what lets a session started in those tools be imported and carried on
   /// (see `AgentResumePoint`).
   ///
   /// False for Hermes, whose session *is* a live ACP process: when it exits the
-  /// session is gone, and an id written down for it would name nothing. Pi
-  /// resumes by id too, but the app has never recorded one and nothing imports
-  /// Pi sessions, so there would be no point to write.
+  /// session is gone, and an id written down for it would name nothing.
   bool get resumesBySessionId =>
       this == AgentTool.claude || this == AgentTool.codex;
 
@@ -117,12 +106,6 @@ enum AgentTool {
       linuxMusl: true,
     ),
     AgentTool.claude => null,
-    // Pi ships only on npm, so the app fetches a private, pinned Node into
-    // `~/.grid` and lets its npm install Pi there — see [NodeToolInstall].
-    AgentTool.pi => const NodeToolInstall(
-      package: '$kPiPackage@$kPiRelease',
-      executable: 'pi',
-    ),
   };
 
   /// The agent's own mark, bundled with the app (declared in `pubspec.yaml`).

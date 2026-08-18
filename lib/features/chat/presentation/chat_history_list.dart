@@ -351,7 +351,10 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
                             // list: a page revealed later arrives as its own
                             // wave, and the stagger never runs off the end of
                             // the curve table on a project with a hundred chats.
-                            index: i % kSidebarPageSize,
+                            // The widest page is the increment, so the modulo is
+                            // taken against that rather than the shorter first
+                            // page — the curve lookup clamps either way.
+                            index: i % kSidebarNextPage,
                             child: _ChatRow(chat: chats[i], indented: true),
                           ),
                         ),

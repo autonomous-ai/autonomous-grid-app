@@ -3,6 +3,7 @@ import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart'
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_event.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_service.dart';
+import 'package:grid_app/infrastructure/cli/claude_permission.dart';
 import 'package:grid_app/infrastructure/cli/claude_stream_parser.dart';
 
 /// One `stream_event` carrying a text delta — the shape the vendor's SSE arrives
@@ -349,6 +350,163 @@ void main() {
         'usage', () {
       final events = _read(ClaudeStreamParser(), _toolResult('t1'));
       expect(events.whereType<ClaudeContextUsed>(), isEmpty);
+    });
+  });
+
+  group('the permission channel — asking is what the flags buy', () {
+    test('a turn carries the two-way stdin and the tool that asks on it', () {
+      final args = claudeExecArgs(model: 'm');
+      expect(args, containsAllInOrder(['--input-format', 'stream-json']));
+      expect(
+        args,
+        containsAllInOrder([
+          '--permission-prompt-tool',
+          kClaudePermissionPromptTool,
+        ]),
+      );
+    });
+
+    test('no turn runs with nobody asked first', () {
+      // The value matters, not just the constant: `bypassPermissions` is what
+      // shipped here until 2026-08-18, and it let Claude write files and run
+      // commands anywhere on this machine without a single card.
+      expect(kClaudePermissionMode, isNot('bypassPermissions'));
+      expect(kClaudePermissionMode, 'default');
+    });
+
+    test(
+      'a shell call reaches the user as the exact command, not a summary',
+      () {
+        final request = parseClaudePermission({
+          'type': 'control_request',
+          'request_id': 'r1',
+          'request': {
+            'subtype': 'can_use_tool',
+            'tool_name': 'Bash',
+            'input': {
+              'command': 'rm -rf build',
+              'description': 'Clear the build',
+            },
+          },
+        });
+        expect(request, isNotNull);
+        expect(request!.kind, AgentPermissionKind.command);
+        expect(request.command, 'rm -rf build');
+        expect(request.summary, 'Clear the build');
+        expect(request.id, 'r1');
+        // A command may be agreed to for the whole chat; a file change may not.
+        expect(request.canAllowForChat, isTrue);
+      },
+    );
+
+    test('a whole-file write shows what the file would become', () {
+      final request = parseClaudePermission({
+        'type': 'control_request',
+        'request_id': 'r2',
+        'request': {
+          'subtype': 'can_use_tool',
+          'tool_name': 'Write',
+          'input': {'file_path': '/tmp/a.txt', 'content': 'after'},
+        },
+      }, readBefore: (path) => path == '/tmp/a.txt' ? 'before' : null);
+      expect(request!.kind, AgentPermissionKind.edit);
+      expect(request.path, '/tmp/a.txt');
+      expect(request.oldText, 'before');
+      expect(request.newText, 'after');
+      expect(request.canAllowForChat, isFalse);
+    });
+
+    test('a partial edit is shown as the file with the swap applied, so the '
+        'diff is of the real file and not of the fragment', () {
+      final request = parseClaudePermission({
+        'type': 'control_request',
+        'request_id': 'r3',
+        'request': {
+          'subtype': 'can_use_tool',
+          'tool_name': 'Edit',
+          'input': {
+            'file_path': '/tmp/a.dart',
+            'old_string': 'one',
+            'new_string': 'two',
+          },
+        },
+      }, readBefore: (_) => 'one and one');
+      expect(request!.oldText, 'one and one');
+      expect(request.newText, 'two and one');
+    });
+
+    test('every occurrence is swapped when the call says so', () {
+      expect(
+        claudeEditResult({
+          'old_string': 'a',
+          'new_string': 'b',
+          'replace_all': true,
+        }, 'a a'),
+        'b b',
+      );
+    });
+
+    test('a tool the app cannot draw is still put to the user, with its whole '
+        'request — refusing it unasked is a no from a chat that promised to '
+        'ask', () {
+      final request = parseClaudePermission({
+        'type': 'control_request',
+        'request_id': 'r4',
+        'request': {
+          'subtype': 'can_use_tool',
+          'tool_name': 'mcp__notion__create_page',
+          'input': {'title': 'Q3'},
+        },
+      });
+      expect(request!.kind, AgentPermissionKind.other);
+      expect(request.summary, 'mcp__notion__create_page');
+      expect(request.command, contains('title: Q3'));
+    });
+
+    test('the reply to our own handshake is not a request to answer', () {
+      expect(
+        parseClaudePermission({
+          'type': 'control_response',
+          'response': {'subtype': 'success', 'request_id': 'init'},
+        }),
+        isNull,
+      );
+    });
+
+    test('yes hands the tool back its input unchanged; no says so in words the '
+        'model can act on', () {
+      final allow = claudePermissionResponse(
+        requestId: 'r1',
+        optionId: kAllowOnceOption,
+        input: const {'command': 'ls'},
+      );
+      final response = (allow['response']! as Map)['response']! as Map;
+      expect(response['behavior'], 'allow');
+      expect(response['updatedInput'], const {'command': 'ls'});
+
+      final deny = claudePermissionResponse(requestId: 'r1', optionId: null);
+      expect(
+        ((deny['response']! as Map)['response']! as Map)['behavior'],
+        'deny',
+      );
+    });
+
+    test('agreeing to one command is not agreeing to another', () {
+      AgentPermission command(String line) => AgentPermission(
+        id: 'x',
+        kind: AgentPermissionKind.command,
+        summary: line,
+        command: line,
+        options: claudePermissionOptions(AgentPermissionKind.command),
+      );
+      expect(
+        claudePermissionGrantKey(command('rm -rf build')),
+        isNot(claudePermissionGrantKey(command('rm -rf /'))),
+      );
+      expect(
+        claudePermissionGrantKey(command('ls')),
+        claudePermissionGrantKey(command('ls')),
+      );
     });
   });
 }

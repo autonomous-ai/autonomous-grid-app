@@ -95,7 +95,6 @@ class AgentSkillScanner {
     SkillSource.hermes => SkillOwner.hermes,
     SkillSource.codex => SkillOwner.codex,
     SkillSource.claude => SkillOwner.claude,
-    SkillSource.pi => SkillOwner.pi,
     // Unreachable: the library is handled above, before this is asked.
     SkillSource.store => SkillOwner.user,
   };

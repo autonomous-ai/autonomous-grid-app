@@ -26,10 +26,6 @@ RelayDialect agentDialect(AgentTool tool) => switch (tool) {
   AgentTool.codex => clientDialect(ClientApp.codex),
   AgentTool.claude => clientDialect(ClientApp.claudeCode),
   AgentTool.hermes => clientDialect(ClientApp.hermes),
-  // Pi posts to `/v1/chat/completions` (its grid provider is an
-  // `openai-completions` one), so — like Hermes — it runs wherever a chat model
-  // does and always has somewhere to go.
-  AgentTool.pi => RelayDialect.chatCompletions,
 };
 
 /// Whether [tool] can answer chats on a grid described by [overview].

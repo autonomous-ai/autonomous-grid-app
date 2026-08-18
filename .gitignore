@@ -61,5 +61,41 @@ docs/*
 !docs/conventions.md
 !docs/style-guide-grid-app.md
 !docs/architecture.md
+!docs/panel-protocol.md
 !docs/git-auto-install.md
 .playwright-mcp/*
+
+# ── The device firmware under device/ ────────────────────────────────────────
+# An ESP-IDF build tree is tens of thousands of files: the previous firmware
+# dragged 406 MB of build/, managed_components/ and a generated sdkconfig into
+# this repo before anyone noticed. These four lines are why that cannot happen
+# again, and they go in BEFORE the first `idf.py build`, not after.
+#
+# What IS tracked, deliberately:
+#   partitions.csv        — dual OTA is a protocol fact (docs/panel-protocol.md
+#                           §"Firmware update"), not a local build choice
+#   sdkconfig.defaults    — the intent; sdkconfig is what a build generates from
+#                           it, and only the intent is reviewable
+#   dependencies.lock     — the exact managed component versions, so two
+#                           machines build the same firmware
+device/*/build/
+device/*/managed_components/
+device/*/sdkconfig
+device/*/sdkconfig.old
+device/*/sdkconfig.superseded
+device/*/sdkconfig.defaults.stamp
+# clangd's index, 8.5 MB of it and 1,331 files, written by whichever editor
+# opened the firmware. It reads as source because it sits beside it.
+device/*/.cache/
+
+# The firmware image the app carries is a build output of the directory above,
+# copied in by scripts/sync_panel_firmware.sh. Tracking it would add 2 MB to
+# history for every firmware iteration, and it is exactly reproducible from
+# device/esp32-circle — so the repo keeps the recipe, not the loaf.
+#
+# assets/panel/ itself must keep existing: pubspec.yaml declares it and Flutter
+# fails the build outright on a declared asset directory that is absent. Its
+# README.md is tracked for that reason, and panelFirmwareProvider already treats
+# a missing image as "carry none" — which is the right behaviour for a checkout
+# with no device attached to it.
+assets/panel/*.bin

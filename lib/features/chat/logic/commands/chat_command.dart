@@ -1,9 +1,8 @@
 /// A slash command the **app** runs, rather than a message it sends.
 ///
-/// Grid drives four different agents over four different transports, and each
+/// Grid drives three different agents over three different transports, and each
 /// agent's own `/commands` live inside the piece of it Grid doesn't talk to —
-/// Codex's are in its TUI crate, Pi's in its interactive mode (see
-/// `docs/agent-commands.md`). So a command that has to work "for every agent"
+/// Codex's are in its TUI crate, for instance (see `docs/agent-commands.md`). So a command that has to work "for every agent"
 /// can only be one the app itself performs, on the state the app itself owns:
 /// the transcript, the open chat, the turn loop.
 ///

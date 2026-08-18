@@ -512,11 +512,18 @@ def cmd_stop(args):
     stop_record(record)
     time.sleep(0.6)
     still = running_pid(record)
-    record.pop("pid", None)
-    save_record(record)
     if still:
+        # Couldn't stop it: keep the record so the row stays honest and a retry
+        # still has a handle to the process.
+        record.pop("pid", None)
+        save_record(record)
         print(f"{args.name} is still running (pid {still})", file=sys.stderr)
         return 1
+    # Stopped for good: drop the record so nothing keeps listing a service that
+    # is gone. The app's running-services bar shows one row per record file, so a
+    # kept record is a card whose Stop button looks like it did nothing (#42).
+    # The log stays — `logs <name>` finds it by name without a record.
+    record_path(args.name).unlink(missing_ok=True)
     print(f"{args.name} stopped")
     return 0
 

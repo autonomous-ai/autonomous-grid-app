@@ -27,6 +27,7 @@ class ChatLoop {
     this.status = LoopStatus.running,
     this.iterations = 0,
     this.pacing,
+    this.continuous = false,
   });
 
   /// What is re-run each time, in the user's words.
@@ -49,9 +50,16 @@ class ChatLoop {
   /// fixed one, where the gap is the user's own number and needs no reason.
   final String? pacing;
 
+  /// Run the next turn the moment the last one ends, not on a clock — for
+  /// "keep building this project, never stop". The one mode with no wait; it
+  /// runs until the user stops it or the seven-day ceiling, whichever is first.
+  final bool continuous;
+
   bool get isRunning => status == LoopStatus.running;
 
-  bool get isSelfPaced => interval == null;
+  bool get isContinuous => continuous;
+
+  bool get isSelfPaced => interval == null && !continuous;
 
   /// Whether [now] is past the seven days a loop may live.
   bool hasExpired(DateTime now) => now.difference(startedAt) >= kLoopExpiry;
@@ -69,11 +77,13 @@ class ChatLoop {
     status: status ?? this.status,
     iterations: iterations ?? this.iterations,
     pacing: pacing ?? this.pacing,
+    continuous: continuous,
   );
 
   Map<String, Object?> toJson() => {
     'prompt': prompt,
     if (interval != null) 'intervalSeconds': interval!.inSeconds,
+    if (continuous) 'continuous': true,
     'startedAt': startedAt.toUtc().toIso8601String(),
     'nextAt': nextAt.toUtc().toIso8601String(),
     'status': status.name,
@@ -83,10 +93,18 @@ class ChatLoop {
 
   /// Null for anything this app didn't write.
   ///
-  /// A loop that was running when the app closed reads back **stopped**. Claude
-  /// Code's own tasks only fire while it is running, and re-arming a timer at
-  /// launch — against a chat the user may not even open — is how a forgotten
-  /// loop becomes a machine that talks to itself overnight.
+  /// A loop that was running when the app closed reads back **running**, and
+  /// the app arms its timer again at launch (`_resumeLoops`).
+  ///
+  /// It used to come back *stopped*, on the reasoning that a timer re-armed at
+  /// launch is how a forgotten loop becomes a machine that talks to itself
+  /// overnight. What that actually cost was worse, and it is in the log for
+  /// 2026-08-18: an app restart killed the turn of a running loop, the loop
+  /// died with it, and starting it again with `/loop` built a *new* loop — the
+  /// count back at zero and the same prompt sent again over work the killed
+  /// turn had already half done. What bounds a forgotten loop is the seven-day
+  /// ceiling, the bar over the composer, and the log line each iteration
+  /// writes — not the app forgetting it existed.
   static ChatLoop? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final prompt = '${raw['prompt'] ?? ''}'.trim();
@@ -106,9 +124,10 @@ class ChatLoop {
           : null,
       startedAt: startedAt,
       nextAt: nextAt,
-      status: stored == LoopStatus.running ? LoopStatus.stopped : stored,
+      status: stored,
       iterations: iterations is int && iterations > 0 ? iterations : 0,
       pacing: raw['pacing'] is String ? raw['pacing'] as String : null,
+      continuous: raw['continuous'] == true,
     );
   }
 }
@@ -122,6 +141,43 @@ const Duration kLoopExpiry = Duration(days: 7);
 /// a loop is not watching something, it is hammering it.
 const Duration kMinLoopInterval = Duration(minutes: 1);
 
+/// The pause a continuous loop leaves between one turn ending and the next
+/// starting. Not zero: a couple of seconds lets the turn settle and keeps a
+/// turn that returns instantly (an immediate failure) from becoming a tight
+/// spin, while staying "back-to-back" against the minutes a real turn takes.
+const Duration kContinuousLoopGap = Duration(seconds: 3);
+
+/// How long a loop iteration's turn may make **no progress** — no streamed
+/// text, no status update — before the loop treats it as hung and stops it.
+///
+/// A stall window, not a wall-clock cap: a turn that keeps producing output is
+/// working, however long it runs, and a loop must never cut real work short.
+/// What this catches is a turn gone *silent* — a `claude -p` that answered once
+/// and then sat for hours (4h46m in the logs) — because only then is nobody
+/// home, and waiting freezes the whole loop (the next beat is armed only once
+/// the current turn returns). An hour of complete silence is a hang, not work.
+const Duration kLoopTurnStall = Duration(minutes: 60);
+
+/// How long a resumed loop waits before an overdue turn goes out.
+///
+/// A loop whose next beat passed while the app was closed is due the moment the
+/// app is back, but *the moment the app is back* is the worst time to send it:
+/// the grid is still being read, the agent is still being found, and several
+/// resumed loops would all fire into that at once. Seconds, not minutes — long
+/// enough for the launch to settle, short enough that "it carries on where it
+/// left off" is still true.
+const Duration kLoopResumeSettle = Duration(seconds: 15);
+
+/// How long the pacer gets to answer on a self-paced loop.
+///
+/// Measured, not guessed: on 2026-08-18 the pacing request came back in 1m26s
+/// against a 20s limit, so every self-paced loop that day logged
+/// `pacing timed out` and fell back to a flat ten minutes — the assistant's
+/// pace, the whole point of the mode, never once got used. Nobody is waiting on
+/// this (the turn has already ended), so the limit only has to be short enough
+/// that a pacer which is never coming back doesn't hold the next beat.
+const Duration kLoopPaceTimeout = Duration(seconds: 90);
+
 /// The bounds a self-paced loop may choose between.
 const Duration kMinPacedDelay = Duration(minutes: 1);
 const Duration kMaxPacedDelay = Duration(hours: 1);
@@ -129,26 +185,32 @@ const Duration kMaxPacedDelay = Duration(hours: 1);
 /// What `/loop <argument>` asked for.
 ///
 /// [interval] is null when the user gave none, which means the assistant paces
-/// itself. [prompt] is empty when they gave no prompt either — there is nothing
-/// to run, and the caller says so rather than inventing an errand.
-typedef LoopRequest = ({Duration? interval, String prompt});
+/// itself — unless [continuous] is set, where the next turn goes out the moment
+/// the last ends. [prompt] is empty when they gave no prompt either — there is
+/// nothing to run, and the caller says so rather than inventing an errand.
+typedef LoopRequest = ({Duration? interval, bool continuous, String prompt});
 
-/// Read `5m check the deploy`, `2h`, or just `check the deploy`.
+/// Read `5m check the deploy`, `2h`, `continuous keep improving`, or just
+/// `check the deploy`.
 ///
-/// Only a **leading** interval token counts: `s`, `m`, `h`, `d` after a number.
-/// Anything else is the prompt, whole. Seconds round up to the one-minute
-/// floor, so `/loop 30s` is a minute rather than a promise the app can't keep.
+/// A leading `continuous` (or `nonstop`) token means back-to-back; otherwise a
+/// leading interval token counts (`s`, `m`, `h`, `d` after a number), and
+/// anything else is the prompt, whole. Seconds round up to the one-minute floor,
+/// so `/loop 30s` is a minute rather than a promise the app can't keep.
 LoopRequest parseLoopArgument(String argument) {
   final trimmed = argument.trim();
-  if (trimmed.isEmpty) return (interval: null, prompt: '');
+  if (trimmed.isEmpty) return (interval: null, continuous: false, prompt: '');
   final space = trimmed.indexOf(RegExp(r'\s'));
   final head = space < 0 ? trimmed : trimmed.substring(0, space);
+  final rest = space < 0 ? '' : trimmed.substring(space + 1).trim();
+  if (head.toLowerCase() == 'continuous' || head.toLowerCase() == 'nonstop') {
+    return (interval: null, continuous: true, prompt: rest);
+  }
   final interval = parseLoopInterval(head);
-  if (interval == null) return (interval: null, prompt: trimmed);
-  return (
-    interval: interval,
-    prompt: space < 0 ? '' : trimmed.substring(space + 1).trim(),
-  );
+  if (interval == null) {
+    return (interval: null, continuous: false, prompt: trimmed);
+  }
+  return (interval: interval, continuous: false, prompt: rest);
 }
 
 /// The duration [token] names (`45s`, `5m`, `2h`, `1d`), or null when it names
@@ -226,6 +288,9 @@ List<Map<String, String>> buildLoopPaceMessages({
 
 /// The one line the loop bar shows.
 String loopBarLabel(ChatLoop loop, DateTime now) => switch (loop.status) {
+  LoopStatus.running when loop.isContinuous =>
+    'Working continuously: ${loop.prompt} · ${loop.iterations} so far · '
+        'until you stop it',
   LoopStatus.running =>
     'Repeating: ${loop.prompt} · ${_cadence(loop)} · '
         '${loop.iterations} so far · next in ${_untilNext(loop, now)}'
@@ -248,4 +313,5 @@ String _untilNext(ChatLoop loop, DateTime now) {
 /// What `/loop` says when it is given nothing to run.
 const String kLoopUsage =
     'Say what to repeat: /loop 5m check whether the deploy finished. '
-    'Leave the interval out and it picks its own pace.';
+    'Leave the interval out and it picks its own pace, or say '
+    '/loop continuous <task> to keep working back-to-back until you stop it.';

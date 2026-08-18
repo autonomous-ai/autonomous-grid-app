@@ -298,7 +298,8 @@ final gridServesAutoModelProvider = Provider.autoDispose<bool>(
   (ref) => ref.watch(playgroundModelsProvider).any((o) => o.id == kAutoModelId),
 );
 
-/// Whether the option list is still waiting on its **first** answer.
+/// Whether the option list has yet to hear a **first** answer — still waiting,
+/// or asked and told nothing.
 ///
 /// Both sources are asked, because the options are built from both: one arriving
 /// ahead of the other leaves the list legitimately empty for a moment, and
@@ -310,16 +311,25 @@ final gridServesAutoModelProvider = Provider.autoDispose<bool>(
 /// still empty, where that screen is the only thing guiding the user.
 final playgroundModelsResolvingProvider = Provider.autoDispose<bool>(
   (ref) =>
-      ref.watch(gridOverviewProvider.select(awaitingFirstAnswer)) ||
-      ref.watch(networkModelsProvider.select(awaitingFirstAnswer)),
+      ref.watch(gridOverviewProvider.select(lacksFirstAnswer)) ||
+      ref.watch(networkModelsProvider.select(lacksFirstAnswer)),
 );
 
-/// Loading with nothing behind it — as opposed to loading *again*, which still
-/// has last round's answer to show.
+/// Nothing behind it yet — as opposed to loading *again*, which still has last
+/// round's answer to show.
 ///
-/// The distinction is the difference between "we don't know yet" and "we know,
-/// and we're checking again". Anything that hides UI while it waits wants this
-/// one, not `isLoading`: on a polled provider `isLoading` comes back true every
+/// The distinction is the difference between "we don't know" and "we know, and
+/// we're checking again". Anything that hides UI while it waits wants this one,
+/// not `isLoading`: on a polled provider `isLoading` comes back true every
 /// cadence, forever.
-bool awaitingFirstAnswer(AsyncValue<Object?> value) =>
-    value.isLoading && !value.hasValue;
+///
+/// **A failed ask counts as not knowing**, which is the half this used to get
+/// wrong. It tested `isLoading && !hasValue`, so a first read that *errored* —
+/// the relay timing out, which it does routinely: `/models → FAILED (7s)
+/// TimeoutException` sits in the app log next to the 200 that follows it four
+/// seconds later — was neither loading nor holding a value, and read as a
+/// settled empty list. The chat then replaced the conversation the user was in
+/// with "no engine is running yet", over a grid that was serving a dozen
+/// models. Not knowing is not the same as knowing there is nothing, and only
+/// the second of those is worth taking someone's transcript away for.
+bool lacksFirstAnswer(AsyncValue<Object?> value) => !value.hasValue;
