@@ -10,6 +10,7 @@ import '../../../shared/widgets/code_text_scope.dart';
 import '../../../shared/widgets/pulse.dart';
 import '../../../shared/widgets/timeline_guide.dart';
 import '../../playground/presentation/message_content.dart';
+import '../logic/agent_run_fold.dart';
 import '../logic/agent_providers.dart';
 import '../logic/agent_step_label.dart';
 
@@ -90,7 +91,9 @@ class _AgentTurnViewState extends ConsumerState<AgentTurnView> {
           else if (block case _Work(
             :final steps,
           ) when detail != AgentDetailMode.answer)
-            _StepColumn(steps: steps, detail: detail),
+            runIsFolded(steps.length)
+                ? _FoldedRun(steps: steps, detail: detail)
+                : _StepColumn(steps: steps, detail: detail),
       ];
     }
     final blocks = [..._blocks!, ?widget.trailing];
@@ -188,6 +191,87 @@ const double _stepNodeGap = _stepIconSize / 2 + 4;
 /// glyph — a dotted line, not a run. This leaves enough that the eye follows one
 /// stroke from the first step to the last.
 const double _rowInsetY = 7;
+
+/// A long run of steps, folded to its tail until asked for.
+///
+/// The line above the rows says what is being left out, in both states: a fold
+/// that quietly shows eight of two thousand steps is a fold that has lied about
+/// what the assistant did.
+class _FoldedRun extends StatefulWidget {
+  const _FoldedRun({required this.steps, required this.detail});
+
+  final List<AgentActivity> steps;
+  final AgentDetailMode detail;
+
+  @override
+  State<_FoldedRun> createState() => _FoldedRunState();
+}
+
+class _FoldedRunState extends State<_FoldedRun> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = widget.steps;
+    final shown = visibleRunSteps(steps.length, open: _open);
+    final tail = steps.sublist(steps.length - shown);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _RunSummary(
+          total: steps.length,
+          shown: shown,
+          open: _open,
+          onTap: () => setState(() => _open = !_open),
+        ),
+        const SizedBox(height: 2),
+        _StepColumn(steps: tail, detail: widget.detail),
+      ],
+    );
+  }
+}
+
+/// The line over a folded run: how many steps ran, and how many of them are on
+/// screen.
+class _RunSummary extends StatelessWidget {
+  const _RunSummary({
+    required this.total,
+    required this.shown,
+    required this.open,
+    required this.onTap,
+  });
+
+  final int total;
+  final int shown;
+  final bool open;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      hoverColor: AppSurface.hoverFill,
+      splashFactory: NoSplash.splashFactory,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Chevron(open: open, dim: true),
+            const SizedBox(width: 6),
+            Text(
+              '$total steps · showing the last $shown',
+              style: TextStyle(fontSize: 11.5, color: AppPalette.textFaint),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// A plain column of step rows — the shape shared by the short-block view and
 /// the expanded long-block view.
