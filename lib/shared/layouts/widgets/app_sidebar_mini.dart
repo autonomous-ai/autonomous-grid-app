@@ -186,6 +186,20 @@ class _MiniHomeRail extends ConsumerWidget {
           onTap: () =>
               ref.read(shellSectionProvider.notifier).select(ShellSection.chat),
         ),
+        // The Office group flattens to one tile per app rather than a tile that
+        // opens a submenu: folded, the rail's whole trick is that a glyph names
+        // itself in a tooltip, and a tile that only reveals more tiles names
+        // nothing. One row today, and it grows the same way the wide rail's
+        // group does.
+        for (final target in kOfficeSections)
+          if (target.isVisibleForBuild)
+            MiniRailItem(
+              icon: target.thinIcon,
+              tooltip: target.label,
+              selected: section == target,
+              onTap: () =>
+                  ref.read(shellSectionProvider.notifier).select(target),
+            ),
         for (final target in kSidebarSections)
           MiniRailItem(
             icon: target.thinIcon,

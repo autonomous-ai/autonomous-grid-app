@@ -21,7 +21,21 @@ void main() {
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('grid_chat_scale');
   });
-  tearDown(() => dir.delete(recursive: true));
+  // Retried, not just called. One test in here deletes this folder WHILE a read
+  // is in flight — that is its subject — and the read can put a file back
+  // between the recursive delete listing the folder and removing it. The delete
+  // then fails with "Directory not empty", from a test that had already passed.
+  tearDown(() async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await dir.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        if (attempt >= 3) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+  });
 
   Conversation chat(int i) => Conversation(
     id: 'c$i',

@@ -17,7 +17,7 @@ import 'diff_view_menu.dart';
 import 'jump_to_file.dart';
 import 'review_mark.dart';
 import 'scope_menu.dart';
-import 'toolbar_pill.dart';
+import '../../../../shared/widgets/toolbar_pill.dart';
 
 /// The row under the panel's tabs: which changes are on screen, how much they
 /// come to, and what can be done with them.

@@ -21,7 +21,12 @@ typedef OneShotTarget = ({String endpoint, String apiKey, String model});
 /// would have been the one that stopped agreeing with the first.
 OneShotTarget? resolveOneShotTarget(Ref ref) {
   final localBaseUrl = ref.read(localProviderEndpointProvider);
-  final localModel = ref.read(servingModelProvider);
+  // The local engine's own first model — NOT `servingModelProvider`, which is a
+  // display label joining every serving engine's models with commas. Sending
+  // that as `model` asked for "qwen3, llama3" and was refused, on exactly the
+  // machines that serve more than one; the failure then read as "no headline
+  // could be written" rather than as a malformed request.
+  final localModel = ref.read(localServingModelProvider);
   if (localBaseUrl != null && localModel != null && localModel.isNotEmpty) {
     return (
       endpoint: '$localBaseUrl/v1/chat/completions',

@@ -44,6 +44,20 @@ class _Actions extends StatelessWidget {
   /// you reach for to stop something is the thing that started it.
   final VoidCallback onStop;
 
+  /// The narrowest each group can be drawn, in logical pixels — and the flex
+  /// weights that share the row in that proportion.
+  ///
+  /// Left: attach 32 + commands 32 + gap 4 + the access pill's own floor 58.
+  /// Right: agent pill 58 + 8 + model pill 58 + 4 + mic 32 + 4 + stop 32 + 6 +
+  /// send 32 — counting Stop, which only appears mid-turn and must not be the
+  /// thing that breaks the row when it does.
+  ///
+  /// Re-measure these if a control is added to either side: they are the
+  /// composer's real floor, and a stale one shows up as stripes rather than as a
+  /// layout that merely looks tight.
+  static const _leftFloor = 126;
+  static const _rightFloor = 234;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -62,6 +76,23 @@ class _Actions extends StatelessWidget {
         children: [
           // What goes into the turn.
           Flexible(
+            // Weighted by what each side actually needs, not shared evenly.
+            //
+            // An even share is what the composer had, and it striped a 440px
+            // column by 1.9px with every control showing: two loose Flexibles
+            // split the row down the middle, so this group was handed 206px to
+            // spend 126 of while the group opposite needed 234 and had the same
+            // 206. Eighty pixels of slack sat unused *between* them.
+            //
+            // The weights are the two floors: 32 + 32 + 4 + 58 here, and
+            // 58 + 8 + 58 + 4 + 32 + 4 + 32 + 6 + 32 there (a pill's own floor is
+            // 58 — leading + gap + ellipsis + caret + padding). Weighting by them
+            // means both sides reach their floor at the same width — 388px plus
+            // this padding — instead of the wider side breaking first at nearly
+            // 480. Nothing changes on a roomy composer: a loose fit still lets
+            // each group take its natural size, and `spaceBetween` still puts
+            // them where they were.
+            flex: _leftFloor,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -80,15 +111,10 @@ class _Actions extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // Who answers, and go.
-          //
-          // An even share, not the 2:1 this first had. Each group carries one
-          // more control than the other side thinks: two icon buttons and a
-          // pill here, two pills and a send button there. Giving the left a
-          // third made *it* the first thing to break — the access pill was
-          // squeezed to 33px against a floor of 58 and struck stripes across
-          // the composer.
+          // Who answers, and go — the wider of the two groups, and weighted to
+          // say so. See [_leftFloor] for why the split isn't even.
           Flexible(
+            flex: _rightFloor,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

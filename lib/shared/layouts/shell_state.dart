@@ -128,6 +128,10 @@ enum ShellSection {
     'Scheduled',
     thinIcon: LucideIcons.calendarClock300,
   ),
+  // Named 'Docs', not 'Office Docs': the sidebar's Office group already says
+  // which family it belongs to, and the ⌘K palette reads "Go to Docs", which is
+  // what a person would type. See [kOfficeSections].
+  officeDocs(LucideIcons.fileText, 'Docs', thinIcon: LucideIcons.fileText300),
   agents(LucideIcons.bot, 'Agents', thinIcon: LucideIcons.bot300),
   skills(LucideIcons.sparkles, 'Skills', thinIcon: LucideIcons.sparkles300),
   connectors(LucideIcons.cable, 'Connectors', thinIcon: LucideIcons.cable300),
@@ -236,6 +240,16 @@ enum ShellSection {
 /// "Start an engine" on an empty chat, the failed-download pill — so a user who
 /// simply wanted to host had nowhere to click.
 const kSidebarSections = [ShellSection.engines, ShellSection.scheduled];
+
+/// What the sidebar's **Office** group opens to, in order.
+///
+/// One row today, and the group still earns its chevron rather than being a flat
+/// "Docs" row: Sheets, Slides and PDF are the same kind of thing under the same
+/// word, and a user who opens Office and finds only Docs has learned something
+/// true about this build — where a lone Docs row would have said nothing about
+/// what the app is growing into. Nothing unbuilt is listed as a disabled row
+/// either; §5 forbids offering what isn't there.
+const kOfficeSections = [ShellSection.officeDocs];
 
 /// One labelled run of rows in the settings nav.
 ///

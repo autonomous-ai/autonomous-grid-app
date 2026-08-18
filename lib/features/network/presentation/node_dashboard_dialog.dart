@@ -5,7 +5,9 @@ import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/grid_power_provider.dart';
 import '../logic/node_dashboard_layout.dart';
+import '../logic/node_dashboard_view.dart';
 import 'node_dashboard_card.dart';
+import 'node_dashboard_toolbar.dart';
 
 /// Opens the node dashboard — every machine on this grid with its live readings.
 ///
@@ -31,6 +33,11 @@ class NodeDashboardDialog extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     final nodes = ref.watch(gridOnlineNodesProvider);
+    final view = ref.watch(nodeDashboardViewProvider);
+    // Two lists on purpose. The cards render [shown]; the toolbar and the header
+    // are given [nodes], because a filter's own menu must keep offering what the
+    // grid has rather than what is left after it — see [NodeDashboardToolbar].
+    final shown = applyNodeDashboardView(nodes, view);
     return Dialog(
       backgroundColor: AppPalette.windowBg,
       insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
@@ -46,12 +53,20 @@ class NodeDashboardDialog extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _DialogHeader(nodes: nodes),
+              _DialogHeader(total: nodes.length, shown: shown.length),
+              if (nodes.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                NodeDashboardToolbar(nodes: nodes),
+              ],
               const SizedBox(height: 16),
               Flexible(
-                child: nodes.isEmpty
-                    ? const _EmptyState()
-                    : _NodeGrid(nodes: nodes),
+                child: switch ((nodes.isEmpty, shown.isEmpty)) {
+                  (true, _) => const _EmptyState(),
+                  // Machines are serving, the filters just don't want any of
+                  // them — a different fact, and one with a way out.
+                  (false, true) => const _NoMatchState(),
+                  (false, false) => _NodeGrid(nodes: shown),
+                },
               ),
             ],
           ),
@@ -130,9 +145,11 @@ class _NodeGrid extends StatelessWidget {
 }
 
 class _DialogHeader extends StatelessWidget {
-  const _DialogHeader({required this.nodes});
+  const _DialogHeader({required this.total, required this.shown});
 
-  final List<OverviewNode> nodes;
+  /// Machines serving this grid, and how many of them the filters let through.
+  final int total;
+  final int shown;
 
   @override
   Widget build(BuildContext context) {
@@ -155,11 +172,13 @@ class _DialogHeader extends StatelessWidget {
               // Says "serving", not "N of M online": the relay lists only nodes
               // whose heartbeat is still live, so every card below is online by
               // construction and a ratio would always read N of N.
+              //
+              // The ratio that *is* printed is a different one — cards shown out
+              // of machines serving — and only while a filter is on. The count
+              // has to follow what the dashboard is actually showing, or the one
+              // line naming a number contradicts the cards under it.
               Text(
-                nodes.isEmpty
-                    ? 'No machines are serving this grid right now.'
-                    : '${nodes.length} machine${nodes.length == 1 ? '' : 's'} '
-                          'serving · readings refresh with the grid overview',
+                nodeDashboardSubtitle(total, shown),
                 style: TextStyle(fontSize: 12, color: AppPalette.textFaint),
               ),
             ],
@@ -172,6 +191,48 @@ class _DialogHeader extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ],
+    );
+  }
+}
+
+/// Machines are serving, but none of them answer the filters in force.
+///
+/// Its own state rather than [_EmptyState]'s sentence, because the two are
+/// opposite facts and only one of them is the user's to fix: an empty grid needs
+/// a machine joined to it, and this needs a button pressed. Telling somebody to
+/// go join a machine to a grid that already has nine is the kind of wrong advice
+/// that costs an afternoon.
+class _NoMatchState extends ConsumerWidget {
+  const _NoMatchState();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.filter_alt_off_outlined,
+            size: 26,
+            color: AppPalette.textFaint,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'No machine on this grid matches what you asked for.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: ref
+                .read(nodeDashboardViewProvider.notifier)
+                .clearFilters,
+            child: const Text('Show all machines'),
+          ),
+        ],
+      ),
     );
   }
 }
