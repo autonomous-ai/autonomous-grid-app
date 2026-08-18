@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/composer_keys.dart';
-import '../../../shared/widgets/toast.dart';
 import '../logic/recording_controller.dart';
+import 'voice_input.dart';
 
 /// The message composer — a multiline field, a mic button that transcribes a
 /// voice clip straight into the field and sends it, and a circular send
@@ -40,56 +42,61 @@ class ChatInputBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: ComposerKeys(
-            canSend: canSend,
-            onSend: onSend,
-            onPaste: onPaste,
-            builder: (context, focusNode) => TextField(
-              controller: controller,
-              focusNode: focusNode,
-              minLines: 1,
-              maxLines: 5,
-              enabled: !sending,
-              keyboardType: TextInputType.multiline,
-              textInputAction: TextInputAction.newline,
-              decoration: InputDecoration(
-                hintText: hint,
-                filled: true,
-                fillColor: AppPalette.cardBg,
-                prefixIcon: prefix,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
+    return VoiceShortcut(
+      controller: controller,
+      sending: sending,
+      onSend: onSend,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: ComposerKeys(
+              canSend: canSend,
+              onSend: onSend,
+              onPaste: onPaste,
+              builder: (context, focusNode) => TextField(
+                controller: controller,
+                focusNode: focusNode,
+                minLines: 1,
+                maxLines: 5,
+                enabled: !sending,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  filled: true,
+                  fillColor: AppPalette.cardBg,
+                  prefixIcon: prefix,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  border: _border(AppPalette.divider),
+                  enabledBorder: _border(AppPalette.divider),
+                  focusedBorder: _border(AppPalette.accent, width: 1.5),
                 ),
-                border: _border(AppPalette.divider),
-                enabledBorder: _border(AppPalette.divider),
-                focusedBorder: _border(AppPalette.accent, width: 1.5),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        _MicButton(controller: controller, sending: sending, onSend: onSend),
-        const SizedBox(width: 10),
-        SizedBox(
-          width: 48,
-          height: 48,
-          child: FilledButton(
-            onPressed: canSend ? onSend : null,
-            style: FilledButton.styleFrom(
-              shape: const CircleBorder(),
-              padding: EdgeInsets.zero,
+          const SizedBox(width: 10),
+          _MicButton(controller: controller, sending: sending, onSend: onSend),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: FilledButton(
+              onPressed: canSend ? onSend : null,
+              style: FilledButton.styleFrom(
+                shape: const CircleBorder(),
+                padding: EdgeInsets.zero,
+              ),
+              child: sending
+                  ? const AppSpinner(size: SpinnerSize.large)
+                  : const Icon(Icons.arrow_upward_rounded, size: 20),
             ),
-            child: sending
-                ? const AppSpinner(size: SpinnerSize.large)
-                : const Icon(Icons.arrow_upward_rounded, size: 20),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -103,6 +110,9 @@ class ChatInputBar extends StatelessWidget {
 /// Tap to record, tap again to stop, transcribe and send — a successful
 /// non-empty transcript goes straight into [controller] and out through
 /// [onSend], the same way a voice message sends itself once you let go.
+///
+/// [VoiceShortcut] does the same from the keyboard; both press
+/// [pressVoiceInput].
 class _MicButton extends ConsumerWidget {
   const _MicButton({
     required this.controller,
@@ -119,18 +129,22 @@ class _MicButton extends ConsumerWidget {
     final phase = ref.watch(recordingControllerProvider);
     final theme = Theme.of(context);
     final recording = phase is RecordingActive;
-    final busy = sending || phase is RecordingTranscribing;
     return Tooltip(
-      message: switch (phase) {
-        RecordingActive() => 'Stop recording',
-        RecordingTranscribing() => 'Transcribing…',
-        RecordingIdle() || RecordingFailed() => 'Voice input',
-      },
+      message: voiceInputTooltip(phase),
       child: SizedBox(
         width: 48,
         height: 48,
         child: OutlinedButton(
-          onPressed: busy ? null : () => _tap(context, ref),
+          onPressed: voiceInputBusy(phase, sending: sending)
+              ? null
+              : () => unawaited(
+                  pressVoiceInput(
+                    context,
+                    ref,
+                    controller: controller,
+                    onSend: onSend,
+                  ),
+                ),
           style: OutlinedButton.styleFrom(
             shape: const CircleBorder(),
             padding: EdgeInsets.zero,
@@ -147,32 +161,11 @@ class _MicButton extends ConsumerWidget {
               size: 20,
               color: theme.colorScheme.error,
             ),
-            RecordingIdle() || RecordingFailed() => const Icon(
-              Icons.mic_none_rounded,
-              size: 20,
-            ),
+            RecordingIdle() ||
+            RecordingFailed() => const Icon(Icons.mic_none_rounded, size: 20),
           },
         ),
       ),
     );
-  }
-
-  Future<void> _tap(BuildContext context, WidgetRef ref) async {
-    final transcript = await ref
-        .read(recordingControllerProvider.notifier)
-        .toggle();
-    if (!context.mounted) return;
-    final phase = ref.read(recordingControllerProvider);
-    if (phase case RecordingFailed(:final message)) {
-      ToastScope.show(
-        context,
-        ToastSpec(message: message, severity: ToastSeverity.error),
-      );
-      return;
-    }
-    final text = transcript?.trim();
-    if (text == null || text.isEmpty) return;
-    controller.text = text;
-    onSend();
   }
 }

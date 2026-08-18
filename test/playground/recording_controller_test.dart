@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:grid_app/features/playground/logic/recording_controller.dart';
+import 'package:grid_app/features/playground/presentation/voice_input.dart';
 import 'package:grid_app/infrastructure/api/stt_client.dart';
 import 'package:grid_app/infrastructure/platform/mic_recorder.dart';
 
@@ -102,10 +104,7 @@ void main() {
 
     expect(transcript, isNull);
     expect(recorder.startPath, isNull);
-    expect(
-      container.read(recordingControllerProvider),
-      isA<RecordingFailed>(),
-    );
+    expect(container.read(recordingControllerProvider), isA<RecordingFailed>());
   });
 
   test('tapping while idle starts a recording', () async {
@@ -121,10 +120,7 @@ void main() {
 
     expect(transcript, isNull);
     expect(recorder.startPath, isNotNull);
-    expect(
-      container.read(recordingControllerProvider),
-      isA<RecordingActive>(),
-    );
+    expect(container.read(recordingControllerProvider), isA<RecordingActive>());
   });
 
   test(
@@ -173,5 +169,33 @@ void main() {
 
     expect(transcript, isNull);
     expect(container.read(recordingControllerProvider), isA<RecordingIdle>());
+  });
+
+  test('the mic is unavailable while a clip is still becoming text', () {
+    // The chord and the greyed-out button ask this one function, so a keystroke
+    // can never start a second recording over a transcript in flight.
+    expect(
+      voiceInputBusy(const RecordingTranscribing(), sending: false),
+      isTrue,
+    );
+    expect(voiceInputBusy(const RecordingIdle(), sending: true), isTrue);
+    expect(voiceInputBusy(const RecordingIdle(), sending: false), isFalse);
+    // Recording is not busy: that press is how you stop it.
+    expect(voiceInputBusy(const RecordingActive(), sending: false), isFalse);
+  });
+
+  test('the mic names its shortcut in the keys this platform really has', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    expect(voiceInputTooltip(const RecordingIdle()), 'Voice input · ⌘⇧M');
+    expect(voiceInputTooltip(const RecordingActive()), 'Stop recording · ⌘⇧M');
+    // Nothing to press means nothing to advertise.
+    expect(voiceInputTooltip(const RecordingTranscribing()), 'Transcribing…');
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    expect(
+      voiceInputTooltip(const RecordingIdle()),
+      'Voice input · Ctrl+Shift+M',
+    );
   });
 }

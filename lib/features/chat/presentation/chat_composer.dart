@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,12 +9,12 @@ import '../../../shared/widgets/composer_buttons.dart';
 import '../../../shared/widgets/composer_keys.dart';
 import '../../../shared/widgets/context_chip.dart';
 import '../../../shared/widgets/liquid_glass.dart';
-import '../../../shared/widgets/toast.dart';
 import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/logic/recording_controller.dart';
 import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/file_chip.dart';
+import '../../playground/presentation/voice_input.dart';
 import '../logic/composer_snippet.dart';
 import '../logic/composer_context.dart';
 import '../logic/file_attachments.dart';
@@ -140,108 +142,116 @@ class ComposerSection extends StatelessWidget {
       context,
     ); // reads AppGlass/AppSurface tokens — follow theme flips
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    // Over the whole card, not just the field: the chord has to work with the
+    // caret in the box *and* after a click on one of the pills under it, which
+    // is where a hand that reached for the mouse leaves the focus.
+    return VoiceShortcut(
+      controller: messageController,
+      sending: sending,
+      onSend: onSend,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ),
+                  if (errorAction != null) ...[
+                    const SizedBox(width: 8),
+                    errorAction!,
+                  ],
+                ],
+              ),
+            ),
+          LiquidGlass(
+            borderRadius: BorderRadius.circular(18),
+            fill: AppGlass.surfaceFill,
+            shadow: AppSurface.composerShadow,
+            showBorder: true,
+            borderColor: AppGlass.lift,
+            borderWidth: 1.5,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    error!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.error,
+                _Attachments(
+                  isText: _isText,
+                  attachments: attachments,
+                  files: files,
+                  snippets: snippets,
+                  terminals: terminals,
+                  needsImage: needsImage,
+                  onAdd: onAddAttachment,
+                  onRemoveAt: onRemoveAttachment,
+                  onRemoveFileAt: onRemoveFile,
+                  onRemoveSnippets: onRemoveSnippets,
+                  onRemoveTerminal: onRemoveTerminal,
+                ),
+                ComposerKeys(
+                  canSend: canSend,
+                  onSend: onSend,
+                  onPaste: onPaste,
+                  focusNode: focusNode,
+                  builder: (context, focusNode) => TextField(
+                    controller: messageController,
+                    focusNode: focusNode,
+                    minLines: 1,
+                    maxLines: 6,
+                    // Deliberately *not* disabled while a turn runs: what the
+                    // user types now goes into the answer being written (or, when
+                    // it can't, queues behind it). Locking the box was what made a
+                    // follow-up thought something to hold in your head for the
+                    // minutes an agent turn can take.
+                    enabled: true,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    style: const TextStyle(fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: _inputHint(modality),
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.fromLTRB(18, 17, 18, 20),
                     ),
                   ),
                 ),
-                if (errorAction != null) ...[
-                  const SizedBox(width: 8),
-                  errorAction!,
-                ],
+                _Actions(
+                  busySendTooltip: busySendTooltip,
+                  // Room for either kind: the one button attaches both, so it
+                  // stays live until the message is full of pictures *and* files.
+                  canAttach:
+                      _isText &&
+                      (attachments.length < maxChatImages ||
+                          files.length < maxChatFiles),
+                  sending: sending,
+                  canSend: canSend,
+                  approvalPicker: approvalPicker,
+                  agentPicker: agentPicker,
+                  modelPicker: modelPicker,
+                  onAttachFile: onAttachFile,
+                  onOpenCommands: onOpenCommands,
+                  messageController: messageController,
+                  onSend: onSend,
+                  onStop: onStop,
+                ),
               ],
             ),
           ),
-        LiquidGlass(
-          borderRadius: BorderRadius.circular(18),
-          fill: AppGlass.surfaceFill,
-          shadow: AppSurface.composerShadow,
-          showBorder: true,
-          borderColor: AppGlass.lift,
-          borderWidth: 1.5,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _Attachments(
-                isText: _isText,
-                attachments: attachments,
-                files: files,
-                snippets: snippets,
-                terminals: terminals,
-                needsImage: needsImage,
-                onAdd: onAddAttachment,
-                onRemoveAt: onRemoveAttachment,
-                onRemoveFileAt: onRemoveFile,
-                onRemoveSnippets: onRemoveSnippets,
-                onRemoveTerminal: onRemoveTerminal,
-              ),
-              ComposerKeys(
-                canSend: canSend,
-                onSend: onSend,
-                onPaste: onPaste,
-                focusNode: focusNode,
-                builder: (context, focusNode) => TextField(
-                  controller: messageController,
-                  focusNode: focusNode,
-                  minLines: 1,
-                  maxLines: 6,
-                  // Deliberately *not* disabled while a turn runs: what the
-                  // user types now goes into the answer being written (or, when
-                  // it can't, queues behind it). Locking the box was what made a
-                  // follow-up thought something to hold in your head for the
-                  // minutes an agent turn can take.
-                  enabled: true,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  style: const TextStyle(fontSize: 15),
-                  decoration: InputDecoration(
-                    hintText: _inputHint(modality),
-                    filled: false,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    contentPadding: const EdgeInsets.fromLTRB(18, 17, 18, 20),
-                  ),
-                ),
-              ),
-              _Actions(
-                busySendTooltip: busySendTooltip,
-                // Room for either kind: the one button attaches both, so it
-                // stays live until the message is full of pictures *and* files.
-                canAttach:
-                    _isText &&
-                    (attachments.length < maxChatImages ||
-                        files.length < maxChatFiles),
-                sending: sending,
-                canSend: canSend,
-                approvalPicker: approvalPicker,
-                agentPicker: agentPicker,
-                modelPicker: modelPicker,
-                onAttachFile: onAttachFile,
-                onOpenCommands: onOpenCommands,
-                messageController: messageController,
-                onSend: onSend,
-                onStop: onStop,
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
