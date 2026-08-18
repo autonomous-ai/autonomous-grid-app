@@ -25,7 +25,6 @@ import '../../agents/presentation/agent_picker.dart';
 import '../../agents/presentation/agent_permission_card.dart';
 import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
-import '../../agents/presentation/running_services_bar.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_file.dart';
 import '../../playground/logic/playground_models.dart';
@@ -37,9 +36,7 @@ import '../../playground/presentation/no_model_yet.dart';
 import '../../playground/presentation/transcript_view.dart';
 import '../logic/commands/chat_command.dart';
 import 'command_slash_menu.dart';
-import 'compacted_divider.dart';
-import 'goal_bar.dart';
-import 'loop_bar.dart';
+import 'composer_status.dart';
 import '../../skills/presentation/save_skill_bar.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
 import '../logic/active_workdir.dart';
@@ -60,6 +57,7 @@ import 'chat_composer.dart';
 import 'chat_header.dart';
 import 'chat_starters.dart';
 import 'grid_model_picker.dart';
+import 'chat_event_rows.dart';
 import 'out_of_steps_bar.dart';
 import 'plan_approve_bar.dart';
 
@@ -843,6 +841,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // its model pill (the way out), but Send would have nowhere to go.
     final messages = active?.messages ?? const <ChatMessage>[];
     final compaction = active?.compaction;
+    // A goal or a loop that has finished is drawn where it finished, the same
+    // way a compaction is. While either is still running it says so on the
+    // status line under the composer instead ([ComposerStatus]).
+    final goal = active?.goal;
+    final loop = active?.loop;
     // *Whether* there is an in-flight bubble, not what it says: this answers
     // once when the turn starts and once when it ends, while the bubble's own
     // contents change with every token.
@@ -951,7 +954,21 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                   scrollId: compaction,
                                   cacheId: compaction,
                                   builder: (_) =>
-                                      CompactedDivider(compaction: compaction),
+                                      CompactedRow(compaction: compaction),
+                                ),
+                              // How the goal ended, and how the repeating
+                              // prompt did — at the turn it happened on.
+                              if (goal != null && goal.endedAfter == i + 1)
+                                TranscriptRow(
+                                  scrollId: goal,
+                                  cacheId: goal,
+                                  builder: (_) => GoalEndedRow(goal: goal),
+                                ),
+                              if (loop != null && loop.endedAfter == i + 1)
+                                TranscriptRow(
+                                  scrollId: loop,
+                                  cacheId: loop,
+                                  builder: (_) => LoopEndedRow(loop: loop),
                                 ),
                             ],
                           ],
@@ -1031,9 +1048,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               // turn" scope reads it (`lastTurnAgentPaths`) —
                               // so bringing the bar back is putting this one
                               // line back.
-                              const GoalBar(),
-                              const LoopBar(),
-                              const RunningServicesBar(),
                               const SaveSkillBar(),
                               const QueuedFollowUps(),
                               if (slash != null)
@@ -1138,6 +1152,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                     .read(chatSessionsProvider.notifier)
                                     .stop(),
                               ),
+                              // Under the composer, not above it: what is still
+                              // running is a footnote to what the user is
+                              // typing, and everything up there is something
+                              // waiting on them to decide.
+                              const ComposerStatus(),
                             ],
                           );
                         },

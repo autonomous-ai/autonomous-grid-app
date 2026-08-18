@@ -2616,6 +2616,56 @@ void main() {
     });
 
     test(
+      '/goal typed into a blank composer starts the chat rather than '
+      'refusing — as far as anything on screen says the user is in one '
+      'already, and a chat is only saved once something is said in it',
+      () async {
+        final grid = _FakeClassifier('MET\nAll green.');
+        final h = _harness(
+          tmp,
+          agentInstalled: true,
+          grid: grid,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'done'),
+            ),
+          ],
+        );
+        final chats = h.container.read(chatSessionsProvider.notifier);
+
+        final outcome = await chats.runCommand((
+          command: ChatCommand.goal,
+          argument: 'the tests pass',
+        ), model: 'qwen');
+        await settle();
+
+        expect(outcome, isNull);
+        final session = h.container.read(chatSessionsProvider);
+        final chat = session.conversations.single;
+        // Started, left open in front of the user, on the model the picker was
+        // showing — and already working on the condition.
+        expect(session.activeId, chat.id);
+        expect(chat.model, 'qwen');
+        expect(chat.goal?.condition, 'the tests pass');
+        expect(_userTurns(h.container, chat.id), contains('the tests pass'));
+      },
+    );
+
+    test('a goal that is refused starts nothing, so a mistyped condition '
+        'leaves no empty chat behind in the sidebar', () async {
+      final h = _harness(tmp, updates: const []);
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      final outcome = await chats.runCommand((
+        command: ChatCommand.goal,
+        argument: 'x' * (kMaxGoalCondition + 1),
+      ), model: 'qwen');
+
+      expect(outcome?.failed, isTrue);
+      expect(h.container.read(chatSessionsProvider).conversations, isEmpty);
+    });
+
+    test(
       'a MET verdict ends it, and the bar says met rather than stopped',
       () async {
         final grid = _FakeClassifier('MET\nAll six tests pass.');
@@ -2645,6 +2695,18 @@ void main() {
         expect(goal?.status, GoalStatus.met);
         expect(goal?.reason, 'All six tests pass.');
         expect(goal?.turnsEvaluated, 1);
+        // And where it ended, so "Goal met" is drawn in the transcript at the
+        // turn it was met on rather than pinned over the composer until
+        // somebody closes it.
+        expect(
+          goal?.endedAfter,
+          h.container
+              .read(chatSessionsProvider)
+              .conversations
+              .single
+              .messages
+              .length,
+        );
       },
     );
 
@@ -2718,14 +2780,41 @@ void main() {
       }
     }
 
-    test('dismissing a stopped loop takes it off the chat — the bar draws '
-        'whenever a chat has a loop at all, so stopping an already stopped one '
-        'left it sitting there', () async {
-      final grid = _FakeClassifier('30\nNothing is pending.');
+    test('/loop typed into a blank composer starts the chat too, and its '
+        'first run goes out in it', () async {
       final h = _harness(
         tmp,
         agentInstalled: true,
-        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'still building'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: '5m check the deploy',
+      ), model: 'qwen');
+      await settle();
+
+      final session = h.container.read(chatSessionsProvider);
+      final chat = session.conversations.single;
+      expect(session.activeId, chat.id);
+      expect(chat.model, 'qwen');
+      expect(chat.loop?.prompt, 'check the deploy');
+      expect(_userTurns(h.container, chat.id), contains('check the deploy'));
+      // Leave no timer running behind the test.
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    test('a loop that stops records where in the transcript it stopped, so '
+        'the line saying so lands on that turn and not at the bottom of '
+        'whatever is said next', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
         updates: [
           const ChatSendSuccess(
             ChatMessage(role: ChatRole.assistant, text: 'still building'),
@@ -2739,61 +2828,30 @@ void main() {
         argument: '5m check the deploy',
       ));
       await settle();
+      final before = h.container
+          .read(chatSessionsProvider)
+          .conversations
+          .single
+          .messages
+          .length;
+
       await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
 
-      // Stopped, and still on the chat: that is what the bar reads to say so.
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.loop?.endedAfter, before);
+      // Said again later does not move it: it stopped where it stopped.
+      await chats.send(network: _credential(), model: 'qwen', message: 'more');
+      await settle();
       expect(
-        h.container.read(chatSessionsProvider).active?.loop?.isRunning,
-        isFalse,
+        h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single
+            .loop
+            ?.endedAfter,
+        before,
       );
-
-      chats.dismissLoop();
-
-      expect(
-        h.container.read(chatSessionsProvider).active?.loop,
-        isNull,
-        reason: 'the bar has nothing left to draw',
-      );
-      // And it stays gone: the loop was saved to disk, so a dismissal that only
-      // touched memory would put the bar back on the next launch.
-      final saved = await h.container.read(chatStoreProvider).loadAll();
-      expect(saved.single.loop, isNull);
     });
-
-    test(
-      'a running loop is not dismissed out from under its own turns — the '
-      'bar is the only thing on screen saying they are still going out',
-      () async {
-        final grid = _FakeClassifier('30\nNothing is pending.');
-        final h = _harness(
-          tmp,
-          agentInstalled: true,
-          grid: grid,
-          updates: [
-            const ChatSendSuccess(
-              ChatMessage(role: ChatRole.assistant, text: 'still building'),
-            ),
-          ],
-        );
-        final chats = h.container.read(chatSessionsProvider.notifier);
-        await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-        await chats.runCommand((
-          command: ChatCommand.loop,
-          argument: '5m check the deploy',
-        ));
-        await settle();
-
-        chats.dismissLoop();
-
-        expect(
-          h.container.read(chatSessionsProvider).active?.loop?.isRunning,
-          isTrue,
-        );
-
-        // Leave nothing armed behind the test.
-        await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-      },
-    );
 
     test('the first run goes out at once — a loop that sits silent for five '
         'minutes after you set it reads as broken', () async {
@@ -3225,7 +3283,14 @@ void main() {
           at: DateTime.now(),
         ),
       );
-      ChatStore(directory: tmp).save(compacted);
+      // Through the app's own store, not a second one over the same folder:
+      // writes are queued per chat and drained in order *within* a store, so
+      // two of them racing over one file is a hazard only a test can build.
+      final store = h.container.read(chatStoreProvider);
+      store.save(compacted);
+      // The write is off this isolate now, so the reload has to wait for it —
+      // in the app nothing does, which is the point of it.
+      await store.settled;
       await chats.reloadFromDisk();
 
       await chats.send(

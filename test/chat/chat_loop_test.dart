@@ -186,4 +186,46 @@ void main() {
       expect(stopped, isNot(expired));
     });
   });
+  group('the line under the composer while it runs', () {
+    test('it names the prompt and counts down, and leaves the cadence and the '
+        "pacer's reason to /loop", () {
+      final note = loopStatusNote(
+        _loop(iterations: 2, nextAt: _start.add(const Duration(minutes: 8))),
+        _start.add(const Duration(minutes: 5)),
+      );
+      expect(note, contains('check the deploy'));
+      expect(note, contains('2 so far'));
+      expect(note, contains('next in 3m'));
+      expect(note, isNot(contains('every 5m')));
+    });
+
+    test('a continuous loop counts turns and never a countdown — there is no '
+        'next time to name', () {
+      final note = loopStatusNote(
+        _loop(interval: null, continuous: true, iterations: 7),
+        _start,
+      );
+      expect(note, contains('7 so far'));
+      expect(note, isNot(contains('next in')));
+    });
+  });
+
+  group('where it ended', () {
+    test('the anchor survives a restart, so the stopped line stays at the turn '
+        'it stopped on', () {
+      final ended = ChatLoop(
+        prompt: 'check the deploy',
+        interval: const Duration(minutes: 5),
+        startedAt: _start,
+        nextAt: _start,
+        status: LoopStatus.stopped,
+        endedAfter: 6,
+      );
+      expect(ChatLoop.fromJson(ended.toJson())?.endedAfter, 6);
+    });
+
+    test('a running loop writes no anchor at all', () {
+      expect(_loop().toJson().containsKey('endedAfter'), isFalse);
+    });
+  });
 }

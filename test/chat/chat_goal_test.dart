@@ -8,12 +8,14 @@ ChatGoal _goal({
   GoalStatus status = GoalStatus.active,
   int turnsEvaluated = 0,
   String? reason,
+  int? endedAfter,
 }) => ChatGoal(
   condition: 'the tests in test/auth pass',
   status: status,
   startedAt: _start,
   turnsEvaluated: turnsEvaluated,
   reason: reason,
+  endedAfter: endedAfter,
 );
 
 void main() {
@@ -143,6 +145,47 @@ void main() {
 
     test('asking with no goal set says so plainly', () {
       expect(goalStatusLine(null, _start), 'No goal set.');
+    });
+  });
+  group('the line under the composer while it runs', () {
+    test('it names the condition, and stays short — the long form is what '
+        '/goal prints when asked', () {
+      final note = goalStatusNote(_goal(turnsEvaluated: 3));
+      expect(note, contains('the tests in test/auth pass'));
+      expect(note, contains('3 turns'));
+      // No elapsed time, no evaluator reason: this line shares one row with
+      // everything else running.
+      expect(note.length, lessThan(goalBarLabel(_goal(), _start).length + 20));
+    });
+
+    test('a goal nothing has been judged on yet counts nothing', () {
+      expect(goalStatusNote(_goal()), isNot(contains('0 turns')));
+    });
+
+    test('one judged turn is a turn, not turns', () {
+      expect(goalStatusNote(_goal(turnsEvaluated: 1)), endsWith('1 turn'));
+    });
+  });
+
+  group('where it ended', () {
+    test('the anchor survives a restart, so the line stays at the turn it '
+        'happened on rather than sliding to the bottom', () {
+      final read = ChatGoal.fromJson(
+        _goal(status: GoalStatus.met, endedAfter: 4).toJson(),
+      );
+      expect(read?.endedAfter, 4);
+    });
+
+    test('a goal that picks back up has not ended anywhere', () {
+      final resumed = _goal(
+        status: GoalStatus.stalled,
+        endedAfter: 4,
+      ).copyWith(status: GoalStatus.active, clearEndedAfter: true);
+      expect(resumed.endedAfter, isNull);
+    });
+
+    test('a running goal writes no anchor at all', () {
+      expect(_goal().toJson().containsKey('endedAfter'), isFalse);
     });
   });
 }

@@ -39,6 +39,7 @@ class ChatGoal {
     required this.startedAt,
     this.turnsEvaluated = 0,
     this.reason,
+    this.endedAfter,
   });
 
   /// What has to be true for the work to be done, in the user's words. Sent to
@@ -57,18 +58,32 @@ class ChatGoal {
   /// assistant is told to work on next; once it ends it is why it ended.
   final String? reason;
 
+  /// How many messages the chat held when the goal ended — the point in the
+  /// transcript where the line saying so is drawn, the way `/compact` draws its
+  /// divider where it folded.
+  ///
+  /// Null while it runs, and null again if a stalled goal picks back up. Without
+  /// it the news would sit at the end of the transcript and slide down under
+  /// whatever is said next, ending up somewhere it never happened.
+  final int? endedAfter;
+
   bool get isRunning => status == GoalStatus.active;
 
   ChatGoal copyWith({
     GoalStatus? status,
     int? turnsEvaluated,
     String? reason,
+    int? endedAfter,
+    // A goal that picks back up has not ended anywhere, and `?? this` cannot
+    // say that.
+    bool clearEndedAfter = false,
   }) => ChatGoal(
     condition: condition,
     status: status ?? this.status,
     startedAt: startedAt,
     turnsEvaluated: turnsEvaluated ?? this.turnsEvaluated,
     reason: reason ?? this.reason,
+    endedAfter: clearEndedAfter ? null : (endedAfter ?? this.endedAfter),
   );
 
   Map<String, Object?> toJson() => {
@@ -77,6 +92,7 @@ class ChatGoal {
     'startedAt': startedAt.toUtc().toIso8601String(),
     'turnsEvaluated': turnsEvaluated,
     if (reason != null) 'reason': reason,
+    if (endedAfter != null) 'endedAfter': endedAfter,
   };
 
   /// Null for anything this app didn't write.
@@ -94,12 +110,14 @@ class ChatGoal {
       orElse: () => GoalStatus.stalled,
     );
     final turns = raw['turnsEvaluated'];
+    final endedAfter = raw['endedAfter'];
     return ChatGoal(
       condition: condition,
       status: stored == GoalStatus.active ? GoalStatus.stalled : stored,
       startedAt: startedAt,
       turnsEvaluated: turns is int && turns > 0 ? turns : 0,
       reason: raw['reason'] is String ? raw['reason'] as String : null,
+      endedAfter: endedAfter is int && endedAfter > 0 ? endedAfter : null,
     );
   }
 }
@@ -216,6 +234,18 @@ String goalBarLabel(ChatGoal goal, DateTime now) => switch (goal.status) {
     'Paused after $kGoalStallTurns turns with no work done. The goal is still '
         'set — say something and it picks up again.',
 };
+
+/// The one dim line the composer's status strip shows while a goal is running.
+///
+/// Short on purpose: it sits under the composer for the whole run, next to
+/// whatever else is going on, and the long form — how long it has run, the
+/// evaluator's latest reason — is [goalBarLabel], which `/goal` prints on
+/// demand. What has to be there is what the user set and what it has cost.
+String goalStatusNote(ChatGoal goal) {
+  final turns = goal.turnsEvaluated;
+  if (turns == 0) return 'Goal: ${goal.condition}';
+  return 'Goal: ${goal.condition} · $turns ${turns == 1 ? 'turn' : 'turns'}';
+}
 
 /// The status line `/goal` prints when it is asked rather than set.
 String goalStatusLine(ChatGoal? goal, DateTime now) {

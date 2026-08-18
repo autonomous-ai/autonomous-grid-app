@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/served_service.dart';
-import 'package:grid_app/features/agents/presentation/running_services_bar.dart';
+import 'package:grid_app/features/agents/presentation/running_service_notes.dart';
 
 void main() {
   late Directory tmp;

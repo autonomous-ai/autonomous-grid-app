@@ -2,48 +2,36 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/composer_notice_bar.dart';
+import '../../../shared/widgets/composer_status_line.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/served_service.dart';
 
-/// What the assistant has left running on this computer, above the composer.
+/// What the assistant has left running on this computer, for the composer's
+/// status strip.
 ///
 /// Not "in this chat": the record carries no conversation, the process outlives
-/// the chat that started it, and a bar claiming otherwise would be inventing a
+/// the chat that started it, and a line claiming otherwise would be inventing a
 /// link that isn't there. It says *this computer*, which is what's true.
 ///
-/// Nothing at all when nothing is running — which is the usual case, so the
-/// composer keeps its room.
-class RunningServicesBar extends ConsumerWidget {
-  const RunningServicesBar({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppTheme.watch(context);
-    final services = ref.watch(servedServicesProvider).value ?? const [];
-    if (services.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final status in services)
-          ComposerNoticeBar(
-            icon: Icons.dns_outlined,
-            label: serviceLabel(status),
-            actions: [
-              if (status.service.url case final url?)
-                TextButton(
-                  onPressed: () => launchUrl(Uri.parse(url)),
-                  child: const Text('Open'),
-                ),
-              _StopButton(name: status.service.name),
-            ],
-          ),
-      ],
-    );
-  }
+/// Empty when nothing is running — which is the usual case, so the strip draws
+/// nothing at all.
+List<StatusNote> runningServiceNotes(WidgetRef ref) {
+  final services = ref.watch(servedServicesProvider).value ?? const [];
+  return [
+    for (final status in services)
+      StatusNote(
+        icon: Icons.dns_outlined,
+        label: serviceLabel(status),
+        actions: [
+          if (status.service.url case final url?)
+            TextButton(
+              onPressed: () => launchUrl(Uri.parse(url)),
+              child: const Text('Open'),
+            ),
+          _StopButton(name: status.service.name),
+        ],
+      ),
+  ];
 }
 
 /// The one line per service.

@@ -7,18 +7,16 @@ part of 'chat_sessions_controller.dart';
 /// The rules are pure and live in `commands/chat_goal.dart`; this is what
 /// persists a goal, judges a turn, and sends the next one.
 mixin _ChatGoals on _ChatSessions {
-  /// Set the open chat's goal and start working on it.
+  /// Set the goal of the chat on screen — starting that chat if it is still a
+  /// blank compose ([_startedChat]) — and get to work on it.
   ///
   /// The first turn goes out immediately with the condition as the directive —
   /// a goal that waits for you to type something is a note to yourself.
-  Future<CommandOutcome?> _setGoal(String condition) async {
-    final chat = state.active;
-    if (chat == null) {
-      return (
-        message: 'Open a chat first — a goal belongs to one conversation.',
-        failed: true,
-      );
-    }
+  ///
+  /// Everything that can refuse is checked *before* the chat is started, so a
+  /// condition that is too long or a grid that isn't there leaves no empty
+  /// conversation behind in the sidebar.
+  Future<CommandOutcome?> _setGoal(String condition, String model) async {
     if (condition.length > kMaxGoalCondition) {
       return (
         message:
@@ -33,6 +31,7 @@ mixin _ChatGoals on _ChatSessions {
         failed: true,
       );
     }
+    final chat = _startedChat(model);
     _saveGoal(
       chat.id,
       ChatGoal(
@@ -226,6 +225,19 @@ mixin _ChatGoals on _ChatSessions {
   void _saveGoal(String id, ChatGoal goal) {
     final chat = _find(id);
     if (chat == null) return;
-    _saveAndReplace(chat.copyWith(goal: goal));
+    _saveAndReplace(chat.copyWith(goal: _stampGoalEnd(goal, chat)));
+  }
+
+  /// [goal] carrying the point in the transcript where it ended.
+  ///
+  /// One place rather than at each of the half-dozen endings, and it is what
+  /// puts the "Goal met" line in the conversation at the moment it happened
+  /// instead of over the composer for good. Stamped once: a goal that ends,
+  /// then has its reason updated, ended where it first did. Cleared when a
+  /// stalled goal picks back up, because then it hasn't ended at all.
+  ChatGoal _stampGoalEnd(ChatGoal goal, Conversation chat) {
+    if (goal.isRunning) return goal.copyWith(clearEndedAfter: true);
+    if (goal.endedAfter != null) return goal;
+    return goal.copyWith(endedAfter: chat.messages.length);
   }
 }
