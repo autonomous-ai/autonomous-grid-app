@@ -87,4 +87,43 @@ void main() {
       },
     );
   });
+
+  group('what happens to the pictures attached beside a command', () {
+    test('a repeating prompt goes out as words, so the picture is taken off '
+        'the composer instead of riding onto the next message', () {
+      expect(
+        droppedDraftMessage(ChatCommand.loop, const ['dome.png']),
+        '“dome.png” didn’t come along — /loop carries words only.',
+      );
+    });
+
+    test('the first is named and the rest counted, so the user knows how much '
+        'came off', () {
+      expect(
+        droppedDraftMessage(ChatCommand.goal, const ['a.png', 'b.png', 'c.md']),
+        '“a.png” and 2 more didn’t come along — /goal carries words only.',
+      );
+    });
+
+    test('a new chat starts empty, and says that rather than a line about '
+        'what commands carry', () {
+      expect(
+        droppedDraftMessage(ChatCommand.clear, const ['dome.png']),
+        '“dome.png” didn’t come along — a new chat starts empty.',
+      );
+    });
+
+    test('/compact sends nothing, so the message being drafted keeps its '
+        'attachments and there is nothing to report', () {
+      expect(ChatCommand.compact.draftDropReason, isNull);
+      expect(
+        droppedDraftMessage(ChatCommand.compact, const ['dome.png']),
+        isNull,
+      );
+    });
+
+    test('nothing attached, nothing to say', () {
+      expect(droppedDraftMessage(ChatCommand.loop, const []), isNull);
+    });
+  });
 }
