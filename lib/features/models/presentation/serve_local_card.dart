@@ -9,6 +9,7 @@ import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/log_view.dart';
+import '../../../shared/widgets/node_name_field.dart';
 import '../../node_setup/logic/background_model_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
@@ -40,6 +41,11 @@ class ServeLocalCard extends ConsumerStatefulWidget {
 
 class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   final _advertise = TextEditingController();
+
+  /// What this computer joins under. Pre-filled with its own name in
+  /// [initState], so the field shows what a start would actually use rather than
+  /// a blank box the user has to guess at.
+  final _nodeName = TextEditingController();
   String? _model;
   String? _advertiseFilledFor;
 
@@ -49,8 +55,15 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   int? _ctxSize;
 
   @override
+  void initState() {
+    super.initState();
+    _nodeName.text = ref.read(nodeNameProvider);
+  }
+
+  @override
   void dispose() {
     _advertise.dispose();
+    _nodeName.dispose();
     super.dispose();
   }
 
@@ -160,6 +173,9 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
               ? deriveAdvertiseName(model)
               : advertise,
           ctxSize: ctxSize,
+          // Blank falls back to this computer's own name, inside the controller
+          // — so an emptied field behaves the same as one never touched.
+          nodeName: _nodeName.text,
         );
   }
 
@@ -329,6 +345,8 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     _AdvancedOptions(
       children: [
         AdvertiseAsField(controller: _advertise, hintText: 'Qwen3.6-35B-A3B'),
+        const SizedBox(height: 12),
+        NodeNameField(controller: _nodeName),
         const SizedBox(height: 12),
         ContextLengthField(
           model: selected.primary.name,

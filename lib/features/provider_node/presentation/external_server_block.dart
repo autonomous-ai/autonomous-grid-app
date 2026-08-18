@@ -5,13 +5,15 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/labeled_field.dart';
+import '../../../shared/widgets/node_name_field.dart';
 import '../../models/logic/advertise_name.dart';
 import '../logic/provider_run_controller.dart';
 import 'engine_block.dart';
 
 /// A card for connecting an external inference server (Ollama, vLLM, etc.) with
-/// Base URL / Model / Advertise-as fields and a Start button. Wraps either a
-/// plain [EngineBlock] or a [CollapsibleEngineBlock] depending on [collapsible].
+/// Base URL / Model / Advertise-as / grid-name fields and a Start button. Wraps
+/// either a plain [EngineBlock] or a [CollapsibleEngineBlock] depending on
+/// [collapsible].
 class ExternalServerBlock extends ConsumerStatefulWidget {
   const ExternalServerBlock({
     super.key,
@@ -52,6 +54,12 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
   late final _model = TextEditingController(text: widget.initialModel);
   late final _advertise = TextEditingController(text: widget.initialAdvertise);
 
+  /// What this computer joins under — pre-filled with its own name, so the field
+  /// shows what a start would actually use rather than a blank box.
+  late final _nodeName = TextEditingController(
+    text: ref.read(nodeNameProvider),
+  );
+
   /// Once the user types their own "Advertise as", stop auto-filling it — don't
   /// clobber a name they chose.
   bool _advertiseEdited = false;
@@ -89,6 +97,7 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
     _endpoint.dispose();
     _model.dispose();
     _advertise.dispose();
+    _nodeName.dispose();
     super.dispose();
   }
 
@@ -100,6 +109,9 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
           endpoint: _endpoint.text.trim(),
           model: _model.text.trim(),
           advertiseAs: _advertise.text.trim(),
+          // Blank falls back to this computer's own name, inside the controller
+          // — so an emptied field behaves the same as one never touched.
+          nodeName: _nodeName.text,
         );
   }
 
@@ -109,6 +121,7 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
       endpoint: _endpoint,
       model: _model,
       advertise: _advertise,
+      nodeName: _nodeName,
       suggestedModels: widget.suggestedModels,
       onStart: _start,
     );
@@ -129,15 +142,16 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
   }
 }
 
-/// The external engine form body: Base URL, Model and Advertise-as fields over a
-/// Start button. The controllers stay the source of truth so [onStart] reads
-/// them; [suggestedModels] picks the Model field shape.
+/// The external engine form body: Base URL, Model, Advertise-as and this
+/// computer's grid name over a Start button. The controllers stay the source of
+/// truth so [onStart] reads them; [suggestedModels] picks the Model field shape.
 class ServerForm extends StatelessWidget {
   const ServerForm({
     super.key,
     required this.endpoint,
     required this.model,
     required this.advertise,
+    required this.nodeName,
     required this.suggestedModels,
     required this.onStart,
   });
@@ -145,6 +159,7 @@ class ServerForm extends StatelessWidget {
   final TextEditingController endpoint;
   final TextEditingController model;
   final TextEditingController advertise;
+  final TextEditingController nodeName;
   final List<String> suggestedModels;
   final VoidCallback onStart;
 
@@ -166,6 +181,8 @@ class ServerForm extends StatelessWidget {
           hintText: 'qwen3-31b.gguf',
           optional: true,
         ),
+        const SizedBox(height: 12),
+        NodeNameField(controller: nodeName),
         const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerLeft,

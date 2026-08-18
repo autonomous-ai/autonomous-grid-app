@@ -1071,4 +1071,83 @@ void main() {
       isA<ProviderRunStopped>(),
     );
   });
+
+  group('the name this computer joins under', () {
+    ProviderContainer containerOn(FakeGridCliService cli) {
+      final container = ProviderContainer(
+        overrides: [
+          gridCliServiceProvider.overrideWithValue(cli),
+          nodeNameProvider.overrideWithValue('grid-app'),
+          freePortFinderProvider.overrideWithValue(() async => 54321),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('what the user typed is what --name carries', () async {
+      // Two machines macOS called the same thing show up on the grid page as
+      // one name twice; this is the field that tells them apart.
+      final fake = FakeGridCliService();
+
+      await containerOn(fake)
+          .read(providerRunControllerProvider.notifier)
+          .startExternal(
+            network: 'net',
+            endpoint: 'http://x/v1',
+            model: 'm',
+            nodeName: 'node-bubu',
+          );
+
+      expect(fake.lastStartArgs, containsAllInOrder(['--name', 'node-bubu']));
+    });
+
+    test(
+      'the local engine takes it too — the same field on either card',
+      () async {
+        final fake = FakeGridCliService();
+
+        await containerOn(fake)
+            .read(providerRunControllerProvider.notifier)
+            .startLocal(
+              network: 'net',
+              model: 'qwen.gguf',
+              nodeName: 'node-bubu',
+            );
+
+        expect(fake.lastStartArgs, containsAllInOrder(['--name', 'node-bubu']));
+      },
+    );
+
+    test(
+      "an emptied field joins under this computer's own name — `--name` with "
+      'nothing after it leaves the machine nameless on the grid',
+      () async {
+        final fake = FakeGridCliService();
+
+        await containerOn(fake)
+            .read(providerRunControllerProvider.notifier)
+            .startExternal(
+              network: 'net',
+              endpoint: 'http://x/v1',
+              model: 'm',
+              nodeName: '   ',
+            );
+
+        expect(fake.lastStartArgs, containsAllInOrder(['--name', 'grid-app']));
+      },
+    );
+
+    test('a start that never mentions a name is unchanged', () async {
+      // Every other caller — the auto-host setup, anything not through these
+      // two cards — must keep joining exactly as it did.
+      final fake = FakeGridCliService();
+
+      await containerOn(fake)
+          .read(providerRunControllerProvider.notifier)
+          .startExternal(network: 'net', endpoint: 'http://x/v1', model: 'm');
+
+      expect(fake.lastStartArgs, containsAllInOrder(['--name', 'grid-app']));
+    });
+  });
 }

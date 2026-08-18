@@ -179,11 +179,14 @@ class ProviderRunFailed extends ProviderRunState {
 class ProviderRunController extends Notifier<ProviderRunState> {
   static const _maxLogLines = 400;
 
-  /// The node's display name on the grid, passed via `--name` on join so each
+  /// The default display name on the grid, passed via `--name` on join so each
   /// host appears as itself on the grid page instead of a shared "grid-app".
   /// The machine's own name (via [nodeNameProvider]); read once — it's stable
   /// for the app's lifetime. Purely cosmetic: the CLI keys run records and
   /// `grid leave` by its own engine id, not this name (see [_leaveEngine]).
+  ///
+  /// A join can override it — see [_nameOr] — for the two machines macOS called
+  /// the same thing.
   late final String _engineName = ref.read(nodeNameProvider);
 
   /// Context window for an external (`--at`) engine, passed via `--ctx-size`.
@@ -270,6 +273,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     required String model,
     String? advertiseAs,
     int? ctxSize,
+    String? nodeName,
   }) async {
     Future<List<String>> buildArgs() async => [
       'join',
@@ -281,7 +285,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       ..._advertiseArgs(advertiseAs),
       ..._ctxArgs(ctxSize),
       '--name',
-      _engineName,
+      _nameOr(nodeName),
     ];
     return _start(
       await buildArgs(),
@@ -298,6 +302,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     required String endpoint,
     required String model,
     String? advertiseAs,
+    String? nodeName,
   }) {
     return _start(
       [
@@ -310,7 +315,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         ..._advertiseArgs(advertiseAs),
         ..._ctxArgs(_externalCtxSize),
         '--name',
-        _engineName,
+        _nameOr(nodeName),
       ],
       grid: network,
       model: model,
@@ -382,6 +387,15 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// uses its own default). Shared by the local and external join paths.
   List<String> _ctxArgs(int? ctxSize) =>
       ctxSize != null ? ['--ctx-size', '$ctxSize'] : const [];
+
+  /// What to join under: what the user typed, or this computer's own name when
+  /// they left the field alone. Never blank — the CLI takes `--name` with an
+  /// empty value and the machine then shows up on the grid page as nothing at
+  /// all.
+  String _nameOr(String? nodeName) {
+    final typed = nodeName?.trim() ?? '';
+    return typed.isEmpty ? _engineName : typed;
+  }
 
   /// [rebuildForPortConflict] (local engine only) rebuilds the join args with a
   /// freshly-picked port, so a "port already in use" abort self-heals on a
