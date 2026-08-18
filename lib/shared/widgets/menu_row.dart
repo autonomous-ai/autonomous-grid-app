@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../../../shared/theme/app_theme.dart';
+import '../theme/app_theme.dart';
 
 /// The gutter that turns a row's hover fill into an inset pill rather than a
 /// band running the full width of the panel — the same 6 the chat menu uses.
@@ -21,13 +21,19 @@ const double kMenuRowPadding = 9;
 const double kMenuRowGlyph = 14;
 final BorderRadius kMenuRowRadius = BorderRadius.circular(AppControl.radius);
 
-/// One row of the Review scope menu.
+/// One row of a menu that answers "which one?" — the Review scope menu, the
+/// node dashboard's sort and filter menus.
 ///
 /// Its own widget rather than a `MenuItemButton`: Material's row brings a ripple
 /// the app disables everywhere, a 48px tap target, and no way to put a wash
 /// behind the chosen row without it reading as a button dropped into the menu.
 /// This is the same construction the chat menu uses, so the two look like one
 /// design system.
+///
+/// Shared rather than owned by Review, which is where it was written: a feature
+/// may not reach into another's internals (conventions §1), and the second
+/// caller for it was the node dashboard — one menu row for the app, not one per
+/// feature that needs a tick beside the chosen line.
 class MenuRow extends StatefulWidget {
   const MenuRow({
     super.key,

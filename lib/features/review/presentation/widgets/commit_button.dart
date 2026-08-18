@@ -7,7 +7,7 @@ import '../../logic/commit_action.dart';
 import '../../logic/commit_controller.dart';
 import '../../logic/review_snapshot.dart';
 import 'commit_popover.dart';
-import 'toolbar_pill.dart';
+import '../../../../shared/widgets/toolbar_pill.dart';
 import 'toolbar_popover.dart';
 
 /// The toolbar's one tinted control, and the panel it opens.
