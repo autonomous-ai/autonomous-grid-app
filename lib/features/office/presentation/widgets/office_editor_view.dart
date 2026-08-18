@@ -19,22 +19,24 @@ import 'office_editor_rows.dart';
 /// each.
 ///
 /// The formatting shown is the shallow read from `docx_format.dart` — enough that
-/// a heading looks like a heading and a centred line stays centred. The Read view
-/// is the faithful one; this is the one you can type in.
+/// a heading looks like a heading, a centred line stays centred and a numbered
+/// item keeps its number. It is not Word: no page breaks, no headers or footers,
+/// and a heading whose style is based on another heading draws at the body size.
 ///
 /// Tables are drawn as tables and their cells can be typed in (see
 /// `office_editor_rows.dart` for how the flat paragraph list is grouped back into
-/// a grid). Pictures are not drawn here at all — the paragraph holding one shows a
-/// placeholder, because an empty gap where an image is reads as a document that
-/// lost it.
+/// a grid). Pictures are drawn at the size Word was told to draw them; one whose
+/// bytes are missing from the file leaves a frame rather than a gap, because the
+/// author put something there.
 class OfficeEditorView extends ConsumerStatefulWidget {
   const OfficeEditorView({super.key, required this.doc});
 
   final OfficeDocOpen doc;
 
-  /// A Letter-ish column. The Read view draws the document's real page size; this
-  /// one only needs a comfortable measure to type in.
-  static const _pageWidth = 816.0;
+  /// The page's own margins at full width. Word's inch, and the most the page
+  /// gives up — a narrow pane gets a proportional share instead, or the margins
+  /// alone would be wider than the paper.
+  static const _pageInset = 72.0;
 
   @override
   ConsumerState<OfficeEditorView> createState() => _OfficeEditorViewState();
@@ -79,7 +81,7 @@ class _OfficeEditorViewState extends ConsumerState<OfficeEditorView> {
     _focus.clear();
   }
 
-  List<String> get _lines => widget.doc.text.split('\n');
+  List<String> get _lines => widget.doc.lines;
 
   /// The format of paragraph [index] — or of the paragraph it was split from,
   /// which has no entry of its own yet.
@@ -107,32 +109,29 @@ class _OfficeEditorViewState extends ConsumerState<OfficeEditorView> {
   }
 
   /// One paragraph's field, wherever it is drawn — body text or a table cell.
-  Widget _paragraph(int index, List<String> lines) {
+  ///
+  /// [width] is the line it has to fit in, and it is *passed*, not measured: a
+  /// `LayoutBuilder` here sat inside the `IntrinsicHeight` a table row needs, and
+  /// intrinsics cannot run a layout callback — Flutter answers that by mutating
+  /// the render tree mid-pass, which surfaced as a mouse-tracker assertion
+  /// (`!_debugDuringDeviceUpdate`). Every caller already knows the width.
+  Widget _paragraph(int index, List<String> lines, double width) {
     final text = index < lines.length ? lines[index] : '';
     final controller = _controllerFor(index, text);
     final format = _formatFor(index);
-    final field = _Paragraph(
+    return _Paragraph(
       format: format,
       controller: controller,
       focusNode: _focusFor(index),
+      text: text,
       onChanged: (value) =>
           ref.read(officeDocProvider.notifier).editLine(index, value),
       // No splitting inside a cell: a new paragraph there would have no format
       // entry, so the grouping that draws the table would lose track of it. Body
       // text has no such constraint.
       onSplit: format.inTable ? null : () => _split(index, controller),
+      width: width,
     );
-    if (!format.inTable) return field;
-    // In a cell the height has to be right, and a `TextField` will not say what
-    // its height is: inside the `IntrinsicHeight` a table row needs, it reports
-    // the height of one line in the *theme's* text style rather than in the one
-    // it is given — 6px short of the truth here, which is what struck a
-    // "BOTTOM OVERFLOWED BY 6.0 PIXELS" stripe across every row.
-    //
-    // So a `Text` of the same words in the same style is laid *under* the field
-    // to set the size, and the field fills it. The Text is the measurer; the
-    // field is what you type in.
-    return _SizedByText(text: text, format: format, child: field);
   }
 
   @override
@@ -149,48 +148,80 @@ class _OfficeEditorViewState extends ConsumerState<OfficeEditorView> {
     }
     return ColoredBox(
       color: AppPalette.paperDesk,
-      child: Center(
-        child: SizedBox(
-          width: OfficeEditorView._pageWidth,
-          child: ColoredBox(
-            color: AppPalette.paper,
-            // The page's own ink, so nothing on it can inherit the app's — see the
-            // token's note. A document is white paper in both themes.
-            child: DefaultTextStyle.merge(
-              style: const TextStyle(color: AppPalette.paperInk),
-              child: Theme(
-                // A page is not a form: the app's field theme would fill every
-                // paragraph with a grey rounded box.
-                data: Theme.of(context).copyWith(
-                  inputDecorationTheme: const InputDecorationTheme(),
-                  textSelectionTheme: TextSelectionThemeData(
-                    cursorColor: AppPalette.accent,
-                    selectionColor: AppPalette.accent.withValues(alpha: 0.22),
-                    selectionHandleColor: AppPalette.accent,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // The document's own paper — A4 is 794px where US Letter is 816, and a
+          // document laid out for one reads wrong at the other's measure. Never
+          // wider than the pane, though: a fixed page is what overflowed every
+          // table the moment the window came off full screen.
+          final paper = widget.doc.pageWidthPx;
+          final page = constraints.maxWidth < paper
+              ? constraints.maxWidth
+              : paper;
+          // Margins shrink with the page rather than holding their inch: at the
+          // app's narrowest window two 72px margins are wider than the paper
+          // between them, and the text would be laid out in nothing.
+          final inset = (page * 0.09).clamp(16.0, OfficeEditorView._pageInset);
+          // What is left for text — and what a table must fit inside. Derived,
+          // never assumed: a table sized to a constant overflowed by exactly the
+          // width the window had lost.
+          final column = page - inset * 2;
+          return Center(
+            child: SizedBox(
+              width: page,
+              child: ColoredBox(
+                color: AppPalette.paper,
+                // The page's own ink, so nothing on it can inherit the app's — see the
+                // token's note. A document is white paper in both themes.
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(color: AppPalette.paperInk),
+                  child: Theme(
+                    // A page is not a form: the app's field theme would fill every
+                    // paragraph with a grey rounded box.
+                    data: Theme.of(context).copyWith(
+                      inputDecorationTheme: const InputDecorationTheme(),
+                      textSelectionTheme: TextSelectionThemeData(
+                        cursorColor: AppPalette.accent,
+                        selectionColor: AppPalette.accent.withValues(
+                          alpha: 0.22,
+                        ),
+                        selectionHandleColor: AppPalette.accent,
+                      ),
+                    ),
+                    child: ListView.builder(
+                      // The *same* [inset] the column above was derived from.
+                      // These two are one measurement: while this held the full
+                      // 72px and the column shrank with the page, every table
+                      // was told it had `144 - 2 * inset` more room than the
+                      // list would give it — 45px at a 550px page, which is
+                      // exactly what overflowed.
+                      padding: EdgeInsets.fromLTRB(inset, 56, inset, 72),
+                      itemCount: rows.length,
+                      itemBuilder: (context, index) => switch (rows[index]) {
+                        OfficeEditorParagraph(:final index) => _paragraph(
+                          index,
+                          lines,
+                          column,
+                        ),
+                        OfficeEditorTable(:final rows, :final gridTwips) =>
+                          _Table(
+                            rows: rows,
+                            gridTwips: gridTwips,
+                            // The real column, measured this frame — a table
+                            // sized to a constant overflowed by exactly the
+                            // width the window had lost.
+                            availableWidth: column,
+                            cell: (line, width) =>
+                                _paragraph(line, lines, width),
+                          ),
+                      },
+                    ),
                   ),
-                ),
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(72, 56, 72, 72),
-                  itemCount: rows.length,
-                  itemBuilder: (context, index) => switch (rows[index]) {
-                    OfficeEditorParagraph(:final index) => _paragraph(
-                      index,
-                      lines,
-                    ),
-                    OfficeEditorTable(:final rows, :final gridTwips) => _Table(
-                      rows: rows,
-                      gridTwips: gridTwips,
-                      // The page's text column, which is what the table has to
-                      // fit inside — the padding above is its margins.
-                      availableWidth: OfficeEditorView._pageWidth - 144,
-                      cell: (line) => _paragraph(line, lines),
-                    ),
-                  },
                 ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -202,6 +233,8 @@ class _Paragraph extends StatelessWidget {
     required this.format,
     required this.controller,
     required this.focusNode,
+    required this.text,
+    required this.width,
     required this.onChanged,
     this.onSplit,
   });
@@ -209,10 +242,26 @@ class _Paragraph extends StatelessWidget {
   final DocxLineFormat format;
   final TextEditingController controller;
   final FocusNode focusNode;
+
+  /// The paragraph's text, for measuring — see [_SizedByText].
+  final String text;
+
+  /// The width of the line this paragraph is drawn on — see the note on
+  /// `_OfficeEditorViewState._paragraph` for why it is passed rather than
+  /// measured here.
+  final double width;
+
   final ValueChanged<String> onChanged;
 
   /// What Enter does — null where a paragraph may not be split (a table cell).
   final VoidCallback? onSplit;
+
+  /// The most of a line that indents, markers and margins may take between them.
+  ///
+  /// A ceiling, not a target: it only ever bites in a column too narrow for the
+  /// document's own geometry, where the choice is between text with nowhere to go
+  /// and an indent that isn't quite right.
+  static const _maxLeadShare = 0.6;
 
   /// [field], with Enter starting a new paragraph where that is allowed.
   Widget _withEnter(Widget field) {
@@ -238,7 +287,15 @@ class _Paragraph extends StatelessWidget {
       fontFamily: format.fontFamily,
       height: format.lineHeight,
     );
-    if (format.hasPicture) return _PicturePlaceholder(format: format);
+    if (format.picture case final picture?) {
+      return _Picture(picture: picture, format: format);
+    }
+    final textAlign = switch (format.align) {
+      DocxTextAlign.center => TextAlign.center,
+      DocxTextAlign.right => TextAlign.right,
+      DocxTextAlign.justify => TextAlign.justify,
+      DocxTextAlign.left => TextAlign.left,
+    };
     final field = TextField(
       controller: controller,
       focusNode: focusNode,
@@ -247,12 +304,7 @@ class _Paragraph extends StatelessWidget {
       // paragraph instead of a line inside this one.
       maxLines: null,
       style: style,
-      textAlign: switch (format.align) {
-        DocxTextAlign.center => TextAlign.center,
-        DocxTextAlign.right => TextAlign.right,
-        DocxTextAlign.justify => TextAlign.justify,
-        DocxTextAlign.left => TextAlign.left,
-      },
+      textAlign: textAlign,
       decoration: const InputDecoration(
         border: InputBorder.none,
         filled: false,
@@ -263,21 +315,66 @@ class _Paragraph extends StatelessWidget {
         hintText: null,
       ),
     );
+    // A hang is the room the list marker sits in, so the row starts that far to
+    // the left of the text and the marker box takes it back. Word's geometry:
+    // text at indentLeft, marker at indentLeft + firstLine.
+    final hang = format.marker == null || format.firstLinePx >= 0
+        ? 0.0
+        : -format.firstLinePx;
+    // Indents are absolute where columns are not: a paragraph indented half an
+    // inch inside a 40px table cell asks for more furniture than the cell has,
+    // and fixed boxes in a `Row` do not give way — they overflow. Everything
+    // before the text is capped at [_maxLeadShare] of the line so the text always
+    // has a line to be on.
+    final room = width > 0 ? width : 0.0;
+    final lead = (format.indentLeftPx - hang).clamp(0.0, room * _maxLeadShare);
+    final marker = format.marker;
+    final markerWidth = marker == null
+        ? 0.0
+        : (hang > 0 ? hang : 24.0).clamp(0.0, room * _maxLeadShare - lead);
+    final firstLine = marker != null || format.firstLinePx <= 0
+        ? 0.0
+        : format.firstLinePx.clamp(0.0, room * _maxLeadShare - lead);
     return Padding(
       padding: EdgeInsets.only(
         top: format.spaceBeforePx,
         bottom: format.spaceAfterPx,
-        left: format.indentLeftPx,
-        right: format.indentRightPx,
+        left: lead,
+        right: format.indentRightPx.clamp(0.0, room * _maxLeadShare),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // A first-line indent, as the empty box it is. A hang (negative) is
-          // where a list marker would sit; the Edit view has no markers, so it
-          // simply doesn't indent.
-          if (format.firstLinePx > 0) SizedBox(width: format.firstLinePx),
-          Expanded(child: _withEnter(field)),
+          // The number or bullet, drawn *beside* the field and never inside it:
+          // it is not part of the paragraph's text (Word generates it from
+          // `numbering.xml`), so it must not be typeable and must never be
+          // written back. See `docx_numbering.dart`.
+          if (marker != null)
+            SizedBox(
+              width: markerWidth,
+              child: Text(marker, style: style),
+            ),
+          // A first-line indent, as the empty box it is.
+          if (firstLine > 0) SizedBox(width: firstLine),
+          // In a table the height has to be exact, and a `TextField` will not say
+          // what its height is: inside the `IntrinsicHeight` a row needs, it
+          // reports one line of the *theme's* text style instead of the style it
+          // was given. So a `Text` of the same words measures it.
+          //
+          // It wraps the field and nothing else. Wrapping the whole paragraph —
+          // padding, marker and all — is what struck "RenderFlex overflowed by 45
+          // pixels": the measuring `Text` knew nothing about the indent, so the
+          // row was forced into a box narrower than its own indent.
+          Expanded(
+            child: format.inTable
+                ? _SizedByText(
+                    text: text,
+                    style: style,
+                    align: textAlign,
+                    child: _withEnter(field),
+                  )
+                : _withEnter(field),
+          ),
         ],
       ),
     );
@@ -305,11 +402,18 @@ class _Table extends StatelessWidget {
 
   /// Builds the field for one line — the same paragraph widget body text uses, so
   /// a cell is typed in exactly like anything else.
-  final Widget Function(int line) cell;
+  ///
+  /// Handed the width it has to draw in, because the paragraph no longer measures
+  /// for itself: a `LayoutBuilder` inside this table's `IntrinsicHeight` is what
+  /// the mouse-tracker assertion was.
+  final Widget Function(int line, double width) cell;
 
   /// Word's hairline, and the app's own [AppPalette.divider] deliberately not
   /// used: the grid is part of the document, so it stays the same in both themes.
   static const _rule = Color(0xFF9A9A9A);
+
+  /// The air between a cell's rule and its text, each side.
+  static const _cellPad = 7.0;
 
   @override
   Widget build(BuildContext context) {
@@ -341,13 +445,18 @@ class _Table extends StatelessWidget {
                         ),
                       ),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
+                        horizontal: _cellPad,
                         vertical: 3,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         mainAxisSize: MainAxisSize.min,
-                        children: [for (final line in box.lines) cell(line)],
+                        children: [
+                          for (final line in box.lines)
+                            // What is left of the cell once its own padding has
+                            // had its share — the line the text really gets.
+                            cell(line, _widthOf(box, widths) - _cellPad * 2),
+                        ],
                       ),
                     ),
                 ],
@@ -388,33 +497,67 @@ class _Table extends StatelessWidget {
   }
 }
 
-/// Where a picture is, in a view that cannot draw one.
+/// A picture in the document, drawn where its paragraph is.
 ///
-/// Says which view can, rather than leaving a gap: the paragraph is still there
-/// and still saves — this only stands in for what it holds.
-class _PicturePlaceholder extends StatelessWidget {
-  const _PicturePlaceholder({required this.format});
+/// Read-only, like the picture itself: there is nothing to type into. The
+/// paragraph is still a paragraph and still saves — a save doesn't touch a
+/// paragraph whose text didn't change, so the drawing inside it is never at risk
+/// from being shown here.
+class _Picture extends StatelessWidget {
+  const _Picture({required this.picture, required this.format});
 
+  final DocxPicture picture;
   final DocxLineFormat format;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.only(
-      top: format.spaceBeforePx + 4,
-      bottom: format.spaceAfterPx + 4,
-      left: format.indentLeftPx,
-      right: format.indentRightPx,
+  Widget build(BuildContext context) {
+    final bytes = picture.bytes;
+    return Padding(
+      padding: EdgeInsets.only(
+        top: format.spaceBeforePx + 4,
+        bottom: format.spaceAfterPx + 4,
+        left: format.indentLeftPx,
+        right: format.indentRightPx,
+      ),
+      child: Align(
+        alignment: switch (format.align) {
+          DocxTextAlign.center => Alignment.center,
+          DocxTextAlign.right => Alignment.centerRight,
+          _ => Alignment.centerLeft,
+        },
+        child: bytes == null
+            ? const _MissingPicture()
+            : Image.memory(
+                bytes,
+                width: picture.widthPx,
+                height: picture.heightPx,
+                // The size Word was told to draw it at is the size it prints at,
+                // so a picture too wide for the column is scaled, not cropped.
+                fit: BoxFit.contain,
+                // A format Flutter can't decode — an EMF or WMF out of an old
+                // document — leaves the frame rather than a red exception box, so
+                // the text around it is still readable.
+                errorBuilder: (context, _, _) => const _MissingPicture(),
+              ),
+      ),
+    );
+  }
+}
+
+/// A picture the document points at that this build cannot draw.
+class _MissingPicture extends StatelessWidget {
+  const _MissingPicture();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      border: Border.all(color: const Color(0x33000000)),
+      color: const Color(0x08000000),
     ),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0x33000000)),
-        color: const Color(0x08000000),
-      ),
-      child: const Text(
-        'Picture — switch to Read to see it',
-        style: TextStyle(fontSize: 11.5, color: Color(0x99000000)),
-      ),
+    child: const Text(
+      "Picture — Grid can't show this one",
+      style: TextStyle(fontSize: 11.5, color: Color(0x99000000)),
     ),
   );
 }
@@ -433,12 +576,18 @@ class _PicturePlaceholder extends StatelessWidget {
 class _SizedByText extends StatelessWidget {
   const _SizedByText({
     required this.text,
-    required this.format,
+    required this.style,
+    required this.align,
     required this.child,
   });
 
   final String text;
-  final DocxLineFormat format;
+
+  /// The very style the field draws in — passed rather than rebuilt, because a
+  /// measurer that measures a *different* style is worse than none.
+  final TextStyle style;
+  final TextAlign align;
+
   final Widget child;
 
   @override
@@ -448,22 +597,7 @@ class _SizedByText extends StatelessWidget {
       // cell with no text still has a line's height in Word.
       Opacity(
         opacity: 0,
-        child: Text(
-          text.isEmpty ? ' ' : text,
-          style: TextStyle(
-            fontSize: format.fontSizePx,
-            fontWeight: format.bold ? FontWeight.w700 : FontWeight.w400,
-            fontStyle: format.italic ? FontStyle.italic : FontStyle.normal,
-            fontFamily: format.fontFamily,
-            height: format.lineHeight,
-          ),
-          textAlign: switch (format.align) {
-            DocxTextAlign.center => TextAlign.center,
-            DocxTextAlign.right => TextAlign.right,
-            DocxTextAlign.justify => TextAlign.justify,
-            DocxTextAlign.left => TextAlign.left,
-          },
-        ),
+        child: Text(text.isEmpty ? ' ' : text, style: style, textAlign: align),
       ),
       Positioned.fill(child: child),
     ],

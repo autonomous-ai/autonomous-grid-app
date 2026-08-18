@@ -15,9 +15,10 @@
 ///
 /// **What editing a paragraph does cost.** A paragraph the user changed is
 /// rebuilt from one run, so formatting that varied *inside* that paragraph (a
-/// bold word mid-sentence) comes back in the formatting of its first run, and a
-/// soft line break inside it (Shift+Enter) reads and returns as a space.
-/// Paragraphs the user didn't touch are not rewritten at all and keep both.
+/// bold word mid-sentence) comes back in the formatting of its first run.
+/// Paragraphs the user didn't touch are not rewritten at all and keep theirs.
+/// Tabs and soft line breaks *do* survive: they read as `\t` and `\n` and are
+/// written back as `<w:tab/>` and `<w:br/>`.
 ///
 /// TODO(BE): that flattening is the honest ceiling of a text-only editor, and it
 /// is silent — the user sees no warning that a mixed-format paragraph they
@@ -60,9 +61,10 @@ class DocxFile {
 
   /// How wide this document's pages are, in logical pixels.
   ///
-  /// Read here because the walk is already open and both views need it: the Read
-  /// view sizes its sheet by it, and a document is laid out for the paper it was
-  /// written on — A4 is 794px where US Letter is 816.
+  /// Read here because the walk is already open, and the editor draws its sheet
+  /// at it: a document is laid out for the paper it was written on — A4 is 794px
+  /// where US Letter is 816, and text set for one reads wrong at the other's
+  /// measure.
   final double pageWidthPx;
 
   final Archive _zip;
@@ -98,7 +100,7 @@ class DocxFile {
     if (body == null) return null;
     final paragraphs = _paragraphsOf(body);
     if (paragraphs.isEmpty) return null;
-    final styles = _stylesRootOf(zip);
+    final styles = _partRootOf(zip, 'word/styles.xml');
     return DocxFile._(
       zip,
       xml,
@@ -106,20 +108,27 @@ class DocxFile {
       // The same list, walked once more rather than parsed again: index i of one
       // is index i of the other by construction, which is what the Edit view
       // relies on to type into the paragraph it is pointing at.
-      lineFormats(paragraphs, styles, body),
+      lineFormats(
+        paragraphs,
+        styles,
+        body,
+        media: _mediaOf(zip),
+        numberingRoot: _partRootOf(zip, 'word/numbering.xml'),
+      ),
       _pageWidthPxOf(body),
     );
   }
 
-  /// The document as the editor shows it: one line per paragraph.
-  String get text => lines.join('\n');
-
-  /// The whole file with [edited] as its text — the same zip, with only the
-  /// paragraphs that differ from [lines] touched.
-  Uint8List save(String edited) {
+  /// The whole file with [edited] as its paragraphs — the same zip, with only
+  /// the ones that differ from [lines] touched.
+  ///
+  /// A list rather than one string split on newlines: a paragraph may contain a
+  /// newline of its own (a soft break), so only the caller knows where one
+  /// paragraph ends and the next begins.
+  Uint8List save(List<String> edited) {
     // Can't fail: this is the string [open] already parsed.
     final body = XmlDocument.parse(_bodyXml);
-    _applyLines(body, lines, edited.split('\n'));
+    _applyLines(body, lines, edited);
     final out = Archive();
     for (final file in _zip.files) {
       out.add(
@@ -140,13 +149,19 @@ class DocxFile {
 List<XmlElement> _paragraphsOf(XmlDocument body) =>
     body.findAllElements('p', namespaceUri: '*').toList();
 
-/// One paragraph as exactly one editor line.
+/// One paragraph as one editor line — which may itself hold newlines.
 ///
-/// Deliberately *not* the chat attachment reader's `docxText`, which turns a
-/// soft line break into a newline: here a newline is what separates one
-/// paragraph from the next, so a paragraph that produced two lines would slide
-/// every following paragraph's text onto the wrong paragraph on save. A soft
-/// break reads as a space instead.
+/// A `w:br` is a soft line break (Shift+Enter), and it comes back as `\n`.
+/// It used to come back as a space, to keep one paragraph on one line: the
+/// editor's text was a single string joined by newlines, so a paragraph
+/// producing two lines would have slid every following paragraph's text onto
+/// the wrong paragraph on save.
+///
+/// Real documents settled that. A file where a whole numbered section is *one*
+/// paragraph with soft breaks between its bullets — which is what Word gives
+/// you for Shift+Enter — came out as one unreadable block of run-together
+/// sentences. The lines are a `List<String>` now precisely so a paragraph can
+/// hold its own breaks without the list losing count of paragraphs.
 String _paragraphLine(XmlElement paragraph) {
   final buffer = StringBuffer();
   for (final node in paragraph.descendants.whereType<XmlElement>()) {
@@ -156,7 +171,7 @@ String _paragraphLine(XmlElement paragraph) {
       case 'tab':
         buffer.write('\t');
       case 'br':
-        buffer.write(' ');
+        buffer.write('\n');
     }
   }
   return buffer.toString();
@@ -311,14 +326,23 @@ XmlElement? _runStyle(XmlElement run) {
 
 /// One run carrying [text], in [style] if the run it replaces had one.
 ///
-/// Tabs come back as `<w:tab/>` rather than as a tab character, because Word
-/// ignores whitespace inside `<w:t>` beyond a single space.
+/// Tabs and newlines come back as `<w:tab/>` and `<w:br/>` rather than as
+/// characters: Word ignores whitespace inside `<w:t>` beyond a single space, so
+/// a paragraph's own line breaks would simply vanish on the way out. That is the
+/// other half of reading `w:br` as `\n` — a soft break survives a round trip
+/// through the editor instead of being flattened by it.
 XmlElement _buildRun(String? prefix, XmlElement? style, String text) {
   final children = <XmlNode>[?style];
-  final parts = text.split('\t');
+  final parts = _splitKeepingBreaks(text);
   for (var i = 0; i < parts.length; i++) {
-    if (i > 0) children.add(XmlElement(XmlName.parts('tab', prefix: prefix)));
-    if (parts[i].isEmpty) continue;
+    if (i > 0) {
+      children.add(
+        XmlElement(
+          XmlName.parts(parts[i].afterBreak ? 'br' : 'tab', prefix: prefix),
+        ),
+      );
+    }
+    if (parts[i].text.isEmpty) continue;
     children.add(
       XmlElement(
         XmlName.parts('t', prefix: prefix),
@@ -328,11 +352,34 @@ XmlElement _buildRun(String? prefix, XmlElement? style, String text) {
           // two runs is the only thing holding them apart.
           XmlAttribute(XmlName.parts('space', prefix: 'xml'), 'preserve'),
         ],
-        [XmlText(parts[i])],
+        [XmlText(parts[i].text)],
       ),
     );
   }
   return XmlElement(XmlName.parts('r', prefix: prefix), const [], children);
+}
+
+/// A stretch of a paragraph's text, and which mark ended the one before it.
+typedef _RunPart = ({String text, bool afterBreak});
+
+/// Splits [text] on tabs and newlines, remembering which was which.
+///
+/// One pass over both, rather than splitting on one and then the other: the two
+/// have to keep their order, and `"a\tb\nc"` written back with its tab and its
+/// break the wrong way round is a paragraph that reads differently than it did.
+List<_RunPart> _splitKeepingBreaks(String text) {
+  final parts = <_RunPart>[];
+  var start = 0;
+  var afterBreak = false;
+  for (var i = 0; i < text.length; i++) {
+    final mark = text[i];
+    if (mark != '\t' && mark != '\n') continue;
+    parts.add((text: text.substring(start, i), afterBreak: afterBreak));
+    afterBreak = mark == '\n';
+    start = i + 1;
+  }
+  parts.add((text: text.substring(start), afterBreak: afterBreak));
+  return parts;
 }
 
 /// The page width from the body's trailing `w:sectPr`, in logical pixels.
@@ -358,10 +405,49 @@ double _pageWidthPxOf(XmlDocument body) {
   return (twips ?? letterTwips) / 15;
 }
 
-/// `word/styles.xml`, or null when the file has none — a document with no style
-/// part still opens, its paragraphs just draw at the fallback size.
-XmlElement? _stylesRootOf(Archive zip) {
-  final bytes = zip.findFile('word/styles.xml')?.readBytes();
+/// Every picture the document points at, by the relationship id that points at
+/// it.
+///
+/// Read here, with the zip already open, so the Edit view can draw the pictures
+/// rather than leave gaps where they are. Only the parts an `r:id` actually
+/// names: a document's media folder can hold what nothing references, and
+/// carrying those would be bytes in memory for nothing on screen.
+Map<String, Uint8List> _mediaOf(Archive zip) {
+  final rels = zip.findFile('word/_rels/document.xml.rels')?.readBytes();
+  final root = rels == null
+      ? null
+      : _parse(utf8.decode(rels, allowMalformed: true))?.rootElement;
+  if (root == null) return const {};
+  final media = <String, Uint8List>{};
+  for (final entry in root.childElements) {
+    if (entry.name.local != 'Relationship') continue;
+    final id = _attributeOf(entry, 'Id');
+    final target = _attributeOf(entry, 'Target');
+    if (id == null || target == null) continue;
+    if (_attributeOf(entry, 'TargetMode') == 'External') continue;
+    // Targets are relative to the part that owns them, so a document's
+    // `media/image1.png` is `word/media/image1.png` in the archive.
+    final path = target.startsWith('/')
+        ? target.substring(1)
+        : 'word/${target.replaceAll('../', '')}';
+    final bytes = zip.findFile(path)?.readBytes();
+    if (bytes != null) media[id] = bytes;
+  }
+  return media;
+}
+
+String? _attributeOf(XmlElement element, String local) {
+  for (final attribute in element.attributes) {
+    if (attribute.name.local == local) return attribute.value;
+  }
+  return null;
+}
+
+/// The root of one XML part, or null when the file hasn't got it — a document
+/// with no styles or no numbering still opens; its paragraphs just draw at the
+/// fallback size, or without markers.
+XmlElement? _partRootOf(Archive zip, String path) {
+  final bytes = zip.findFile(path)?.readBytes();
   if (bytes == null) return null;
   return _parse(utf8.decode(bytes, allowMalformed: true))?.rootElement;
 }

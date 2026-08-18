@@ -192,9 +192,9 @@ class OfficeDocController extends Notifier<OfficeDocState> {
           // fresh ones instead of showing the old words in them.
           openId: ++_opens,
           path: path,
-          text: docx.text,
-          savedText: docx.text,
-          // Handed to the Read view, which parses the file itself.
+          lines: List.unmodifiable(docx.lines),
+          savedLines: List.unmodifiable(docx.lines),
+          // Kept to tell a later change on disk from the app's own save.
           bytes: bytes,
           formats: docx.formats,
           pageWidthPx: docx.pageWidthPx,
@@ -239,49 +239,43 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     return true;
   }
 
-  /// What the user has typed. Cheap on purpose — it runs on every keystroke, so
-  /// it only swaps the string and lets [OfficeDocOpen.dirty] derive the rest.
-  void edit(String text) {
-    final open = state;
-    if (open is! OfficeDocOpen) return;
-    if (open.text == text) return;
-    // Clears a previous failure: the message named the save that failed, and
-    // this is no longer that text.
-    state = open.copyWith(text: text, save: const OfficeSaveIdle());
-  }
-
   /// Replace one paragraph's text — what the Edit view calls on every keystroke.
   ///
-  /// Paragraph [index] is an index into the document's lines, which is the same
-  /// index `docx_edit.dart` patches by. The whole text is still the one source of
-  /// truth: a second model of "the lines" would be a second thing to keep in step
-  /// with the field the user is typing in.
+  /// Paragraph [index] indexes the document's paragraphs, which is the same index
+  /// `docx_edit.dart` patches by, so the thing under the caret and the thing
+  /// written back are the same paragraph.
   void editLine(int index, String value) {
     final open = state;
     if (open is! OfficeDocOpen) return;
-    final lines = open.text.split('\n');
-    if (index < 0 || index >= lines.length || lines[index] == value) return;
-    lines[index] = value;
-    edit(lines.join('\n'));
+    if (index < 0 || index >= open.lines.length) return;
+    if (open.lines[index] == value) return;
+    final lines = [...open.lines]..[index] = value;
+    // The save state clears with the edit: the message named a save of text that
+    // is no longer what is here.
+    _put(open, lines);
   }
 
   /// Break paragraph [index] in two at [at] — what Enter does.
   ///
-  /// Its own method rather than letting a newline sit inside one paragraph's text:
-  /// the Edit view draws one field per line, so a `\n` typed into a field would
-  /// silently renumber every paragraph after it while the caret stayed put.
+  /// A real paragraph split, not a newline dropped into the text: a newline
+  /// inside a paragraph is Word's *soft* break, which this editor keeps and
+  /// writes back as one. Only this makes a new `<w:p>`.
   void splitLine(int index, int at) {
     final open = state;
     if (open is! OfficeDocOpen) return;
-    final lines = open.text.split('\n');
-    if (index < 0 || index >= lines.length) return;
-    final line = lines[index];
+    if (index < 0 || index >= open.lines.length) return;
+    final line = open.lines[index];
     final cut = at.clamp(0, line.length);
-    lines
+    final lines = [...open.lines]
       ..[index] = line.substring(0, cut)
       ..insert(index + 1, line.substring(cut));
-    edit(lines.join('\n'));
+    _put(open, lines);
   }
+
+  void _put(OfficeDocOpen open, List<String> lines) => state = open.copyWith(
+    lines: List.unmodifiable(lines),
+    save: const OfficeSaveIdle(),
+  );
 
   /// Write the edits back into the file they came from.
   Future<void> save() async {
@@ -290,7 +284,7 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     if (open is! OfficeDocOpen || baseline == null) return;
     if (open.save is OfficeSaveRunning) return;
 
-    final text = open.text;
+    final lines = open.lines;
     // The patch is built from the bytes this document was *opened* with, so
     // writing it over a file that has changed since would erase that change —
     // and the assistant changes these files while they are open. Checked here
@@ -310,7 +304,7 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     }
     state = open.copyWith(save: const OfficeSaveRunning());
     try {
-      await _writeAtomically(open.path, baseline.save(text));
+      await _writeAtomically(open.path, baseline.save(lines));
     } on Object catch (error, stack) {
       ref
           .read(appLogProvider)
@@ -328,10 +322,10 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     }
     final latest = state;
     if (latest is! OfficeDocOpen || latest.path != open.path) return;
-    // [savedText] is what was written, not what the editor holds now: the user
+    // [savedLines] is what was written, not what the editor holds now: the user
     // may have typed on while the write ran, and those keystrokes are still
     // unsaved.
-    state = latest.copyWith(savedText: text, save: const OfficeSaveIdle());
+    state = latest.copyWith(savedLines: lines, save: const OfficeSaveIdle());
   }
 
   void _fail(String message) {

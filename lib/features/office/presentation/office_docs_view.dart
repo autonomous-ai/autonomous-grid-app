@@ -10,9 +10,7 @@ import '../../../shared/widgets/panel_splitter.dart';
 import '../logic/office_doc_controller.dart';
 import '../logic/office_doc_state.dart';
 import '../logic/office_layout.dart';
-import '../logic/office_view_mode.dart';
 import 'widgets/office_chat_column.dart';
-import 'widgets/office_formatted_view.dart';
 import 'widgets/office_doc_bar.dart';
 import 'widgets/office_editor_view.dart';
 
@@ -23,10 +21,14 @@ import 'widgets/office_editor_view.dart';
 /// it takes the side of the window that grows, and the conversation keeps a fixed
 /// column the eye returns to.
 ///
-/// Two views over the file: Read draws it faithfully (`docx_file_viewer`), Edit
-/// puts a caret in its paragraphs. No ribbon either way — nothing here formats
-/// text. See `docx_edit.dart` for exactly what a save preserves and what it
-/// flattens.
+/// One view over the file, and it is the editable one. There was a second — a
+/// faithful read-only render by `docx_file_viewer` — kept while the editor
+/// couldn't draw pictures. It went when the editor could: the package's reader
+/// dropped the text of list items whose content is one paragraph of soft breaks,
+/// so the prettier view was the one that quietly lost words.
+///
+/// No ribbon: nothing here formats text. See `docx_edit.dart` for exactly what a
+/// save preserves and what it flattens.
 class OfficeDocsView extends ConsumerWidget {
   const OfficeDocsView({super.key});
 
@@ -150,7 +152,7 @@ class _DocumentSide extends ConsumerWidget {
                 OfficeDocOpening(:final name) => LoadingView(
                   message: 'Opening $name…',
                 ),
-                OfficeDocOpen() => _OpenDocument(doc: state),
+                OfficeDocOpen() => OfficeEditorView(doc: state),
                 OfficeDocFailed(:final name, :final message) => _CouldNotOpen(
                   name: name,
                   message: message,
@@ -162,27 +164,6 @@ class _DocumentSide extends ConsumerWidget {
         ),
       ],
     );
-  }
-}
-
-/// The open document, in whichever view the user chose.
-///
-/// Read falls back to Edit when the file's bytes aren't there to hand the viewer —
-/// the switch is disabled in that case too, and the fallback is here as well
-/// because a mode with nothing to draw must not draw a blank page.
-class _OpenDocument extends ConsumerWidget {
-  const _OpenDocument({required this.doc});
-
-  final OfficeDocOpen doc;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final bytes = doc.bytes;
-    final mode = ref.watch(officeViewModeProvider);
-    if (mode == OfficeViewMode.read && bytes != null) {
-      return OfficeFormattedView(bytes: bytes, pageWidth: doc.pageWidthPx);
-    }
-    return OfficeEditorView(doc: doc);
   }
 }
 

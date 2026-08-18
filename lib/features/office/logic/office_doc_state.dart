@@ -31,8 +31,8 @@ final class OfficeDocOpen extends OfficeDocState {
   const OfficeDocOpen({
     required this.openId,
     required this.path,
-    required this.text,
-    required this.savedText,
+    required this.lines,
+    required this.savedLines,
     this.bytes,
     this.formats = const [],
     this.pageWidthPx = 816,
@@ -53,16 +53,14 @@ final class OfficeDocOpen extends OfficeDocState {
   /// says otherwise. Both views size their sheet by it.
   final double pageWidthPx;
 
-  /// The file exactly as it was read, kept for the Read view.
+  /// The file exactly as it was read — the yardstick for "has this changed under
+  /// us".
   ///
-  /// `docx_file_viewer` parses for itself — it takes the bytes and does its own
-  /// reading — so what the state carries is the file, not a model of it. Null only
-  /// if the read gave nothing, in which case Read has nothing to show and the
-  /// switch says so.
-  ///
-  /// It is the *opened* bytes and stays that way while paragraphs are edited: Read
-  /// shows what is on disk, which is the truthful thing for a view that cannot
-  /// show unsaved edits anyway. Save, then switch, to see them there.
+  /// Kept as bytes rather than as a hash because it costs nothing to keep and
+  /// answers exactly: [OfficeDocController] compares a fresh read against it to
+  /// tell the assistant's edit from the app's own save, and refuses to write a
+  /// patch built from a file that has moved on. Stays the *opened* bytes for the
+  /// life of the document, which is what makes that comparison mean anything.
   final Uint8List? bytes;
 
   /// Which *opening* this is — bumped every time a document is opened, the same
@@ -77,12 +75,18 @@ final class OfficeDocOpen extends OfficeDocState {
   /// The file this came from, and where [text] goes back to.
   final String path;
 
-  /// What the editor holds.
-  final String text;
+  /// What the editor holds: one entry per paragraph, in document order.
+  ///
+  /// A list rather than one string joined by newlines, because a paragraph can
+  /// contain a newline of its own — Word's soft break (Shift+Enter), which whole
+  /// sections of real documents are built out of. Joined, there would be no way
+  /// to tell that break from the end of the paragraph, and a save would turn one
+  /// paragraph into several.
+  final List<String> lines;
 
   /// What is on disk — the yardstick for [dirty] rather than a flag somebody has
   /// to remember to clear.
-  final String savedText;
+  final List<String> savedLines;
 
   /// How the last save went, so the bar can say so where the user is looking.
   final OfficeSaveState save;
@@ -97,20 +101,26 @@ final class OfficeDocOpen extends OfficeDocState {
   /// refuses rather than trusting the user read it.
   final bool staleOnDisk;
 
-  bool get dirty => text != savedText;
+  bool get dirty {
+    if (lines.length != savedLines.length) return true;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i] != savedLines[i]) return true;
+    }
+    return false;
+  }
 
   String get name => folderName(path);
 
   OfficeDocOpen copyWith({
-    String? text,
-    String? savedText,
+    List<String>? lines,
+    List<String>? savedLines,
     OfficeSaveState? save,
     bool? staleOnDisk,
   }) => OfficeDocOpen(
     openId: openId,
     path: path,
-    text: text ?? this.text,
-    savedText: savedText ?? this.savedText,
+    lines: lines ?? this.lines,
+    savedLines: savedLines ?? this.savedLines,
     bytes: bytes,
     formats: formats,
     pageWidthPx: pageWidthPx,

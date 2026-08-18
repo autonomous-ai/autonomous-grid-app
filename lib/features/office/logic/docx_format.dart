@@ -1,22 +1,26 @@
 /// Just enough of a paragraph's formatting to type into it.
 ///
-/// The Read view is the faithful one — `docx_file_viewer` resolves the whole
-/// styles.xml cascade, numbering, tables and pictures. This is for the Edit view,
-/// where the job is different: the caret has to sit in text that *looks* like the
-/// document, and it has to do so on exactly the paragraphs `docx_edit.dart` can
-/// patch. So this reads the same `<w:p>` list that file walks, and reads it in the
-/// same pass — an editor whose formatting came from a second, independent parse
-/// would be one document-shaped disagreement away from writing a paragraph's text
-/// into its neighbour.
+/// The caret has to sit in text that *looks* like the document, and it has to do
+/// so on exactly the paragraphs `docx_edit.dart` can patch. So this reads the same
+/// `<w:p>` list that file walks, and reads it in the same pass — an editor whose
+/// formatting came from a second, independent parse would be one document-shaped
+/// disagreement away from writing a paragraph's text into its neighbour.
 ///
 /// **Deliberately shallow.** Direct `w:pPr`/`w:rPr`, the paragraph's own style one
-/// level deep, then `w:docDefaults`. No `w:basedOn` chain, no theme fonts, no
-/// numbering — a heading based on another heading shows the body size here while
-/// the Read view has it right. That is the honest trade for an edit surface: it
-/// has to be recognisable, not exact.
+/// level deep, then `w:docDefaults`. No `w:basedOn` chain and no theme fonts — a
+/// heading based on another heading shows the body size here. That is the honest
+/// trade for an edit surface: it has to be recognisable, not exact.
+///
+/// Numbering is the exception, and had to be: a list's "1." is not in the
+/// document's text at all (see `docx_numbering.dart`), so leaving it out was not
+/// approximating a document — it was showing a numbered section with no numbers.
 library;
 
+import 'dart:typed_data';
+
 import 'package:xml/xml.dart';
+
+import 'docx_numbering.dart';
 
 /// How a paragraph's lines sit against the column.
 enum DocxTextAlign { left, center, right, justify }
@@ -52,6 +56,23 @@ class DocxTableSpan {
   final List<int> gridTwips;
 }
 
+/// A picture in a paragraph, ready to draw.
+class DocxPicture {
+  const DocxPicture({this.bytes, this.widthPx, this.heightPx});
+
+  /// The media part's own bytes, straight out of the zip.
+  final Uint8List? bytes;
+
+  /// The size Word was told to draw it at, in logical pixels.
+  final double? widthPx;
+  final double? heightPx;
+
+  /// The document points at a picture this build cannot produce — the part is
+  /// missing from the zip. Worth drawing a frame for rather than nothing: the
+  /// author put something here.
+  bool get broken => bytes == null;
+}
+
 /// What the Edit view needs to draw one paragraph.
 class DocxLineFormat {
   const DocxLineFormat({
@@ -68,7 +89,8 @@ class DocxLineFormat {
     this.spaceAfterPx = 0,
     this.fontFamily,
     this.table,
-    this.hasPicture = false,
+    this.picture,
+    this.marker,
   });
 
   /// Word's default: 11pt, which is 14.67 logical pixels at 96dpi.
@@ -96,13 +118,22 @@ class DocxLineFormat {
   /// Where this paragraph sits in a table, or null for body text.
   final DocxTableSpan? table;
 
-  /// The paragraph holds a drawing. The Edit view can't draw pictures, so it says
-  /// so with a placeholder instead of leaving an empty gap where one is — a
-  /// document that looks like it lost an image is worse than one that says the
-  /// image is elsewhere.
-  final bool hasPicture;
+  /// The picture this paragraph holds, with the bytes to draw it. Null for a
+  /// paragraph that holds none — and also for one whose picture this build can't
+  /// reach, which [DocxPicture.broken] tells apart.
+  final DocxPicture? picture;
+
+  /// The number or bullet Word draws beside this paragraph, or null when it
+  /// draws none.
+  ///
+  /// Not part of the paragraph's text and never written back — see
+  /// `docx_numbering.dart`. The view draws it in the hanging indent, beside the
+  /// field rather than in it.
+  final String? marker;
 
   bool get inTable => table != null;
+
+  bool get hasPicture => picture != null;
 }
 
 /// Twips (1/1440 inch) to logical pixels (1/96 inch).
@@ -119,15 +150,47 @@ double _sizePx(num halfPoints) => halfPoints * 2 / 3;
 List<DocxLineFormat> lineFormats(
   List<XmlElement> paragraphs,
   XmlElement? stylesRoot,
-  XmlDocument body,
-) {
+  XmlDocument body, {
+  Map<String, Uint8List> media = const {},
+  XmlElement? numberingRoot,
+}) {
   final styles = _parseStyleTable(stylesRoot);
   final defaults = _parseDefaults(stylesRoot);
   final tables = _tableSpans(body);
-  return [
-    for (final paragraph in paragraphs)
-      _formatOf(paragraph, styles, defaults, tables[paragraph]),
+  final numbering = parseNumbering(numberingRoot);
+  // Which list each paragraph is in, then the markers in one walk: the third
+  // item's "3." depends on the two before it, so this cannot be decided one
+  // paragraph at a time.
+  final refs = [
+    for (final paragraph in paragraphs) _listRefOf(paragraph, styles),
   ];
+  final markers = listMarkers(refs, numbering);
+  return [
+    for (var i = 0; i < paragraphs.length; i++)
+      _formatOf(
+        paragraphs[i],
+        styles,
+        defaults,
+        tables[paragraphs[i]],
+        media,
+        marker: markers[i],
+        list: refs[i],
+        numbering: numbering,
+      ),
+  ];
+}
+
+/// Which list a paragraph belongs to — its own `w:numPr`, else its style's.
+///
+/// `numId="0"` is Word's way of saying *not* a list: a paragraph turning its
+/// style's numbering off. Read as a list, it draws a marker nobody asked for.
+DocxListRef? _listRefOf(XmlElement paragraph, Map<String, _StyleBits> styles) {
+  final pPr = _child(paragraph, 'pPr');
+  final numPr = _child(pPr, 'numPr');
+  final own = _val(numPr, 'numId');
+  if (own == '0') return null;
+  if (own != null) return (numId: own, ilvl: _intVal(numPr, 'ilvl') ?? 0);
+  return styles[_val(pPr, 'pStyle')]?.list;
 }
 
 /// Every table's cells, mapped from the paragraphs inside them.
@@ -180,7 +243,11 @@ DocxLineFormat _formatOf(
   Map<String, _StyleBits> styles,
   _StyleBits defaults,
   DocxTableSpan? table,
-) {
+  Map<String, Uint8List> media, {
+  String? marker,
+  DocxListRef? list,
+  Map<String, Map<int, DocxNumLevel>> numbering = const {},
+}) {
   final pPr = _child(paragraph, 'pPr');
   final rPr = _child(pPr, 'rPr') ?? _firstRunProps(paragraph);
   final style = styles[_val(pPr, 'pStyle')] ?? const _StyleBits();
@@ -194,6 +261,15 @@ DocxLineFormat _formatOf(
       22;
   final lineTwips =
       _intAttr(spacing, 'line') ?? style.lineTwips ?? defaults.lineTwips;
+  // Where the first line starts, positive to indent and negative to hang. A list
+  // level's own hang is the room its marker sits in, and it applies only when the
+  // paragraph states no indent of its own — Word merges these per property, it
+  // never adds them.
+  final levelHang = hangingOf(list, numbering);
+  final firstLineTwips = hanging != null
+      ? -hanging
+      : _intAttr(indent, 'firstLine') ??
+            (levelHang != null ? -levelHang : style.indentFirstLineTwips ?? 0);
   return DocxLineFormat(
     align: _align(_val(pPr, 'jc')) ?? style.align ?? DocxTextAlign.left,
     fontSizePx: _sizePx(size),
@@ -201,40 +277,68 @@ DocxLineFormat _formatOf(
     italic: _onOff(rPr, 'i') ?? style.italic ?? defaults.italic ?? false,
     underline: _underline(rPr) ?? style.underline ?? false,
     // `w:line` in the default rule is 240ths of single spacing. Single itself is
-    // the font's own line, which this approximates at 1.2 — the Read view is
-    // where per-font metrics belong.
+    // the font's own line height, which this approximates at 1.2 rather than
+    // measuring the face — a per-font table (Arial 1.15, Calibri 1.22, …) is what
+    // it would take to match Word's line rhythm exactly.
     lineHeight: lineTwips == null ? 1.2 : 1.2 * (lineTwips / 240),
     indentLeftPx: _px(
       _intAttr(indent, 'left') ??
           _intAttr(indent, 'start') ??
+          indentOf(list, numbering) ??
           style.indentLeftTwips ??
           0,
     ),
     indentRightPx: _px(
       _intAttr(indent, 'right') ?? _intAttr(indent, 'end') ?? 0,
     ),
-    firstLinePx: _px(
-      hanging != null
-          ? -hanging
-          : _intAttr(indent, 'firstLine') ?? style.indentFirstLineTwips ?? 0,
-    ),
+    firstLinePx: _px(firstLineTwips),
     spaceBeforePx: _px(
       _intAttr(spacing, 'before') ?? style.spaceBeforeTwips ?? 0,
     ),
     spaceAfterPx: _px(_intAttr(spacing, 'after') ?? style.spaceAfterTwips ?? 0),
     fontFamily: _fontOf(rPr) ?? style.font ?? defaults.font,
     table: table,
-    hasPicture: _hasPicture(paragraph),
+    picture: _pictureOf(paragraph, media),
+    marker: marker,
   );
 }
 
-/// Whether the paragraph carries a drawing — `w:drawing` for the modern shape,
-/// `w:pict` for the VML one older documents still use.
-bool _hasPicture(XmlElement paragraph) {
+/// The picture a paragraph carries, if it carries one.
+///
+/// `w:drawing` is the modern shape and `w:pict` the VML one older documents
+/// still use; a paragraph with either is a paragraph the Edit view must draw
+/// something for. Which bytes it is comes from the relationship id on the blip,
+/// looked up in [media] — a picture whose part is missing from the zip (a broken
+/// relationship, which converters leave behind) comes back [DocxPicture.broken]
+/// so the view can say so instead of drawing a gap.
+DocxPicture? _pictureOf(XmlElement paragraph, Map<String, Uint8List> media) {
+  XmlElement? drawing;
   for (final node in paragraph.descendantElements) {
-    if (node.name.local == 'drawing' || node.name.local == 'pict') return true;
+    if (node.name.local == 'drawing' || node.name.local == 'pict') {
+      drawing = node;
+      break;
+    }
   }
-  return false;
+  if (drawing == null) return null;
+  String? embed;
+  double? width;
+  double? height;
+  for (final node in drawing.descendantElements) {
+    switch (node.name.local) {
+      case 'blip':
+        embed ??= _attr(node, 'embed');
+      case 'extent':
+        // `wp:extent` is in EMU — 914400 to the inch, so 9525 to a pixel.
+        width ??= (_intAttr(node, 'cx') ?? 0) / 9525;
+        height ??= (_intAttr(node, 'cy') ?? 0) / 9525;
+    }
+  }
+  final bytes = embed == null ? null : media[embed];
+  return DocxPicture(
+    bytes: bytes,
+    widthPx: (width ?? 0) > 0 ? width : null,
+    heightPx: (height ?? 0) > 0 ? height : null,
+  );
 }
 
 /// The run properties of the paragraph's first run — what the paragraph looks
@@ -260,6 +364,7 @@ class _StyleBits {
     this.indentLeftTwips,
     this.indentFirstLineTwips,
     this.font,
+    this.list,
   });
 
   final int? sizeHalfPoints;
@@ -273,6 +378,10 @@ class _StyleBits {
   final int? indentLeftTwips;
   final int? indentFirstLineTwips;
   final String? font;
+
+  /// A style can carry the list itself (`ListParagraph`, `ListBullet`), which is
+  /// how a paragraph gets numbered without a `w:numPr` of its own.
+  final DocxListRef? list;
 }
 
 /// styleId → the bits of it this view uses.
@@ -302,7 +411,12 @@ _StyleBits _bitsOf(XmlElement? pPr, XmlElement? rPr) {
   final spacing = _child(pPr, 'spacing');
   final indent = _child(pPr, 'ind');
   final hanging = _intAttr(indent, 'hanging');
+  final numPr = _child(pPr, 'numPr');
+  final numId = _val(numPr, 'numId');
   return _StyleBits(
+    list: numId == null || numId == '0'
+        ? null
+        : (numId: numId, ilvl: _intVal(numPr, 'ilvl') ?? 0),
     sizeHalfPoints: _intVal(rPr, 'sz'),
     bold: _onOff(rPr, 'b'),
     italic: _onOff(rPr, 'i'),

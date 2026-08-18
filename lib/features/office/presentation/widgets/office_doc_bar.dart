@@ -4,20 +4,17 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
-import '../../../../shared/widgets/app_segmented.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/status_dot.dart';
 import '../../logic/office_doc_controller.dart';
 import '../../logic/office_doc_state.dart';
-import '../../logic/office_view_mode.dart';
 import '../discard_changes_dialog.dart';
 
 /// The strip above the page: which document this is, whether it is saved, and
-/// the two things you can do to it.
+/// what you can do to it — start a blank one, open another, write this one back.
 ///
-/// Two, and that is the whole point of this first version — open a document and
-/// write it back. There is no ribbon to hide behind, so the bar says plainly what
-/// the app can do.
+/// No ribbon, because nothing here formats text. A bar that shows only what the
+/// app can actually do is the honest shape for that.
 class OfficeDocBar extends ConsumerWidget {
   const OfficeDocBar({super.key, required this.doc});
 
@@ -84,10 +81,6 @@ class OfficeDocBar extends ConsumerWidget {
                       color: AppPalette.textSecondary,
                     ),
                     const SizedBox(width: 8),
-                    if (open != null && !tight) ...[
-                      _ViewSwitch(hasViewer: open.bytes != null),
-                      const SizedBox(width: 12),
-                    ],
                     Expanded(
                       child: Text(
                         open?.name ?? 'Docs',
@@ -101,13 +94,6 @@ class OfficeDocBar extends ConsumerWidget {
                     ),
                     if (open != null && open.dirty && !saving)
                       _NotSavedMark(tight: tight),
-                    // Folded to one glyph rather than dropped: the switch is how
-                    // you get to the editor at all, so it is the last thing a
-                    // narrow bar may lose.
-                    if (open != null && tight) ...[
-                      _ViewSwitchButton(hasViewer: open.bytes != null),
-                      const SizedBox(width: 4),
-                    ],
                     // A new document without going back to an empty screen
                     // first. Glyph-only even when there is room: it is the third
                     // action in a bar whose first two are the ones people came
@@ -146,63 +132,6 @@ class OfficeDocBar extends ConsumerWidget {
         ),
         const Divider(height: 1, thickness: 1),
       ],
-    );
-  }
-}
-
-/// Read or Edit — the two ways to have the open document on screen.
-///
-/// Both words are on it because they are different capabilities, not different
-/// skins: Read is the document as it really is and cannot be typed in, Edit is
-/// where the caret goes. Collapses to the one word that is true when the file's
-/// bytes aren't there for the viewer, with the reason in a tooltip rather than a
-/// switch that silently does nothing.
-class _ViewSwitch extends ConsumerWidget {
-  const _ViewSwitch({required this.hasViewer});
-
-  final bool hasViewer;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    const modes = OfficeViewMode.values;
-    final mode = ref.watch(officeViewModeProvider);
-    if (!hasViewer) {
-      return Tooltip(
-        message:
-            "Grid couldn't hand this document to the viewer, so only the "
-            'editable view is available.',
-        child: Text(
-          OfficeViewMode.edit.label,
-          style: TextStyle(color: AppPalette.textFaint, fontSize: 12.5),
-        ),
-      );
-    }
-    return AppSegmented(
-      segments: [for (final m in modes) SegmentSpec(label: m.label)],
-      selected: modes.indexOf(mode),
-      onChanged: (index) =>
-          ref.read(officeViewModeProvider.notifier).select(modes[index]),
-    );
-  }
-}
-
-/// The switch folded to one button, for a bar with no room for two words.
-class _ViewSwitchButton extends ConsumerWidget {
-  const _ViewSwitchButton({required this.hasViewer});
-
-  final bool hasViewer;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (!hasViewer) return const SizedBox.shrink();
-    final formatted = ref.watch(officeViewModeProvider) == OfficeViewMode.read;
-    return AppIconButton(
-      icon: formatted ? LucideIcons.pencil300 : LucideIcons.layoutPanelTop300,
-      size: 16,
-      // Names what the press will do, not what is on screen — the one thing a
-      // single-button toggle has to get right.
-      tooltip: formatted ? 'Edit the text' : 'Show the formatting',
-      onPressed: () => ref.read(officeViewModeProvider.notifier).toggle(),
     );
   }
 }
