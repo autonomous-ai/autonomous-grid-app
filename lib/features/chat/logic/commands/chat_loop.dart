@@ -93,10 +93,18 @@ class ChatLoop {
 
   /// Null for anything this app didn't write.
   ///
-  /// A loop that was running when the app closed reads back **stopped**. Claude
-  /// Code's own tasks only fire while it is running, and re-arming a timer at
-  /// launch — against a chat the user may not even open — is how a forgotten
-  /// loop becomes a machine that talks to itself overnight.
+  /// A loop that was running when the app closed reads back **running**, and
+  /// the app arms its timer again at launch (`_resumeLoops`).
+  ///
+  /// It used to come back *stopped*, on the reasoning that a timer re-armed at
+  /// launch is how a forgotten loop becomes a machine that talks to itself
+  /// overnight. What that actually cost was worse, and it is in the log for
+  /// 2026-08-18: an app restart killed the turn of a running loop, the loop
+  /// died with it, and starting it again with `/loop` built a *new* loop — the
+  /// count back at zero and the same prompt sent again over work the killed
+  /// turn had already half done. What bounds a forgotten loop is the seven-day
+  /// ceiling, the bar over the composer, and the log line each iteration
+  /// writes — not the app forgetting it existed.
   static ChatLoop? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final prompt = '${raw['prompt'] ?? ''}'.trim();
@@ -116,7 +124,7 @@ class ChatLoop {
           : null,
       startedAt: startedAt,
       nextAt: nextAt,
-      status: stored == LoopStatus.running ? LoopStatus.stopped : stored,
+      status: stored,
       iterations: iterations is int && iterations > 0 ? iterations : 0,
       pacing: raw['pacing'] is String ? raw['pacing'] as String : null,
       continuous: raw['continuous'] == true,
@@ -149,6 +157,26 @@ const Duration kContinuousLoopGap = Duration(seconds: 3);
 /// home, and waiting freezes the whole loop (the next beat is armed only once
 /// the current turn returns). An hour of complete silence is a hang, not work.
 const Duration kLoopTurnStall = Duration(minutes: 60);
+
+/// How long a resumed loop waits before an overdue turn goes out.
+///
+/// A loop whose next beat passed while the app was closed is due the moment the
+/// app is back, but *the moment the app is back* is the worst time to send it:
+/// the grid is still being read, the agent is still being found, and several
+/// resumed loops would all fire into that at once. Seconds, not minutes — long
+/// enough for the launch to settle, short enough that "it carries on where it
+/// left off" is still true.
+const Duration kLoopResumeSettle = Duration(seconds: 15);
+
+/// How long the pacer gets to answer on a self-paced loop.
+///
+/// Measured, not guessed: on 2026-08-18 the pacing request came back in 1m26s
+/// against a 20s limit, so every self-paced loop that day logged
+/// `pacing timed out` and fell back to a flat ten minutes — the assistant's
+/// pace, the whole point of the mode, never once got used. Nobody is waiting on
+/// this (the turn has already ended), so the limit only has to be short enough
+/// that a pacer which is never coming back doesn't hold the next beat.
+const Duration kLoopPaceTimeout = Duration(seconds: 90);
 
 /// The bounds a self-paced loop may choose between.
 const Duration kMinPacedDelay = Duration(minutes: 1);
