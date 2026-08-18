@@ -64,6 +64,32 @@ final servingModelProvider = Provider<String?>((ref) {
   return models.isEmpty ? null : models.join(', ');
 });
 
+/// The first model this machine's **local** engine is serving, or null when it
+/// is serving none.
+///
+/// A single MODEL ID, which is the difference from [servingModelProvider] — that
+/// one is a LABEL: every serving engine's models flattened and joined with
+/// commas, for a row that reads "serving: qwen3, llama3". Passed to an API as a
+/// model it is not an id at all, and a machine serving two models would have
+/// asked for `"qwen3, llama3"` and been refused. `local_throughput.dart` had
+/// already met this and worked around it in place with `split(',').first`; this
+/// is that fix given a name, so the third caller does not have to rediscover it.
+///
+/// Restricted to `EngineKind.local` on purpose. The caller that wants this is
+/// pairing it with `localProviderEndpointProvider` — a `http://localhost:<port>`
+/// URL — and on a machine also serving an API engine, the flattened list can
+/// begin with a model that localhost does not have.
+final localServingModelProvider = Provider<String?>((ref) {
+  for (final engine in ref.watch(servingEnginesProvider)) {
+    if (engine.kind != EngineKind.local) continue;
+    for (final model in engine.models) {
+      final id = model.trim();
+      if (id.isNotEmpty) return id;
+    }
+  }
+  return null;
+});
+
 /// Base URL of this machine's local built-in engine on the active grid, read
 /// from its run record's `endpoint_port`. Null when no local engine is serving.
 /// Lets the Playground hit the local server directly for a quick smoke test.

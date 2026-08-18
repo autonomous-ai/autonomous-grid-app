@@ -79,7 +79,7 @@ void main() {
           localProviderEndpointProvider.overrideWithValue(
             'http://localhost:8081',
           ),
-          servingModelProvider.overrideWithValue('qwen3'),
+          localServingModelProvider.overrideWithValue('qwen3'),
           chatTransportProvider.overrideWithValue(transport),
         ],
       );
@@ -139,7 +139,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           localProviderEndpointProvider.overrideWithValue(null),
-          servingModelProvider.overrideWithValue(null),
+          localServingModelProvider.overrideWithValue(null),
           playgroundModelsProvider.overrideWithValue(const []),
           chatTransportProvider.overrideWithValue(_FakeTransport(reply: '{}')),
         ],

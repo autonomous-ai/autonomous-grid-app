@@ -22,8 +22,12 @@ Future<({ProviderContainer container, Directory dir})> _harness(
   final container = ProviderContainer(
     overrides: [chatStoreProvider.overrideWithValue(store)],
   );
-  addTearDown(container.dispose);
+  // Registered in THIS order because tearDowns run in reverse: the directory
+  // goes last, after the container is disposed. The other way round deleted it
+  // while a save was still in flight, and the delete failed with "Directory not
+  // empty" — intermittently, and only under load.
   addTearDown(() => dir.deleteSync(recursive: true));
+  addTearDown(container.dispose);
   await container.read(chatSessionsProvider.notifier).restored;
   return (container: container, dir: dir);
 }
