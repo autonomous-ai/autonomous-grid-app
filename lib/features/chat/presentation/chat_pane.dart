@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/panels/panel_slots.dart';
 import '../../../shared/panels/panel_tabs.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/no_grid_notice.dart';
 import '../../../shared/widgets/panel_splitter.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../projects/logic/project.dart';
@@ -45,7 +44,7 @@ class ChatPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final network = ref.watch(selectedNetworkProvider);
-    if (network == null) return const _NoGrid();
+    if (network == null) return const NoGridNotice();
 
     // The project the open chat belongs to — a saved chat's own, or the one a
     // brand-new (not-yet-saved) chat is being composed in, so the rail shows
@@ -293,40 +292,6 @@ class _RailPanel extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: ProjectRail(project: project),
-      ),
-    );
-  }
-}
-
-class _NoGrid extends ConsumerWidget {
-  const _NoGrid();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Follow the theme so this re-colours the instant the user flips Light/Dark.
-    AppTheme.watch(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            LucideIcons.messagesSquare,
-            size: 40,
-            color: AppPalette.textFaint,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Pick a grid to chat with.',
-            style: TextStyle(color: AppPalette.textSecondary),
-          ),
-          const SizedBox(height: 14),
-          FilledButton(
-            onPressed: () => ref
-                .read(shellSectionProvider.notifier)
-                .select(ShellSection.grids),
-            child: const Text('Open grids'),
-          ),
-        ],
       ),
     );
   }

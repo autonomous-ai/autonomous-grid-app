@@ -283,6 +283,29 @@ abstract final class AppPalette {
 
   static Color get textFaint =>
       AppTheme.pick(const Color(0xFF8E8D86), const Color(0xFF6E6E68));
+
+  /// The page a document is drawn on, and the ink on it.
+  ///
+  /// The one pair here that does **not** follow the app's theme, deliberately: a
+  /// page is the *document*, not the app's chrome. Word keeps dark chrome around
+  /// white paper for the reason that decides it — what you edit has to look like
+  /// what you send, and a page that turned charcoal in dark mode would show the
+  /// author a document nobody else will ever see. Named here rather than typed
+  /// into the editor so the rule is stated once and the exception is visible
+  /// next to the tokens it breaks with.
+  /// Both are `const`, and that is the enforcement rather than a note: a
+  /// `AppTheme.pick` here would make the page follow Light/Dark, and a value that
+  /// cannot be picked cannot drift. Pure black ink, not the app's near-black
+  /// [textPrimary] — Word's "automatic" text colour is #000000, and this text is
+  /// going to print.
+  static const paper = Color(0xFFFFFFFF);
+  static const paperInk = Color(0xFF000000);
+
+  /// The desk the page sits on. This one *is* chrome, so it does follow the
+  /// theme — and it has to differ from [paper] in light mode too, or the page
+  /// loses its edges against a white pane.
+  static Color get paperDesk =>
+      AppTheme.pick(const Color(0xFFF0F0EE), const Color(0xFF141414));
 }
 
 /// The scrollbar thumb, per brightness.

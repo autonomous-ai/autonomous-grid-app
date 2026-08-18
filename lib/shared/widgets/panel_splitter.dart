@@ -10,7 +10,7 @@ import '../theme/app_theme.dart';
 ///
 /// **The band is wider than the line it draws.** A 1px target is one a user has
 /// to hunt for; the rule stays hairline-thin so nothing about the layout looks
-/// heavier, while [_band] logical pixels around it accept the pointer. That gap
+/// heavier, while [band] logical pixels around it accept the pointer. That gap
 /// between what you see and what you can grab is the whole trick, and it is why
 /// this can't just be a `Divider` with a `MouseRegion` on it.
 class PanelSplitter extends StatefulWidget {
@@ -37,7 +37,11 @@ class PanelSplitter extends StatefulWidget {
 
   /// How much of the pointer's space the seam claims. Comfortably grabbable
   /// without swallowing clicks meant for what's on either side.
-  static const double _band = 7;
+  ///
+  /// Public because it is layout, not decoration: a pane that sizes a fixed
+  /// column beside the seam has to subtract the seam's own width, and reading it
+  /// from here is what keeps the two from drifting apart.
+  static const double band = 7;
 
   @override
   State<PanelSplitter> createState() => _PanelSplitterState();
@@ -93,8 +97,8 @@ class _PanelSplitterState extends State<PanelSplitter> {
         onVerticalDragEnd: _isVertical ? null : _end,
         onVerticalDragCancel: _isVertical ? null : _cancel,
         child: SizedBox(
-          width: _isVertical ? PanelSplitter._band : null,
-          height: _isVertical ? null : PanelSplitter._band,
+          width: _isVertical ? PanelSplitter.band : null,
+          height: _isVertical ? null : PanelSplitter.band,
           child: Center(child: rule),
         ),
       ),
