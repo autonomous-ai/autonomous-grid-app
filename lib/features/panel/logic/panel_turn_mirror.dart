@@ -259,6 +259,14 @@ String panelTurnPartsMessage({
   return PanelOutbound.turnParts(chatId: chatId, parts: shown);
 }
 
+/// How often a running turn's timeline is repeated to the panel.
+///
+/// Against the device's 25 s stale-busy sweep, so two beats can be missed
+/// before a tile that is genuinely working is dropped. Not shorter: this is a
+/// re-send of a payload the panel already has, and its only job is to be
+/// recent.
+const Duration kPanelTurnBeat = Duration(seconds: 10);
+
 /// Turns the app's live chat state into the messages that tell a panel what is
 /// happening, and remembers what it has already said.
 ///
@@ -274,7 +282,13 @@ String panelTurnPartsMessage({
 /// serialized per project. `bf462afc` let every chat in a project answer at
 /// once, so the rule started dropping one of two live turns on the floor.
 class PanelTurnMirror {
-  PanelTurnMirror();
+  /// [clock] is injected so [keepAlive] can be tested without waiting. One
+  /// source for both the stamp and the comparison — reading `DateTime.now()`
+  /// in one and taking the other from the caller is two clocks, and they
+  /// disagree the moment anybody passes a fabricated time.
+  PanelTurnMirror({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+
+  final DateTime Function() _clock;
 
   /// Turns that settled on the last pass, waiting for someone to close them out.
   ///
@@ -293,6 +307,9 @@ class PanelTurnMirror {
   /// The last `turn.parts` payload sent per chat, so an unchanged timeline is
   /// not sent twice.
   final Map<String, String> _sent = {};
+
+  /// When each chat's timeline last went out, for [keepAlive].
+  final Map<String, DateTime> _sentAt = {};
 
   /// The turns that settled since this was last called, and forget them.
   ///
@@ -326,6 +343,7 @@ class PanelTurnMirror {
   }) {
     _holding.clear();
     _sent.clear();
+    _sentAt.clear();
     return _diff(
       projects: projects,
       chats: chats,
@@ -351,11 +369,19 @@ class PanelTurnMirror {
       messages.add(_settle(chatId, chats));
       _holding.remove(chatId);
       _sent.remove(chatId);
+      _sentAt.remove(chatId);
     }
 
     for (final chatId in running) {
       if (!_holding.contains(chatId)) {
         _holding.add(chatId);
+        // The beat's clock starts HERE, not at the first timeline. A turn that
+        // has produced no steps yet — an agent thinking, or one long tool call
+        // before it says anything — has nothing in `_sent`, and keepAlive's
+        // "never sent" fallback then read as "just sent" and never fired. That
+        // is precisely the turn this beat exists for, and it was the one turn it
+        // could not save (seen on hardware 2026-08-18).
+        _sentAt[chatId] = _clock();
         messages.add(PanelOutbound.turnStarted(chatId));
         // Not the timeline, on this change. `ChatSessionsController.send`
         // commits the user's turn and *then* clears the chat's run feed, so at
@@ -384,9 +410,51 @@ class PanelTurnMirror {
       );
       if (_sent[chatId] == payload) continue;
       _sent[chatId] = payload;
+      _sentAt[chatId] = _clock();
       messages.add(payload);
     }
     return messages;
+  }
+
+  /// Say again what a running turn's timeline is, for any chat that has gone
+  /// quiet.
+  ///
+  /// **The tile's liveness is per CHAT, and the link's heartbeat does not carry
+  /// it.** The device clears a busy tile after 25 s without a frame ABOUT THAT
+  /// TILE (`ui_prune_stale_busy`), and the only thing that stamps it is a
+  /// `processing` — which is what a `turn.parts` becomes. Meanwhile this mirror
+  /// deliberately sends nothing while the timeline is unchanged, or the link
+  /// would carry 3 KB per streamed token.
+  ///
+  /// Those two rules meet badly in the middle of a real turn: an agent inside
+  /// one long tool call, or a model thinking, produces no new parts for
+  /// minutes. The app is working, the `ping` says the app is alive, and the
+  /// panel still drops the tile back to the last turn's recap — reported from
+  /// the desk on 2026-08-18. The summarizing beat covered the tail of a turn
+  /// and nothing covered its body.
+  ///
+  /// Re-sending the SAME payload rather than inventing a lighter beat: it is
+  /// what is true, it is what the panel would draw anyway, and it costs one
+  /// frame per running chat per [after] — against a 25 s deadline, at most a
+  /// few KB a minute on a cable that carries 8 KB firmware slices.
+  List<String> keepAlive({required Duration after}) {
+    final now = _clock();
+    return [
+      for (final chatId in _holding)
+        if (now.difference(_sentAt[chatId] ?? now) >= after)
+          // A turn that has produced nothing yet has no payload to repeat, and
+          // still owns a tile that says it is working. An empty timeline is the
+          // honest thing to repeat there.
+          _stampAlive(chatId, now),
+    ];
+  }
+
+  String _stampAlive(String chatId, DateTime now) {
+    final payload =
+        _sent[chatId] ??
+        panelTurnPartsMessage(chatId: chatId, parts: const []);
+    _sentAt[chatId] = now;
+    return payload;
   }
 
   /// How the turn that was running in [chatId] ended.

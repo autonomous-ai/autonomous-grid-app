@@ -797,6 +797,82 @@ void main() {
   group('keeping a panel up to date with a turn', () {
     const projects = [_project];
 
+    test('a turn that goes quiet is said again, because the panel drops a tile '
+        'it has not heard about for 25 seconds', () {
+      // Reported from the desk 2026-08-18: the app was still running a turn and
+      // the panel had gone back to the previous recap. The timeline had not
+      // changed — an agent inside one long tool call — so the mirror, which
+      // deduplicates to keep 3 KB per token off the wire, sent nothing; and the
+      // link's `ping` says the APP is alive, not that any one tile is.
+      var now = DateTime(2026, 8, 18, 12);
+      final mirror = PanelTurnMirror(clock: () => now);
+      final running = _chatsWith(chatId: 'c-1', running: true, sending: true);
+      final runs = {
+        'c-1': AgentRun(parts: [TurnStep(_step('s1', 'flutter test'))]),
+      };
+      // First pass announces the turn and deliberately withholds the timeline
+      // (the feed still holds the previous turn's steps at that instant); the
+      // second sends it.
+      mirror.onChange(projects: projects, chats: running, runs: runs);
+      mirror.onChange(projects: projects, chats: running, runs: runs);
+
+      // Nothing changed since, so the ordinary path stays silent...
+      expect(
+        mirror.onChange(projects: projects, chats: running, runs: runs),
+        isEmpty,
+      );
+      // ...and too soon is still silent: this is a re-send, not a poll.
+      now = now.add(const Duration(seconds: 3));
+      expect(mirror.keepAlive(after: kPanelTurnBeat), isEmpty);
+
+      now = now.add(const Duration(minutes: 5));
+      final beat = mirror.keepAlive(after: kPanelTurnBeat);
+      final sent = jsonDecode(beat.single) as Map;
+      expect(sent['t'], 'turn.parts');
+      expect(sent['chatId'], 'c-1');
+      // The same timeline, not a placeholder: it is what the panel would draw.
+      expect(((sent['parts']! as List).single as Map)['label'], 'flutter test');
+    });
+
+    test('a turn that has produced NOTHING yet is kept alive too — an agent '
+        'thinking is the case this beat exists for', () {
+      var now = DateTime(2026, 8, 18, 12);
+      final mirror = PanelTurnMirror(clock: () => now);
+      // Running, with an empty feed: no steps, no todos, nothing to draw.
+      mirror.onChange(
+        projects: projects,
+        chats: _chatsWith(chatId: 'c-1', running: true, sending: true),
+        runs: const {},
+      );
+
+      now = now.add(const Duration(seconds: 30));
+      final beat = mirror.keepAlive(after: kPanelTurnBeat);
+      final sent = jsonDecode(beat.single) as Map;
+      expect(sent['t'], 'turn.parts');
+      expect(sent['chatId'], 'c-1');
+      expect(sent['parts'], isEmpty);
+    });
+
+    test('a settled turn is never kept alive — the tile is meant to stop', () {
+      var now = DateTime(2026, 8, 18, 12);
+      final mirror = PanelTurnMirror(clock: () => now);
+      mirror.onChange(
+        projects: projects,
+        chats: _chatsWith(chatId: 'c-1', running: true, sending: true),
+        runs: {
+          'c-1': AgentRun(parts: [TurnStep(_step('s1', 'flutter test'))]),
+        },
+      );
+      mirror.onChange(
+        projects: projects,
+        chats: _chatsWith(chatId: 'c-1'),
+        runs: const {},
+      );
+
+      now = now.add(const Duration(minutes: 5));
+      expect(mirror.keepAlive(after: kPanelTurnBeat), isEmpty);
+    });
+
     test('TWO chats in one project both working are two live turns, not one — '
         'the tile each of them gets is its own', () {
       // The bug this whole change came out of. While a tile stood for a

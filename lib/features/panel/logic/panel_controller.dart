@@ -183,10 +183,25 @@ class PanelController {
     // has quit and an app with nothing to say look identical from the panel.
     // Empty on purpose — it says "still here" and re-sends no state, which is
     // what keeps a link idle through a long turn.
-    _heartbeat ??= Timer.periodic(
-      kPanelHeartbeat,
-      (_) => _ref.read(panelLinkProvider).send(PanelOutbound.ping()),
-    );
+    _heartbeat ??= Timer.periodic(kPanelHeartbeat, (_) {
+      _ref.read(panelLinkProvider).send(PanelOutbound.ping());
+      // The `ping` above says the APP is alive. It says nothing about any one
+      // tile, and the device times those out separately — 25 s without a frame
+      // about a chat and it drops that tile back to the last recap, however
+      // busy the machine is. A turn spends minutes inside a single tool call
+      // without changing its timeline, so this is the beat that covers the body
+      // of a turn the way `turn.summarizing` covers its tail.
+      final alive = _turns.keepAlive(after: kPanelTurnBeat);
+      if (alive.isNotEmpty) {
+        // Logged on purpose, and it is evidence rather than noise: a tile that
+        // drops back to its last recap mid-turn leaves NOTHING in this log
+        // today, so the first question — did the app say anything about that
+        // chat in the gap? — had no answer. At most one line per 10s per
+        // running chat.
+        _log.info('panel', 'Said again that ${alive.length} turn(s) are live');
+        _push(alive);
+      }
+    });
   }
 
   /// Stop answering. The link and the port are released by their own providers.
