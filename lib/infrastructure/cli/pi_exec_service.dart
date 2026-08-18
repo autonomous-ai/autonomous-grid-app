@@ -137,7 +137,7 @@ abstract interface class PiExecService {
 ///
 /// TODO(BE): Pi has no per-action approval channel (the thing Hermes gets over
 /// ACP), so an app turn still runs commands and writes files with nobody asked
-/// first — same gap as `codex exec`. Named here rather than buried in an argv
+/// first. Named here rather than buried in an argv
 /// string.
 const String kPiNoApproveFlag = '--no-approve';
 

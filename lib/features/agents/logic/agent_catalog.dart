@@ -83,8 +83,8 @@ enum AgentTool {
   /// Whether a conversation with this agent survives the app being quit.
   ///
   /// True for the two that run one process per turn and keep the conversation
-  /// in a file of their own, resumed by id: `claude --resume <id>` and
-  /// `codex exec resume <id>`. Their sessions outlive both the process that
+  /// in a file of their own, resumed by id: `claude --resume <id>` and Codex's
+  /// own thread id. Their sessions outlive both the process that
   /// made them and this app, which is what lets a chat pick one back up — and
   /// what lets a session started in those tools be imported and carried on
   /// (see `AgentResumePoint`).

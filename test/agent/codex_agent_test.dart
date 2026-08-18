@@ -3,268 +3,326 @@ import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
 import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/agent_version_service.dart';
-import 'package:grid_app/infrastructure/cli/codex_exec_service.dart';
+import 'package:grid_app/infrastructure/cli/codex_agent_service.dart';
+import 'package:grid_app/infrastructure/cli/codex_app_server_parser.dart';
+import 'package:grid_app/infrastructure/cli/codex_app_server_service.dart';
+import 'package:grid_app/infrastructure/cli/codex_approval.dart';
 
 void main() {
-  group('parseCodexEvent — the codex exec --json thread stream', () {
-    test('the opening thread.started carries the id to resume with later', () {
-      final event = parseCodexEvent({
-        'type': 'thread.started',
-        'thread_id': 'abc-123',
-      }, {});
-      expect(event, isA<CodexThreadStarted>());
-      expect((event as CodexThreadStarted).threadId, 'abc-123');
-    });
+  group('the codex app-server stream, notification by notification', () {
+    Map<String, String> answer() => <String, String>{};
 
-    test('an agent message becomes the assembled answer so far', () {
-      final messages = <String, String>{};
-      final event = parseCodexEvent({
-        'type': 'item.completed',
-        'item': {'id': 'i0', 'type': 'agent_message', 'text': 'Hello there'},
-      }, messages);
-      expect(event, isA<CodexMessageEvent>());
-      expect((event as CodexMessageEvent).text, 'Hello there');
-    });
-
-    test('a second message joins the first — a turn can hold several', () {
-      final messages = <String, String>{};
-      parseCodexEvent({
-        'type': 'item.completed',
-        'item': {'id': 'i0', 'type': 'agent_message', 'text': 'First'},
-      }, messages);
-      final event = parseCodexEvent({
-        'type': 'item.completed',
-        'item': {'id': 'i1', 'type': 'agent_message', 'text': 'Second'},
-      }, messages);
-      expect((event as CodexMessageEvent).text, 'First\n\nSecond');
-    });
-
-    test('a command step maps to a command activity with its live status', () {
-      final started = parseCodexEvent({
-        'type': 'item.started',
-        'item': {
-          'id': 'c1',
-          'type': 'command_execution',
-          'command': 'ls -la',
-          'status': 'in_progress',
+    test('the opening thread carries the id to resume with later', () {
+      final event = parseCodexAppServerEvent(
+        method: 'thread/started',
+        params: const {
+          'thread': {'id': 'th-1'},
         },
-      }, {});
-      final activity = (started as CodexActivityEvent).activity;
+        messages: answer(),
+      );
+      expect(event, isA<CodexThreadStarted>());
+      expect((event! as CodexThreadStarted).threadId, 'th-1');
+    });
+
+    test('deltas build the answer as it is typed, and the finished block '
+        'replaces them rather than doubling them', () {
+      final messages = answer();
+      parseCodexAppServerEvent(
+        method: 'item/agentMessage/delta',
+        params: const {'itemId': 'm1', 'delta': 'Hel'},
+        messages: messages,
+      );
+      final streaming = parseCodexAppServerEvent(
+        method: 'item/agentMessage/delta',
+        params: const {'itemId': 'm1', 'delta': 'lo'},
+        messages: messages,
+      );
+      expect((streaming! as CodexMessageEvent).text, 'Hello');
+
+      final whole = parseCodexAppServerEvent(
+        method: 'item/completed',
+        params: const {
+          'item': {'type': 'agentMessage', 'id': 'm1', 'text': 'Hello there'},
+        },
+        messages: messages,
+      );
+      expect((whole! as CodexMessageEvent).text, 'Hello there');
+    });
+
+    test('two messages in one turn are joined, not overwritten', () {
+      final messages = answer();
+      parseCodexAppServerEvent(
+        method: 'item/completed',
+        params: const {
+          'item': {'type': 'agentMessage', 'id': 'm1', 'text': 'First'},
+        },
+        messages: messages,
+      );
+      final second = parseCodexAppServerEvent(
+        method: 'item/completed',
+        params: const {
+          'item': {'type': 'agentMessage', 'id': 'm2', 'text': 'Second'},
+        },
+        messages: messages,
+      );
+      expect((second! as CodexMessageEvent).text, 'First\n\nSecond');
+    });
+
+    test('a command step keeps its live status — this protocol spells it '
+        'inProgress, and reading it as unknown would show every finished '
+        'command as still running', () {
+      final running = parseCodexAppServerEvent(
+        method: 'item/started',
+        params: const {
+          'item': {
+            'type': 'commandExecution',
+            'id': 'c1',
+            'command': 'ls -la',
+            'status': 'inProgress',
+          },
+        },
+        messages: answer(),
+      );
+      final activity = (running! as CodexActivityEvent).activity;
       expect(activity.kind, AgentActivityKind.command);
       expect(activity.label, 'ls -la');
       expect(activity.status, AgentActivityStatus.running);
 
-      final done = parseCodexEvent({
-        'type': 'item.completed',
-        'item': {
-          'id': 'c1',
-          'type': 'command_execution',
-          'command': 'ls -la',
-          'status': 'completed',
+      final done = parseCodexAppServerEvent(
+        method: 'item/completed',
+        params: const {
+          'item': {
+            'type': 'commandExecution',
+            'id': 'c1',
+            'command': 'ls -la',
+            'status': 'completed',
+            'aggregatedOutput': 'a\nb',
+          },
         },
-      }, {});
-      // Same id — the sender upserts it, so the running row turns into a done one.
-      expect((done as CodexActivityEvent).activity.id, 'c1');
-      expect(done.activity.status, AgentActivityStatus.done);
-    });
-
-    test('a web search maps to a web activity labelled by its query', () {
-      final event = parseCodexEvent({
-        'type': 'item.started',
-        'item': {'id': 'w1', 'type': 'web_search', 'query': 'grid p2p ai'},
-      }, {});
-      final activity = (event as CodexActivityEvent).activity;
-      expect(activity.kind, AgentActivityKind.web);
-      expect(activity.label, 'grid p2p ai');
-    });
-
-    test('a todo list becomes the plan, done vs pending, blanks dropped', () {
-      final event = parseCodexEvent({
-        'type': 'item.completed',
-        'item': {
-          'id': 't1',
-          'type': 'todo_list',
-          'items': [
-            {'text': 'Read the files', 'completed': true},
-            {'text': 'Write the answer', 'completed': false},
-            {'text': '   ', 'completed': false},
-          ],
-        },
-      }, {});
-      final entries = (event as CodexPlanEvent).entries;
-      expect(entries.length, 2);
-      expect(entries[0].status, AgentPlanStatus.done);
-      expect(entries[1].status, AgentPlanStatus.pending);
-    });
-
-    test('turn.failed is the fatal signal, carrying codex own reason', () {
-      final event = parseCodexEvent({
-        'type': 'turn.failed',
-        'error': {'message': 'stream disconnected'},
-      }, {});
-      expect(event, isA<CodexTurnFailed>());
-      expect((event as CodexTurnFailed).message, 'stream disconnected');
-    });
-
-    test('a bare error is a transient reconnect notice, not a failure', () {
-      final event = parseCodexEvent({
-        'type': 'error',
-        'message': 'Reconnecting... 1/5',
-      }, {});
-      expect(event, isNull);
-    });
-
-    test('reasoning becomes a thinking step, so a pause reads as work', () {
-      final event = parseCodexEvent({
-        'type': 'item.started',
-        'item': {
-          'id': 'r1',
-          'type': 'reasoning',
-          'text': 'Checking where the file lives',
-          'status': 'in_progress',
-        },
-      }, {});
-      final activity = (event as CodexActivityEvent).activity;
-      expect(activity.kind, AgentActivityKind.thinking);
-      expect(activity.label, 'Checking where the file lives');
-      expect(activity.status, AgentActivityStatus.running);
-    });
-
-    test('reasoning carried as a summary list is read too', () {
-      final event = parseCodexEvent({
-        'type': 'item.completed',
-        'item': {
-          'id': 'r2',
-          'type': 'reasoning',
-          'summary': [
-            {'text': 'First I will read the files'},
-          ],
-        },
-      }, {});
+        messages: answer(),
+      );
       expect(
-        (event as CodexActivityEvent).activity.label,
-        'First I will read the files',
+        (done! as CodexActivityEvent).activity.status,
+        AgentActivityStatus.done,
+      );
+      expect((done as CodexActivityEvent).activity.result, contains('a'));
+    });
+
+    test('a plan revision replaces the to-do list, blanks dropped', () {
+      final event = parseCodexAppServerEvent(
+        method: 'turn/plan/updated',
+        params: const {
+          'plan': [
+            {'step': 'Read the file', 'status': 'completed'},
+            {'step': 'Fix it', 'status': 'inProgress'},
+            {'step': '  ', 'status': 'pending'},
+          ],
+        },
+        messages: answer(),
+      );
+      final entries = (event! as CodexPlanEvent).entries;
+      expect(entries.length, 2);
+      expect(entries.first.status, AgentPlanStatus.done);
+      expect(entries.last.status, AgentPlanStatus.active);
+    });
+
+    test('a turn that ends badly says so; one that simply ends does not', () {
+      final failed = parseCodexAppServerEvent(
+        method: 'turn/completed',
+        params: const {
+          'turn': {
+            'status': 'failed',
+            'error': {'message': 'the grid refused'},
+          },
+        },
+        messages: answer(),
+      );
+      expect((failed! as CodexTurnFailed).message, 'the grid refused');
+      expect(
+        parseCodexAppServerEvent(
+          method: 'turn/completed',
+          params: const {
+            'turn': {'status': 'completed'},
+          },
+          messages: answer(),
+        ),
+        isA<CodexTurnCompleted>(),
       );
     });
 
-    test('an empty reasoning item carries nothing to show', () {
+    test('an error Codex will retry is a reconnect notice, not a dead turn — '
+        'reporting it would put a failure over a turn that goes on to '
+        'answer', () {
       expect(
-        parseCodexEvent({
-          'type': 'item.completed',
-          'item': {'id': 'r3', 'type': 'reasoning', 'text': '   '},
-        }, {}),
+        parseCodexAppServerEvent(
+          method: 'error',
+          params: const {
+            'willRetry': true,
+            'error': {'message': 'stream dropped'},
+          },
+          messages: answer(),
+        ),
         isNull,
       );
+      expect(
+        parseCodexAppServerEvent(
+          method: 'error',
+          params: const {
+            'willRetry': false,
+            'error': {'message': 'stream dropped'},
+          },
+          messages: answer(),
+        ),
+        isA<CodexTurnFailed>(),
+      );
     });
 
-    test(
-      'turn.completed says the turn ended by itself — the chat reads it to tell '
-      'a finished turn from one cut off mid-plan',
-      () {
+    test('the prompt we just sent, the turn opening, and a notification from a '
+        'later build all surface nothing', () {
+      for (final method in ['turn/started', 'thread/tokenUsage/updated']) {
         expect(
-          parseCodexEvent({'type': 'turn.completed'}, {}),
-          isA<CodexTurnCompleted>(),
+          parseCodexAppServerEvent(
+            method: method,
+            params: const {},
+            messages: answer(),
+          ),
+          isNull,
         );
-      },
-    );
-
-    test('turn lifecycle chatter and unknown items surface nothing', () {
-      expect(parseCodexEvent({'type': 'turn.started'}, {}), isNull);
+      }
       expect(
-        parseCodexEvent({
-          'type': 'item.completed',
-          'item': {'id': 'x1', 'type': 'reasoning_summary'},
-        }, {}),
+        parseCodexAppServerEvent(
+          method: 'item/completed',
+          params: const {
+            'item': {'type': 'userMessage', 'id': 'u1'},
+          },
+          messages: answer(),
+        ),
         isNull,
       );
     });
   });
 
-  group('file_change — so a file Codex writes becomes openable', () {
-    test('a completed add surfaces the created file for the chat to open', () {
-      final event = parseCodexEvent({
-        'type': 'item.completed',
-        'item': {
-          'id': 'f1',
-          'type': 'file_change',
-          'status': 'completed',
-          'changes': [
-            {'path': '/tmp/ws/tank1990.html', 'kind': 'add'},
-          ],
-        },
-      }, {});
-      expect(event, isA<CodexFileChangeEvent>());
-      final change = (event as CodexFileChangeEvent).changes.single;
-      expect(change.path, '/tmp/ws/tank1990.html');
-      expect(change.kind, CodexFileChangeKind.add);
+  group('the approval channel — the reason this transport exists', () {
+    test('what the chat may do is what the composer said, and full access is '
+        'now a choice rather than the only setting there was', () {
+      expect(
+        codexApprovalPolicy(AgentApprovalMode.readOnly).sandbox,
+        'read-only',
+      );
+      expect(codexApprovalPolicy(AgentApprovalMode.ask).policy, 'untrusted');
+      expect(
+        codexApprovalPolicy(AgentApprovalMode.ask).sandbox,
+        'workspace-write',
+      );
+      expect(
+        codexApprovalPolicy(AgentApprovalMode.full).sandbox,
+        'danger-full-access',
+      );
+      // Nothing may be touched, so nothing can be escalated into a card.
+      expect(codexApprovalPolicy(AgentApprovalMode.readOnly).policy, 'never');
     });
 
-    test(
-      'an in-flight apply has written nothing yet, so it surfaces nothing',
-      () {
-        expect(
-          parseCodexEvent({
-            'type': 'item.started',
-            'item': {
-              'id': 'f1',
-              'type': 'file_change',
-              'status': 'in_progress',
-              'changes': [
-                {'path': '/tmp/a.txt', 'kind': 'add'},
-              ],
-            },
-          }, {}),
-          isNull,
-        );
-      },
-    );
+    test('a command reaches the user as the exact line Codex would run', () {
+      final request = parseCodexApproval(
+        id: 7,
+        method: kCodexCommandApproval,
+        params: const {
+          'command': "/bin/zsh -lc \"printf 'hi' > out.txt\"",
+          'cwd': '/tmp',
+          'availableDecisions': ['accept', 'acceptForSession', 'decline'],
+        },
+      );
+      expect(request!.kind, AgentPermissionKind.command);
+      expect(request.command, contains('out.txt'));
+      expect(request.id, 7);
+      expect(request.canAllowForChat, isTrue);
+    });
 
-    test('a file_change carrying no usable path surfaces nothing', () {
+    test('only the answers Codex says it will take are offered — a button the '
+        'server would reject is a button that does nothing', () {
+      final request = parseCodexApproval(
+        id: 1,
+        method: kCodexCommandApproval,
+        params: const {
+          'command': 'ls',
+          'availableDecisions': ['accept', 'decline'],
+        },
+      );
+      expect(request!.canAllowForChat, isFalse);
+      expect(request.options.map((o) => o.optionId), ['accept', 'decline']);
+    });
+
+    test('a patch is shown as the patch, over the files it touches — there is '
+        'no honest before/after without applying it', () {
+      final request = parseCodexApproval(
+        id: 2,
+        method: kCodexFileChangeApproval,
+        params: const {'itemId': 'f1'},
+        item: const {
+          'type': 'fileChange',
+          'id': 'f1',
+          'changes': [
+            {'path': 'lib/a.dart', 'kind': 'update', 'diff': '@@ -1 +1 @@'},
+          ],
+        },
+      );
+      expect(request!.kind, AgentPermissionKind.other);
+      expect(request.summary, 'Change lib/a.dart');
+      expect(request.command, contains('@@ -1 +1 @@'));
+    });
+
+    test('the chat-wide yes is handed back as the one Codex knows, so the chat '
+        'and the thread agree on what was granted', () {
+      expect(codexDecisionFor(kAllowForChatOption), kCodexAcceptForSession);
+      expect(codexDecisionFor(kCodexAccept), kCodexAccept);
+      // No answer at all is a no — never a yes by default.
+      expect(codexDecisionFor(null), kCodexDecline);
       expect(
-        parseCodexEvent({
-          'type': 'item.completed',
-          'item': {
-            'id': 'f1',
-            'type': 'file_change',
-            'status': 'completed',
-            'changes': [],
-          },
-        }, {}),
-        isNull,
+        codexApprovalResult(method: kCodexCommandApproval, optionId: null),
+        {'decision': kCodexDecline},
       );
     });
 
-    test('every kind is parsed faithfully, add / update / delete alike', () {
-      final event =
-          parseCodexEvent({
-                'type': 'item.completed',
-                'item': {
-                  'id': 'f1',
-                  'type': 'file_change',
-                  'status': 'completed',
-                  'changes': [
-                    {'path': '/tmp/new.html', 'kind': 'add'},
-                    {'path': '/tmp/old.dart', 'kind': 'update'},
-                    {'path': '/tmp/gone.txt', 'kind': 'delete'},
-                  ],
-                },
-              }, {})
-              as CodexFileChangeEvent;
-      expect(event.changes.map((c) => c.kind), [
-        CodexFileChangeKind.add,
-        CodexFileChangeKind.update,
-        CodexFileChangeKind.delete,
-      ]);
+    test('a request this app has no answer for is not answered with a yes', () {
+      expect(
+        parseCodexApproval(
+          id: 3,
+          method: 'item/permissions/requestApproval',
+          params: const {},
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('codexAppServerArgs — a mistyped flag fails like a mute model', () {
+    test('the turn runs a stdio server carrying the grid overrides', () {
+      final args = codexAppServerArgs(config: const ['model="auto"']);
+      expect(args.first, 'app-server');
+      expect(args, contains('--stdio'));
+      expect(args, containsAllInOrder(['-c', 'model="auto"']));
     });
 
-    test('only created files are recorded — an edit or a delete has no honest '
-        'before to diff or undo', () {
-      const changes = [
-        (path: '/tmp/new.html', kind: CodexFileChangeKind.add),
-        (path: '/tmp/old.dart', kind: CodexFileChangeKind.update),
-        (path: '/tmp/gone.txt', kind: CodexFileChangeKind.delete),
-      ];
-      expect(codexAddedPaths(changes), ['/tmp/new.html']);
+    test('the sandbox is no longer nailed to the command line — it follows the '
+        "chat's mode now, per thread", () {
+      expect(
+        codexAppServerArgs(config: const []).join(' '),
+        isNot(contains('sandbox')),
+      );
+    });
+
+    test('a Codex too old to ask says so, in a sentence naming the fix — '
+        'falling back to the transport that could not ask would be the app '
+        'promising to ask and then not asking', () {
+      expect(
+        codexStartupFailure('error: unrecognized subcommand \'app-server\'', 2),
+        kCodexTooOld,
+      );
+      expect(
+        codexStartupFailure('panicked at foo.rs', 101),
+        'panicked at foo.rs',
+      );
+      expect(codexStartupFailure('', 1), contains('code 1'));
     });
   });
 
@@ -276,84 +334,6 @@ void main() {
     test('a banner without a version reads as unknown', () {
       expect(parseSemver('command not found'), isNull);
       expect(parseSemver(''), isNull);
-    });
-  });
-
-  group('codexExecArgs — the two subcommands take different flags', () {
-    test('a first turn runs in the folder it was given', () {
-      final args = codexExecArgs(workdir: '/tmp/work', config: const []);
-
-      expect(args.first, 'exec');
-      expect(args, isNot(contains('resume')));
-      expect(args, containsAllInOrder(['-C', '/tmp/work']));
-    });
-
-    test('a resumed turn passes no flag `exec resume` would reject — one '
-        'unknown flag kills the turn before the model is ever reached', () {
-      final args = codexExecArgs(
-        workdir: '/tmp/work',
-        config: const [],
-        resumeThreadId: 'abc',
-      );
-
-      expect(args, containsAllInOrder(['exec', 'resume']));
-      expect(args.last, 'abc');
-      expect(args, isNot(contains('--sandbox')));
-      expect(args, isNot(contains('-C')));
-      expect(args, isNot(contains('/tmp/work')));
-    });
-
-    test('both turns carry the sandbox mode, said the one way both subcommands '
-        'take — `--sandbox` kills `exec resume` at argv parsing', () {
-      for (final args in [
-        codexExecArgs(workdir: '/tmp/work', config: const []),
-        codexExecArgs(
-          workdir: '/tmp/work',
-          config: const [],
-          resumeThreadId: 'abc',
-        ),
-      ]) {
-        expect(args, isNot(contains('--sandbox')));
-        expect(
-          args,
-          containsAllInOrder(['-c', 'sandbox_mode="$kCodexSandboxMode"']),
-        );
-        expect(args, contains('--json'));
-      }
-    });
-
-    test('the grid the app picked rides on every turn, resumed ones too — a '
-        'resumed session does not restore the model it was recorded with, so '
-        'a turn without it answers as a model nobody chose', () {
-      final config = codexGridOverrides(
-        base: 'https://relay.example/relay/v1',
-        model: 'qwen3',
-      );
-
-      for (final args in [
-        codexExecArgs(workdir: '/tmp/work', config: config),
-        codexExecArgs(
-          workdir: '/tmp/work',
-          config: config,
-          resumeThreadId: 'abc',
-        ),
-      ]) {
-        for (final override in config) {
-          expect(args, containsAllInOrder(['-c', override]));
-        }
-        expect(args, contains('model="qwen3"'));
-      }
-    });
-
-    test("the user's own config is still loaded, because their MCP servers "
-        'live in it — dropping it would take every connector away from an '
-        'in-app turn without saying so', () {
-      final args = codexExecArgs(
-        workdir: '/tmp/work',
-        config: codexGridOverrides(base: 'https://relay', model: 'qwen3'),
-      );
-
-      expect(args, isNot(contains('--ignore-user-config')));
     });
   });
 
@@ -393,7 +373,7 @@ void main() {
     });
 
     test('the credential itself never reaches the command line', () {
-      final args = codexExecArgs(workdir: '/tmp/work', config: overrides);
+      final args = codexAppServerArgs(config: overrides);
 
       expect(args.join(' '), isNot(contains('secret-key')));
       expect(overrides.join(' '), isNot(contains('secret-key')));

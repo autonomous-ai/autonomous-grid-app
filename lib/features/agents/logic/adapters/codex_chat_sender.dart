@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../../infrastructure/cli/agent_resume_point.dart';
-import '../../../../infrastructure/cli/codex_exec_service.dart';
+import '../../../../infrastructure/cli/codex_agent_service.dart';
+import '../../../../infrastructure/cli/codex_app_server_service.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/logging/app_log.dart';
+import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../../shared/copy/setup_hints.dart';
 import '../../../network/logic/app_guide_snippets.dart';
@@ -20,21 +22,23 @@ import '../agent_prompt.dart';
 import '../agent_session_slots.dart';
 import '../agent_turn_log.dart';
 import '../agent_server_error.dart';
+import '../agent_permission_decision.dart';
+import '../agent_permissions.dart';
 import '../agent_providers.dart';
 import 'codex_tool.dart';
 
-/// The Codex exec seam, or null when Codex is absent.
-final codexExecServiceProvider = Provider<CodexExecService?>((ref) {
+/// The Codex seam, or null when Codex is absent.
+final codexServiceProvider = Provider<CodexService?>((ref) {
   final path = ref.watch(codexPathProvider);
-  return path == null ? null : CodexExecServiceImpl(path);
+  return path == null ? null : CodexAppServerService(path);
 });
 
-/// A [ChatSender] backed by Codex over `codex exec --json`.
+/// A [ChatSender] backed by Codex over `codex app-server`.
 ///
 /// Codex runs one turn per process and exits, so — unlike Hermes's persistent
 /// ACP session — continuity comes from **resuming the thread**: the first turn
 /// replays the history and learns Codex's `thread_id`, and each later turn sends
-/// only the new message with `codex exec resume <id>`, letting Codex hold the
+/// only the new message on a resumed thread, letting Codex hold the
 /// conversation context itself. Switching conversation, grid or model starts a
 /// fresh thread.
 ///
@@ -50,11 +54,15 @@ final codexExecServiceProvider = Provider<CodexExecService?>((ref) {
 /// Codex session on the machine. Their config is still *read*, so the MCP
 /// servers in it stay available to an in-app turn.
 ///
-/// It runs with **no sandbox** ([kCodexSandboxMode]): Codex changes files and
-/// runs commands on this computer, and — unlike Hermes over ACP — `codex exec`
-/// has no channel to ask first, so nothing here prompts the user. The approval
-/// picker in the composer governs Hermes only; it has nothing to hand Codex.
-/// TODO(BE): a per-action approval path for Codex would close that gap.
+/// **How much it may touch is the chat's own setting** — the approval picker in
+/// the composer reaches Codex now, through the thread's sandbox and approval
+/// policy ([codexApprovalPolicy]), and a command it can't run unattended stops
+/// and asks in the chat. Until 2026-08-18 there was no channel to ask on and
+/// every turn ran with full access to this machine whatever the picker said.
+///
+/// Codex still judges the trivial cases itself — a bare `echo` is run without
+/// anyone being asked — exactly as Hermes does, so copy must never promise that
+/// *every* command is shown first.
 final codexChatSenderProvider = Provider<ChatSender>((ref) {
   return CodexChatSender(ref);
 });
@@ -89,8 +97,6 @@ class CodexChatSender implements ChatSender {
     String? conversationId,
     String? instructions,
     bool planFirst = false,
-    // Codex has no permission channel at all — it never stops to ask, so
-    // there is nothing here to hold it to. See `agentSupportsApproval`.
     AgentApprovalMode? approval,
     AgentResumePoint? resume,
   }) async* {
@@ -98,7 +104,7 @@ class CodexChatSender implements ChatSender {
       yield const ChatSendFailure('The agent can only answer in text.');
       return;
     }
-    if (_ref.read(codexExecServiceProvider) == null) {
+    if (_ref.read(codexServiceProvider) == null) {
       yield ChatSendFailure(notSetUpToMessage('answer chats'));
       return;
     }
@@ -113,6 +119,15 @@ class CodexChatSender implements ChatSender {
     // turn's steps. See [AgentRuns.reset].
     final chat = conversationId ?? '';
     _ref.read(agentRunsProvider.notifier).reset(chat);
+
+    // This turn runs under the mode its *chat* was set to when Send was pressed.
+    // Plan mode has two shapes, as it does for every agent: the planning turn is
+    // forced read-only, and the execute turn that follows carries the plan out
+    // asking per action.
+    final chosen = approval ?? _ref.read(chatPrefsProvider).approval;
+    final mode = planFirst
+        ? AgentApprovalMode.readOnly
+        : (chosen == AgentApprovalMode.plan ? AgentApprovalMode.ask : chosen);
 
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final turn = _slots.planTurn(
@@ -135,6 +150,7 @@ class CodexChatSender implements ChatSender {
       // process's environment — nothing on disk is touched, so the user's
       // terminal `codex` keeps answering with whatever *they* pointed it at.
       config: codexGridOverrides(base: network.relayBaseUrl, model: model),
+      approval: mode,
       environment: {kCodexAppApiKeyEnv: network.relayApiKey},
       planFirst: planFirst,
       slot: turn.slot,
@@ -146,7 +162,7 @@ class CodexChatSender implements ChatSender {
   /// steps into the activity feed, and end with the finished reply.
   ///
   /// Driven by an explicit subscription (not `await for`) so Stop tears the turn
-  /// down there and then — cancelling the stream kills the `codex exec` process.
+  /// down there and then — cancelling the stream kills the server process.
   Stream<ChatSendUpdate> _runTurn({
     required String workdir,
     required String prompt,
@@ -157,6 +173,7 @@ class CodexChatSender implements ChatSender {
     required bool planFirst,
     required AgentSessionSlot slot,
     required String chat,
+    required AgentApprovalMode approval,
   }) {
     // The feed was reset up front in [send], before the grid setup — see
     // [AgentRuns.reset]; here we only take the notifier to append to. That reset
@@ -164,20 +181,16 @@ class CodexChatSender implements ChatSender {
     // Codex answer (Codex cites no sources of its own today).
     final runs = _ref.read(agentRunsProvider.notifier);
     final log = _ref.read(commandLogProvider.notifier);
-    // Same builder the service runs (see [codexExecArgs]) — the `-c` overrides
-    // are where a turn's grid and model actually live, and a wrong one fails
-    // exactly like a model that wouldn't answer, so they belong on screen.
+    // Same builder the service runs (see [codexAppServerArgs]) — the `-c`
+    // overrides are where a turn's grid and model actually live, and a wrong one
+    // fails exactly like a model that wouldn't answer, so they belong on screen.
     final logId = log.begin(
       CliCallKind.start,
-      'codex exec -m $model (agent)',
+      'codex app-server -m $model (agent)',
       detail: agentTurnDetail(
         args: [
           'codex',
-          ...codexExecArgs(
-            workdir: workdir,
-            config: config,
-            resumeThreadId: resumeThreadId,
-          ),
+          ...codexAppServerArgs(config: config),
         ],
         workdir: workdir,
         environment: environment,
@@ -185,12 +198,13 @@ class CodexChatSender implements ChatSender {
       ),
     );
 
-    final service = _ref.read(codexExecServiceProvider)!;
+    final service = _ref.read(codexServiceProvider)!;
     final run = service.run(
       workdir: workdir,
       prompt: prompt,
       config: config,
       environment: environment,
+      approval: approval,
       resumeThreadId: resumeThreadId,
     );
 
@@ -219,6 +233,17 @@ class CodexChatSender implements ChatSender {
           case CodexFileChangeEvent(:final changes):
             workedAtAll = true;
             _recordAddedFiles(chat, changes);
+          case CodexPermissionRequested(:final request):
+            decideAgentPermission(
+              ref: _ref,
+              agent: 'codex',
+              chat: chat,
+              request: request,
+              approval: approval,
+              // No key: Codex holds its own "for the rest of this thread" yes,
+              // so a second memory here would only be able to disagree with it.
+              answer: (optionId) => run.answerPermission(request.id, optionId),
+            );
           case CodexTurnCompleted():
             endedCleanly = true;
           case CodexMessageEvent(:final text):
@@ -232,7 +257,7 @@ class CodexChatSender implements ChatSender {
         }
       },
       onError: (Object error) {
-        failure = error is CodexExecException
+        failure = error is CodexException
             ? (error.retryable
                   ? "Couldn't start Codex on this computer. Try sending again."
                   : "Couldn't start Codex on this computer. ${error.message}")
@@ -242,6 +267,8 @@ class CodexChatSender implements ChatSender {
       onDone: () async {
         await run.done;
         settled = true;
+        // The turn is over: a card left pinned would answer nobody.
+        _ref.read(agentPermissionsProvider.notifier).clear(chat);
         final reply = answer.toString().trim();
         final plan = _ref.read(agentRunProvider(chat)).plan;
         // A turn that announced a plan and stopped before finishing it is worth

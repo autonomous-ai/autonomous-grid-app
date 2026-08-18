@@ -55,9 +55,10 @@ final piSessionDirProvider = Provider<Directory>(
 ///
 /// It runs with `--no-approve` ([kPiNoApproveFlag]), so the folder the chat
 /// opens in never gets to hand Pi its own extensions or settings. Pi still
-/// changes files and runs commands on this computer, and — like `codex exec` —
-/// has no channel to ask first, so nothing here prompts the user. TODO(BE): a
-/// per-action approval path for Pi would close that gap.
+/// changes files and runs commands on this computer and has no channel to ask
+/// first, so nothing here prompts the user. TODO(BE): Pi is now the **only**
+/// chat agent with that gap — Hermes, Claude Code and Codex all ask — so the
+/// approval picker means nothing on a Pi chat while appearing to.
 final piChatSenderProvider = Provider<ChatSender>((ref) {
   return PiChatSender(ref);
 });
@@ -82,7 +83,7 @@ class PiChatSender implements ChatSender {
     String? instructions,
     bool planFirst = false,
     // Pi has no permission channel at all — it never stops to ask, so there is
-    // nothing here to hold it to. See `agentSupportsApproval`.
+    // nothing here to hold it to.
     AgentApprovalMode? approval,
     // Pi resumes by `--session <id>`, but the app has never written one of its
     // ids down and nothing imports Pi sessions — so there is never a point to

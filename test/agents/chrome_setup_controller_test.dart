@@ -137,6 +137,7 @@ class _FakeExec implements ClaudeExecService {
       events: const Stream<ClaudeExecEvent>.empty(),
       done: Future<void>.value(),
       kill: () {},
+      answerPermission: (_, _) {},
     );
   }
 }
