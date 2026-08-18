@@ -4,6 +4,9 @@
 /// names a media type — since the transcript carries no structured attachments.
 library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 enum MediaKind { image, video, audio }
 
 sealed class MessageSegment {
@@ -176,4 +179,30 @@ String _trimTrailingPunctuation(String url) {
     end--;
   }
   return url.substring(0, end);
+}
+
+/// A base64 `data:image/…` URI, whose payload group holds the encoded bytes.
+final _imageDataUri = RegExp(
+  r'^data:image/[\w.+-]+;base64,(.+)$',
+  caseSensitive: false,
+  dotAll: true,
+);
+
+/// The raw bytes of a base64 `data:image/…` URI, or null when [url] is not one.
+///
+/// An agent that embeds a screenshot in its reply writes it as
+/// `data:image/png;base64,…` — the whole image inline, no address to fetch. The
+/// network image loader can only GET an `http(s)` URL, so it turns every such
+/// message into "Image failed to load"; the bytes are pulled out here and drawn
+/// from memory instead. Null for a network URL (which is loaded the usual way)
+/// and for a payload that isn't valid base64, so a malformed URI degrades to the
+/// same failure state rather than throwing mid-build.
+Uint8List? decodeImageDataUri(String url) {
+  final match = _imageDataUri.firstMatch(url);
+  if (match == null) return null;
+  try {
+    return base64Decode(match.group(1)!);
+  } on FormatException {
+    return null;
+  }
 }
