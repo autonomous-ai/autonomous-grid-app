@@ -1,4 +1,5 @@
 import 'agent_event.dart';
+import 'model_control_tokens.dart';
 import 'codex_agent_service.dart';
 
 /// Turns the `codex app-server` protocol into the shapes the chat already
@@ -66,8 +67,9 @@ CodexEvent? parseCodexAppServerEvent({
 }
 
 /// The answer so far: every message item's text, in the order they arrived.
-String codexJoinedAnswer(Map<String, String> messages) =>
-    messages.values.where((m) => m.trim().isNotEmpty).join('\n\n');
+String codexJoinedAnswer(Map<String, String> messages) => stripControlTokens(
+  messages.values.where((m) => m.trim().isNotEmpty).join('\n\n'),
+);
 
 /// One `ThreadItem`, whatever stage of its life it is at.
 CodexEvent? parseCodexAppServerItem(

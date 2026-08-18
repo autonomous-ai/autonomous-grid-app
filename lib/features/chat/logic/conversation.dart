@@ -1,4 +1,5 @@
 import 'turn_model_share.dart';
+import '../../../infrastructure/cli/model_control_tokens.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import 'commands/chat_compaction.dart';
@@ -361,11 +362,15 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
   final rawSources = json['sources'];
   final rawPlan = json['plan'];
   final rawParts = json['parts'];
+  final assistant = json['role'] == ChatRole.assistant.name;
+  final text = json['text'] is String ? json['text'] as String : '';
   return ChatMessage(
-    role: json['role'] == ChatRole.assistant.name
-        ? ChatRole.assistant
-        : ChatRole.user,
-    text: json['text'] is String ? json['text'] as String : '',
+    role: assistant ? ChatRole.assistant : ChatRole.user,
+    // A reply saved before the transports learned to cut can carry the model's
+    // chat-template markers, and everything the model invented after them (see
+    // [stripControlTokens]). The user's own message is never touched: those
+    // characters are theirs to have typed.
+    text: assistant ? stripControlTokens(text) : text,
     media: [
       if (rawMedia is List)
         for (final m in rawMedia)

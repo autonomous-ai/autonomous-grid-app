@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'agent_event.dart';
 import 'agent_question.dart';
 import 'claude_exec_event.dart';
+import 'model_control_tokens.dart';
 
 /// The tools Claude Code uses to change a file. Only these produce a
 /// [ClaudeFileWriteStarted] / [ClaudeFileWriteFinished] pair, so the chat offers
@@ -349,10 +350,14 @@ class ClaudeStreamParser {
 
   /// The answer as it stands: every finished block, plus whatever of the current
   /// one has arrived.
-  String _answer() => [
-    ..._completed,
-    if (_partial.isNotEmpty) _partial.toString(),
-  ].join('\n\n');
+  /// Everything the agent has said this turn, as one passage.
+  ///
+  /// Cut at a chat-template marker if one arrived: a model served over the grid
+  /// can overrun its stop token, and what comes after is not the agent's — see
+  /// [stripControlTokens].
+  String _answer() => stripControlTokens(
+    [..._completed, if (_partial.isNotEmpty) _partial.toString()].join('\n\n'),
+  );
 
   /// The answer up to the last **finished** block — no half-written sentence.
   ///
@@ -361,7 +366,7 @@ class ClaudeStreamParser {
   /// sentence still being typed (a sub-agent's, most often), and cutting there
   /// splits the agent's own words mid-syllable — "…và chạ" above the step,
   /// "y vài ph" below it.
-  String _settled() => _completed.join('\n\n');
+  String _settled() => stripControlTokens(_completed.join('\n\n'));
 }
 
 /// How full the model's context was for one request, from that request's
