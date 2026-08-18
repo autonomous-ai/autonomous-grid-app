@@ -357,6 +357,11 @@ mixin _ChatSend on _ChatSessions {
     required Completer<void> done,
   }) {
     final id = conversation.id;
+    // Anything the assistant was still waiting to hear is overtaken by this: the
+    // question asked what to do next, and a turn going out *is* what to do next.
+    // Left standing, the card would offer to answer a decision the conversation
+    // has already made.
+    ref.read(agentQuestionsProvider.notifier).clear(id);
     // Time the turn from here, not from `send`: a turn can wait behind a queued
     // one, and "Working now" would otherwise report the wait as work.
     state = state.withTurnStarted(id, DateTime.now());

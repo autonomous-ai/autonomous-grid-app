@@ -1,12 +1,32 @@
 import 'dart:convert';
 
 import 'agent_event.dart';
+import 'agent_question.dart';
 import 'claude_exec_event.dart';
 
 /// The tools Claude Code uses to change a file. Only these produce a
 /// [ClaudeFileWriteStarted] / [ClaudeFileWriteFinished] pair, so the chat offers
 /// to open what the agent actually wrote rather than every path it merely read.
 const Set<String> kClaudeFileWriteTools = {'Write', 'Edit', 'NotebookEdit'};
+
+/// Tools whose *result* is the CLI coaching the model, not telling the user
+/// anything.
+///
+/// `EnterPlanMode` answers with a page of instructions addressed to the
+/// assistant — "You should now focus on exploring the codebase… DO NOT write or
+/// edit any files yet" — and `ExitPlanMode` with the sentence that releases it.
+/// Both landed in the transcript verbatim, which read as the app telling the
+/// user what to do. The row still shows (the agent did switch modes), the
+/// payload behind it doesn't.
+const Set<String> kClaudeCoachingTools = {'EnterPlanMode', 'ExitPlanMode'};
+
+/// The plan-mode tools in the user's words. Every other tool row is titled by
+/// what it acted on ([claudeToolLabel]); these two act on nothing, so without
+/// this they show the CLI's own identifier and nothing else.
+const Map<String, String> kClaudePhrasedTools = {
+  'EnterPlanMode': 'Planning before changing anything',
+  'ExitPlanMode': 'Finished the plan',
+};
 
 /// Turns the JSONL of `claude -p --output-format stream-json` into the shapes
 /// the chat already renders.
@@ -193,6 +213,15 @@ class ClaudeStreamParser {
       return [ClaudePlanEvent(parseAgentPlan(input['todos']))];
     }
 
+    // Neither is a step the user watches happen: this one is a question, and it
+    // belongs where they can answer it, not folded into a row. Falls through to
+    // an ordinary row when the call carries nothing answerable, so a malformed
+    // question is still visible rather than swallowed.
+    if (name == 'AskUserQuestion') {
+      final questions = parseAgentQuestions(input['questions']);
+      if (questions.isNotEmpty) return [ClaudeQuestionsEvent(questions)];
+    }
+
     final activity = AgentActivity(
       id: id,
       kind: claudeToolKind(name),
@@ -239,7 +268,9 @@ class ClaudeStreamParser {
             status: failed
                 ? AgentActivityStatus.failed
                 : AgentActivityStatus.done,
-            result: claudeToolResult(block['content']),
+            result: kClaudeCoachingTools.contains(call.tool)
+                ? null
+                : claudeToolResult(block['content']),
           ),
         ),
       );
@@ -380,6 +411,13 @@ String? claudeToolRequest(String name, Map<String, dynamic> input) {
   if (name == 'Bash' && command is String && command.trim().isNotEmpty) {
     return clipToolPayload(command);
   }
+  // The plan itself, as the markdown the model wrote — the one payload here a
+  // user reads rather than inspects, and JSON quoting turns it into one long
+  // line of `\n`.
+  final plan = input['plan'];
+  if (name == 'ExitPlanMode' && plan is String && plan.trim().isNotEmpty) {
+    return clipToolPayload(plan.trim());
+  }
   try {
     return clipToolPayload(const JsonEncoder.withIndent('  ').convert(input));
   } on JsonUnsupportedObjectError {
@@ -418,6 +456,7 @@ String? claudeToolResult(Object? content) {
 /// eight times says nothing; the commands do.
 String claudeToolLabel(String name, Map<String, dynamic> input) {
   if (isBrowserTool(name)) return browserToolLabel(name, input);
+  if (kClaudePhrasedTools[name] case final phrase?) return phrase;
   final detail = switch (name) {
     'Bash' => input['command'],
     'WebSearch' => input['query'],

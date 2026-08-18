@@ -14,6 +14,7 @@ import '../../../infrastructure/platform/window_focus.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agents/logic/agent_changes.dart';
+import '../../agents/logic/agent_questions.dart';
 import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/agent_session_title.dart';
@@ -716,6 +717,7 @@ class ChatSessionsController extends _ChatSessions
     // conversation the user deleted, and its live feed with them.
     ref.read(agentChangesProvider.notifier).forget(id);
     ref.read(agentRunsProvider.notifier).forget(id);
+    ref.read(agentQuestionsProvider.notifier).clear(id);
     final remaining = [
       for (final c in state.conversations)
         if (c.id != id) c,
@@ -768,11 +770,13 @@ class ChatSessionsController extends _ChatSessions
     if (doomed.isEmpty) return;
     final changes = ref.read(agentChangesProvider.notifier);
     final runs = ref.read(agentRunsProvider.notifier);
+    final questions = ref.read(agentQuestionsProvider.notifier);
     for (final id in doomed) {
       _cancel(id);
       _store.delete(id);
       changes.forget(id);
       runs.forget(id);
+      questions.clear(id);
       _deletedWhileLoading?.add(id);
     }
     final gone = doomed.toSet();
@@ -881,6 +885,30 @@ class ChatSessionsController extends _ChatSessions
       message: 'The plan looks good — go ahead and carry it out.',
       planFirst: false,
       // The agent that wrote the plan is the only one that has it.
+      continuing: true,
+    );
+  }
+
+  /// The user answered the assistant's questions from the card over the
+  /// composer.
+  ///
+  /// An ordinary message, because that is all it can be: the `AskUserQuestion`
+  /// call that asked was answered by the CLI itself the moment it was made (see
+  /// [ClaudeQuestionsEvent]), so there is no request left to reply to — only the
+  /// next thing to say. [continuing] keeps it with the agent that asked, and the
+  /// card is cleared first so a queued answer doesn't leave the question sitting
+  /// there as though nobody had answered it.
+  Future<void> answerQuestions(String message) {
+    final network = ref.read(selectedNetworkProvider);
+    final active = state.active;
+    if (network == null || active == null || message.trim().isEmpty) {
+      return Future.value();
+    }
+    ref.read(agentQuestionsProvider.notifier).clear(active.id);
+    return send(
+      network: network,
+      model: active.model,
+      message: message,
       continuing: true,
     );
   }

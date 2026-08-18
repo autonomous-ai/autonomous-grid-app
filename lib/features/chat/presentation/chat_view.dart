@@ -13,7 +13,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
-import '../../agents/logic/agent_changes.dart';
+import '../../agents/logic/agent_chat_scope.dart';
 import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/active_chat_agent.dart';
@@ -52,6 +52,7 @@ import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
 import 'queued_follow_ups.dart';
 import 'agent_handover_bar.dart';
+import 'agent_questions_card.dart';
 import 'file_mention_menu.dart';
 import 'chat_composer.dart';
 import 'chat_header.dart';
@@ -782,10 +783,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // that asked for them, and they're waiting there on the way back. Deferred
     // because writing a provider during build would throw, and only when the
     // answer moved — this build runs on every keystroke and streamed token.
-    if (ref.read(agentChangesScopeProvider) != activeId) {
+    if (ref.read(agentChatScopeProvider) != activeId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
-        ref.read(agentChangesScopeProvider.notifier).show(activeId);
+        ref.read(agentChatScopeProvider.notifier).show(activeId);
       });
     }
 
@@ -1042,6 +1043,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               const AgentHandoverBar(),
+                              // Above the plan bar: a question the assistant
+                              // asked is the one notice here that is *about*
+                              // what to type next, so it sits closest to where
+                              // the answer would otherwise be typed.
+                              const AgentQuestionsCard(),
                               const PlanApproveBar(),
                               const OutOfStepsBar(),
                               // `AgentChangesBar` used to sit here. Hidden on
