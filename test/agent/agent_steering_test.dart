@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/features/agents/logic/agent_steering.dart';
 import 'package:grid_app/infrastructure/cli/codex_app_server_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_steer.dart';
@@ -23,26 +24,80 @@ class _RecordingLog implements AppLog {
 
 void main() {
   group('what the user said mid-turn, in the turn', () {
-    test('is filed after what the agent had written by then, so it sits where '
-        'it was said and not under the whole answer', () {
+    test('typed mid-sentence, it waits for the seam instead of cutting the '
+        "agent's paragraph in half", () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       final runs = container.read(agentRunsProvider.notifier);
       runs.reset('chat-1');
 
-      // The agent has written its opening line; the user reads it and cuts in.
+      // The agent is halfway through a sentence when the user cuts in.
+      runs.interject(
+        'chat-1',
+        'just the main file',
+        answer: 'Reading the repo (config,',
+      );
+      expect(
+        container.read(agentRunProvider('chat-1')).parts,
+        isEmpty,
+        reason: 'nothing is placed while the sentence is still being written',
+      );
+
+      // It finishes the sentence and reaches for a tool: that is the seam, and
+      // the message lands after the passage rather than inside it.
+      runs.upsertStep(
+        'chat-1',
+        const AgentActivity(
+          id: 'step-1',
+          kind: AgentActivityKind.command,
+          label: 'ls',
+          status: AgentActivityStatus.running,
+        ),
+        answer: 'Reading the repo (config, main).',
+      );
+
+      expect(container.read(agentRunProvider('chat-1')).parts.map(_describe), [
+        'text:Reading the repo (config, main).',
+        'said:just the main file',
+        'step:ls',
+      ]);
+    });
+
+    test('typed while the agent is between blocks, it goes in at once — there '
+        'is nothing to break', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final runs = container.read(agentRunsProvider.notifier);
+      runs.reset('chat-1');
+      runs.say('chat-1', 'Reading the repo.');
+
       runs.interject(
         'chat-1',
         'just the main file',
         answer: 'Reading the repo.',
       );
-      // Then it carries on, and the rest of the answer lands after the turn.
-      runs.say('chat-1', 'Reading the repo.\n\nOnly the main file, then.');
 
       expect(container.read(agentRunProvider('chat-1')).parts.map(_describe), [
         'text:Reading the repo.',
         'said:just the main file',
-        'text:Only the main file, then.',
+      ]);
+    });
+
+    test('a turn that ends while one is still waiting places it rather than '
+        'losing it', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final runs = container.read(agentRunsProvider.notifier);
+      runs.reset('chat-1');
+      runs.interject('chat-1', 'and stop there', answer: 'Working on it,');
+      expect(container.read(agentRunProvider('chat-1')).spokenInto, isTrue);
+
+      // What the landing does — see `_timelineOf`.
+      runs.say('chat-1', 'Working on it, and stopping there.');
+
+      expect(container.read(agentRunProvider('chat-1')).parts.map(_describe), [
+        'text:Working on it, and stopping there.',
+        'said:and stop there',
       ]);
     });
 

@@ -101,8 +101,12 @@ class AgentActivityFeed extends ConsumerWidget {
     // in the loop above and so stays nullable to the analyzer.
     final active = running;
     final sections = <Widget>[
-      if (run.parts.isNotEmpty || answer != null)
-        AgentTurnView(parts: run.parts, trailing: answer),
+      if (run.parts.isNotEmpty || answer != null || run.pendingSaid.isNotEmpty)
+        AgentTurnView(
+          parts: run.parts,
+          trailing: answer,
+          pending: run.pendingSaid,
+        ),
       if (showSteps && plan.isNotEmpty) MessagePlan(entries: plan),
       if (sources.isNotEmpty) MessageSources(sources: sources),
     ];

@@ -27,7 +27,12 @@ import '../logic/agent_step_label.dart';
 /// the live feed passes the run's parts as they arrive, the finished bubble
 /// passes the same list off the saved message.
 class AgentTurnView extends ConsumerStatefulWidget {
-  const AgentTurnView({super.key, required this.parts, this.trailing});
+  const AgentTurnView({
+    super.key,
+    required this.parts,
+    this.trailing,
+    this.pending = const [],
+  });
 
   /// The turn so far, oldest first.
   final List<TurnPart> parts;
@@ -35,6 +40,15 @@ class AgentTurnView extends ConsumerStatefulWidget {
   /// Drawn under the last part — the passage still streaming in, on a turn that
   /// hasn't landed yet. Null once it has.
   final Widget? trailing;
+
+  /// What the user has said into this turn that hasn't been placed yet — see
+  /// [AgentRun.pendingSaid]. Drawn under [trailing], which is where it will
+  /// settle anyway: the seam it is waiting for closes the passage above it, so
+  /// the row doesn't move when it lands, the text simply carries on below.
+  ///
+  /// Without this the message would be invisible from Send until the agent's
+  /// next tool call — the composer clears, and nothing on screen says it went.
+  final List<String> pending;
 
   @override
   ConsumerState<AgentTurnView> createState() => _AgentTurnViewState();
@@ -98,7 +112,11 @@ class _AgentTurnViewState extends ConsumerState<AgentTurnView> {
                 : _StepColumn(steps: steps, detail: detail),
       ];
     }
-    final blocks = [..._blocks!, ?widget.trailing];
+    final blocks = [
+      ..._blocks!,
+      ?widget.trailing,
+      for (final said in widget.pending) _SaidRow(text: said),
+    ];
     return SelectionArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
