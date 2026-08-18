@@ -9,6 +9,7 @@ ChatLoop _loop({
   int iterations = 0,
   DateTime? nextAt,
   String? pacing,
+  bool continuous = false,
 }) => ChatLoop(
   prompt: 'check the deploy',
   interval: interval,
@@ -17,6 +18,7 @@ ChatLoop _loop({
   status: status,
   iterations: iterations,
   pacing: pacing,
+  continuous: continuous,
 );
 
 void main() {
@@ -54,6 +56,46 @@ void main() {
         'say what is missing instead of inventing an errand', () {
       expect(parseLoopArgument('5m').prompt, isEmpty);
       expect(parseLoopArgument('').prompt, isEmpty);
+    });
+
+    test('a leading "continuous" means back-to-back, and the rest is the task '
+        '— for "keep building this project, never stop"', () {
+      final asked = parseLoopArgument('continuous keep improving the project');
+      expect(asked.continuous, isTrue);
+      expect(asked.interval, isNull);
+      expect(asked.prompt, 'keep improving the project');
+    });
+
+    test('a fixed or self-paced loop is not continuous', () {
+      expect(parseLoopArgument('5m watch it').continuous, isFalse);
+      expect(parseLoopArgument('watch it').continuous, isFalse);
+    });
+  });
+
+  group('continuous — keep working, never stop', () {
+    test('a continuous loop is neither self-paced nor fixed', () {
+      final loop = _loop(interval: null, continuous: true);
+      expect(loop.isContinuous, isTrue);
+      expect(loop.isSelfPaced, isFalse);
+    });
+
+    test('it survives a round-trip through JSON', () {
+      final read = ChatLoop.fromJson(
+        _loop(interval: null, continuous: true, iterations: 4).toJson(),
+      );
+      expect(read?.isContinuous, isTrue);
+      expect(read?.iterations, 4);
+    });
+
+    test('the bar says it works continuously until stopped, with no countdown', () {
+      final label = loopBarLabel(
+        _loop(interval: null, continuous: true, iterations: 7),
+        _start,
+      );
+      expect(label, contains('Working continuously'));
+      expect(label, contains('7 so far'));
+      expect(label, contains('until you stop it'));
+      expect(label, isNot(contains('next in')));
     });
   });
 

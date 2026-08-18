@@ -70,6 +70,13 @@ final chatSessionsProvider =
 /// holding a stalled turn for the full hour.
 final loopTurnStallProvider = Provider<Duration>((ref) => kLoopTurnStall);
 
+/// The gap a continuous loop leaves between turns. A seam over
+/// [kContinuousLoopGap] so a test can drive back-to-back turns without the
+/// three-second settle in between.
+final loopContinuousGapProvider = Provider<Duration>(
+  (ref) => kContinuousLoopGap,
+);
+
 /// Everything needed to repeat a failed turn without asking the user to rebuild
 /// its text, pictures, documents, or captured context in the composer.
 class _RetryableTurn {
