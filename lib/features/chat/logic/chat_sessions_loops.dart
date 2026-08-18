@@ -31,6 +31,7 @@ mixin _ChatLoops on _ChatSessions {
       ChatLoop(
         prompt: request.prompt,
         interval: request.interval,
+        continuous: request.continuous,
         startedAt: now,
         // The first run goes out now rather than one interval from now. A loop
         // that sits silent for two hours after you set it reads as broken, and
@@ -69,22 +70,27 @@ mixin _ChatLoops on _ChatSessions {
   Future<void> _runLoopIteration(String id) async {
     final chat = _find(id);
     final loop = chat?.loop;
-    final network = ref.read(selectedNetworkProvider);
     if (chat == null || loop == null || !loop.isRunning || _disposed) return;
-    if (network == null) {
-      ref
-          .read(appLogProvider)
-          .warn('chat', 'loop in $id stopped: no grid is selected');
-      _saveLoop(id, loop.copyWith(status: LoopStatus.stopped));
-      return;
-    }
-    // Seven days is the ceiling, checked before spending a turn rather than
-    // after — an expired loop must not get one last free run.
+    // Seven days is the ceiling, checked first — before the grid check below can
+    // send an expired loop into an endless retry, and before spending a turn, so
+    // an expired loop never gets one last free run.
     if (loop.hasExpired(DateTime.now())) {
       ref
           .read(appLogProvider)
           .info('chat', 'loop in $id expired after 7 days: ${loop.prompt}');
       _saveLoop(id, loop.copyWith(status: LoopStatus.expired));
+      return;
+    }
+    final network = ref.read(selectedNetworkProvider);
+    if (network == null) {
+      // A grid that blinked out mid-loop is not a reason to end an all-day run:
+      // a background sync empties the session for a moment and `build()` returns
+      // null between reads. Skip this beat and try again shortly rather than
+      // stopping for good — this was the silent "loop died after 15-30m".
+      ref
+          .read(appLogProvider)
+          .warn('chat', 'loop in $id: no grid selected, retrying in 1m');
+      _armLoopTimer(id, kMinLoopInterval);
       return;
     }
     // A turn is already running in this chat: skip this beat rather than queue
@@ -164,14 +170,21 @@ mixin _ChatLoops on _ChatSessions {
     final loop = chat?.loop;
     if (chat == null || loop == null || !loop.isRunning) return;
 
+    // Continuous: the next turn goes out the moment this one ended — a short
+    // settle, not a wait, and no pacer to ask. Fixed uses the user's number; a
+    // self-paced loop asks the assistant how long to wait.
     final fixed = loop.interval;
-    final paced = fixed == null ? await _askThePace(id, loop) : null;
+    final paced = (fixed == null && !loop.isContinuous)
+        ? await _askThePace(id, loop)
+        : null;
     if (_disposed) return;
     // Re-read: the user may have stopped it while the pace was being chosen.
     final current = _find(id)?.loop;
     if (current == null || !current.isRunning) return;
 
-    final delay = fixed ?? paced?.delay ?? const Duration(minutes: 10);
+    final delay = loop.isContinuous
+        ? ref.read(loopContinuousGapProvider)
+        : (fixed ?? paced?.delay ?? const Duration(minutes: 10));
     final now = DateTime.now();
     _saveLoop(
       id,

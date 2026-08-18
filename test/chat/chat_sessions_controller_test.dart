@@ -8,6 +8,7 @@ import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
 import 'package:grid_app/features/chat/logic/chat_approval.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_command.dart';
+import 'package:grid_app/features/chat/logic/commands/chat_loop.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_compaction.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_goal.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
@@ -279,6 +280,20 @@ class _FixedNetwork extends SelectedNetwork {
   NetworkCredential? build() => _credential();
 }
 
+/// A grid that can be dropped mid-test — modelling a background sync emptying
+/// the session for a moment, the blip that used to kill a running loop for good.
+class _FlippableNetwork extends SelectedNetwork {
+  bool dropped = false;
+
+  @override
+  NetworkCredential? build() => dropped ? null : _credential();
+
+  void drop() {
+    dropped = true;
+    ref.invalidateSelf();
+  }
+}
+
 /// The agent's own name for a session, handed back the moment it's asked for —
 /// unless [held] is set, in which case it waits for [release].
 ///
@@ -355,6 +370,8 @@ _harness(
   GridOverview? overview,
   ChatTransport? grid,
   Duration? loopTurnStall,
+  Duration? loopContinuousGap,
+  SelectedNetwork Function()? selectedNetwork,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
@@ -368,6 +385,9 @@ _harness(
       // — and a working one is left alone — without waiting the full hour.
       if (loopTurnStall != null)
         loopTurnStallProvider.overrideWithValue(loopTurnStall),
+      // Shrink the continuous gap so a test can drive back-to-back turns.
+      if (loopContinuousGap != null)
+        loopContinuousGapProvider.overrideWithValue(loopContinuousGap),
       // [answering] stands in for whoever replies, for a test that cares about
       // the reply arriving over time rather than about who sent it.
       chatSenderProvider.overrideWithValue(answering ?? sender),
@@ -403,8 +423,9 @@ _harness(
       projectsStoreProvider.overrideWithValue(
         ProjectsStore(file: File('${dir.path}/projects.json')),
       ),
-      // Approving a plan reads the current grid; keep it off the real home.
-      selectedNetworkProvider.overrideWith(_FixedNetwork.new),
+      // Approving a plan reads the current grid; keep it off the real home. A
+      // test can pass its own to model the grid blinking out mid-loop.
+      selectedNetworkProvider.overrideWith(selectedNetwork ?? _FixedNetwork.new),
       // What answers the one-shot calls — the goal's evaluator, `/compact`'s
       // summarizer. Absent unless a test cares, so nothing reaches a network.
       if (grid != null) ...[
@@ -2791,6 +2812,82 @@ void main() {
       );
       expect(chat.loop?.iterations, 1, reason: 'the next beat was scheduled');
       expect(chat.loop?.isRunning, isTrue);
+
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    test('a continuous loop runs turns back-to-back — the "keep building this '
+        'project, never stop" a full-day run needs', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        loopContinuousGap: const Duration(milliseconds: 20),
+        updates: const [
+          ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'did a bit'),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await settle();
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: 'continuous keep improving the project',
+      ));
+
+      // Let several back-to-back iterations run (a 20ms settle between each).
+      ChatLoop? loop;
+      for (var i = 0; i < 60; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        loop = h.container.read(chatSessionsProvider).conversations.single.loop;
+        if ((loop?.iterations ?? 0) >= 3) break;
+      }
+
+      expect(loop?.isContinuous, isTrue);
+      expect(
+        loop?.iterations,
+        greaterThanOrEqualTo(3),
+        reason: 'turns fire back-to-back, not on a clock',
+      );
+      expect(loop?.isRunning, isTrue, reason: 'it never stops on its own');
+
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    test('a grid that blinks out mid-loop does not kill it — a momentary null '
+        'grid retries instead of stopping for good', () async {
+      final net = _FlippableNetwork();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        loopContinuousGap: const Duration(milliseconds: 20),
+        selectedNetwork: () => net,
+        updates: const [
+          ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await settle();
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: 'continuous keep improving',
+      ));
+
+      // Let it run, then drop the grid the way a background sync would.
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      net.drop();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      final loop =
+          h.container.read(chatSessionsProvider).conversations.single.loop;
+      expect(
+        loop?.isRunning,
+        isTrue,
+        reason: 'a momentary null grid retries; it does not stop the loop',
+      );
 
       await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
     });
