@@ -62,6 +62,24 @@ import 'panel_firmware_test.dart' show espAppImage;
 Map<String, Object?> _lastOf(_FakeTransport transport, String type) =>
     transport.replies.lastWhere((r) => r['t'] == type);
 
+/// Pump until [ready] holds, then return; fail saying what never happened.
+///
+/// Counting pumps does not work for anything downstream of voice, and the reason
+/// is not asynchrony in general — it is a real FILE. A capture is written to a
+/// temp WAV and handed to the STT seam **by path**, the way every file-passing
+/// command in this app works, so how many event-loop turns a voice turn needs is
+/// a property of the machine's disk that day. `pumpEventQueue(times: 40)` was
+/// enough on an idle laptop and not under `--concurrency=12`, where it surfaced
+/// as "Null check operator used on a null value" and "Bad state: No element" —
+/// both pointing at the feature rather than at the wait. Seen on 2026-08-18.
+Future<void> _until(bool Function() ready, {required String what}) async {
+  for (var attempt = 0; attempt < 400; attempt++) {
+    if (ready()) return;
+    await pumpEventQueue(times: 5);
+  }
+  fail('timed out waiting for $what');
+}
+
 /// Everything the app said, minus the heartbeat.
 ///
 /// `replies.single` means "the panel was told this and nothing else", which is a
@@ -1507,6 +1525,10 @@ void main() {
       );
       await pumpEventQueue();
 
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       final welcome = _beyondTheHeartbeat(transport).single;
       expect(welcome['t'], 'welcome');
       // The Settings page's Voice row reports this rather than choosing it, so it
@@ -1609,6 +1631,10 @@ void main() {
       transport.deliver('{"t":"hello","fw":"9.0.0","proto":99,"mac":""}');
       await pumpEventQueue();
 
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       expect(_beyondTheHeartbeat(transport).single['t'], 'welcome');
     });
 
@@ -1645,6 +1671,10 @@ void main() {
         transport.deliver('{"t":"turn.send","projectId":"p-1","text":"hi"}');
         await pumpEventQueue();
 
+        await _until(
+          () => _beyondTheHeartbeat(transport).isNotEmpty,
+          what: 'the panel to be told anything at all',
+        );
         final reply = _beyondTheHeartbeat(transport).single;
         expect(reply['t'], 'turn.error');
         expect(reply['projectId'], 'p-1');
@@ -1666,6 +1696,10 @@ void main() {
       );
       await pumpEventQueue();
 
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       final reply = _beyondTheHeartbeat(transport).single;
       expect(reply['t'], 'turn.error');
       expect(reply['message'], contains('Open Grid'));
@@ -1689,6 +1723,10 @@ void main() {
       );
       await pumpEventQueue();
 
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       final reply = _beyondTheHeartbeat(transport).single;
       expect(reply['t'], 'turn.error');
       expect(reply['message'], contains('model'));
@@ -1713,10 +1751,14 @@ void main() {
         '{"t":"turn.send","projectId":"${project.id}",'
         '"text":"run the tests"}',
       );
-      await pumpEventQueue();
+      await pumpEventQueue(times: 40);
 
       // A project nobody has talked in yet gets a chat of its own, opened in
       // the folder the agent then works in.
+      await _until(
+        () => agent.history != null,
+        what: 'the turn to reach the agent',
+      );
       expect(agent.history!.last.text, 'run the tests');
       expect(agent.workdir, project.path);
       expect(agent.model, 'qwen');
@@ -2157,6 +2199,10 @@ void main() {
         transport.deliver('{"t":"hello","fw":"0.1.0","proto":1,"mac":"AA"}');
         await pumpEventQueue();
 
+        await _until(
+          () => _beyondTheHeartbeat(transport).isNotEmpty,
+          what: 'the panel to be told anything at all',
+        );
         expect(_beyondTheHeartbeat(transport).single['t'], 'welcome');
       },
     );
@@ -2202,6 +2248,10 @@ void main() {
         transport.deliver('{"t":"voice.end"}');
         await pumpEventQueue();
 
+        await _until(
+          () => transport.replies.any((r) => r['t'] == 'voice.transcript'),
+          what: 'the transcript to reach the panel',
+        );
         final transcript = transport.replies.firstWhere(
           (r) => r['t'] == 'voice.transcript',
         );
@@ -2283,8 +2333,12 @@ void main() {
         );
         transport.deliverAudio(pcm);
         transport.deliver('{"t":"voice.end"}');
-        await pumpEventQueue();
+        await pumpEventQueue(times: 40);
 
+      await _until(
+        () => agent.history != null,
+        what: 'the transcript to reach the agent',
+      );
         expect(agent.history!.last.text, 'ship it');
       },
     );
@@ -2341,9 +2395,17 @@ void main() {
 
       // No model is asked and nobody is: one candidate cannot be the wrong one,
       // and a confirmation here is a tap that answers a question with one option.
+      await _until(
+        () => transport.replies.any((r) => r['t'] == 'voice.transcript'),
+        what: 'the transcript to reach the panel',
+      );
       final transcript = _lastOf(transport, 'voice.transcript');
       expect(transcript['needsConfirm'], false);
       expect(transcript['projectId'], project.id);
+      await _until(
+        () => agent.history != null,
+        what: 'the transcript to reach the agent',
+      );
       expect(agent.history!.last.text, 'deploy it');
     });
 
@@ -2373,6 +2435,10 @@ void main() {
         await pumpEventQueue();
         await pumpEventQueue();
 
+        await _until(
+          () => transport.replies.any((r) => r['t'] == 'voice.transcript'),
+          what: 'the transcript to reach the panel',
+        );
         final transcript = _lastOf(transport, 'voice.transcript');
         expect(transcript['needsConfirm'], true);
         expect(transcript['projectId'], api.id);
@@ -2385,7 +2451,7 @@ void main() {
           '{"t":"voice.confirm","routeId":"${transcript['routeId']}",'
           '"projectId":"${other.id}"}',
         );
-        await pumpEventQueue();
+        await pumpEventQueue(times: 40);
 
         expect(agent.history!.last.text, 'deploy it');
         expect(agent.workdir, other.path);
@@ -2403,6 +2469,10 @@ void main() {
       );
       await pumpEventQueue();
 
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       expect(_beyondTheHeartbeat(transport).single['t'], 'voice.error');
     });
 
@@ -2428,6 +2498,10 @@ void main() {
       transport.deliver('{"t":"voice.end"}');
       await pumpEventQueue();
 
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       final reply = _beyondTheHeartbeat(transport).single;
       expect(reply['t'], 'voice.error');
       expect(reply['message'], contains('grid login'));
@@ -2444,7 +2518,15 @@ void main() {
       transport.deliver('{"t":"voice.end"}');
       await pumpEventQueue();
 
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       expect(_beyondTheHeartbeat(transport).single['t'], 'voice.error');
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       expect(_beyondTheHeartbeat(transport).single['message'], contains('microphone'));
       expect(stt.clip, isNull);
     });
@@ -2460,6 +2542,10 @@ void main() {
       transport.deliver('{"t":"voice.end"}');
       await pumpEventQueue();
 
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
       expect(_beyondTheHeartbeat(transport).single['message'], contains('grid tool'));
     });
 
@@ -2492,6 +2578,10 @@ void main() {
         transport.deliver('{"t":"hello","fw":"v0.4.1","proto":1,"mac":"AA"}');
         await pumpEventQueue();
 
+        await _until(
+          () => _beyondTheHeartbeat(transport).isNotEmpty,
+          what: 'the panel to be told anything at all',
+        );
         expect(_beyondTheHeartbeat(transport).single['t'], 'welcome');
       },
     );
