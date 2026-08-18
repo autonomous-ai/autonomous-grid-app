@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
+import 'package:grid_app/infrastructure/cli/agent_question.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_event.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_service.dart';
 import 'package:grid_app/infrastructure/cli/claude_permission.dart';
@@ -267,6 +268,197 @@ void main() {
       );
       expect(_read(parser, {'type': 'rate_limit_event'}), isEmpty);
       expect(_read(parser, {'type': 'something_new'}), isEmpty);
+    });
+  });
+
+  group('a question the CLI answers for us reaches the user anyway', () {
+    Map<String, dynamic> ask(Object? questions) => _assistant({
+      'type': 'tool_use',
+      'id': 'q1',
+      'name': 'AskUserQuestion',
+      'input': {'questions': questions},
+    });
+
+    test('the question leaves the stream as something to answer, not a row to '
+        'read — under claude -p the CLI answers it itself, so a tool row is '
+        'the one shape the user cannot act on', () {
+      final event = _one(
+        ClaudeStreamParser(),
+        ask([
+          {
+            'question': 'How often should the review loop run?',
+            'header': 'Frequency',
+            'options': [
+              {
+                'label': 'On every change',
+                'description': 'Runs on each commit.',
+              },
+              {'label': 'Daily', 'description': 'One pass a day.'},
+            ],
+          },
+        ]),
+      );
+
+      final questions = (event as ClaudeQuestionsEvent).questions;
+      expect(questions.single.header, 'Frequency');
+      expect(questions.single.options.map((o) => o.label), [
+        'On every change',
+        'Daily',
+      ]);
+    });
+
+    test('a call carrying nothing answerable stays an ordinary row, so a '
+        'malformed question is visible rather than swallowed', () {
+      final event = _one(ClaudeStreamParser(), ask('not a list'));
+
+      expect(event, isA<ClaudeActivityEvent>());
+    });
+
+    test('entering plan mode keeps its row but drops the page of instructions '
+        'the CLI writes back to the model — it is addressed to the assistant, '
+        'and it read as the app ordering the user about', () {
+      final parser = ClaudeStreamParser();
+      _read(
+        parser,
+        _assistant({
+          'type': 'tool_use',
+          'id': 'p1',
+          'name': 'EnterPlanMode',
+          'input': <String, dynamic>{},
+        }),
+      );
+
+      final settled = _one(parser, {
+        'type': 'user',
+        'message': {
+          'content': [
+            {
+              'type': 'tool_result',
+              'tool_use_id': 'p1',
+              'content': 'Entered plan mode. You should now focus on…',
+            },
+          ],
+        },
+      });
+
+      final step = (settled as ClaudeActivityEvent).activity;
+      expect(step.result, isNull);
+      expect(step.status, AgentActivityStatus.done);
+      // Titled in the user's words: this tool acts on nothing, so the label
+      // would otherwise be the CLI's own identifier.
+      expect(step.label, 'Planning before changing anything');
+    });
+  });
+
+  group('a tool row says what it was about, not what it was called', () {
+    test(
+      'a sub-agent row carries the job it was given — the tool is `Agent` in '
+      'Claude Code 2.x, and titling only `Task` left every one of them '
+      'reading "Agent" with its description dropped',
+      () {
+        expect(
+          claudeToolLabel('Agent', const {
+            'description': 'Review the diff',
+            'subagent_type': 'code-reviewer',
+          }),
+          'Agent · Review the diff',
+        );
+        // The older name still answers, since the app pins no CLI version.
+        expect(
+          claudeToolLabel('Task', const {'description': 'Review the diff'}),
+          'Task · Review the diff',
+        );
+      },
+    );
+
+    test('a skill row names the skill that ran', () {
+      expect(
+        claudeToolLabel('Skill', const {
+          'skill': 'grid-web',
+          'args': 'flutter',
+        }),
+        'Skill · grid-web',
+      );
+    });
+
+    test('a connector row drops the wire identifier for the server and tool '
+        'behind it — a row spent entirely on `mcp__…__…` names nothing the '
+        'user chose', () {
+      expect(
+        claudeToolLabel('mcp__gitnexus__impact', const {'target': 'ChatStore'}),
+        'gitnexus · impact · ChatStore',
+      );
+    });
+  });
+
+  group('answerToQuestions — the reply the pick goes back as', () {
+    AgentQuestion q(
+      String header,
+      List<String> options, {
+      bool multi = false,
+    }) => AgentQuestion(
+      question: '$header?',
+      header: header,
+      multiSelect: multi,
+      options: [
+        for (final label in options)
+          AgentQuestionOption(label: label, description: ''),
+      ],
+    );
+
+    test('every answer names its question, since the agent asks up to four at '
+        'once and a bare list cannot be matched back to them', () {
+      final answer = answerToQuestions(
+        [
+          q('Frequency', ['Daily']),
+          q('Scope', ['New code only']),
+        ],
+        {
+          0: {'Daily'},
+          1: {'New code only'},
+        },
+      );
+
+      expect(answer, 'Frequency: Daily\nScope: New code only');
+    });
+
+    test('a multi-pick reads in the order the question listed, not the order '
+        'they were tapped', () {
+      final answer = answerToQuestions(
+        [
+          q('Lenses', ['Code', 'UI', 'Tester'], multi: true),
+        ],
+        {
+          0: {'Tester', 'Code'},
+        },
+      );
+
+      expect(answer, 'Lenses: Code, Tester');
+    });
+
+    test('a question left alone is left out — silence on one of four is a '
+        'truthful answer, a blank line is not', () {
+      final answer = answerToQuestions(
+        [
+          q('Frequency', ['Daily']),
+          q('Scope', ['All']),
+        ],
+        {
+          1: {'All'},
+        },
+      );
+
+      expect(answer, 'Scope: All');
+    });
+
+    test('nothing picked answers nothing at all, which is what stops the card '
+        'sending an empty message', () {
+      expect(
+        answerToQuestions([
+          q('Frequency', ['Daily']),
+        ], const {}),
+        isEmpty,
+      );
     });
   });
 

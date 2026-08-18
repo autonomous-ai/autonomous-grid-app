@@ -5,6 +5,7 @@ import 'dart:io';
 import '../logging/app_log.dart';
 import 'agent_event.dart';
 import 'hermes_permission_policy.dart';
+import 'hermes_steer.dart';
 import 'host_environment.dart';
 import 'stdio_line_writer.dart';
 
@@ -179,6 +180,14 @@ abstract interface class HermesAcpSession {
   /// awaits [HermesAcpRun.done] before the next.
   HermesAcpRun prompt(String text);
 
+  /// Hand the turn in flight something the user typed while it was working.
+  ///
+  /// Null back means Hermes took it; anything else is the raw reason it didn't,
+  /// for the caller to log. It does **not** interrupt — the text is appended to
+  /// the last tool result, so the model reads it on its next iteration and the
+  /// work already done is kept (see [hermesSteerPrompt]).
+  Future<String?> steer(String text);
+
   /// Answer a [HermesAcpPermission] the agent is waiting on: [optionId] is the
   /// choice it offered, or null to cancel it (which the agent reads as no). The
   /// turn resumes — or doesn't — on this call.
@@ -247,6 +256,11 @@ class _HermesAcpSession implements HermesAcpSession {
   StreamController<HermesAcpEvent>? _events;
   Completer<void>? _turnDone;
   int? _turnId;
+
+  /// Steers waiting on the adapter's answer, by the id they were sent with, and
+  /// how many of its acknowledgements are still to be kept out of the answer.
+  final _steers = <Object, Completer<String?>>{};
+  var _steerAcks = 0;
   // Kind/title arrive only on the first tool_call; a later tool_call_update
   // carries just id + status, so remember them to keep the label. Cleared each
   // turn so one turn's tools don't bleed into the next.
@@ -344,6 +358,35 @@ class _HermesAcpSession implements HermesAcpSession {
   }
 
   @override
+  Future<String?> steer(String text) {
+    if (text.trim().isEmpty) return Future.value('Nothing to send.');
+    final session = _sessionId;
+    if (_closed || session == null) {
+      return Future.value('The Hermes session had already closed.');
+    }
+    // Nothing is running, so there is nothing to steer: the adapter would take
+    // the text as a prompt to run after the next turn, which is not what the
+    // caller asked for and would be answered where nobody is listening.
+    if (_turnDone == null) return Future.value('No turn was running.');
+    final id = _nextId++;
+    final answered = Completer<String?>();
+    _steers[id] = answered;
+    _steerAcks++;
+    _write({
+      'jsonrpc': '2.0',
+      'id': id,
+      'method': 'session/prompt',
+      'params': {
+        'sessionId': session,
+        'prompt': [
+          {'type': 'text', 'text': hermesSteerPrompt(text)},
+        ],
+      },
+    });
+    return answered.future;
+  }
+
+  @override
   Future<void> close() async {
     _closed = true;
     _process?.kill();
@@ -428,6 +471,14 @@ class _HermesAcpSession implements HermesAcpSession {
         }
         if (!_ready.isCompleted) _ready.complete();
       default:
+        // A steer rides the same channel as a prompt, so it comes back here —
+        // and it is not the turn ending. Answering the caller is all there is to
+        // do: whether Hermes took the message or not, the turn carries on.
+        final steered = _steers.remove(message['id']);
+        if (steered != null) {
+          if (!steered.isCompleted) steered.complete(_errorOf(message));
+          return;
+        }
         // A prompt response ends its turn, and its `stopReason` says whether
         // Hermes got to the end of the work or was stopped short of it — or it
         // carries an error, which is the turn failing with nothing streamed.
@@ -594,13 +645,26 @@ class _HermesAcpSession implements HermesAcpSession {
       case 'agent_message_chunk':
         final content = raw['content'];
         if (content is Map && content['text'] is String) {
+          final said = content['text'] as String;
+          // The adapter answers a `/steer` in the agent's own voice, on the
+          // running turn — so its acknowledgement would otherwise be pasted
+          // into the middle of the answer the user is reading. Kept in the log,
+          // which is where "did it get my message?" is answered from.
+          if (_steerAcks > 0 && isHermesSteerAck(said)) {
+            _steerAcks--;
+            _log.info(
+              'agent',
+              'Hermes on a mid-answer message: ${said.trim()}',
+            );
+            return;
+          }
           // The model is writing again, so the round of tools it was waiting on
           // has come back. This is the half [_retireRunning] cannot catch from
           // a later `tool_call`: the tools of the *last* round have no call
           // after them, and without this their spinners turn all the way
           // through the answer being written over them.
           _retireRunning(events);
-          events.add(HermesAcpMessage(content['text'] as String));
+          events.add(HermesAcpMessage(said));
         }
     }
   }
@@ -735,6 +799,13 @@ class _HermesAcpSession implements HermesAcpSession {
     _events?.close();
     _events = null;
     _turnId = null;
+    // Nobody is left to answer a steer sent as the turn was ending — say so
+    // rather than leaving the caller waiting on a future that never completes.
+    for (final waiting in _steers.values) {
+      if (!waiting.isCompleted) waiting.complete('The turn ended first.');
+    }
+    _steers.clear();
+    _steerAcks = 0;
     final done = _turnDone;
     _turnDone = null;
     if (done != null && !done.isCompleted) done.complete();

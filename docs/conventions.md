@@ -124,7 +124,7 @@ are **deliberate** — don't "fix" them back.
 - **Only the grid, the agents, and wire formats are tested.** `test/` holds exactly
   these areas and no others: `agent`, `agents`, `network`, `chat`, `code`,
   `playground`, `connectors`, `skills`, `scheduled`, `mcp`, `models`, `node_setup`,
-  `panel`, `provider`, `provider_node`, `auto_router`. Everything else went on
+  `panel`, `vectors`, `provider`, `provider_node`, `auto_router`. Everything else went on
   2026-08-11 (~700 tests: review, projects, onboarding, messaging, terminal, prompts,
   appearance, layouts, logging, core, and the CLI/credentials/store/wire-parse
   plumbing under `cli`, `auth`, `state`, `api`, `infrastructure`). Don't add a folder
@@ -136,7 +136,11 @@ are **deliberate** — don't "fix" them back.
   rots faster than tests catch it; a codec is the opposite — it never rots, it is
   pure, and it fails as a desync three layers away from the mistake, which running
   the app diagnoses very badly. Adding an area is still a decision to argue for
-  here, not a habit.
+  here, not a habit. `vectors/` is not a fifth area but the *evidence* `panel/`
+  asserts against: `panel_frame.txt`, generated from the protocol document by
+  `scripts/gen_panel_vectors.py` — a third implementation — and read by both the
+  Dart codec and the firmware's host-compiled test. A copy per side would let one
+  drift and still pass, which is the one thing a shared vector file prevents.
   **TODO(BE): that cut is not free**, and it took real guards with it —
   `GridCliService`'s argv and logging, `credentials.toml` parsing, `GridHomeStore`,
   and `GridOverview.fromJson` are now checked by nobody. Those are exactly the
@@ -153,17 +157,35 @@ are **deliberate** — don't "fix" them back.
 ## 9. Definition of done
 
 - `flutter analyze lib test` → **0 issues**; relevant `flutter test test/<area>` green.
-  Measured on a clean `main` on 2026-08-11, the repo clears both bars: `analyze` reports
-  **no issues**, and `flutter test` is **1599 passing, 0 failing**. So a failure you
-  see is *yours* — there is no standing "known failure" list to hide behind.
-  (There was one, twice over: it named `provider_run_controller_test` and
-  `sidebar_item_test`, then 9 analyzer issues in `features/models/` and 3 overflow
-  failures in `connectors_view_layout_test`. Every one of them outlived the problem it
-  described. If you add a note like this, date it and re-measure before trusting it.)
-- **Run the whole suite as `flutter test --concurrency=12`** — **20s** for 1599 tests
-  in 156 files on a 10-core Mac (2026-08-11), against ~26s at the default. Most of
-  that is still *starting one suite per file*, not running tests: a file costs
-  ~110ms to open and most of them finish their own tests in under 100ms. So if the
+  Re-measured on a clean `main` on **2026-08-18**: **2228 tests across 190 files**, and a
+  test failure you see is *yours* — there is no standing "known failure" list to hide
+  behind. (There was one, twice over: it named
+  `provider_run_controller_test` and `sidebar_item_test`, then 9 analyzer issues in
+  `features/models/` and 3 overflow failures in `connectors_view_layout_test`. Every one
+  of them outlived the problem it described. If you add a note like this, date it and
+  re-measure before trusting it.)
+  ⚠️ **`analyze` did not clear its bar on 2026-08-18: 3 issues.** Two
+  `unawaited_return_in_try_block` warnings (`connectors/logic/connector_link_controller.dart`,
+  `skills/logic/skills_controller.dart`) and one `prefer_final_fields` info on
+  `feedback_dialog.dart`'s `_attachLogs`. **Measured on Flutter 3.47.0 while CI pins
+  3.44.4** (§10) — which is why `docs/architecture.md` counts **1** on the same tree the
+  same day: the two `unawaited_return_in_try_block` warnings come from the newer
+  analyzer. Two people can both be right here and the pair only ever agrees if the
+  version is stated with the count, so **state it**. **The bar is still 0**: this is debt
+  to clear, not an allowance to spend.
+  ⚠️ **Two tests are flaky under a loaded machine**, both the same shape and both new
+  with the off-isolate chat write: `chat/chat_store_scale_test.dart` and
+  `chat/chat_sessions_controller_test.dart` fail their **tearDown** with
+  `FileSystemException: Deletion failed … Directory not empty` — the temp dir is deleted
+  while a write that now runs off the isolate is still landing in it. Each file passes on
+  its own, twice over. Re-run the file before believing a failure there; the fix belongs
+  in the teardown, not in a retry.
+- **Run the whole suite as `flutter test --concurrency=12`** — 2228 tests in 190 files on
+  a 10-core Mac took **26s idle and 61s while another agent was working the same
+  machine** (both 2026-08-18); it was 20s for 1599 tests in 156 files on 08-11. Wall time
+  here says as much about what else is running as about the suite. Most of it is still
+  *starting one suite per file*, not running tests: a file
+  costs ~110ms to open and most of them finish their own tests in under 100ms. So if the
   run ever feels slow again, the lever is fewer files, not fewer assertions — one
   more `test/<area>/one_function_test.dart` costs more than the twenty tests inside
   it. Re-measure before quoting these.
@@ -174,10 +196,16 @@ are **deliberate** — don't "fix" them back.
 ## 10. Tooling & git
 
 - **The SDK floor is real and `pubspec.yaml` is the only place that states it**
-  (currently Dart `^3.10.0`). CI pins nothing but `channel: stable`, so the target is
-  simply *current stable*. Check with `dart --version` before blaming your code: a
+  (currently Dart `^3.10.0`). Check with `dart --version` before blaming your code: a
   too-old SDK fails at `pub get` with a version-solving error that never mentions
   Flutter, and `flutter upgrade` is usually the whole fix.
+  **The ceiling is now real too: CI pins `flutter-version: 3.44.4`** (`.github/workflows/release.yml`,
+  since `58687e7f` on 2026-08-18) and that pin is load-bearing, not tidiness. `channel: stable`
+  with no version shipped DMGs built on an engine nobody here had ever launched — Flutter 3.47.0
+  against the 3.44.4 developed on — and the symptom was the UI tearing itself apart on users'
+  machines while the same commit rendered perfectly when built locally. If you upgrade your own
+  Flutter, you are no longer building what ships; verify a release build before assuming a
+  rendering bug is in this repo.
   This line used to hardcode one machine's SDK path. It was wrong on the next machine
   someone worked from, which meant `which flutter` quietly kept resolving to an
   ancient copy while the doc insisted otherwise — so locate yours, don't copy a path.

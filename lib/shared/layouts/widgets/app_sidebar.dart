@@ -17,6 +17,7 @@ import '../../widgets/status_dot.dart';
 import '../shell_state.dart';
 import 'sidebar_account.dart';
 import 'sidebar_item.dart';
+import 'sidebar_office_group.dart';
 
 /// The app's left rail: which half of the app you are in, what you can do in
 /// it, what you have already done, and who you are signed in as.
@@ -174,6 +175,10 @@ class _HomeRail extends ConsumerWidget {
               // the screens you *go to*, so they read as two groups without
               // needing a divider between them.
               const SizedBox(height: 4),
+              // Directly under New chat, above the setup screens: opening a
+              // document is the other thing a person comes here to *do*, and it
+              // is the only row in this rail that holds rows of its own.
+              const SidebarOfficeGroup(),
               for (final target in kSidebarSections)
                 SidebarItem(
                   icon: target.thinIcon,

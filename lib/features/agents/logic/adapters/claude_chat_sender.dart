@@ -24,10 +24,12 @@ import '../../../playground/logic/playground_request.dart';
 import '../agent_catalog.dart';
 import '../agent_changes.dart';
 import '../agent_model_support.dart';
+import '../agent_questions.dart';
 import '../agent_prompt.dart';
 import '../agent_providers.dart';
 import '../agent_permission_decision.dart';
 import '../agent_session_grants.dart';
+import '../agent_steering.dart';
 import '../agent_permissions.dart';
 import '../agent_server_error.dart';
 import '../agent_session_slots.dart';
@@ -578,6 +580,13 @@ class ClaudeChatSender implements ChatSender {
           dropEnvironment: dropEnvironment,
         );
 
+    // Anything typed in this chat while the turn runs goes straight into it —
+    // Claude reads it at its next tool boundary and changes course inside the
+    // same turn, and it is recorded in the turn's timeline where it happened
+    // (see [AgentSteeringController]).
+    final steering = _ref.read(agentSteeringProvider.notifier);
+    steering.offer(chat, run.steer);
+
     final answer = StringBuffer();
     // The answer up to its last finished block — where the turn may be divided.
     // See [ClaudeMessageEvent.settled].
@@ -612,6 +621,12 @@ class ClaudeChatSender implements ChatSender {
             runs.upsertStep(chat, activity, answer: settledText);
           case ClaudePlanEvent(:final entries):
             runs.setPlan(chat, entries);
+          // Put to the user over the composer. The turn does not wait for it —
+          // the CLI already answered the call itself (see [ClaudeQuestionsEvent])
+          // — so this races the rest of the turn on purpose: the answer goes
+          // back as the next message, whenever they get to it.
+          case ClaudeQuestionsEvent(:final questions):
+            _ref.read(agentQuestionsProvider.notifier).ask(chat, questions);
           case ClaudeFileWriteStarted(:final path):
             workedAtAll = true;
             before[path] = readTextFileNow(path);
@@ -663,8 +678,9 @@ class ClaudeChatSender implements ChatSender {
         await run.done;
         settled = true;
         // The turn is over: a card left pinned would be a button that answers
-        // nobody.
+        // nobody, and a message typed from here belongs to the next turn.
         _ref.read(agentPermissionsProvider.notifier).clear(chat);
+        steering.withdraw(chat);
         final reply = answer.toString().trim();
         final plan = _ref.read(agentRunProvider(chat)).plan;
         // A turn that announced a plan and stopped before finishing it is worth
@@ -716,6 +732,7 @@ class ClaudeChatSender implements ChatSender {
     updates.onCancel = () async {
       await events.cancel();
       _ref.read(agentPermissionsProvider.notifier).clear(chat);
+      steering.withdraw(chat);
       if (settled) return;
       run.kill();
       log.finish(logId, error: 'stopped');

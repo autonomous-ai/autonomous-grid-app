@@ -13,7 +13,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
-import '../../agents/logic/agent_changes.dart';
+import '../../agents/logic/agent_chat_scope.dart';
 import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/active_chat_agent.dart';
@@ -51,7 +51,10 @@ import '../logic/conversation.dart';
 import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
 import 'queued_follow_ups.dart';
+import '../../../shared/widgets/composer_buttons.dart';
+import '../../agents/logic/agent_steering.dart';
 import 'agent_handover_bar.dart';
+import 'agent_questions_card.dart';
 import 'file_mention_menu.dart';
 import 'chat_composer.dart';
 import 'chat_header.dart';
@@ -386,13 +389,27 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // deliberately, so the app must not go on quoting it into every message
     // after.
     ref.read(attachedTerminalsProvider.notifier).clear();
-    if (_attachments.isNotEmpty || _files.isNotEmpty || _snippets.isNotEmpty) {
-      setState(() {
-        _attachments.clear();
-        _files.clear();
-        _snippets.clear();
-      });
-    }
+    _clearDraft();
+  }
+
+  /// Everything hanging off the composer beside the text, by name — what a
+  /// notice about it has to be able to point at.
+  List<String> get _draftNames => [
+    for (final attachment in _attachments) attachment.filename,
+    for (final file in _files) file.name,
+    for (final snippet in _snippets) snippet.name,
+  ];
+
+  /// Take the pictures, files and quoted selections off the composer. They
+  /// belonged to the line that just left it; kept, they ride onto the next
+  /// message the user never meant to put them on.
+  void _clearDraft() {
+    if (_attachments.isEmpty && _files.isEmpty && _snippets.isEmpty) return;
+    setState(() {
+      _attachments.clear();
+      _files.clear();
+      _snippets.clear();
+    });
   }
 
   /// Reads the terminals on screen, at the moment Send is pressed rather than
@@ -600,7 +617,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _composerFocus.requestFocus();
   }
 
-  /// Run [call] and empty the composer — the command *was* the message.
+  /// Run [call] and empty the composer — the command *was* the message, its
+  /// attachments included.
   ///
   /// Some commands take a moment (a summary is a model call), so what they have
   /// to say arrives as a toast rather than as a return value nobody sees.
@@ -610,6 +628,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// showing — the same model an ordinary message would have gone out on.
   Future<void> _runCommand(ChatCommandCall call) async {
     _message.clear();
+    // The attachments were part of that line too, and a command carries words
+    // only ([ChatCommand.draftDropReason]) — so they come off with it, and are
+    // named on the way out rather than left sitting under a composer the user
+    // has already emptied.
+    if (call.command.draftDropReason != null) {
+      final dropped = droppedDraftMessage(call.command, _draftNames);
+      _clearDraft();
+      if (dropped != null) {
+        ToastScope.show(
+          context,
+          ToastSpec(message: dropped, severity: ToastSeverity.warning),
+        );
+      }
+    }
     final outcome = await ref
         .read(chatSessionsProvider.notifier)
         .runCommand(call, model: _model.text.trim());
@@ -740,6 +772,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final active = ref.watch(chatSessionsProvider.select((s) => s.active));
     final activeId = ref.watch(chatSessionsProvider.select((s) => s.activeId));
     final sending = ref.watch(chatSessionsProvider.select((s) => s.sending));
+    // Whether a message typed right now reaches the agent mid-answer or waits
+    // for the next turn — the two are different promises, and Send says which.
+    final steerable = ref.watch(canSteerChatProvider(activeId));
     final error = ref.watch(chatSessionsProvider.select((s) => s.error));
     final openProject = ref.watch(openChatProjectProvider);
     final options = ref.watch(playgroundModelsProvider);
@@ -782,10 +817,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // that asked for them, and they're waiting there on the way back. Deferred
     // because writing a provider during build would throw, and only when the
     // answer moved — this build runs on every keystroke and streamed token.
-    if (ref.read(agentChangesScopeProvider) != activeId) {
+    if (ref.read(agentChatScopeProvider) != activeId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
-        ref.read(agentChangesScopeProvider.notifier).show(activeId);
+        ref.read(agentChatScopeProvider.notifier).show(activeId);
       });
     }
 
@@ -1054,6 +1089,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               const AgentHandoverBar(),
+                              // Above the plan bar: a question the assistant
+                              // asked is the one notice here that is *about*
+                              // what to type next, so it sits closest to where
+                              // the answer would otherwise be typed.
+                              const AgentQuestionsCard(),
                               const PlanApproveBar(),
                               const OutOfStepsBar(),
                               // `AgentChangesBar` used to sit here. Hidden on
@@ -1101,6 +1141,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 needsImage: needsImage,
                                 sending: sending,
                                 canSend: canSend,
+                                busySendTooltip: steerable
+                                    ? kSendIntoAnswerTooltip
+                                    : kSendAfterAnswerTooltip,
                                 error: error,
                                 // Retry reuses the committed turn, including
                                 // its picture, after the user picks a model

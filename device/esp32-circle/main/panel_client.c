@@ -69,9 +69,9 @@ static void note_inbound(void)
 // The ids from the last `projects` message, kept only long enough to reconcile removals against what the
 // UI already holds.
 //
-// A file-scope array in PSRAM BSS rather than a local: at MAX_PROJECTS this is several KB and the reader
+// A file-scope array in PSRAM BSS rather than a local: at MAX_TILES this is several KB and the reader
 // task that runs it has a 4 KB stack. It is only ever touched from that one task.
-static EXT_RAM_BSS_ATTR char s_ids[MAX_PROJECTS][ID_MAX];
+static EXT_RAM_BSS_ATTR char s_ids[MAX_TILES][ID_MAX];
 
 // volatile: written on one task and read on another (the handshake task decides a session ended, the
 // link task and the UI read the result), and not worth a mutex — a stale read costs one loop period.
@@ -237,38 +237,38 @@ static void send_projects_list(void)
 {
     cJSON *m = cJSON_CreateObject();
     if (!m) return;
-    cJSON_AddStringToObject(m, "t", "projects.list");
+    cJSON_AddStringToObject(m, "t", "chats.list");
     send_json(m);
 }
 
-void panel_client_send_turn(const char *project_id, const char *text)
+void panel_client_send_turn(const char *chat_id, const char *text)
 {
-    if (!project_id || !project_id[0] || !text || !text[0]) return;
+    if (!chat_id || !chat_id[0] || !text || !text[0]) return;
     cJSON *m = cJSON_CreateObject();
     cJSON_AddStringToObject(m, "t", "turn.send");
-    cJSON_AddStringToObject(m, "projectId", project_id);
+    cJSON_AddStringToObject(m, "chatId", chat_id);
     cJSON_AddStringToObject(m, "text", text);
     send_json(m);
 }
 
-void panel_client_stop_project(const char *project_id)
+void panel_client_stop_project(const char *chat_id)
 {
-    if (!project_id || !project_id[0]) return;
+    if (!chat_id || !chat_id[0]) return;
     cJSON *m = cJSON_CreateObject();
     if (!m) return;
     cJSON_AddStringToObject(m, "t", "turn.stop");
-    cJSON_AddStringToObject(m, "projectId", project_id);
-    ESP_LOGI(TAG, "turn.stop %s", project_id);
+    cJSON_AddStringToObject(m, "chatId", chat_id);
+    ESP_LOGI(TAG, "turn.stop %s", chat_id);
     send_json(m);
 }
 
-void panel_client_answer(const char *project_id, const char *id, const char *option_id)
+void panel_client_answer(const char *chat_id, const char *id, const char *option_id)
 {
     if (!id || !id[0] || !option_id || !option_id[0]) return;
     cJSON *m = cJSON_CreateObject();
     if (!m) return;
     cJSON_AddStringToObject(m, "t", "answer");
-    cJSON_AddStringToObject(m, "projectId", project_id ? project_id : "");
+    cJSON_AddStringToObject(m, "chatId", chat_id ? chat_id : "");
     // VERBATIM, both of them. `id` is grid-app's handle for the request and `optionId` is one of the ids
     // it offered; neither means anything on this side, and anything the panel derived for itself would be
     // an answer to a question nobody asked.
@@ -280,15 +280,15 @@ void panel_client_answer(const char *project_id, const char *id, const char *opt
 
 // ── VOICE, OUTBOUND ─────────────────────────────────────────────────────────────────────────────────
 
-void panel_client_voice_begin(const char *project_id, voice_cmd_t cmd)
+void panel_client_voice_begin(const char *chat_id, voice_cmd_t cmd)
 {
     cJSON *m = cJSON_CreateObject();
     if (!m) return;
     cJSON_AddStringToObject(m, "t", "voice.begin");
-    // OMITTED, not empty. panel-protocol.md §2 makes `projectId` optional and absence is the message: it tells
+    // OMITTED, not empty. panel-protocol.md §2 makes `chatId` optional and absence is the message: it tells
     // grid-app the user spoke from a screen that names no project, so it has to route the transcript
     // itself and ask. An empty string would be a project id — one that matches nothing.
-    if (project_id && project_id[0]) cJSON_AddStringToObject(m, "projectId", project_id);
+    if (chat_id && chat_id[0]) cJSON_AddStringToObject(m, "chatId", chat_id);
     // Same rule for the modifier: VOICE_CMD_NONE sends no `cmd` key at all rather than "none", so a
     // plain turn and a modified one differ by a field being there, not by its value.
     if (cmd == VOICE_CMD_GOAL)      cJSON_AddStringToObject(m, "cmd", "goal");
@@ -318,15 +318,15 @@ void panel_client_voice_end(void)
     send_json(m);
 }
 
-void panel_client_voice_confirm(const char *route_id, const char *project_id)
+void panel_client_voice_confirm(const char *route_id, const char *chat_id)
 {
-    if (!route_id || !project_id || !project_id[0]) return;
+    if (!route_id || !chat_id || !chat_id[0]) return;
     cJSON *m = cJSON_CreateObject();
     if (!m) return;
     cJSON_AddStringToObject(m, "t", "voice.confirm");
     cJSON_AddStringToObject(m, "routeId", route_id);
-    cJSON_AddStringToObject(m, "projectId", project_id);
-    ESP_LOGI(TAG, "voice.confirm route=%s → %s", route_id, project_id);
+    cJSON_AddStringToObject(m, "chatId", chat_id);
+    ESP_LOGI(TAG, "voice.confirm route=%s → %s", route_id, chat_id);
     send_json(m);
 }
 
@@ -440,18 +440,20 @@ static void session_lost(const char *why)
 // rather than sent as null when absent, so an empty string here means "the app did not say".
 //
 // FOUR calls where the reference's project fetch has one struct assignment, because the reference owns
-// both halves and this one does not: ui_project_set_name is also what CREATES the tile, so the order
+// both halves and this one does not: ui_tile_set_name is also what CREATES the tile, so the order
 // matters — everything after it addresses a project that now exists.
-static void apply_project(const cJSON *j)
+static void apply_tile(const cJSON *j)
 {
     const char *id = jstr(j, "id");
     if (!id[0]) return;
-    ui_project_set_name(id, jstr(j, "name"));
-    ui_project_set_engine(id, jstr(j, "agent"));
-    ui_project_set_selected_model(id, jstr(j, "model"));
+    ui_tile_set_name(id, jstr(j, "name"));
+    // After the name, because ui_tile_set_name is what CREATES the tile.
+    ui_tile_set_project(id, jstr(j, "project"));
+    ui_tile_set_engine(id, jstr(j, "agent"));
+    ui_tile_set_selected_model(id, jstr(j, "model"));
     // A tile with a recap already on it is not overwritten by the list: a turn that has since finished put
     // something fresher there. Restore rather than emit, so a project that is busy right now keeps its
-    // Working row (ui_project_restore_event never touches the live lifecycle).
+    // Working row (ui_tile_restore_event never touches the live lifecycle).
     //
     // BOTH zones, and as `summary` rather than `done`. Two things were wrong here and both showed on every
     // cold start: `done` is the kind of a finished STEP, so the card came up green with a tick; and passing
@@ -461,16 +463,20 @@ static void apply_project(const cJSON *j)
     // behind it, and when the app has none the headline stands in for both.
     const char *recap = jstr(j, "recap");
     const char *summary = jstr(j, "summary");
-    if (recap[0] && !ui_project_has_event(id)) {
-        ui_project_restore_event(id, "summary", summary[0] ? summary : recap, recap);
+    if (recap[0] && !ui_tile_has_event(id)) {
+        // The body goes in EMPTY when the app has none, rather than being filled with the headline. The
+        // reader then says there is no long form yet (READER_NO_BODY) instead of drawing the same
+        // sentence the tile is already showing — which is what "the recap and the summary are the same"
+        // looked like on 2026-08-18, and it was this line manufacturing it.
+        ui_tile_restore_event(id, "summary", summary, recap);
     }
-    // The tint. An unrecognised value is drawn as `done` by ui_project_set_recap_kind, never as an error —
+    // The tint. An unrecognised value is drawn as `done` by ui_tile_set_recap_kind, never as an error —
     // guessing "failed" on a turn that worked is the worse of the two mistakes.
     const char *rk = jstr(j, "recapKind");
-    if (rk[0]) ui_project_set_recap_kind(id, rk);
+    if (rk[0]) ui_tile_set_recap_kind(id, rk);
     // busy comes from the list too, for a panel that plugged in mid-turn. "processing" with no step text
     // falls back to the rotating gerund until the first turn.parts arrives.
-    if (jbool(j, "busy")) ui_project_emit(id, "processing", "", NULL);
+    if (jbool(j, "busy")) ui_tile_emit(id, "processing", "", NULL);
 }
 
 static void on_welcome(const cJSON *root)
@@ -544,7 +550,7 @@ static void on_welcome(const cJSON *root)
 // repeating here: with the huge-range circular carousel every add and remove re-anchors the scroll to
 // keep the viewed project centred, so locking per ui_* call would let the LVGL task render between them
 // and the viewed tile would visibly wobble. The recursive lock makes the poll render as ONE transition.
-static void on_projects(const cJSON *root)
+static void on_chats(const cJSON *root)
 {
     const cJSON *items = cJSON_GetObjectItemCaseSensitive(root, "items");
     int n = 0, seen = 0;
@@ -556,18 +562,18 @@ static void on_projects(const cJSON *root)
         // A project with no id cannot be addressed by any later message — turn.started, turn.parts and
         // turn.stop all key on it — so a tile for it could only ever be a tile that never updates.
         const char *id = jstr(it, "id");
-        if (!id[0] || n >= MAX_PROJECTS) continue;
+        if (!id[0] || n >= MAX_TILES) continue;
         snprintf(s_ids[n], sizeof(s_ids[0]), "%s", id);
         n++;
-        apply_project(it);
+        apply_tile(it);
     }
-    // Removals, from the END so ui_project_remove can shift the model without a snapshot of every id.
-    for (int i = ui_project_count() - 1; i >= 0; i--) {
+    // Removals, from the END so ui_tile_remove can shift the model without a snapshot of every id.
+    for (int i = ui_tile_count() - 1; i >= 0; i--) {
         char cur[ID_MAX];
-        if (!ui_project_id_at(i, cur, sizeof(cur))) continue;
+        if (!ui_tile_id_at(i, cur, sizeof(cur))) continue;
         bool present = false;
         for (int j = 0; j < n; j++) if (strcmp(cur, s_ids[j]) == 0) { present = true; break; }
-        if (!present) ui_project_remove(cur);
+        if (!present) ui_tile_remove(cur);
     }
     // The list is built: drop the boot spinner and land on a project (or stay on the empty page).
     ui_land_after_reload();
@@ -575,12 +581,12 @@ static void on_projects(const cJSON *root)
     if (seen > n) ESP_LOGW(TAG, "projects: %d sent, %d usable", seen, n);
 }
 
-static void on_project_updated(const cJSON *root)
+static void on_chat_updated(const cJSON *root)
 {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, "item");
     if (!cJSON_IsObject(item) || !jstr(item, "id")[0]) { s_bad++; return; }
     display_lock();
-    apply_project(item);
+    apply_tile(item);
     display_unlock();
 }
 
@@ -599,8 +605,8 @@ static void on_project_updated(const cJSON *root)
 // turn.error both close, so a step stuck at `unknown` cannot outlive its turn on this screen either.
 static void on_turn_parts(const cJSON *root)
 {
-    const char *project_id = jstr(root, "projectId");
-    if (!project_id[0]) { s_bad++; return; }
+    const char *chat_id = jstr(root, "chatId");
+    if (!chat_id[0]) { s_bad++; return; }
     const cJSON *parts = cJSON_GetObjectItemCaseSensitive(root, "parts");
 
     // The last MAIN step (no `parent`) — what the tile's centred line names.
@@ -653,14 +659,14 @@ static void on_turn_parts(const cJSON *root)
     display_lock();
     // `processing` first: it is what CREATES the busy row, and it is also the only thing stamping the
     // tile's liveness — ui_prune_stale_busy clears a project whose stamps stop arriving.
-    ui_project_emit(project_id, "processing", step_label, NULL);
+    ui_tile_emit(chat_id, "processing", step_label, NULL);
     // Then the detail, which needs the busy row to exist.
-    if (step_tool[0]) ui_project_set_tool(project_id, step_tool, step_label, step_kind, step_arg);
-    ui_project_set_agents(project_id, n_subs > 0 ? subs : NULL);
+    if (step_tool[0]) ui_tile_set_tool(chat_id, step_tool, step_label, step_kind, step_arg);
+    ui_tile_set_agents(chat_id, n_subs > 0 ? subs : NULL);
     // `todos` rides the MESSAGE, not the parts — it is the state of a plan, not a point in the story.
     // ABSENT means the agent has no plan, which is different from an empty plan and is drawn as nothing.
     const cJSON *todos = cJSON_GetObjectItemCaseSensitive(root, "todos");
-    ui_project_set_todos(project_id, cJSON_IsArray(todos) ? todos : NULL);
+    ui_tile_set_todos(chat_id, cJSON_IsArray(todos) ? todos : NULL);
     display_unlock();
     cJSON_Delete(subs);
 }
@@ -679,7 +685,7 @@ static void on_voice_transcript(const cJSON *root)
     // needsConfirm is the ONLY guard between a guessed route and a turn dispatched into a real
     // repository (panel-protocol.md §2). A panel that showed the transcript and let the app get on with it
     // would defeat it just as completely as one that dispatched itself.
-    const char *pid = jstr(root, "projectId");
+    const char *pid = jstr(root, "chatId");
     ui_voice_routed(!confirm, !pid[0], route_id, pid, text);
     display_unlock();
 }
@@ -723,8 +729,8 @@ static void handle_json(const uint8_t *payload, size_t len)
     note_inbound();
 
     if      (strcmp(t, "welcome") == 0)         on_welcome(root);
-    else if (strcmp(t, "projects") == 0)        on_projects(root);
-    else if (strcmp(t, "project.updated") == 0) on_project_updated(root);
+    else if (strcmp(t, "chats") == 0)        on_chats(root);
+    else if (strcmp(t, "chat.updated") == 0) on_chat_updated(root);
     else if (strcmp(t, "turn.parts") == 0)      on_turn_parts(root);
     else if (strcmp(t, "ping") == 0) {
         // The heartbeat, every 5 s. note_inbound() above has already done this side's half of the work —
@@ -735,9 +741,9 @@ static void handle_json(const uint8_t *payload, size_t len)
         // Anchors the clock. Every step's `t0` is measured from this instant, and the device counts from
         // here rather than stamping a step when it first sees one — `onAttach` re-sends the whole timeline
         // after a panel reboot, and stamping would make every step read as having just begun.
-        ui_project_turn_started(jstr(root, "projectId"));
+        ui_tile_turn_started(jstr(root, "chatId"));
     } else if (strcmp(t, "turn.done") == 0) {
-        const char *pid = jstr(root, "projectId"), *recap = jstr(root, "recap");
+        const char *pid = jstr(root, "chatId"), *recap = jstr(root, "recap");
         display_lock();
         // `recap` is both halves here: the headline AND the body. grid-app sends one line (the last thing
         // the agent said, cut to a line), so passing it as `recap` as well would print the same sentence
@@ -757,8 +763,8 @@ static void handle_json(const uint8_t *payload, size_t len)
         // The recap rides as BOTH the body and the headline (4th argument). As the headline it is drawn
         // unclipped, which is the point of a ≤15-word budget; as the body it gives the reader something
         // to show for the seconds before `summary` lands, and for the turns where it never does.
-        if (recap[0]) ui_project_emit(pid, "summary", recap, recap);
-        else          ui_project_emit(pid, "done", "done", NULL);
+        if (recap[0]) ui_tile_emit(pid, "summary", recap, recap);
+        else          ui_tile_emit(pid, "done", "done", NULL);
         // How it ENDED still comes from the list's `recapKind` — the `project.updated` that follows a
         // finished turn is what paints a failure red or a stop grey, on top of this neutral default.
         display_unlock();
@@ -776,7 +782,7 @@ static void handle_json(const uint8_t *payload, size_t len)
         // reference used for its trailing "Summarizing…" window. That also re-stamps `busy_last_ms`, so
         // the 25s stale-busy sweep does not fire in the middle of it — and still fires if the app dies
         // here, which is the whole reason that sweep exists.
-        ui_project_emit(jstr(root, "projectId"), "processing", NULL, NULL);
+        ui_tile_emit(jstr(root, "chatId"), "processing", NULL, NULL);
     } else if (strcmp(t, "summary") == 0) {
         // The long form of the last recap, and a SEPARATE message on purpose: the app writes it by asking
         // a model, which takes seconds, and holding turn.done for it would leave a tile spinning on work
@@ -791,15 +797,15 @@ static void handle_json(const uint8_t *payload, size_t len)
         // to rest. This is only the ≤120-word body behind it, so it touches the reader and NOT the card:
         // `set_summary` replaces `m_full` and repaints a reader that happens to be open on this project,
         // leaving the headline the tile is drawing exactly where it is.
-        ui_project_set_summary(jstr(root, "projectId"), jstr(root, "text"));
+        ui_tile_set_summary(jstr(root, "chatId"), jstr(root, "text"));
     } else if (strcmp(t, "question") == 0) {
-        ui_question_show(jstr(root, "projectId"), jstr(root, "id"), jstr(root, "summary"),
+        ui_question_show(jstr(root, "chatId"), jstr(root, "id"), jstr(root, "summary"),
                          jstr(root, "command"),
                          cJSON_GetObjectItemCaseSensitive(root, "options"));
     } else if (strcmp(t, "question.cancel") == 0) {
         // Fires whenever the OTHER surface settles it first, and when the app's own timer gives up (55 s
         // today; the agent stops waiting at 60). A panel that ignored it would hold a dead card forever.
-        ui_question_cancel(jstr(root, "projectId"), jstr(root, "id"));
+        ui_question_cancel(jstr(root, "chatId"), jstr(root, "id"));
     } else if (strcmp(t, "voice.transcript") == 0) {
         on_voice_transcript(root);
     } else if (strcmp(t, "voice.error") == 0) {
@@ -821,9 +827,9 @@ static void handle_json(const uint8_t *payload, size_t len)
     // is a real feature and not a line to slip in. TODO(BE): worth building — "let a human look at it" is
     // the current answer and it does not scale to a change nobody is holding the panel for.
     } else if (strcmp(t, "turn.error") == 0) {
-        ESP_LOGW(TAG, "turn.error on %s: %s", jstr(root, "projectId"), jstr(root, "message"));
+        ESP_LOGW(TAG, "turn.error on %s: %s", jstr(root, "chatId"), jstr(root, "message"));
         display_lock();
-        ui_project_emit(jstr(root, "projectId"), "error", jstr(root, "message"), NULL);
+        ui_tile_emit(jstr(root, "chatId"), "error", jstr(root, "message"), NULL);
         display_unlock();
     } else {
         // NOT an error. A grid-app running ahead of this firmware is a version mismatch someone can act

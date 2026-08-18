@@ -1,4 +1,5 @@
 import 'agent_event.dart';
+import 'agent_question.dart';
 
 /// One thing to show from a running Claude Code turn — the same shapes the Chat
 /// tab already renders for Hermes and Codex ([AgentActivity], [AgentPlanEntry],
@@ -108,6 +109,18 @@ class ClaudeMessageEvent extends ClaudeExecEvent {
 class ClaudePlanEvent extends ClaudeExecEvent {
   const ClaudePlanEvent(this.entries);
   final List<AgentPlanEntry> entries;
+}
+
+/// Claude stopped to ask the user something — its `AskUserQuestion` tool.
+///
+/// **Not a request the turn waits on.** Under `claude -p` the CLI answers the
+/// call itself ("The user did not answer the questions") and the model carries
+/// on, so this is the app catching a question on its way past: the chat puts it
+/// to the user, and their pick goes back as the next message. Never empty —
+/// a call the parser could make nothing of stays an ordinary tool row.
+class ClaudeQuestionsEvent extends ClaudeExecEvent {
+  const ClaudeQuestionsEvent(this.questions);
+  final List<AgentQuestion> questions;
 }
 
 /// Claude is *about* to write [path] — emitted from the tool call, before the

@@ -11,13 +11,16 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../auth/logic/session_controller.dart';
+import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/model_delete_controller.dart';
 import '../logic/model_group.dart';
 import '../logic/model_pull_controller.dart';
+import '../logic/model_storage.dart';
 import '../logic/models_providers.dart';
 import '../logic/pull_spec.dart';
 import '../logic/suggested_catalog.dart';
 import 'cancel_download_button.dart';
+import 'model_delete_confirm.dart';
 import 'model_detail_badges.dart';
 
 /// The right pane of the model manager dialog: one model's full version list
@@ -112,7 +115,6 @@ class _VersionPicker extends ConsumerStatefulWidget {
 
 class _VersionPickerState extends ConsumerState<_VersionPicker> {
   late ModelVersion _selected;
-  bool _isDeleting = false;
 
   /// The message from a download this panel started and that failed. Set only
   /// for our own pulls — [ModelPullFailed] doesn't say which spec it belongs
@@ -144,6 +146,20 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   ];
 
   bool get _isDownloaded => _isVersionDownloaded(_selected);
+
+  /// What the selected version actually weighs on disk. The catalog's own
+  /// figure is what it *will* weigh; for a delete the honest number is the one being
+  /// freed, so it's summed from the files themselves.
+  int _bytesOnDisk() {
+    final names = {
+      for (final name in _fileNamesFor(_selected)) name.toLowerCase(),
+    };
+    var bytes = 0;
+    for (final file in ref.read(localModelsProvider)) {
+      if (names.contains(file.name.toLowerCase())) bytes += file.sizeBytes;
+    }
+    return bytes;
+  }
 
   /// True once *every* part is on disk. A split model missing one part isn't
   /// downloaded — it's unservable — so it must not read as done.
@@ -212,8 +228,8 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
         title: const Text('Download anyway?'),
         content: Text(
           '${_selected.version ?? 'This version'} '
-          '(${_sizeLabel(_selected.sizeBytes)}) needs more memory than this '
-          'computer has, so it won\'t start here. You can still download it — '
+          '(${modelSizeLabel(_selected.sizeBytes)}) needs more memory than '
+          'this computer has, so it won\'t start here. You can still download it — '
           'to share from another computer on your grid, or for later.',
         ),
         actions: [
@@ -236,38 +252,17 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
     if (files.isEmpty) return;
     final label = _modelLabel(files);
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete model?'),
-        content: Text(
-          '"$label" will be removed from this computer. '
-          'You can download it again later.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppPalette.textSecondary,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmModelDelete(
+      context,
+      label: label,
+      sizeBytes: _bytesOnDisk(),
+      unfinished: false,
     );
+    if (!confirmed) return;
 
-    if (confirmed != true) return;
-
-    setState(() => _isDeleting = true);
-
-    final deleteController = ref.read(modelDeleteControllerProvider.notifier);
-    await deleteController.delete(files, label: label);
-
-    setState(() => _isDeleting = false);
+    await ref
+        .read(modelDeleteControllerProvider.notifier)
+        .delete(files, label: label);
   }
 
   /// What to call this model in a sentence: the filename when it's one file,
@@ -277,12 +272,10 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
       ? files.first
       : '${stripSplitSuffix(files.first)} (${files.length} parts)';
 
-  String _sizeLabel(int bytes) {
-    final gb = bytes / 1e9;
-    return gb >= 10
-        ? '${gb.toStringAsFixed(0)} GB'
-        : '${gb.toStringAsFixed(1)} GB';
-  }
+  /// Why Delete is off. Names where to stop it — "Model engines" is the row's
+  /// own label in the sidebar, so the sentence points somewhere that exists.
+  static const _inUseReason =
+      'This model is running right now. Stop it in Model engines to delete it.';
 
   /// The pills for one version. Quantisation and size are facts, so they stay
   /// neutral; the two badges that carry a verdict — will it run here, is it
@@ -290,7 +283,7 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   /// the menu lists a dozen versions.
   List<AppSelectBadge> _versionBadges(ModelVersion v) => [
     AppSelectBadge(v.version ?? '—'),
-    AppSelectBadge(_sizeLabel(v.sizeBytes)),
+    AppSelectBadge(modelSizeLabel(v.sizeBytes)),
     if (v.status case final status?)
       AppSelectBadge(
         status.label,
@@ -354,6 +347,27 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
           });
       }
     });
+
+    // Whether this model is coming down / going away, and what to say if the
+    // delete failed — all read from the controller, which is the only thing
+    // that knows. A second local copy of "is it deleting" drifts the moment
+    // anything else finishes the job (see [_startDownload]).
+    final files = _fileNamesFor(_selected);
+    final label = files.isEmpty ? '' : _modelLabel(files);
+    final deleteState = ref.watch(modelDeleteControllerProvider);
+    final deleting = switch (deleteState) {
+      ModelDeleting(label: final deletingLabel) => deletingLabel == label,
+      _ => false,
+    };
+    final deleteError = switch (deleteState) {
+      ModelDeleteFailed(label: final failedLabel, :final message)
+          when failedLabel == label =>
+        message,
+      _ => null,
+    };
+    // Never offer to delete the weights the engine is reading right now.
+    final serving = ref.watch(servingModelProvider);
+    final inUse = files.any((file) => isModelInUse(file, serving));
 
     final pullState = ref.watch(modelPullControllerProvider);
     final pulling = pullState is ModelPulling ? pullState : null;
@@ -459,40 +473,17 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
           child: Row(
             children: [
               Expanded(
-                child: switch (_error) {
+                child: switch (_error ?? deleteError) {
                   final message? => ErrorBox(message: message, maxHeight: 72),
                   _ => const SizedBox.shrink(),
                 },
               ),
               const SizedBox(width: 12),
               if (_isDownloaded) ...[
-                TextButton(
-                  onPressed: _isDeleting
-                      ? null
-                      : () => _confirmAndDelete(context),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppPalette.textSecondary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_isDeleting)
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      else
-                        const Icon(Icons.delete_outline, size: 16),
-                      if (!_isDeleting) const SizedBox(width: 4),
-                      if (!_isDeleting) const Text('Delete'),
-                      if (_isDeleting) const Text(' Deleting'),
-                    ],
-                  ),
+                _DeleteButton(
+                  deleting: deleting,
+                  blockedReason: inUse ? _inUseReason : null,
+                  onPressed: () => _confirmAndDelete(context),
                 ),
                 const SizedBox(width: 8),
               ],
@@ -515,6 +506,43 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
         ),
       ],
     );
+  }
+}
+
+/// The quiet way to get a model's space back, beside the download button.
+///
+/// [blockedReason] both disables it and becomes its tooltip: a dead button with
+/// no word on why is the thing that sends people to support.
+class _DeleteButton extends StatelessWidget {
+  const _DeleteButton({
+    required this.deleting,
+    required this.blockedReason,
+    required this.onPressed,
+  });
+
+  final bool deleting;
+  final String? blockedReason;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final button = TextButton.icon(
+      onPressed: deleting || blockedReason != null ? null : onPressed,
+      style: TextButton.styleFrom(foregroundColor: AppPalette.textSecondary),
+      icon: deleting
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.delete_outline, size: 16),
+      label: Text(deleting ? 'Deleting' : 'Delete'),
+    );
+    return switch (blockedReason) {
+      final reason? => Tooltip(message: reason, child: button),
+      _ => button,
+    };
   }
 }
 

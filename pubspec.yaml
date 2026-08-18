@@ -20,6 +20,11 @@ dependencies:
   crypto: ^3.0.6
   cryptography: ^2.9.0
   desktop_drop: ^0.7.1
+  # Generates the blank document "New" makes. Reading and drawing a .docx is the
+  # app's own (office/logic/docx_edit.dart + docx_format.dart) — a read-only
+  # renderer from `docx_file_viewer` was tried and dropped: it lost the text of
+  # list items built from soft breaks.
+  docx_creator: ^1.3.2
   file_selector: ^1.0.3
   flutter:
     sdk: flutter
@@ -54,6 +59,17 @@ dev_dependencies:
 # icons, so packages/tray_manager patches TrayMenu.swift to draw tinted SF
 # Symbol icons (blue = active grid, grey = others) in the menu-bar menu.
 dependency_overrides:
+  # docx_creator still declares `xml: ^6.6.1`, and this app is on 7: its own OOXML
+  # code needs two things 6 doesn't have — `namespaceUri:` on `findAllElements`,
+  # and `XmlName.parts` — so `ooxml_text.dart` and `docx_edit.dart` would both
+  # have to be walked back to use it.
+  #
+  # The override is the smaller move, and it is checked rather than assumed:
+  # `dart run tool/docx_roundtrip_check.dart` generates a blank document through
+  # that package under xml 7 and then opens and patches it. Drop this line when
+  # docx_creator widens its constraint — and re-run that probe when either
+  # package moves.
+  xml: ^7.0.1
   tray_manager:
     path: packages/tray_manager
 

@@ -12,7 +12,7 @@ import '../../logic/commit_controller.dart';
 import '../../logic/commit_message_writer.dart';
 import '../../logic/review_file.dart';
 import '../../logic/review_snapshot.dart';
-import 'menu_row.dart';
+import '../../../../shared/widgets/menu_row.dart';
 import 'review_mark.dart' show ChangeCount;
 import 'review_toolbar.dart' show ReviewBranchLine;
 

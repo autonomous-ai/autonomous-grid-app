@@ -70,7 +70,8 @@ class AgentActivity {
 
   /// The tool call this step ran *inside*, or null when the agent itself ran it.
   ///
-  /// Claude Code's `Task` tool starts a sub-agent, and that sub-agent's whole
+  /// Claude Code's `Agent` tool (`Task` in older builds) starts a sub-agent,
+  /// and that sub-agent's whole
   /// working life — its thoughts, its file reads, its commands — comes back in
   /// the same stream as the main agent's, tagged with the id of the `Task` call
   /// that started it. So a step is not always the agent's own: it can belong to

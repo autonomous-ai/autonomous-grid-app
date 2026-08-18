@@ -4,6 +4,7 @@ import '../../../infrastructure/panel/panel_audio.dart';
 import '../../../infrastructure/panel/panel_message.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../projects/logic/project.dart';
+import 'panel_turn_mirror.dart';
 
 /// The most audio one capture may hold — ten minutes at 16 kHz, 16-bit mono,
 /// which is 19.2 MB.
@@ -53,16 +54,16 @@ const int kPanelVoicePendingLimit = 4;
 /// come is a worse one.
 class PanelVoiceCapture {
   PanelVoiceCapture({
-    this.projectId,
+    this.chatId,
     this.command = PanelVoiceCommand.none,
     this.lang,
     this.limitBytes = kPanelVoiceMaxBytes,
   });
 
-  /// The project the panel was showing when the user started speaking, or null
+  /// The chat the panel was showing when the user started speaking, or null
   /// when they spoke from a screen that names none — which is what makes
   /// routing a decision (see [panelVoiceRouteFor]) rather than a lookup.
-  final String? projectId;
+  final String? chatId;
 
   /// Which pill started this capture. Carried on the capture rather than read
   /// again at the end, because by then the panel may already be showing a
@@ -160,19 +161,19 @@ sealed class PanelVoiceRoute {
   const PanelVoiceRoute();
 }
 
-/// The panel named the project, so this goes there without asking.
+/// The panel named the chat, so this goes there without asking.
 class PanelVoiceRouted extends PanelVoiceRoute {
-  const PanelVoiceRouted(this.projectId);
+  const PanelVoiceRouted(this.chatId);
 
-  final String projectId;
+  final String chatId;
 }
 
-/// Nobody named a project. This is the app's best guess, and it is sent with
+/// Nobody named a chat. This is the app's best guess, and it is sent with
 /// `needsConfirm` so the panel asks before anything runs.
 class PanelVoiceGuessed extends PanelVoiceRoute {
-  const PanelVoiceGuessed(this.projectId);
+  const PanelVoiceGuessed(this.chatId);
 
-  final String projectId;
+  final String chatId;
 }
 
 /// There is nowhere to send it. [message] is what the panel shows, and it names
@@ -188,53 +189,45 @@ class PanelVoiceUnroutable extends PanelVoiceRoute {
 /// Pure, and the whole of the hard half of voice: transcription either works or
 /// says why, while routing can be confidently wrong. The rules, in order:
 ///
-/// - A project the panel named wins outright.
-/// - A project the panel named that this computer no longer has is refused in
+/// - A chat the panel named wins outright.
+/// - A chat the panel named that this computer no longer has is refused in
 ///   words rather than re-guessed — the user picked a tile, and quietly sending
 ///   their words somewhere else is exactly the failure the confirm step exists
 ///   to prevent.
-/// - Otherwise the guess is the project talked in most recently, which is the
-///   only signal the app has about what the person at the panel is working on,
-///   falling back to the first project it lists when nothing has been said
-///   anywhere yet.
+/// - Otherwise the guess is the chat talked in most recently, which is the only
+///   signal the app has about what the person at the panel is working on. It is
+///   only a fallback: [PanelVoiceGuessed] is what puts the question to a model
+///   (and then to the user), rather than an answer.
 PanelVoiceRoute panelVoiceRouteFor({
   required String? spokenIn,
   required List<Project> projects,
   required ChatSessionsState chats,
 }) {
-  if (projects.isEmpty) {
+  final tiles = panelTileChatsOf(projects, chats);
+  if (tiles.isEmpty) {
     return const PanelVoiceUnroutable(
-      'There are no projects on this computer yet. Add one in Grid first.',
+      'There are no chats on this computer yet. Start one in Grid first.',
     );
   }
   final named = spokenIn?.trim() ?? '';
   if (named.isNotEmpty) {
-    if (projects.any((project) => project.id == named)) {
-      return PanelVoiceRouted(named);
-    }
+    if (tiles.contains(named)) return PanelVoiceRouted(named);
     return const PanelVoiceUnroutable(
-      'This computer no longer has that project.',
+      'This computer no longer has that chat.',
     );
   }
-  return PanelVoiceGuessed(
-    _mostRecentlyUsed(projects, chats) ?? projects.first.id,
-  );
+  return PanelVoiceGuessed(_mostRecentlyUsed(tiles, chats) ?? tiles.first);
 }
 
-/// The project whose chat was touched last, or null when none of the listed
-/// projects has ever been talked in.
-///
-/// Archived chats are excluded with the rest by [ChatSessionsState.live]: a
-/// project the user filed away is not what they are working on now.
-String? _mostRecentlyUsed(List<Project> projects, ChatSessionsState chats) {
-  final known = {for (final project in projects) project.id};
+/// The tile chat touched last, or null when none of them has ever been talked
+/// in.
+String? _mostRecentlyUsed(Set<String> tiles, ChatSessionsState chats) {
   String? best;
   DateTime? bestAt;
   for (final conversation in chats.live) {
-    final projectId = conversation.projectId;
-    if (projectId == null || !known.contains(projectId)) continue;
+    if (!tiles.contains(conversation.id)) continue;
     if (bestAt != null && !conversation.updatedAt.isAfter(bestAt)) continue;
-    best = projectId;
+    best = conversation.id;
     bestAt = conversation.updatedAt;
   }
   return best;

@@ -95,7 +95,16 @@ static const char *TAG = "voice";
 //
 // The old value assumed "transcription of a minute of audio on a desktop is seconds". A capture may now
 // be ten minutes and 19 MB, which is an upload as well as a transcription.
+//
+// It is a CEILING, not the wait. The wait itself is sized to the clip that was actually sent (below),
+// because 180 s is the right budget for ten minutes of audio and an absurd one for two seconds of it —
+// and the case where somebody wants their screen back promptly is exactly the short one: a press they did
+// not mean, stopped straight away.
 #define REPLY_WAIT_MS 180000
+// Fixed part: the round trip that happens whatever the clip is — the app's own dispatch, the CLI, the
+// request setup. Then a slice per second of audio for the upload and the model's own reading of it.
+#define REPLY_WAIT_BASE_MS 20000
+#define REPLY_WAIT_PER_S_MS 300
 
 // The capture task's stack. INTERNAL RAM, which is what a plain xTaskCreate gives on this IDF, and the
 // reference records why that matters: a flash write disables the cache, PSRAM is unreadable while it is
@@ -292,29 +301,38 @@ static void voice_task(void *arg)
              (unsigned)(s_len / 1024), s_heard ? "speech" : "no speech", avg,
              (unsigned)s_lvl_peak, VOICE_GATE_MEANABS);
 
+    // ── NOTHING IS COMING BACK, SO SAY SO NOW ───────────────────────────────────────────────────────
+    // Both branches below end the turn WITHOUT `voice.end` — one because the link went, the other because
+    // `voice.begin` never went out at all. grid-app therefore has nothing to answer, and a capture started
+    // from the Overview leaves the screen holding its "Sending…" state waiting for a routing answer to a
+    // question nobody asked; from an agent tile it waited on the periodic tick noticing the capture had
+    // ended. Neither is a thing to depend on when the answer is already known HERE. On the Overview the
+    // only exit was VOICE_ROUTE_WAIT_MS, a watchdog sized for transcribing a TEN-MINUTE clip (180 s), so
+    // pressing Voice and stopping straight away parked the panel on a loading screen for three minutes.
+    // Seen on hardware 2026-08-18; the app-side log for it is empty, which is the tell: the app was never
+    // told a capture happened.
+    if (s_abandon || lost || !begun) ui_voice_release();
+
     if (s_abandon || lost) {
         // The cable left, or the host stopped reading. Say so plainly instead of leaving the panel
         // looking like it is still listening: the audio is gone and nothing is coming back.
         ESP_LOGW(TAG, "voice turn abandoned — the link went away");
         notice("Lost the computer", "Nothing was sent. Check the cable and try again.");
     } else if (!begun) {
-        // The gate never latched: nothing was sent, no turn was started, and this is the ONLY outcome
-        // where the panel has to explain itself — from the outside a silent press and a working one look
-        // identical.
-        // The level goes IN THE MESSAGE, not only in a log nobody can reach.
+        // The gate never latched: nothing was sent and no turn was started. NOTHING IS SHOWN — the screen
+        // simply goes back where it was (ui_voice_release above), which is what a press somebody did not
+        // mean should cost. A card here was the common case dressed as an incident: most of the presses
+        // that land in this branch are a mis-tap or a stop straight after starting, and a dialog for that
+        // is a second thing to dismiss.
         //
-        // This panel's console is on the other USB port, and the port it talks to grid-app on is not the
-        // one carrying ESP_LOG — so on a desk with one cable plugged in, a log line does not exist. A
-        // number here turns "it doesn't work" into a diagnosis anyone can read off the glass and repeat
-        // back: 0 is a microphone that is not delivering samples at all (suspect the I2S pin roles, which
-        // board_pins.h records as unverified), a level below the gate is speech too quiet or a threshold
-        // too high, and a level above it with this message showing would be a bug in the gate itself.
-        char body[160];
-        snprintf(body, sizeof(body),
-                 "Level %u peak, %u average — the gate wants %d. "
-                 "Tap the mic and speak once it turns red.",
+        // ⚠️ WHAT THIS GIVES UP, and it is real: the card carried the measured level, and that number is
+        // the difference between "the microphone delivers nothing at all" (0 — suspect the I2S pin roles,
+        // which board_pins.h records as unverified), "you spoke too quietly", and "the gate is wrong". It
+        // is still in the "capture ended" line above — but this panel's console is on the OTHER USB port,
+        // so on a one-cable desk that log does not exist. If the mic is ever suspected again, that second
+        // cable is now the only way to see it.
+        ESP_LOGI(TAG, "nothing heard — no turn started (peak %u, avg %u, gate %d)",
                  (unsigned)s_lvl_peak, avg, VOICE_GATE_MEANABS);
-        notice("Nothing heard", body);
     } else if (!drain(-1)) {   // the mic is closed now, so there is nothing left to interleave with
         ESP_LOGW(TAG, "the tail of the recording could not be sent");
         notice("Lost the computer", "Only part of what you said was sent. Check the cable and try again.");
@@ -323,11 +341,19 @@ static void voice_task(void *arg)
         // Wait for `voice.transcript` or `voice.error` HERE rather than letting the task end and having
         // the screen wait on its own. One state machine, one place it can be read from, and the turn is
         // not over until the panel knows what the computer heard.
-        const int64_t deadline = esp_timer_get_time() + (int64_t)REPLY_WAIT_MS * 1000;
+        //
+        // Sized to THIS clip. See REPLY_WAIT_MS for why a flat ceiling was the wrong shape.
+        const unsigned clip_s = (unsigned)(s_len / (AUDIO_SAMPLE_RATE * 2));
+        uint32_t wait_ms = REPLY_WAIT_BASE_MS + clip_s * REPLY_WAIT_PER_S_MS;
+        if (wait_ms > REPLY_WAIT_MS) wait_ms = REPLY_WAIT_MS;
+        ESP_LOGI(TAG, "waiting up to %us for the transcript of %us of audio",
+                 (unsigned)(wait_ms / 1000), clip_s);
+        const int64_t deadline = esp_timer_get_time() + (int64_t)wait_ms * 1000;
         while (!s_reply_seen && !s_abandon && esp_timer_get_time() < deadline) {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
         if (!s_reply_seen) {
+            ui_voice_release();   // nothing is coming — do not leave the screen mid-send
             notice("No answer from the computer",
                    "The panel sent what you said and heard nothing back.");
         }
@@ -348,7 +374,7 @@ void voice_init(void)
              (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024));
 }
 
-void voice_start(const char *project_id, voice_cmd_t cmd)
+void voice_start(const char *chat_id, voice_cmd_t cmd)
 {
     if (s_active) return;   // one utterance at a time; the second press is the user repeating themselves
     if (!s_buf) {
@@ -362,7 +388,7 @@ void voice_start(const char *project_id, voice_cmd_t cmd)
         }
     }
 
-    snprintf(s_project, sizeof(s_project), "%s", project_id ? project_id : "");
+    snprintf(s_project, sizeof(s_project), "%s", chat_id ? chat_id : "");
     s_cmd = cmd;
     s_stop_req = false;
     s_abandon = false;

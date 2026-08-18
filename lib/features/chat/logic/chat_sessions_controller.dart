@@ -14,6 +14,7 @@ import '../../../infrastructure/platform/window_focus.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agents/logic/agent_changes.dart';
+import '../../agents/logic/agent_questions.dart';
 import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/agent_session_title.dart';
@@ -21,6 +22,7 @@ import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agents/logic/adapters/claude_chat_sender.dart';
+import '../../agents/logic/agent_steering.dart';
 import '../../agents/logic/auto_agent_router.dart';
 import '../../network/logic/node_display.dart' show kAutoModelId;
 import '../../auth/logic/session_controller.dart';
@@ -96,6 +98,7 @@ class _RetryableTurn {
   /// The transcript length after the user turn was committed. A partial answer
   /// may follow it after failure; retry trims to this point before sending.
   final int messageCount;
+
   final List<MediaAttachment> attachments;
   final bool planTurn;
   final AgentTool? continuedAgent;
@@ -287,7 +290,10 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   });
 
   /// Hold a turn typed while the chat was busy — [_ChatQueue].
-  void _enqueue(QueuedTurn turn);
+  void _enqueue(String id, QueuedTurn turn);
+
+  /// Put a turn typed mid-answer into the answer itself — [_ChatQueue].
+  Future<bool> _steerRunningTurn(String id, QueuedTurn turn);
 
   /// Send the next held turn, if any — [_ChatQueue].
   bool _drainQueue(String id);
@@ -722,6 +728,7 @@ class ChatSessionsController extends _ChatSessions
     // conversation the user deleted, and its live feed with them.
     ref.read(agentChangesProvider.notifier).forget(id);
     ref.read(agentRunsProvider.notifier).forget(id);
+    ref.read(agentQuestionsProvider.notifier).clear(id);
     final remaining = [
       for (final c in state.conversations)
         if (c.id != id) c,
@@ -774,11 +781,13 @@ class ChatSessionsController extends _ChatSessions
     if (doomed.isEmpty) return;
     final changes = ref.read(agentChangesProvider.notifier);
     final runs = ref.read(agentRunsProvider.notifier);
+    final questions = ref.read(agentQuestionsProvider.notifier);
     for (final id in doomed) {
       _cancel(id);
       _store.delete(id);
       changes.forget(id);
       runs.forget(id);
+      questions.clear(id);
       _deletedWhileLoading?.add(id);
     }
     final gone = doomed.toSet();
@@ -887,6 +896,30 @@ class ChatSessionsController extends _ChatSessions
       message: 'The plan looks good — go ahead and carry it out.',
       planFirst: false,
       // The agent that wrote the plan is the only one that has it.
+      continuing: true,
+    );
+  }
+
+  /// The user answered the assistant's questions from the card over the
+  /// composer.
+  ///
+  /// An ordinary message, because that is all it can be: the `AskUserQuestion`
+  /// call that asked was answered by the CLI itself the moment it was made (see
+  /// [ClaudeQuestionsEvent]), so there is no request left to reply to — only the
+  /// next thing to say. [continuing] keeps it with the agent that asked, and the
+  /// card is cleared first so a queued answer doesn't leave the question sitting
+  /// there as though nobody had answered it.
+  Future<void> answerQuestions(String message) {
+    final network = ref.read(selectedNetworkProvider);
+    final active = state.active;
+    if (network == null || active == null || message.trim().isEmpty) {
+      return Future.value();
+    }
+    ref.read(agentQuestionsProvider.notifier).clear(active.id);
+    return send(
+      network: network,
+      model: active.model,
+      message: message,
       continuing: true,
     );
   }

@@ -20,7 +20,7 @@ import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/features/panel/logic/panel_controller.dart';
 import 'package:grid_app/features/projects/logic/selected_project.dart';
 import 'package:grid_app/features/panel/logic/panel_firmware_updater.dart';
-import 'package:grid_app/features/panel/logic/panel_project_mirror.dart';
+import 'package:grid_app/features/panel/logic/panel_chat_mirror.dart';
 import 'package:grid_app/features/panel/logic/panel_question_mirror.dart';
 import 'package:grid_app/features/panel/logic/panel_summary_writer.dart';
 import 'package:grid_app/features/panel/logic/panel_turn_mirror.dart';
@@ -344,9 +344,60 @@ ChatSessionsState _chatsWith({
 }
 
 void main() {
-  group('the tile a project becomes', () {
-    test('carries the assistant it uses, so the panel can show it', () {
-      final tile = panelProjectFor(
+  group('the tile a chat becomes', () {
+    Conversation chat({
+      String id = 'c-1',
+      String title = 'A chat',
+      String projectId = 'p-1',
+      DateTime? at,
+      List<ChatMessage> messages = const [],
+      bool pinned = false,
+      DateTime? archivedAt,
+    }) => _chat(
+      id: id,
+      projectId: projectId,
+      at: at ?? DateTime(2026, 8, 13),
+      messages: messages,
+      pinned: pinned,
+      archivedAt: archivedAt,
+    ).copyWith(title: title);
+
+    test('is the CHAT: its title heads it, its project names the folder under '
+        'it, and the agent is the one that ANSWERED it', () {
+      final tile = panelChatFor(
+        chat(
+          title: 'Retry the webhook',
+          messages: [
+            const ChatMessage(role: ChatRole.user, text: 'fix it'),
+            const ChatMessage(
+              role: ChatRole.assistant,
+              text: 'Done',
+              agent: 'codex',
+            ),
+          ],
+        ),
+        const Project(
+          id: 'p-1',
+          name: 'grid-app',
+          path: '/tmp/grid-app',
+          agent: 'claude',
+          model: 'auto',
+        ),
+        const ChatSessionsState(),
+      );
+      expect(tile.id, 'c-1');
+      expect(tile.name, 'Retry the webhook');
+      expect(tile.project, 'grid-app');
+      // Not the project's 'claude': under Auto the grid picks per turn, and the
+      // tile should say who spoke rather than who was nominated.
+      expect(tile.agent, 'codex');
+      expect(tile.busy, isFalse);
+    });
+
+    test("falls back to the project's agent for a chat nothing has answered "
+        'yet, so a fresh tile is not blank where the mark goes', () {
+      final tile = panelChatFor(
+        chat(),
         const Project(
           id: 'p-1',
           name: 'grid-app',
@@ -357,126 +408,126 @@ void main() {
         const ChatSessionsState(),
       );
       expect(tile.agent, 'claude');
-      expect(tile.model, 'auto');
-      expect(tile.busy, isFalse);
+      // The CHAT's model, not the project's: a chat carries the model it last
+      // ran on, and that is what its next turn will use.
+      expect(tile.model, 'qwen');
     });
 
     test('recaps the last thing the assistant said, in one line', () {
-      final tile = panelProjectFor(
-        _project,
-        ChatSessionsState(
-          conversations: [
-            _chat(
-              id: 'c-1',
-              projectId: 'p-1',
-              at: DateTime(2026, 8, 13),
-              messages: [
-                _said('An earlier answer'),
-                const ChatMessage(role: ChatRole.user, text: 'and now run it'),
-                _said('## Ran the tests\nAll 1599 passed.'),
-              ],
-            ),
+      final tile = panelChatFor(
+        chat(
+          messages: [
+            _said('An earlier answer'),
+            const ChatMessage(role: ChatRole.user, text: 'and now run it'),
+            _said('## Ran the tests\nAll 1599 passed.'),
           ],
         ),
+        _project,
+        const ChatSessionsState(),
       );
-      // The heading markup would arrive on a 480px tile as punctuation, and the
+      // The heading markup would arrive on a 466px tile as punctuation, and the
       // second line is not what the user last read.
       expect(tile.recap, 'Ran the tests');
     });
 
-    test('a project nobody has talked in yet sends no recap at all', () {
-      final tile = panelProjectFor(_project, const ChatSessionsState());
+    test('a chat nobody has spoken in yet sends no recap at all', () {
+      final tile = panelChatFor(chat(), _project, const ChatSessionsState());
       expect(tile.recap, isEmpty);
       expect(tile.toJson().containsKey('recap'), isFalse);
     });
 
-    test('the recap comes from the newest chat, not the pinned one', () {
-      // The sidebar floats pinned chats to the top, which is right for
-      // something the user clicks and wrong for "what happened here last".
-      final tile = panelProjectFor(
-        _project,
-        ChatSessionsState(
+    test('a turn running in THIS chat makes THIS tile busy, and leaves its '
+        "neighbour in the same project alone", () {
+      // The heart of it. Two chats in one folder can answer at once
+      // (`bf462afc`), and while a tile stood for the folder one of the two
+      // turns was invisible — whichever the iteration order reached last won
+      // the tile.
+      final chats = ChatSessionsState(
+        conversations: [
+          _chat(id: 'c-1', projectId: 'p-1', at: DateTime(2026, 8, 13)),
+          _chat(id: 'c-2', projectId: 'p-1', at: DateTime(2026, 8, 12)),
+        ],
+        runningAgents: const {'c-2': 'run-c-2'},
+      );
+      expect(panelChatFor(chat(id: 'c-2'), _project, chats).busy, isTrue);
+      expect(panelChatFor(chat(id: 'c-1'), _project, chats).busy, isFalse);
+    });
+
+    test('the tiles are every chat, grouped by project in the order the app '
+        'lists them and ordered inside a project the way the sidebar is', () {
+      final tiles = panelChatsFor(
+        projects: const [
+          Project(id: 'p-2', name: 'notes', path: '/tmp/notes'),
+          _project,
+        ],
+        chats: ChatSessionsState(
           conversations: [
+            _chat(id: 'a', projectId: 'p-1', at: DateTime(2026, 8, 13)),
+            _chat(id: 'b', projectId: 'p-2', at: DateTime(2026, 8, 12)),
+            // Pinned, so `liveConversations` floats it above 'a' in p-1.
             _chat(
-              id: 'pinned',
+              id: 'c',
               projectId: 'p-1',
               at: DateTime(2026, 8, 1),
-              messages: [_said('Old news')],
               pinned: true,
-            ),
-            _chat(
-              id: 'newest',
-              projectId: 'p-1',
-              at: DateTime(2026, 8, 13),
-              messages: [_said('Fresh news')],
             ),
           ],
         ),
       );
-      expect(tile.recap, 'Fresh news');
+      expect(tiles.map((t) => t.id).toList(), ['b', 'c', 'a']);
+      expect(tiles.map((t) => t.project).toList(), [
+        'notes',
+        'grid-app',
+        'grid-app',
+      ]);
     });
 
-    test('an archived chat is not what the project last did', () {
-      final tile = panelProjectFor(
-        _project,
-        ChatSessionsState(
+    test('an archived chat gets no tile — the panel lists what the sidebar '
+        'lists', () {
+      final tiles = panelChatsFor(
+        projects: const [_project],
+        chats: ChatSessionsState(
           conversations: [
             _chat(
               id: 'filed',
               projectId: 'p-1',
               at: DateTime(2026, 8, 14),
-              messages: [_said('Filed away')],
               archivedAt: DateTime(2026, 8, 14),
             ),
-            _chat(
-              id: 'live',
-              projectId: 'p-1',
-              at: DateTime(2026, 8, 13),
-              messages: [_said('Still here')],
-            ),
+            _chat(id: 'live', projectId: 'p-1', at: DateTime(2026, 8, 13)),
           ],
         ),
       );
-      expect(tile.recap, 'Still here');
+      expect(tiles.map((t) => t.id).toList(), ['live']);
     });
 
-    test('a turn running in any of its chats makes the tile busy', () {
-      // Turns are serialized per project, so the chat holding the lane is what
-      // makes the tile busy — and it need not be the one the recap came from.
-      final chats = ChatSessionsState(
-        conversations: [
-          _chat(
-            id: 'c-1',
-            projectId: 'p-1',
-            at: DateTime(2026, 8, 13),
-            messages: [_said('Answered already')],
-          ),
-          _chat(id: 'c-2', projectId: 'p-1', at: DateTime(2026, 8, 12)),
-        ],
-        runningAgents: const {'c-2': 'run-c-2'},
+    test('a chat in a project the app does not list gets no tile, because a '
+        'chat can outlive the project it was started in', () {
+      final tiles = panelChatsFor(
+        projects: const [_project],
+        chats: ChatSessionsState(
+          conversations: [
+            _chat(id: 'orphan', projectId: 'p-gone', at: DateTime(2026, 8, 14)),
+            _chat(id: 'kept', projectId: 'p-1', at: DateTime(2026, 8, 13)),
+          ],
+        ),
       );
-      expect(panelProjectFor(_project, chats).busy, isTrue);
+      expect(tiles.map((t) => t.id).toList(), ['kept']);
     });
 
-    test("another project's turn never lights up this tile", () {
-      final chats = ChatSessionsState(
-        conversations: [
-          _chat(id: 'other', projectId: 'p-2', at: DateTime(2026, 8, 13)),
-        ],
-        runningAgents: const {'other': 'run-other'},
+    test('the list is cut at the limit rather than overrunning the array the '
+        'firmware allocated for it', () {
+      final tiles = panelChatsFor(
+        projects: const [_project],
+        chats: ChatSessionsState(
+          conversations: [
+            for (var i = 0; i < 5; i++)
+              _chat(id: 'c-$i', projectId: 'p-1', at: DateTime(2026, 8, 13)),
+          ],
+        ),
+        limit: 3,
       );
-      expect(panelProjectFor(_project, chats).busy, isFalse);
-    });
-
-    test('the tiles keep the order the app itself lists projects in', () {
-      final tiles = panelProjectsFor(
-        projects: const [
-          Project(id: 'p-2', name: 'notes', path: '/tmp/notes'),
-          _project,
-        ],
-        chats: const ChatSessionsState(),
-      );
-      expect(tiles.map((t) => t.name).toList(), ['notes', 'grid-app']);
+      expect(tiles.length, 3);
     });
   });
 
@@ -590,7 +641,7 @@ void main() {
       ]);
       expect(panelTurnTodosFor(const AgentRun()), isEmpty);
       expect(
-        jsonDecode(panelTurnPartsMessage(projectId: 'p-1', parts: const [])),
+        jsonDecode(panelTurnPartsMessage(chatId: 'p-1', parts: const [])),
         isNot(contains('todos')),
       );
     });
@@ -626,7 +677,7 @@ void main() {
       // The frame *refuses* an over-long payload rather than truncating it, so
       // an arithmetic cap measured in characters is not a bound on bytes.
       final message = panelTurnPartsMessage(
-        projectId: 'p-1',
+        chatId: 'p-1',
         parts: panelTurnPartsFor(
           AgentRun(
             parts: [
@@ -644,7 +695,7 @@ void main() {
     test('a plan too big for the frame is dropped rather than throwing, '
         'because the timeline running out is not the only way to overflow', () {
       final message = panelTurnPartsMessage(
-        projectId: 'p-1',
+        chatId: 'p-1',
         parts: const [],
         todos: panelTurnTodosFor(
           AgentRun(
@@ -707,11 +758,11 @@ void main() {
         parts: [TurnStep(begun('s1', 4200))],
       );
       final first = panelTurnPartsMessage(
-        projectId: 'p-1',
+        chatId: 'p-1',
         parts: panelTurnPartsFor(run),
       );
       final later = panelTurnPartsMessage(
-        projectId: 'p-1',
+        chatId: 'p-1',
         parts: panelTurnPartsFor(run),
       );
       expect(later, first);
@@ -746,7 +797,58 @@ void main() {
   group('keeping a panel up to date with a turn', () {
     const projects = [_project];
 
-    test('a project that starts working is announced once, and its timeline '
+    test('TWO chats in one project both working are two live turns, not one — '
+        'the tile each of them gets is its own', () {
+      // The bug this whole change came out of. While a tile stood for a
+      // project, `panelTurnHoldersOf` picked ONE chat to speak for the folder,
+      // and the rule for picking it was written when turns were serialized per
+      // project. `bf462afc` ("let every chat in a project answer at once")
+      // deleted that premise, so of two live turns in one folder the panel drew
+      // whichever the iteration order reached last and the other never existed.
+      final mirror = PanelTurnMirror();
+      final both = ChatSessionsState(
+        conversations: [
+          _chat(id: 'c-1', projectId: 'p-1', at: DateTime(2026, 8, 14)),
+          _chat(id: 'c-2', projectId: 'p-1', at: DateTime(2026, 8, 13)),
+        ],
+        runningAgents: const {'c-1': 'run-1', 'c-2': 'run-2'},
+      ).withPhase('c-1', const SendBusy()).withPhase('c-2', const SendBusy());
+
+      final started = mirror.onChange(
+        projects: projects,
+        chats: both,
+        runs: const {},
+      );
+      expect(
+        started.map((m) => (jsonDecode(m) as Map)['chatId']).toList(),
+        ['c-1', 'c-2'],
+      );
+
+      // And each one's timeline is its own, keyed by the chat that produced it.
+      final timelines = mirror.onChange(
+        projects: projects,
+        chats: both,
+        runs: {
+          'c-1': AgentRun(parts: [TurnStep(_step('s1', 'flutter test'))]),
+          'c-2': AgentRun(parts: [TurnStep(_step('s2', 'npm run build'))]),
+        },
+      );
+      final byChat = {
+        for (final m in timelines)
+          (jsonDecode(m) as Map)['chatId'] as String: jsonDecode(m) as Map,
+      };
+      expect(byChat.keys, {'c-1', 'c-2'});
+      expect(
+        ((byChat['c-1']!['parts']! as List).single as Map)['label'],
+        'flutter test',
+      );
+      expect(
+        ((byChat['c-2']!['parts']! as List).single as Map)['label'],
+        'npm run build',
+      );
+    });
+
+    test('a chat that starts working is announced once, and its timeline '
         'follows as the agent produces it', () {
       final mirror = PanelTurnMirror();
       final running = _chatsWith(chatId: 'c-1', running: true, sending: true);
@@ -759,7 +861,7 @@ void main() {
       expect(first, hasLength(1));
       expect(jsonDecode(first.single), {
         't': 'turn.started',
-        'projectId': 'p-1',
+        'chatId': 'c-1',
       });
 
       final next = mirror.onChange(
@@ -771,7 +873,7 @@ void main() {
       );
       expect(jsonDecode(next.single), {
         't': 'turn.parts',
-        'projectId': 'p-1',
+        'chatId': 'c-1',
         'parts': [
           {
             'k': 's',
@@ -822,7 +924,7 @@ void main() {
       // wrong information, not missing information.
       expect(jsonDecode(done.single), {
         't': 'turn.summarizing',
-        'projectId': 'p-1',
+        'chatId': 'c-1',
       });
     });
 
@@ -841,7 +943,7 @@ void main() {
       );
       expect(jsonDecode(failed.single), {
         't': 'turn.error',
-        'projectId': 'p-1',
+        'chatId': 'c-1',
         'message': 'Hermes stopped answering',
       });
     });
@@ -921,7 +1023,7 @@ void main() {
       // told the turn is being read.
       expect((jsonDecode(settled.single) as Map)['t'], 'turn.summarizing');
       final ended = mirror.drainEnded();
-      expect(ended.map((e) => '${e.projectId}/${e.chat?.id}'), ['p-1/c-1']);
+      expect(ended.map((e) => '${e.chatId}/${e.chat?.id}'), ['c-1/c-1']);
 
       // Once handed on, it is gone — a turn closed out twice would send two
       // terminal messages for one turn.
@@ -1001,38 +1103,42 @@ void main() {
       );
     });
 
-    test('a project nobody has talked in sends no kind at all — a colour with '
+    test('a chat nobody has spoken in sends no kind at all — a colour with '
         'nothing to colour is a field the panel has to guess about', () {
-      final tile = panelProjectFor(_project, const ChatSessionsState());
+      final tile = panelChatFor(
+        _chat(id: 'c-0', projectId: 'p-1', at: DateTime(2026, 8, 13)),
+        _project,
+        const ChatSessionsState(),
+      );
       expect(tile.toJson().containsKey('recapKind'), isFalse);
     });
 
-    test('the tile reads its kind off the same chat as its recap', () {
-      final tile = panelProjectFor(
-        _project,
-        ChatSessionsState(
-          conversations: [
-            _chat(
-              id: 'old',
-              projectId: 'p-1',
-              at: DateTime(2026, 8, 1),
-              messages: [_said('Long ago')],
-            ),
-            ended(const [
-              TurnStep(
-                AgentActivity(
-                  id: 's1',
-                  kind: AgentActivityKind.command,
-                  label: 'npm install',
-                  status: AgentActivityStatus.unknown,
-                ),
-              ),
-            ]),
-          ],
+    test('the tile reads its kind off its OWN chat, not off a neighbour in the '
+        'same project', () {
+      final cut = ended(const [
+        TurnStep(
+          AgentActivity(
+            id: 's1',
+            kind: AgentActivityKind.command,
+            label: 'npm install',
+            status: AgentActivityStatus.unknown,
+          ),
         ),
+      ]);
+      final quiet = _chat(
+        id: 'old',
+        projectId: 'p-1',
+        at: DateTime(2026, 8, 1),
+        messages: [_said('Long ago')],
       );
+      final chats = ChatSessionsState(conversations: [quiet, cut]);
+
+      final tile = panelChatFor(cut, _project, chats);
       expect(tile.recap, 'All done');
       expect(tile.toJson()['recapKind'], 'stopped');
+      // Its neighbour ended cleanly, and now says so on its own tile — under
+      // one-tile-per-project these two turns shared a colour.
+      expect(panelChatFor(quiet, _project, chats).toJson()['recapKind'], 'done');
     });
   });
 
@@ -1067,7 +1173,7 @@ void main() {
       );
       expect(jsonDecode(messages.single), {
         't': 'question',
-        'projectId': 'p-1',
+        'chatId': 'c-1',
         'id': 'q-7',
         'summary': 'Delete the build folder',
         'command': 'rm -rf build',
@@ -1077,7 +1183,7 @@ void main() {
           {'id': 'allow_once', 'label': 'Allow once'},
         ],
       });
-      expect(mirror.chatFor('p-1', 'q-7'), 'c-1');
+      expect(mirror.isAsking('c-1', 'q-7'), isTrue);
     });
 
     test('is asked once, not again on every change the app publishes while it '
@@ -1115,15 +1221,16 @@ void main() {
       );
       expect(jsonDecode(cleared.single), {
         't': 'question.cancel',
-        'projectId': 'p-1',
+        'chatId': 'c-1',
         'id': 'q-7',
       });
       // And the answer that arrives a moment later is dropped without a word.
-      expect(mirror.chatFor('p-1', 'q-7'), isNull);
+      expect(mirror.isAsking('c-1', 'q-7'), isFalse);
     });
 
     test(
-      'a turn that ends while a question is up takes the question with it',
+      'the card goes when the QUESTION goes, not when the turn does — it is '
+      'the permission the user is answering, and the window still shows it',
       () {
         final mirror = PanelQuestionMirror();
         mirror.onChange(
@@ -1131,10 +1238,23 @@ void main() {
           chats: working(),
           permissions: {'c-1': ask()},
         );
-        final gone = mirror.onChange(
+
+        // The turn's steps stop arriving but the permission is still pending:
+        // nothing has been answered, so nothing is withdrawn. This changed with
+        // one tile per chat — the card used to hang off the project's turn
+        // holder, so a turn ending pulled a question nobody had answered.
+        final stillAsking = mirror.onChange(
           projects: projects,
           chats: _chatsWith(chatId: 'c-1'),
           permissions: {'c-1': ask()},
+        );
+        expect(stillAsking, isEmpty);
+
+        // Answered in the window, or timed out: now it goes.
+        final gone = mirror.onChange(
+          projects: projects,
+          chats: _chatsWith(chatId: 'c-1'),
+          permissions: const {},
         );
         expect((jsonDecode(gone.single) as Map)['t'], 'question.cancel');
       },
@@ -1213,65 +1333,65 @@ void main() {
   });
 
   group('keeping the tiles up to date without being asked', () {
-    PanelProject tile(
+    PanelChat tile(
       String id, {
-      String name = 'grid-app',
+      String name = 'A chat',
       String recap = '',
-    }) => PanelProject(id: id, name: name, recap: recap);
+    }) => PanelChat(id: id, name: name, project: 'grid-app', recap: recap);
 
     test(
-      'a project created on the desktop reaches a plugged-in panel as the '
+      'a chat started on the desktop reaches a plugged-in panel as the '
       'whole list, because the panel draws them in the order they arrive',
       () {
-        final mirror = PanelProjectMirror();
-        mirror.all([tile('p-1')]);
+        final mirror = PanelChatMirror();
+        mirror.all([tile('c-1')]);
         final messages = mirror.onChange([
-          tile('p-1'),
-          tile('p-2', name: 'notes'),
+          tile('c-1'),
+          tile('c-2', name: 'Notes'),
         ]);
-        expect((jsonDecode(messages.single) as Map)['t'], 'projects');
+        expect((jsonDecode(messages.single) as Map)['t'], 'chats');
       },
     );
 
     test('pinning one is a change to the list, not to any tile on it', () {
-      final mirror = PanelProjectMirror();
-      mirror.all([tile('p-1'), tile('p-2', name: 'notes')]);
+      final mirror = PanelChatMirror();
+      mirror.all([tile('c-1'), tile('c-2', name: 'Notes')]);
       final messages = mirror.onChange([
-        tile('p-2', name: 'notes'),
-        tile('p-1'),
+        tile('c-2', name: 'Notes'),
+        tile('c-1'),
       ]);
-      expect((jsonDecode(messages.single) as Map)['t'], 'projects');
+      expect((jsonDecode(messages.single) as Map)['t'], 'chats');
     });
 
-    test('a renamed project is one tile, sent on its own', () {
-      final mirror = PanelProjectMirror();
-      mirror.all([tile('p-1'), tile('p-2', name: 'notes')]);
+    test('a renamed chat is one tile, sent on its own', () {
+      final mirror = PanelChatMirror();
+      mirror.all([tile('c-1'), tile('c-2', name: 'Notes')]);
       final messages = mirror.onChange([
-        tile('p-1', name: 'grid'),
-        tile('p-2', name: 'notes'),
+        tile('c-1', name: 'Renamed'),
+        tile('c-2', name: 'Notes'),
       ]);
       final sent = jsonDecode(messages.single) as Map;
-      expect(sent['t'], 'project.updated');
-      expect((sent['item']! as Map)['name'], 'grid');
+      expect(sent['t'], 'chat.updated');
+      expect((sent['item']! as Map)['name'], 'Renamed');
     });
 
     test('a change the tile cannot show says nothing at all — the project list '
         'moves for reasons a 466px tile has no room for', () {
       // Editing a project's instructions or its memory republishes the whole
       // list; none of it reaches the tile, and a frame per keystroke would.
-      final mirror = PanelProjectMirror();
-      mirror.all([tile('p-1')]);
-      expect(mirror.onChange([tile('p-1')]), isEmpty);
+      final mirror = PanelChatMirror();
+      mirror.all([tile('c-1')]);
+      expect(mirror.onChange([tile('c-1')]), isEmpty);
     });
 
     test('a panel that has just plugged in is told everything again, whatever '
         'the app remembers telling the last one', () {
-      final mirror = PanelProjectMirror();
-      mirror.all([tile('p-1')]);
+      final mirror = PanelChatMirror();
+      mirror.all([tile('c-1')]);
       mirror.forget();
       expect(
-        (jsonDecode(mirror.onChange([tile('p-1')]).single) as Map)['t'],
-        'projects',
+        (jsonDecode(mirror.onChange([tile('c-1')]).single) as Map)['t'],
+        'chats',
       );
     });
   });
@@ -1433,6 +1553,32 @@ void main() {
     /// All three are pinned rather than read from the machine running the test:
     /// a turn started from the panel reaches for every one of them, and a real
     /// `hermes` on the tester's PATH would answer for real.
+    /// A project with one saved chat in it, written to the stores the harness
+    /// points at BEFORE the container reads them.
+    ///
+    /// A tile is a chat, so the panel can only start a turn in one that already
+    /// exists — and seeding through the real send path would mean running a
+    /// whole turn just to have something to point at, which the tests that pin
+    /// the grid absent cannot do at all.
+    void seed({
+      String projectId = 'p-1',
+      String chatId = 'c-1',
+      String projectName = 'api',
+      String title = 'A chat',
+      String model = 'qwen',
+    }) {
+      ProjectsStore(file: File('${tmp.path}/projects.json')).save([
+        Project(id: projectId, name: projectName, path: '${tmp.path}/api'),
+      ]);
+      ChatStore(directory: tmp).save(
+        _chat(
+          id: chatId,
+          projectId: projectId,
+          at: DateTime(2026, 8, 14),
+        ).copyWith(title: title, model: model),
+      );
+    }
+
     ProviderContainer harness(
       _FakeTransport transport, {
       NetworkCredential? grid,
@@ -1522,7 +1668,7 @@ void main() {
       harness(transport);
 
       transport.deliver(
-        '{"t":"hello","fw":"0.1.0","proto":1,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","fw":"0.1.0","proto":2,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       await pumpEventQueue();
 
@@ -1535,7 +1681,7 @@ void main() {
       // The Settings page's Voice row reports this rather than choosing it, so it
       // has to be the same reading the transcriber is given.
       expect(welcome['voiceLang'], isNotNull);
-      expect(welcome['proto'], 1);
+      expect(welcome['proto'], 2);
       expect(welcome['app'], '0.9.1');
       expect((welcome['machine']! as Map<String, Object?>)['id'], 'this-mac');
     });
@@ -1544,6 +1690,7 @@ void main() {
         'the turn it is already watching is not re-sent', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -1551,14 +1698,10 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
-      const hello = '{"t":"hello","fw":"0.1.0","proto":1,"mac":"AA"}';
+      const hello = '{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}';
       transport.deliver(hello);
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
       expect(
@@ -1593,6 +1736,7 @@ void main() {
         'walked in on, because nothing it was told belongs to it', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -1600,19 +1744,15 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":1,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}');
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
       final beforeSwap = transport.replies.length;
 
       // Same cable, different board.
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":1,"mac":"BB"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"BB"}');
       await pumpEventQueue();
 
       expect(
@@ -1639,37 +1779,35 @@ void main() {
       expect(_beyondTheHeartbeat(transport).single['t'], 'welcome');
     });
 
-    test('asking for the projects gets the real ones', () async {
+    test('asking for the chats gets the real ones, each naming its folder', () async {
       final transport = _FakeTransport();
+      seed();
       final container = harness(transport);
       await container.read(chatSessionsProvider.notifier).restored;
-      final projects = container.read(projectsProvider.notifier);
-      projects.create(path: '${tmp.path}/api', name: 'api');
-      final notes = projects.create(path: '${tmp.path}/notes', name: 'notes');
-      projects.setPinned(notes.id, true);
-
-      transport.deliver('{"t":"projects.list"}');
+      transport.deliver('{"t":"chats.list"}');
       await pumpEventQueue();
 
-      final reply = _lastOf(transport, 'projects');
+      final reply = _lastOf(transport, 'chats');
       final items = (reply['items']! as List).cast<Map<String, Object?>>();
-      // Pinned first, exactly as the rail shows them.
-      expect(items.map((i) => i['name']).toList(), ['notes', 'api']);
+      // The chat, with the folder it lives in under it.
+      expect(items.map((i) => i['name']).toList(), ['A chat']);
+      expect(items.first['project'], 'api');
       expect(items.first['busy'], false);
     });
 
     test(
-      'a turn for a project this computer no longer has is refused in words, '
+      'a turn for a chat this computer no longer has is refused in words, '
       'not by silence',
       () async {
         // Silence would leave the tile spinning on work that is never coming,
         // and the panel has no other way to find out — it reads no disk and
         // cannot see the window.
         final transport = _FakeTransport();
+        seed();
         final container = harness(transport, grid: _credential());
         await container.read(chatSessionsProvider.notifier).restored;
 
-        transport.deliver('{"t":"turn.send","projectId":"p-1","text":"hi"}');
+        transport.deliver('{"t":"turn.send","chatId":"c-gone","text":"hi"}');
         await pumpEventQueue();
 
         await _until(
@@ -1678,22 +1816,19 @@ void main() {
         );
         final reply = _beyondTheHeartbeat(transport).single;
         expect(reply['t'], 'turn.error');
-        expect(reply['projectId'], 'p-1');
-        expect(reply['message'], contains('project'));
+        expect(reply['chatId'], 'c-gone');
+        expect(reply['message'], contains('chat'));
       },
     );
 
     test('a turn asked for with no grid set up says which step is missing, so '
         'the answer is something the user can go and do', () async {
       final transport = _FakeTransport();
+      seed();
       final container = harness(transport, agent: _HeldTurn());
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"hi"}',
+        '{"t":"turn.send","chatId":"c-1","text":"hi"}',
       );
       await pumpEventQueue();
 
@@ -1709,18 +1844,17 @@ void main() {
     test('a turn asked for on a grid serving no models says so rather than '
         'sending a turn nothing can answer', () async {
       final transport = _FakeTransport();
+      // No remembered model anywhere — not on the chat, not on the project —
+      // so the only source left is what the grid serves, and it serves none.
+      seed(model: '');
       final container = harness(
         transport,
         grid: _credential(),
         agent: _HeldTurn(),
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"hi"}',
+        '{"t":"turn.send","chatId":"c-1","text":"hi"}',
       );
       await pumpEventQueue();
 
@@ -1737,6 +1871,7 @@ void main() {
         'panel is told the turn has started', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -1744,12 +1879,8 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}",'
+        '{"t":"turn.send","chatId":"c-1",'
         '"text":"run the tests"}',
       );
       await pumpEventQueue(times: 40);
@@ -1761,16 +1892,17 @@ void main() {
         what: 'the turn to reach the agent',
       );
       expect(agent.history!.last.text, 'run the tests');
-      expect(agent.workdir, project.path);
+      expect(agent.workdir, '${tmp.path}/api');
       expect(agent.model, 'qwen');
       final started = _lastOf(transport, 'turn.started');
-      expect(started['projectId'], project.id);
+      expect(started['chatId'], isNotEmpty);
     });
 
-    test('the window follows the panel: the turn it starts is the one on '
-        'screen, in the project it belongs to', () async {
+    test('the window follows the panel: the chat it starts a turn in is the '
+        'one on screen, in the project that chat belongs to', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -1778,73 +1910,56 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final api = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-      final notes = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/notes', name: 'notes');
       // The desktop is looking somewhere else entirely — which is the ordinary
       // case for a machine with a panel on the desk beside it.
-      container.read(selectedProjectIdProvider.notifier).select(notes.id);
+      container.read(selectedProjectIdProvider.notifier).select('p-elsewhere');
       container.read(shellSectionProvider.notifier).select(ShellSection.skills);
 
       transport.deliver(
-        '{"t":"turn.send","projectId":"${api.id}","text":"run the tests"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run the tests"}',
       );
-      await pumpEventQueue(times: 40);
+      await _until(
+        () => agent.history != null,
+        what: 'the turn to reach the agent',
+      );
 
       expect(container.read(shellSectionProvider), ShellSection.chat);
-      expect(container.read(selectedProjectIdProvider), api.id);
+      expect(container.read(selectedProjectIdProvider), 'p-1');
       // And the chat the reply streams into is the open one, so the answer is
-      // not waiting in a conversation nobody navigated to.
-      final chats = container.read(chatSessionsProvider);
-      expect(chats.active?.projectId ?? chats.draftProjectId, api.id);
+      // not waiting in a conversation nobody navigated to. `send(into:)` does
+      // not open a chat by itself — that is the whole reason this exists.
+      expect(container.read(chatSessionsProvider).activeId, 'c-1');
     });
 
-    test('the window follows a turn into a project that already has a chat, '
-        'which is the send that does NOT open itself', () async {
+    test('a second chat in the SAME project is opened on its own, not folded '
+        'into whichever of them the window happened to be showing', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
+      seed(chatId: 'c-2', title: 'The other one');
       final container = harness(
         transport,
         grid: _credential(),
         agent: agent,
         models: const ['qwen'],
       );
-      final sessions = container.read(chatSessionsProvider.notifier);
-      await sessions.restored;
-      final api = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-      // An existing chat in that project, left in the background.
-      sessions.newChat(projectId: api.id);
-      // Not awaited: `send` completes when the TURN does, and _HeldTurn holds it
-      // until answered — awaiting here waits on a reply this line is trying to
-      // set up.
-      unawaited(
-        sessions.send(network: _credential(), model: 'qwen', message: 'first'),
-      );
-      await pumpEventQueue(times: 40);
-      await agent.answer('done');
-      await pumpEventQueue(times: 40);
-      final existing = container.read(chatSessionsProvider).active!.id;
-      container.read(shellSectionProvider.notifier).select(ShellSection.agents);
+      await container.read(chatSessionsProvider.notifier).restored;
+      container.read(chatSessionsProvider.notifier).select('c-1');
 
-      transport.deliver(
-        '{"t":"turn.send","projectId":"${api.id}","text":"again"}',
+      transport.deliver('{"t":"turn.send","chatId":"c-2","text":"and this"}');
+      await _until(
+        () => agent.history != null,
+        what: 'the turn to reach the agent',
       );
-      await pumpEventQueue(times: 40);
 
-      expect(container.read(chatSessionsProvider).activeId, existing);
-      expect(container.read(shellSectionProvider), ShellSection.chat);
-      expect(container.read(selectedProjectIdProvider), api.id);
+      expect(container.read(chatSessionsProvider).activeId, 'c-2');
     });
 
     test('a turn already running in the project is said out loud rather than '
         'quietly starting a second one', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -1852,14 +1967,10 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
-      const ask = '{"t":"turn.send","projectId":"PID","text":"go"}';
-      transport.deliver(ask.replaceAll('PID', project.id));
+      const ask = '{"t":"turn.send","chatId":"PID","text":"go"}';
+      transport.deliver(ask.replaceAll('PID', 'c-1'));
       await pumpEventQueue();
-      transport.deliver(ask.replaceAll('PID', project.id));
+      transport.deliver(ask.replaceAll('PID', 'c-1'));
       await pumpEventQueue();
 
       final replies = [for (final r in transport.replies) r['t']];
@@ -1882,6 +1993,7 @@ void main() {
       // the writer's 20s deadline before seeing `turn.done`.
       final model = _OneShotModel('Tests all pass.\n\nEvery one of them.');
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -1890,12 +2002,8 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
 
@@ -1971,6 +2079,7 @@ void main() {
         'I ran the suite and every one of the 1599 tests passed.',
       );
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -1979,13 +2088,9 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":1,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}');
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2005,7 +2110,7 @@ void main() {
       final done = transport.replies.lastWhere((r) => r['t'] == 'turn.done');
       expect(done['recap'], 'Tests all pass after the retry guard.');
       final summary = transport.replies.lastWhere((r) => r['t'] == 'summary');
-      expect(summary['projectId'], project.id);
+      expect(summary['chatId'], isNotEmpty);
       expect(
         summary['text'],
         'I ran the suite and every one of the 1599 tests passed.',
@@ -2022,6 +2127,7 @@ void main() {
       final agent = _HeldTurn();
       final model = _OneShotModel('It ran the tests.');
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2030,12 +2136,8 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2051,6 +2153,7 @@ void main() {
         'an apology on a screen with no room for one', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2058,13 +2161,9 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":1,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}');
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2079,6 +2178,7 @@ void main() {
         "window's card, because it is one question on two screens", () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2086,12 +2186,8 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"clean up"}',
+        '{"t":"turn.send","chatId":"c-1","text":"clean up"}',
       );
       await pumpEventQueue();
       final chatId = container
@@ -2119,11 +2215,11 @@ void main() {
           );
       await pumpEventQueue();
       final asked = transport.replies.lastWhere((r) => r['t'] == 'question');
-      expect(asked['projectId'], project.id);
+      expect(asked['chatId'], isNotEmpty);
       expect(asked['id'], 'q-7');
 
       transport.deliver(
-        '{"t":"answer","projectId":"${project.id}","id":"q-7",'
+        '{"t":"answer","chatId":"c-1","id":"q-7",'
         '"optionId":"allow_once"}',
       );
       await pumpEventQueue();
@@ -2140,6 +2236,7 @@ void main() {
         'without a word — the two surfaces race by design', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2147,12 +2244,8 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"answer","projectId":"${project.id}","id":"q-7",'
+        '{"t":"answer","chatId":"c-1","id":"q-7",'
         '"optionId":"allow_once"}',
       );
       await pumpEventQueue();
@@ -2166,6 +2259,7 @@ void main() {
         'words the window shows', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2173,12 +2267,8 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
       await agent.fail('Hermes stopped answering');
@@ -2197,7 +2287,7 @@ void main() {
         harness(transport);
 
         transport.deliver('{"t":"screen.brightness","level":40}');
-        transport.deliver('{"t":"hello","fw":"0.1.0","proto":1,"mac":"AA"}');
+        transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2212,6 +2302,7 @@ void main() {
       'stopping a project the desktop never opened is a no-op, not a crash',
       () async {
         final transport = _FakeTransport();
+        seed();
         final container = harness(transport);
         await container.read(chatSessionsProvider.notifier).restored;
 
@@ -2232,6 +2323,7 @@ void main() {
         final agent = _HeldTurn();
         final stt = _FakeStt(const SttSuccess('run the tests'));
         final transport = _FakeTransport();
+        seed();
         final container = harness(
           transport,
           grid: _credential(),
@@ -2240,11 +2332,8 @@ void main() {
           stt: stt,
         );
         await container.read(chatSessionsProvider.notifier).restored;
-        final project = container
-            .read(projectsProvider.notifier)
-            .create(path: '${tmp.path}/api', name: 'api');
 
-        transport.deliver('{"t":"voice.begin","projectId":"${project.id}"}');
+        transport.deliver('{"t":"voice.begin","chatId":"c-1"}');
         transport.deliverAudio(pcm);
         transport.deliver('{"t":"voice.end"}');
         await pumpEventQueue();
@@ -2257,7 +2346,7 @@ void main() {
           (r) => r['t'] == 'voice.transcript',
         );
         expect(transcript['text'], 'run the tests');
-        expect(transcript['projectId'], project.id);
+        expect(transcript['chatId'], isNotEmpty);
         expect(transcript['needsConfirm'], false);
         // The turn goes through the same path `turn.send` uses, so the panel
         // watches it exactly as it watches a typed one.
@@ -2277,6 +2366,7 @@ void main() {
         'modifier reaches the agent as part of the sentence', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2285,12 +2375,8 @@ void main() {
         stt: _FakeStt(const SttSuccess('ship the release')),
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"voice.begin","projectId":"${project.id}","cmd":"goal"}',
+        '{"t":"voice.begin","chatId":"c-1","cmd":"goal"}',
       );
       transport.deliverAudio(pcm);
       transport.deliver('{"t":"voice.end"}');
@@ -2317,6 +2403,7 @@ void main() {
         // its sentence through — mangled words are worse than a lost modifier.
         final agent = _HeldTurn();
         final transport = _FakeTransport();
+        seed();
         final container = harness(
           transport,
           grid: _credential(),
@@ -2325,12 +2412,9 @@ void main() {
           stt: _FakeStt(const SttSuccess('ship it')),
         );
         await container.read(chatSessionsProvider.notifier).restored;
-        final project = container
-            .read(projectsProvider.notifier)
-            .create(path: '${tmp.path}/api', name: 'api');
 
         transport.deliver(
-          '{"t":"voice.begin","projectId":"${project.id}","cmd":"lasso"}',
+          '{"t":"voice.begin","chatId":"c-1","cmd":"lasso"}',
         );
         transport.deliverAudio(pcm);
         transport.deliver('{"t":"voice.end"}');
@@ -2349,6 +2433,7 @@ void main() {
       final agent = _HeldTurn();
       final stt = _FakeStt(const SttSuccess('mở lại retry guard'));
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2357,12 +2442,8 @@ void main() {
         stt: stt,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"voice.begin","projectId":"${project.id}","lang":"vi"}',
+        '{"t":"voice.begin","chatId":"c-1","lang":"vi"}',
       );
       transport.deliverAudio(pcm);
       transport.deliver('{"t":"voice.end"}');
@@ -2377,6 +2458,7 @@ void main() {
         'there — there is nothing to guess between', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2385,10 +2467,6 @@ void main() {
         stt: _FakeStt(const SttSuccess('deploy it')),
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver('{"t":"voice.begin"}');
       transport.deliverAudio(pcm);
       transport.deliver('{"t":"voice.end"}');
@@ -2402,7 +2480,7 @@ void main() {
       );
       final transcript = _lastOf(transport, 'voice.transcript');
       expect(transcript['needsConfirm'], false);
-      expect(transcript['projectId'], project.id);
+      expect(transcript['chatId'], isNotEmpty);
       await _until(
         () => agent.history != null,
         what: 'the transcript to reach the agent',
@@ -2411,13 +2489,15 @@ void main() {
     });
 
     test(
-      'with more than one project and no router to ask, the app falls back to '
+      'with more than one chat and no router to ask, the app falls back to '
       'its own guess and ASKS — a guess must not dispatch itself',
       () async {
         // The router being unreachable must not lose a sentence someone already
         // said out loud, and must not spend it on a guess either.
         final agent = _HeldTurn();
         final transport = _FakeTransport();
+        seed();
+        seed(chatId: 'c-2', title: 'The other one');
         final container = harness(
           transport,
           grid: _credential(),
@@ -2426,9 +2506,6 @@ void main() {
           stt: _FakeStt(const SttSuccess('deploy it')),
         );
         await container.read(chatSessionsProvider.notifier).restored;
-        final projects = container.read(projectsProvider.notifier);
-        final api = projects.create(path: '${tmp.path}/api', name: 'api');
-        projects.create(path: '${tmp.path}/notes', name: 'notes');
 
         transport.deliver('{"t":"voice.begin"}');
         transport.deliverAudio(pcm);
@@ -2442,26 +2519,27 @@ void main() {
         );
         final transcript = _lastOf(transport, 'voice.transcript');
         expect(transcript['needsConfirm'], true);
-        expect(transcript['projectId'], api.id);
+        expect(transcript['chatId'], isNotEmpty);
         expect(agent.history, isNull);
 
-        // Confirming is what dispatches it, and the project the user picked wins
+        // Confirming is what dispatches it, and the chat the user picked wins
         // over the one the app guessed.
-        final other = projects.create(path: '${tmp.path}/other', name: 'other');
         transport.deliver(
           '{"t":"voice.confirm","routeId":"${transcript['routeId']}",'
-          '"projectId":"${other.id}"}',
+          '"chatId":"c-2"}',
         );
         await pumpEventQueue(times: 40);
 
         expect(agent.history!.last.text, 'deploy it');
-        expect(agent.workdir, other.path);
+        // Into the chat the user picked, not the one the app had guessed.
+        expect(container.read(chatSessionsProvider).activeId, 'c-2');
       },
     );
 
     test('a confirmation for a transcript nobody is holding is answered, not '
         'ignored — the panel is waiting on something', () async {
       final transport = _FakeTransport();
+      seed();
       final container = harness(transport, grid: _credential());
       await container.read(chatSessionsProvider.notifier).restored;
 
@@ -2480,6 +2558,7 @@ void main() {
     test('a transcription that fails reaches the panel in the words the CLI '
         'used, which name what to do about it', () async {
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2512,6 +2591,7 @@ void main() {
         'there is nothing in to transcribe', () async {
       final stt = _FakeStt(const SttSuccess('never asked'));
       final transport = _FakeTransport();
+      seed();
       final container = harness(transport, grid: _credential(), stt: stt);
       await container.read(chatSessionsProvider.notifier).restored;
 
@@ -2535,6 +2615,7 @@ void main() {
     test('voice with no grid tool on this computer says which tool is missing '
         'instead of leaving the panel listening', () async {
       final transport = _FakeTransport();
+      seed();
       final container = harness(transport, grid: _credential());
       await container.read(chatSessionsProvider.notifier).restored;
 
@@ -2556,7 +2637,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":1,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":2,"mac":"AA"}');
       await pumpEventQueue();
 
       final offer = transport.replies.firstWhere((r) => r['t'] == 'fw.offer');
@@ -2576,7 +2657,7 @@ void main() {
           firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
         );
 
-        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":1,"mac":"AA"}');
+        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":2,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2591,6 +2672,7 @@ void main() {
         'reboots the panel out of work someone is watching', () async {
       final agent = _HeldTurn();
       final transport = _FakeTransport();
+      seed();
       final container = harness(
         transport,
         grid: _credential(),
@@ -2599,15 +2681,11 @@ void main() {
         firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      final project = container
-          .read(projectsProvider.notifier)
-          .create(path: '${tmp.path}/api', name: 'api');
-
       transport.deliver(
-        '{"t":"turn.send","projectId":"${project.id}","text":"run them"}',
+        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":1,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":2,"mac":"AA"}');
       await pumpEventQueue();
 
       expect(transport.replies.any((r) => r['t'] == 'fw.offer'), isFalse);
@@ -2625,7 +2703,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":1,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":2,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();
@@ -2654,7 +2732,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":1,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":2,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();

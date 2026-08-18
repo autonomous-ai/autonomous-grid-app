@@ -24,7 +24,7 @@ import '../../projects/logic/project.dart';
 import '../../projects/logic/selected_project.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import 'panel_firmware_updater.dart';
-import 'panel_project_mirror.dart';
+import 'panel_chat_mirror.dart';
 import 'panel_question_mirror.dart';
 import 'panel_summary_writer.dart';
 import 'panel_turn_mirror.dart';
@@ -61,11 +61,11 @@ final panelControllerProvider = Provider<PanelController>((ref) {
   // The tiles move on their own too. Without this a project created, renamed or
   // deleted on the desktop reached a plugged-in panel only if it happened to
   // ask again — which it does once, on waking.
-  ref.listen(sortedProjectsProvider, (_, _) => controller.mirrorProjects());
+  ref.listen(sortedProjectsProvider, (_, _) => controller.mirrorChats());
   // And when a turn's headline is written down: the tile carries the remembered
   // one, so the list is only as current as this store. The mirror dedups by
   // payload, so a turn that changed nothing the panel draws still sends nothing.
-  ref.listen(panelRecapsProvider, (_, _) => controller.mirrorProjects());
+  ref.listen(panelRecapsProvider, (_, _) => controller.mirrorChats());
   ref.onDispose(controller.stop);
   return controller;
 });
@@ -85,7 +85,7 @@ class PanelController {
   final _questions = PanelQuestionMirror();
 
   /// What the panel has already been told about the tiles.
-  final _tiles = PanelProjectMirror();
+  final _tiles = PanelChatMirror();
 
   /// Says the app is still here, on the cadence the panel measures absence
   /// against.
@@ -121,7 +121,7 @@ class PanelController {
   /// A guess is not dispatched until `voice.confirm` names where it goes, so
   /// the words have to wait somewhere, and it cannot be on the panel: it sends
   /// back a route id, not the sentence.
-  final _guessed = <String, ({String projectId, String text})>{};
+  final _guessed = <String, ({String chatId, String text})>{};
 
   /// Route ids, unique within a session — which is all they need to be. They
   /// correlate a `voice.confirm` with the transcript it answers, and a panel
@@ -210,20 +210,20 @@ class PanelController {
     switch (message) {
       case PanelHello():
         await _welcome(message);
-      case PanelProjectsRequested():
-        _sendProjects();
-      case PanelStopRequested(:final projectId):
-        _stopProject(projectId);
-      case PanelTurnRequested(:final projectId, :final text):
-        _startTurn(projectId, text);
-      case PanelAnswered(:final projectId, :final id, :final optionId):
-        _answerQuestion(projectId, id, optionId);
-      case PanelVoiceBegin(:final projectId, :final command, :final lang):
-        _beginVoice(projectId, command, lang);
+      case PanelChatsRequested():
+        _sendChats();
+      case PanelStopRequested(:final chatId):
+        _stopChat(chatId);
+      case PanelTurnRequested(:final chatId, :final text):
+        _startTurn(chatId, text);
+      case PanelAnswered(:final chatId, :final id, :final optionId):
+        _answerQuestion(chatId, id, optionId);
+      case PanelVoiceBegin(:final chatId, :final command, :final lang):
+        _beginVoice(chatId, command, lang);
       case PanelVoiceEnd():
         await _finishVoice();
-      case PanelVoiceConfirm(:final routeId, :final projectId):
-        _confirmVoice(routeId, projectId);
+      case PanelVoiceConfirm(:final routeId, :final chatId):
+        _confirmVoice(routeId, chatId);
       case PanelFirmwareAccepted():
         _firmware.accepted();
       case PanelFirmwareProgress(:final written):
@@ -378,10 +378,10 @@ class PanelController {
   }
 
   /// Tell the panel whatever has changed about the tiles themselves.
-  void mirrorProjects() {
+  void mirrorChats() {
     _push(
       _tiles.onChange(
-        panelProjectsFor(
+        panelChatsFor(
           projects: _ref.read(sortedProjectsProvider),
           chats: _ref.read(chatSessionsProvider),
           history: _ref.read(panelRecapsProvider),
@@ -397,11 +397,10 @@ class PanelController {
   /// countdown, takes the card off the window, and records an approved edit so
   /// it can be undone. A panel answer that skipped it would leave the desktop
   /// showing a question nobody is waiting on.
-  void _answerQuestion(String projectId, String id, String optionId) {
-    final chatId = _questions.chatFor(projectId, id);
+  void _answerQuestion(String chatId, String id, String optionId) {
     // Settled while the answer was in flight — the two surfaces race by design
     // and the loser is dropped without a word.
-    if (chatId == null) return;
+    if (!_questions.isAsking(chatId, id)) return;
     final request = _ref.read(agentPermissionsProvider)[chatId];
     if (request == null) return;
     final choice = panelChoiceForAnswer(optionId, request);
@@ -413,7 +412,7 @@ class PanelController {
       );
       return;
     }
-    _log.info('panel', 'Panel answered a permission in $projectId: $optionId');
+    _log.info('panel', 'Panel answered a permission in $chatId: $optionId');
     _ref.read(agentPermissionsProvider.notifier).answer(chatId, choice);
   }
 
@@ -425,15 +424,15 @@ class PanelController {
   /// Remember how a turn came out, for the voice router to read later.
   ///
   /// Every turn, not only the ones a model summarised: the cheap headline is
-  /// weaker signal but it is signal, and a project with no history at all is one
-  /// the router can only match by name.
+  /// weaker signal but it is signal, and a chat with no history at all is one
+  /// the router can only match by its title.
   void _rememberTurn(
-    String projectId, {
+    String chatId, {
     required String recap,
     String summary = '',
   }) => _ref
       .read(panelRecapsProvider.notifier)
-      .record(projectId, recap: recap, summary: summary);
+      .record(chatId, recap: recap, summary: summary);
 
   /// Close out every turn that settled on the last pass.
   ///
@@ -442,7 +441,7 @@ class PanelController {
   /// so a turn dropped here is a tile that works forever on finished work.
   void _closeEndedTurns() {
     for (final ended in _turns.drainEnded()) {
-      _summarize(ended.projectId, ended.chat);
+      _summarize(ended.chatId, ended.chat);
     }
   }
 
@@ -452,18 +451,18 @@ class PanelController {
   /// No panel has greeted us, or the chat is gone: nothing is watching, so close
   /// it out at once rather than paying for a model. The send is harmless either
   /// way — a panel that never heard `turn.summarizing` reads `turn.done` for a
-  /// project it thinks is idle as "that project is idle now", which the protocol
+  /// chat it thinks is idle as "that chat is idle now", which the protocol
   /// already requires it to tolerate.
-  void _summarize(String projectId, Conversation? chat) {
+  void _summarize(String chatId, Conversation? chat) {
     if (chat == null || !_greeted) {
       final recap = panelRecapOf(chat);
-      _rememberTurn(projectId, recap: recap);
+      _rememberTurn(chatId, recap: recap);
       _ref
           .read(panelLinkProvider)
-          .send(PanelOutbound.turnDone(projectId: projectId, recap: recap));
+          .send(PanelOutbound.turnDone(chatId: chatId, recap: recap));
       return;
     }
-    unawaited(_writeSummary(projectId, chat));
+    unawaited(_writeSummary(chatId, chat));
   }
 
   /// Write the headline, then close the turn out on the panel.
@@ -472,7 +471,7 @@ class PanelController {
   /// panel `turn.summarizing`, which leaves its tile in the working state — so
   /// every path out of here, including every failure, owes it a terminal
   /// message. Drop one and the tile works forever on a turn that ended.
-  Future<void> _writeSummary(String projectId, Conversation chat) async {
+  Future<void> _writeSummary(String chatId, Conversation chat) async {
     PanelTurnSummary? written;
     String? failure;
     final clock = Stopwatch()..start();
@@ -486,7 +485,7 @@ class PanelController {
       kPanelSummarizingBeat,
       (_) => _ref
           .read(panelLinkProvider)
-          .send(PanelOutbound.turnSummarizing(projectId)),
+          .send(PanelOutbound.turnSummarizing(chatId)),
     );
     _summarizing.add(beat);
     try {
@@ -509,7 +508,7 @@ class PanelController {
     // three.
     _log.info(
       'panel',
-      'The headline for $projectId took ${clock.elapsed.inSeconds}s',
+      'The headline for $chatId took ${clock.elapsed.inSeconds}s',
     );
 
     final link = _ref.read(panelLinkProvider);
@@ -519,21 +518,21 @@ class PanelController {
       // reason, because the panel is given a sentence about the WORK and never
       // one apologising for a model: that would be four lines of a 466px screen
       // spent saying nothing about what happened (§5).
-      _log.warn('panel', 'No headline for the turn in $projectId: $failure');
+      _log.warn('panel', 'No headline for the turn in $chatId: $failure');
       link.send(
-        PanelOutbound.turnDone(projectId: projectId, recap: panelRecapOf(chat)),
+        PanelOutbound.turnDone(chatId: chatId, recap: panelRecapOf(chat)),
       );
       return;
     }
-    _rememberTurn(projectId, recap: written.recap, summary: written.summary);
+    _rememberTurn(chatId, recap: written.recap, summary: written.summary);
     link.send(
-      PanelOutbound.turnDone(projectId: projectId, recap: written.recap),
+      PanelOutbound.turnDone(chatId: chatId, recap: written.recap),
     );
     // Second, and only when there is one. The headline ends the turn; the body
     // is what the reader screen shows behind it.
     if (written.summary.isNotEmpty) {
       link.send(
-        PanelOutbound.summary(projectId: projectId, text: written.summary),
+        PanelOutbound.summary(chatId: chatId, text: written.summary),
       );
     }
   }
@@ -546,10 +545,10 @@ class PanelController {
     }
   }
 
-  /// Send the tiles: every project, in the order the app itself lists them, so
-  /// the panel and the rail never disagree about which project is first.
-  void _sendProjects() {
-    final tiles = panelProjectsFor(
+  /// Send the tiles: every chat, in the order the app's own sidebar draws them,
+  /// so the panel and the rail never disagree about what comes first.
+  void _sendChats() {
+    final tiles = panelChatsFor(
       projects: _ref.read(sortedProjectsProvider),
       chats: _ref.read(chatSessionsProvider),
       history: _ref.read(panelRecapsProvider),
@@ -557,51 +556,53 @@ class PanelController {
     _ref.read(panelLinkProvider).send(_tiles.all(tiles));
   }
 
-  /// Interrupt whatever is running in [projectId].
+  /// Interrupt the turn running in [chatId].
   ///
-  /// Every conversation in the project, not one: the panel names a project
-  /// because a project is what its tile is, and which chat inside it holds the
-  /// turn is the desktop's business — a project can also have a second chat
-  /// queued behind the running one, and Stop means stop.
+  /// One chat, because one chat is what a tile is now. It used to stop every
+  /// conversation in a project, which was right while a tile spoke for all of
+  /// them and is wrong now: the neighbouring chat's turn is its own tile, and
+  /// stopping work the user did not point at is not what Stop means.
+  ///
   /// [ChatSessionsController.stopChat] is a no-op on a chat with nothing in
   /// flight, so this costs nothing when the tile was already idle.
-  void _stopProject(String projectId) {
-    final chats = _ref.read(chatSessionsProvider);
-    final controller = _ref.read(chatSessionsProvider.notifier);
-    for (final conversation in chats.live) {
-      if (conversation.projectId != projectId) continue;
-      controller.stopChat(conversation.id);
-    }
-  }
+  void _stopChat(String chatId) =>
+      _ref.read(chatSessionsProvider.notifier).stopChat(chatId);
 
   /// Start a turn the user asked for on the panel.
   ///
-  /// It goes into the project's most recently used chat, or a new one when
-  /// nobody has talked there yet — the same place the window would put it, so
-  /// the two screens show one conversation rather than two histories of the
-  /// same work.
+  /// It goes into the chat the tile IS — no picking, no "most recently used",
+  /// no new conversation. That guesswork existed while a tile stood for a whole
+  /// project; the panel now names the conversation, so the panel and the window
+  /// are looking at the same transcript by construction.
   ///
   /// Every way this can fail is answered in words. Silence would leave the tile
   /// spinning on work that is never coming, and the panel has no other way to
   /// find out: it runs no model, reads no disk and cannot see the window.
-  void _startTurn(String projectId, String text) {
+  void _startTurn(String chatId, String text) {
     final asked = text.trim();
     if (asked.isEmpty) {
-      _refuseTurn(projectId, 'That arrived with no words in it. Say it again?');
-      return;
-    }
-    final project = _ref.read(projectByIdProvider(projectId));
-    if (project == null) {
-      _refuseTurn(projectId, 'This computer no longer has that project.');
+      _refuseTurn(chatId, 'That arrived with no words in it. Say it again?');
       return;
     }
 
     final chats = _ref.read(chatSessionsProvider);
-    final conversations = _conversationsIn(projectId, chats);
-    if (conversations.any((c) => panelTurnInFlight(chats, c.id))) {
+    final chat = panelChatById(chats, chatId);
+    if (chat == null || chat.isArchived) {
+      _refuseTurn(chatId, 'This computer no longer has that chat.');
+      return;
+    }
+    final project = _ref.read(projectByIdProvider(chat.projectId));
+    if (project == null) {
+      _refuseTurn(chatId, 'This computer no longer has that project.');
+      return;
+    }
+    // THIS chat, not its project's. Two chats in one folder answering at once
+    // is ordinary since `bf462afc`, and refusing the second because the first
+    // is busy would be the panel enforcing a rule the app dropped.
+    if (panelTurnInFlight(chats, chatId)) {
       _refuseTurn(
-        projectId,
-        'That project is already working. Press stop first, or wait for it.',
+        chatId,
+        'This chat is already working. Press stop first, or wait for it.',
       );
       return;
     }
@@ -611,24 +612,23 @@ class PanelController {
     final network = _ref.read(selectedNetworkProvider);
     if (network == null) {
       _refuseTurn(
-        projectId,
+        chatId,
         'No grid is open on this computer. Open Grid and pick one.',
       );
       return;
     }
 
-    final target = conversations.isEmpty ? null : conversations.first;
-    final model = _modelFor(project, target);
+    final model = _modelFor(project, chat);
     if (model.isEmpty) {
       _refuseTurn(
-        projectId,
+        chatId,
         'No model is available on this grid. Start one in Grid, then try again.',
       );
       return;
     }
 
-    _log.info('panel', 'Panel started a turn in ${project.name}');
-    unawaited(_dispatchTurn(projectId, target, network, model, asked));
+    _log.info('panel', 'Panel started a turn in ${chat.title}');
+    unawaited(_dispatchTurn(chat, network, model, asked));
   }
 
   /// Hand the turn to [ChatSessionsController] and report a start that never
@@ -639,40 +639,27 @@ class PanelController {
   /// must not queue behind it. Everything after this point reaches the panel
   /// through [mirrorTurns] instead.
   Future<void> _dispatchTurn(
-    String projectId,
-    Conversation? target,
+    Conversation chat,
     NetworkCredential network,
     String model,
     String text,
   ) async {
-    final chats = _ref.read(chatSessionsProvider.notifier);
     try {
-      if (target != null) {
-        // Opened BEFORE the send, not after. `send(into:)` deliberately leaves
-        // the window where it is — that is right for a queued follow-up — so
-        // without this the reply streams into a chat nobody is looking at.
-        _showInWindow(projectId, target.id);
-        await chats.send(
-          network: network,
-          model: model,
-          message: text,
-          into: target.id,
-        );
-        return;
-      }
-      // A project nobody has talked in yet has no chat to send into, and a
-      // chat is not saved until its first message — so it has to be composed
-      // first. `newChat` already makes that compose the open one; the rest of
-      // the window still has to follow it.
-      chats.newChat(projectId: projectId);
-      _showInWindow(projectId, null);
-      await chats.send(network: network, model: model, message: text);
+      // Opened BEFORE the send, not after. `send(into:)` deliberately leaves
+      // the window where it is — that is right for a queued follow-up — so
+      // without this the reply streams into a chat nobody is looking at.
+      _showInWindow(chat.projectId, chat.id);
+      await _ref
+          .read(chatSessionsProvider.notifier)
+          .send(
+            network: network,
+            model: model,
+            message: text,
+            into: chat.id,
+          );
     } on Object catch (e) {
-      _log.warn('panel', 'Panel turn in $projectId could not start: $e');
-      _refuseTurn(
-        projectId,
-        "That couldn't be started here. Open Grid to see.",
-      );
+      _log.warn('panel', 'Panel turn in ${chat.id} could not start: $e');
+      _refuseTurn(chat.id, "That couldn't be started here. Open Grid to see.");
     }
   }
 
@@ -682,7 +669,7 @@ class PanelController {
   /// — and a turn they cannot find is a turn they will start again. The panel
   /// says what happened in fifteen words; the window is where the actual work
   /// is legible, and on a desk with a panel on it the window is very often
-  /// showing some other project entirely.
+  /// showing some other conversation entirely.
   ///
   /// All three, because any one alone leaves the window half-moved: the chat is
   /// what the reply streams into, the rail is what the Projects screen dresses
@@ -693,24 +680,13 @@ class PanelController {
   /// **Not** a window raise. The person is looking at the panel, quite possibly
   /// with another app in front; stealing the screen because they spoke would be
   /// a worse trade than making them click Grid when they turn back to it.
-  void _showInWindow(String projectId, String? chatId) {
-    if (chatId != null) {
-      _ref.read(chatSessionsProvider.notifier).select(chatId);
+  void _showInWindow(String? projectId, String chatId) {
+    _ref.read(chatSessionsProvider.notifier).select(chatId);
+    if (projectId != null) {
+      _ref.read(selectedProjectIdProvider.notifier).select(projectId);
     }
-    _ref.read(selectedProjectIdProvider.notifier).select(projectId);
     _ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
   }
-
-  /// The project's chats, most recently used first.
-  ///
-  /// Sorted here rather than trusting [ChatSessionsState.live]'s order, which
-  /// floats pinned chats to the top — right for a sidebar the user clicks, and
-  /// wrong for "where does the next thing said here belong".
-  List<Conversation> _conversationsIn(String projectId, ChatSessionsState c) =>
-      [
-        for (final conversation in c.live)
-          if (conversation.projectId == projectId) conversation,
-      ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
   /// What to answer a panel turn with: the project's own model, else the one
   /// that chat last ran on, else the app's standing choice, else whatever this
@@ -731,11 +707,11 @@ class PanelController {
   }
 
   /// Tell the panel a turn it asked for is not happening, and why.
-  void _refuseTurn(String projectId, String message) {
-    _log.warn('panel', 'Panel turn in $projectId refused: $message');
+  void _refuseTurn(String chatId, String message) {
+    _log.warn('panel', 'Panel turn in $chatId refused: $message');
     _ref
         .read(panelLinkProvider)
-        .send(PanelOutbound.turnError(projectId: projectId, message: message));
+        .send(PanelOutbound.turnError(chatId: chatId, message: message));
   }
 
   /// Start collecting what the user is saying.
@@ -743,10 +719,10 @@ class PanelController {
   /// A capture already open is dropped rather than continued: a second
   /// `voice.begin` means the first one's `voice.end` never arrived, and the
   /// sentence being spoken now is the one somebody is waiting on.
-  void _beginVoice(String? projectId, PanelVoiceCommand command, String? lang) {
+  void _beginVoice(String? chatId, PanelVoiceCommand command, String? lang) {
     _voiceOpen?.cancel();
     _voice = PanelVoiceCapture(
-      projectId: projectId,
+      chatId: chatId,
       command: command,
       lang: lang,
     );
@@ -822,7 +798,7 @@ class PanelController {
         // this is the last point where the words are still just words, and the
         // next thing that happens to them is being sent as a message.
         _routeTranscript(
-          capture.projectId,
+          capture.chatId,
           '${capture.command.prefix}${text.trim()}',
         );
     }
@@ -887,26 +863,27 @@ class PanelController {
     );
     final routeId = 'r${++_routes}';
     switch (route) {
-      case PanelVoiceRouted(:final projectId):
+      case PanelVoiceRouted(:final chatId):
         // The panel named it. Nothing to decide, and nothing a model could add.
-        _sendTranscript(routeId, projectId, text, needsConfirm: false);
-        _startTurn(projectId, text);
-      case PanelVoiceGuessed(:final projectId):
+        _sendTranscript(routeId, chatId, text, needsConfirm: false);
+        _startTurn(chatId, text);
+      case PanelVoiceGuessed(:final chatId):
         // Spoken from the Overview, where no project is named. `projectId` here
         // is the app's own guess — the most recently used one — and it stands as
         // the answer only if the router cannot do better.
-        unawaited(_routeByModel(routeId, projectId, text));
+        unawaited(_routeByModel(routeId, chatId, text));
       case PanelVoiceUnroutable(:final message):
         _voiceError(message);
     }
   }
 
-  /// Ask a model which project a sentence spoken from the Overview belongs to.
+  /// Ask a model which conversation a sentence spoken from the Overview belongs
+  /// to.
   ///
-  /// The names alone are a strong signal — people name a project after the thing
-  /// it is — but they tie often enough ("api" and "api-v2") that what each project
-  /// has recently *done* is what breaks it. That history is the whole reason
-  /// [panelRecapsProvider] exists.
+  /// The titles alone are a strong signal — a chat is named after what it is
+  /// about — but they tie often enough ("Fix login" and "Fix login again") that
+  /// what each one has recently *done* is what breaks it. That history is the
+  /// whole reason [panelRecapsProvider] exists.
   ///
   /// [fallback] is the app's own guess, and it is what a failure resolves to: the
   /// router being unreachable must not lose a sentence someone already said out
@@ -916,16 +893,29 @@ class PanelController {
     String fallback,
     String text,
   ) async {
-    final projects = _ref.read(sortedProjectsProvider);
     final recaps = _ref.read(panelRecapsProvider.notifier);
-    // In the app's own order, so the router's own fallback — the first candidate —
-    // is the same project the app would have guessed without it.
+    // In the panel's own tile order, so the router's own fallback — the first
+    // candidate — is the same chat the app would have guessed without it.
+    //
+    // CUT to the front of that list. One tile per chat means this can be a
+    // hundred conversations, and a hundred-line prompt is both a bill and a
+    // worse decision: the model is being asked to hold every chat on the
+    // machine in mind to place one sentence. The front of the list is where a
+    // spoken sentence belongs almost every time — it is ordered by what was
+    // talked in most recently.
+    final tiles = panelChatsFor(
+      projects: _ref.read(sortedProjectsProvider),
+      chats: _ref.read(chatSessionsProvider),
+      limit: kPanelRouteCandidates,
+    );
     final candidates = [
-      for (final project in projects)
+      for (final tile in tiles)
         PanelRouteCandidate(
-          id: project.id,
-          name: project.name,
-          recent: recaps.recentFor(project.id),
+          id: tile.id,
+          name: tile.project.isEmpty
+              ? tile.name
+              : '${tile.name} — ${tile.project}',
+          recent: recaps.recentFor(tile.id),
         ),
     ];
 
@@ -949,22 +939,22 @@ class PanelController {
     if (!_ref.mounted) return;
 
     final took = '${(clock.elapsedMilliseconds / 1000).toStringAsFixed(0)}s';
-    final projectId = decision?.projectId ?? fallback;
+    final chatId = decision?.chatId ?? fallback;
     if (decision == null) {
       _log.warn(
         'panel',
         timedOut
             ? 'The router was still thinking after $took, so the sentence goes '
-                  'to $projectId — where this computer was last spoken to. The '
+                  'to $chatId — where this computer was last spoken to. The '
                   'answer may yet arrive and will be ignored.'
             : 'The router had nothing to say after $took (no model reachable, or '
-                  'an unusable answer); sending the sentence to $projectId, '
+                  'an unusable answer); sending the sentence to $chatId, '
                   'which is where this computer was last spoken to',
       );
     } else {
       _log.info(
         'panel',
-        'The router chose $projectId at ${decision.confidence.toStringAsFixed(2)}'
+        'The router chose $chatId at ${decision.confidence.toStringAsFixed(2)}'
             ' in $took'
             '${decision.reason.isEmpty ? '' : ': ${decision.reason}'}',
       );
@@ -975,17 +965,17 @@ class PanelController {
     // failure the confirm step exists to prevent — and the sentence is already
     // said, so the cost of asking is one tap.
     if (decision != null && decision.isConfident) {
-      _sendTranscript(routeId, projectId, text, needsConfirm: false);
-      _startTurn(projectId, text);
+      _sendTranscript(routeId, chatId, text, needsConfirm: false);
+      _startTurn(chatId, text);
       return;
     }
-    _remember(routeId, projectId, text);
-    _sendTranscript(routeId, projectId, text, needsConfirm: true);
+    _remember(routeId, chatId, text);
+    _sendTranscript(routeId, chatId, text, needsConfirm: true);
   }
 
   void _sendTranscript(
     String routeId,
-    String projectId,
+    String chatId,
     String text, {
     required bool needsConfirm,
   }) {
@@ -996,8 +986,8 @@ class PanelController {
       'panel',
       needsConfirm
           ? 'Panel heard ${text.length} characters and guesses they belong to '
-                '$projectId — waiting for the panel to confirm'
-          : 'Panel heard ${text.length} characters for $projectId',
+                '$chatId — waiting for the panel to confirm'
+          : 'Panel heard ${text.length} characters for $chatId',
     );
     _ref
         .read(panelLinkProvider)
@@ -1005,7 +995,7 @@ class PanelController {
           PanelOutbound.voiceTranscript(
             routeId: routeId,
             text: text,
-            projectId: projectId,
+            chatId: chatId,
             needsConfirm: needsConfirm,
           ),
         );
@@ -1016,25 +1006,25 @@ class PanelController {
   /// Bounded, oldest first: an unconfirmed transcript is one the user walked
   /// away from, and the panel asks about one at a time — so a handful covers
   /// every real case and nothing can grow this without limit.
-  void _remember(String routeId, String projectId, String text) {
-    _guessed[routeId] = (projectId: projectId, text: text);
+  void _remember(String routeId, String chatId, String text) {
+    _guessed[routeId] = (chatId: chatId, text: text);
     while (_guessed.length > kPanelVoicePendingLimit) {
       _guessed.remove(_guessed.keys.first);
     }
   }
 
-  /// The user picked a project for a transcript the app had guessed at.
+  /// The user picked a chat for a transcript the app had guessed at.
   ///
-  /// [projectId] wins over the guess: the panel offers the other tiles, and the
+  /// [chatId] wins over the guess: the panel offers the other tiles, and the
   /// whole point of asking is that the answer can differ.
-  void _confirmVoice(String routeId, String projectId) {
+  void _confirmVoice(String routeId, String chatId) {
     final pending = _guessed.remove(routeId);
     if (pending == null) {
       _voiceError('That one is no longer waiting to be sent. Say it again?');
       return;
     }
-    final target = projectId.trim();
-    _startTurn(target.isEmpty ? pending.projectId : target, pending.text);
+    final target = chatId.trim();
+    _startTurn(target.isEmpty ? pending.chatId : target, pending.text);
   }
 
   /// Tell the panel voice went wrong, in words a person can act on.
@@ -1125,77 +1115,116 @@ class PanelController {
   AppLog get _log => _ref.read(appLogProvider);
 }
 
-/// The panel's view of [projects] — one tile each, in the order given.
+/// How many tiles the panel is sent at most.
+///
+/// The firmware allocates its tile array up front — `MAX_TILES` in
+/// `panel_client.h`, ~28 KB of PSRAM — so a longer list is not a slower panel,
+/// it is a panel that drops the tail without knowing it did. Matched here so
+/// the cut happens on the side that can say what was cut.
+const int kPanelMaxTiles = 100;
+
+/// The panel's view of the app's chats — one tile each, **in the order the
+/// sidebar draws them**.
+///
+/// Project by project in [projects] order, and inside each the order
+/// `liveConversations` already fixed (pinned first, then most recently talked
+/// in). Reusing that rather than sorting again is the point: the rail, ⌘K and
+/// the panel would otherwise be three answers to "which chats matter, and in
+/// what order".
+///
+/// **Chats outside every project are left out.** The panel has never shown them
+/// and nothing here changes that — a tile's subtitle is its project, and a
+/// tile with no subtitle is the one row on the carousel that cannot say where
+/// its work would land.
 ///
 /// Pure, and the one place the app's state becomes the panel's: a tile is
 /// derived, never stored, so nothing can go stale between the two screens.
-List<PanelProject> panelProjectsFor({
+List<PanelChat> panelChatsFor({
   required List<Project> projects,
   required ChatSessionsState chats,
   Map<String, List<PanelTurnRecord>> history = const {},
-}) => [
-  for (final project in projects)
-    panelProjectFor(project, chats, history[project.id]?.firstOrNull),
-];
+  int limit = kPanelMaxTiles,
+}) {
+  final tiles = <PanelChat>[];
+  for (final project in projects) {
+    for (final conversation in chats.live) {
+      if (conversation.projectId != project.id) continue;
+      if (tiles.length >= limit) return tiles;
+      tiles.add(
+        panelChatFor(
+          conversation,
+          project,
+          chats,
+          history[conversation.id]?.firstOrNull,
+        ),
+      );
+    }
+  }
+  return tiles;
+}
 
-/// One project as a tile: its name, which assistant answers in it, whether it
-/// is working right now, and one line of what was last said there.
+/// One chat as a tile: its title, the project it sits in, which assistant
+/// answered it, whether it is working right now, and one line of what was last
+/// said there.
 ///
-/// Thin on purpose — the panel is 480px across. Instructions, memory and the
-/// workspace path stay in the app.
-PanelProject panelProjectFor(
+/// Thin on purpose — the panel is 466px across. The transcript, the
+/// instructions and the workspace path stay in the app.
+PanelChat panelChatFor(
+  Conversation conversation,
   Project project,
   ChatSessionsState chats, [
   PanelTurnRecord? last,
-]) {
-  final conversations = [
-    for (final conversation in chats.live)
-      if (conversation.projectId == project.id) conversation,
-  ];
-  final newest = _newestOf(conversations);
-  return PanelProject(
-    id: project.id,
-    name: project.name,
-    agent: project.agent,
-    model: project.model,
-    // Any of the project's chats, not just the newest: turns are serialized per
-    // project, so the one holding the lane is what makes the tile busy, and it
-    // is not necessarily the chat the recap came from.
-    //
-    // The same test the pushed turn state uses ([panelTurnInFlight]) — a tile
-    // that says idle while `turn.started` is on its way about the same project
-    // is two answers to one question.
-    busy: conversations.any((c) => panelTurnInFlight(chats, c.id)),
-    // The REMEMBERED headline, when there is one — the ≤15-word line a model
-    // wrote when that turn ended, which is what the tile is meant to draw.
-    //
-    // The last thing said in the chat, cut to one line, is only the fallback:
-    // that is what there is before any turn has been summarised, and on a cold
-    // start it used to be all the panel ever got. A first line of prose and a
-    // headline are not the same thing, and it showed — the tile and the reader
-    // were handed one string and drew it twice.
-    recap: last?.recap.isNotEmpty == true ? last!.recap : panelRecapOf(newest),
-    // The long form, so a panel plugged in cold has something behind the
-    // headline. Absent until a model has written one, and then the reader says
-    // there is nothing more rather than repeating the headline.
-    summary: last?.summary ?? '',
-    // Read off the same chat as the line above, so a recap and the colour
-    // behind it always describe one turn.
-    recapKind: panelRecapKindOf(
-      failure: chats.errorFor(newest?.id),
-      conversation: newest,
-    ),
-  );
+]) => PanelChat(
+  id: conversation.id,
+  name: conversation.title,
+  project: project.name,
+  // The agent that actually ANSWERED this chat, read off the transcript stamp,
+  // falling back to the project's pick for a chat nothing has answered yet.
+  // Under Auto the two genuinely differ — the grid picks per turn — and the
+  // tile should say who spoke, not who was nominated.
+  agent: _agentOf(conversation) ?? project.agent,
+  model: conversation.model.isNotEmpty ? conversation.model : project.model,
+  // One chat, one turn: no rule is needed for which of a project's chats the
+  // tile speaks for, because there is no longer a tile that speaks for more
+  // than one. That rule is what dropped a live turn when two chats in a folder
+  // ran at once (see [panelRunningChatsOf]).
+  busy: panelTurnInFlight(chats, conversation.id),
+  // The REMEMBERED headline, when there is one — the ≤15-word line a model
+  // wrote when that turn ended, which is what the tile is meant to draw.
+  //
+  // The last thing said in the chat, cut to one line, is only the fallback:
+  // that is what there is before any turn has been summarised, and on a cold
+  // start it used to be all the panel ever got. A first line of prose and a
+  // headline are not the same thing, and it showed — the tile and the reader
+  // were handed one string and drew it twice.
+  recap: last?.recap.isNotEmpty == true
+      ? last!.recap
+      : panelRecapOf(conversation),
+  // The long form, so a panel plugged in cold has something behind the
+  // headline. Absent until a model has written one, and then the reader says
+  // there is nothing more rather than repeating the headline.
+  summary: last?.summary ?? '',
+  // Read off the same chat as the line above, so a recap and the colour behind
+  // it always describe one turn.
+  recapKind: panelRecapKindOf(
+    failure: chats.errorFor(conversation.id),
+    conversation: conversation,
+  ),
+);
+
+/// The agent id stamped on this chat's most recent reply, or null when nothing
+/// has answered in it yet.
+///
+/// Read off the transcript rather than from a field, the same way
+/// `ChatSessionsController` decides who continues a chat: the stamp is
+/// persisted with the reply, so it survives a restart and it describes what
+/// actually happened rather than what was configured.
+String? _agentOf(Conversation conversation) {
+  for (final message in conversation.messages.reversed) {
+    if (message.role != ChatRole.assistant) continue;
+    final agent = message.agent;
+    if (agent != null && agent.isNotEmpty) return agent;
+  }
+  return null;
 }
 
-/// The project's most recently used chat, or null when it has none.
-///
-/// Sorted here rather than trusting the order [ChatSessionsState.live] comes
-/// in: that one floats pinned chats to the top, which is right for a sidebar
-/// the user clicks and wrong for "what happened here last".
-Conversation? _newestOf(List<Conversation> conversations) {
-  if (conversations.isEmpty) return null;
-  final newest = [...conversations]
-    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-  return newest.first;
-}

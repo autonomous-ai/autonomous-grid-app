@@ -10,8 +10,8 @@ import '../../logic/review_controller.dart';
 import '../../logic/review_refs.dart';
 import '../../logic/review_scope.dart';
 import '../../logic/review_snapshot.dart';
-import 'menu_row.dart';
-import 'toolbar_pill.dart';
+import '../../../../shared/widgets/menu_row.dart';
+import '../../../../shared/widgets/toolbar_pill.dart';
 
 /// The one control that says what the surface is showing — the button in the
 /// toolbar and the menu it opens.

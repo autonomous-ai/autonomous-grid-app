@@ -36,7 +36,7 @@ void main() {
   group('parsing what the panel says', () {
     test('hello carries the firmware, protocol and MAC', () {
       final msg = PanelInbound.parse(
-        '{"t":"hello","fw":"0.1.0","proto":1,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","fw":"0.1.0","proto":2,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       expect(msg, isA<PanelHello>());
       final hello = msg as PanelHello;
@@ -62,9 +62,9 @@ void main() {
       // The panel can stop a turn in a project the desktop does not have open,
       // which is the whole reason the id travels.
       final msg =
-          PanelInbound.parse('{"t":"turn.stop","projectId":"p-7"}')
+          PanelInbound.parse('{"t":"turn.stop","chatId":"c-7"}')
               as PanelStopRequested;
-      expect(msg.projectId, 'p-7');
+      expect(msg.chatId, 'c-7');
     });
 
     test('an unknown message is kept, so newer firmware is visible', () {
@@ -102,10 +102,10 @@ void main() {
       final received = <PanelInbound>[];
       link.messages.listen(received.add);
 
-      transport.deliver(encodePanelJson('{"t":"projects.list"}'));
+      transport.deliver(encodePanelJson('{"t":"chats.list"}'));
       await pumpEventQueue();
 
-      expect(received.single, isA<PanelProjectsRequested>());
+      expect(received.single, isA<PanelChatsRequested>());
     });
 
     test('PCM is kept off the message stream', () async {
@@ -134,7 +134,7 @@ void main() {
       link.messages.listen(received.add);
 
       transport.deliver(utf8.encode('ESP-ROM:esp32s3\r\nrst:0x1\r\n'));
-      transport.deliver(encodePanelJson('{"t":"hello","proto":1}'));
+      transport.deliver(encodePanelJson('{"t":"hello","proto":2}'));
       await pumpEventQueue();
 
       expect(received.single, isA<PanelHello>());
@@ -162,13 +162,13 @@ void main() {
 
     test('sending wraps the JSON in a frame the decoder can read back', () {
       final transport = _FakeTransport();
-      PanelLink(transport).send(PanelOutbound.turnStarted('p-1'));
+      PanelLink(transport).send(PanelOutbound.turnStarted('c-1'));
 
       final decoded = PanelFrameDecoder().feed(transport.sent.single).single;
       expect(decoded.type, PanelFrameType.json);
       expect(jsonDecode(decoded.text), {
         't': 'turn.started',
-        'projectId': 'p-1',
+        'chatId': 'c-1',
       });
     });
 
@@ -177,8 +177,8 @@ void main() {
       // recap. Instructions, memory and the workspace path stay in the app.
       final json =
           jsonDecode(
-                PanelOutbound.projects([
-                  const PanelProject(
+                PanelOutbound.chats([
+                  const PanelChat(
                     id: 'p-1',
                     name: 'grid-app',
                     agent: 'claude',

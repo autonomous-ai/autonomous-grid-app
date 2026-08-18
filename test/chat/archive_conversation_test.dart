@@ -22,22 +22,27 @@ Future<({ProviderContainer container, Directory dir})> _harness(
   final container = ProviderContainer(
     overrides: [chatStoreProvider.overrideWithValue(store)],
   );
-  addTearDown(container.dispose);
-  // Retried, and asynchronous: chats are persisted off the UI isolate, so a
-  // file can land between this directory being listed and being removed and
-  // the delete fails with ENOTEMPTY — against whichever test ran next, which
-  // is what made it look like a bug somewhere else entirely.
+  // Registered in THIS order because tearDowns run in reverse: the directory
+  // goes last, after the container is disposed. The other way round deleted it
+  // while a save was still in flight, and the delete failed with "Directory not
+  // empty" — intermittently, and only under load.
+  //
+  // Retried as well as ordered. Disposing stops new saves being started; it
+  // does not wait for one already in flight, and chats are persisted off the UI
+  // isolate, so a file can still land between the directory being listed and
+  // being removed.
   addTearDown(() async {
     for (var attempt = 0; ; attempt++) {
       try {
         await dir.delete(recursive: true);
         return;
       } on FileSystemException {
-        if (attempt >= 4) rethrow;
-        await Future<void>.delayed(const Duration(milliseconds: 25));
+        if (attempt >= 3) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
       }
     }
   });
+  addTearDown(container.dispose);
   await container.read(chatSessionsProvider.notifier).restored;
   return (container: container, dir: dir);
 }

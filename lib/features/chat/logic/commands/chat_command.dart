@@ -83,6 +83,23 @@ enum ChatCommand {
 
   /// How it reads in the menu and in the composer.
   String get slash => '/$name';
+
+  /// Why the pictures, files and quoted selections sitting on the composer
+  /// don't go with this command, or null when they stay put.
+  ///
+  /// A command is not a message: `/loop` sends its prompt as words, so a
+  /// picture attached beside it carries nowhere — and left on the composer it
+  /// rides into whatever the user types next, which is how one sat there after
+  /// a send looking like part of the message that had just gone.
+  ///
+  /// `/compact` is the exception, because it sends nothing at all: the user is
+  /// still writing the message those attachments belong to, and freeing up
+  /// room mid-draft must not cost them the picture they just attached.
+  String? get draftDropReason => switch (this) {
+    ChatCommand.clear => 'a new chat starts empty',
+    ChatCommand.goal || ChatCommand.loop => '$slash carries words only',
+    ChatCommand.compact => null,
+  };
 }
 
 /// A command the user has actually typed, with whatever they typed after it.
@@ -96,6 +113,23 @@ typedef ChatCommandCall = ({ChatCommand command, String argument});
 /// look alike, which is the whole lesson of the goal bar that said one word for
 /// four different endings (§5).
 typedef CommandOutcome = ({String message, bool failed});
+
+/// What to tell the user when [command] took [names] off the composer.
+///
+/// Silence here is the bug: an attachment that vanishes the moment a command
+/// runs reads as one that went with it, and an attachment left behind reads
+/// the same way — so the app says which ones didn't travel. Names the first,
+/// like `attachmentOverflowMessage`, so it is clear *what* went. Null when
+/// nothing was attached, or when the command leaves the draft alone.
+String? droppedDraftMessage(ChatCommand command, List<String> names) {
+  final reason = command.draftDropReason;
+  if (reason == null || names.isEmpty) return null;
+  final rest = names.length - 1;
+  final what = rest == 0
+      ? '“${names.first}”'
+      : '“${names.first}” and $rest more';
+  return '$what didn’t come along — $reason.';
+}
 
 /// The command [text] invokes, or null when it invokes none.
 ///

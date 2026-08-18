@@ -81,7 +81,7 @@ void main() {
 
   group('collecting what the panel is saying', () {
     test('keeps the audio in the order it arrived', () {
-      final capture = PanelVoiceCapture(projectId: 'p-1')
+      final capture = PanelVoiceCapture(chatId: 'p-1')
         ..add([1, 2])
         ..add([3, 4]);
 
@@ -122,74 +122,106 @@ void main() {
   });
 
   group('deciding where a transcript goes', () {
-    test('a project the panel named wins outright — the user was looking at '
+    // Two chats in ONE project and one in another, which is the shape that
+    // broke the old model: a tile stood for a folder, so these three were two
+    // tiles and the panel could not name the chat the user was standing at.
+    final live = ChatSessionsState(
+      conversations: [
+        _chat(id: 'c-1', projectId: 'p-1', at: DateTime(2026, 8, 1)),
+        _chat(id: 'c-2', projectId: 'p-1', at: DateTime(2026, 8, 13)),
+        _chat(id: 'c-3', projectId: 'p-2', at: DateTime(2026, 8, 12)),
+      ],
+    );
+
+    test('the chat the panel named wins outright — the user was looking at '
         'that tile when they spoke', () {
       final route = panelVoiceRouteFor(
-        spokenIn: 'p-2',
+        spokenIn: 'c-2',
         projects: _projects,
-        chats: const ChatSessionsState(),
+        chats: live,
       );
       expect(route, isA<PanelVoiceRouted>());
-      expect((route as PanelVoiceRouted).projectId, 'p-2');
+      expect((route as PanelVoiceRouted).chatId, 'c-2');
     });
 
-    test('with no project named the app guesses, and says it is guessing — a '
+    test('a chat named in the SAME project as another is still named exactly '
+        '— the two are separate tiles and separate conversations', () {
+      final route = panelVoiceRouteFor(
+        spokenIn: 'c-1',
+        projects: _projects,
+        chats: live,
+      );
+      expect((route as PanelVoiceRouted).chatId, 'c-1');
+    });
+
+    test('with no chat named the app guesses, and says it is guessing — a '
         'guess that dispatches itself into a real repository is worse than '
         'one extra tap', () {
       final route = panelVoiceRouteFor(
         spokenIn: null,
         projects: _projects,
-        chats: ChatSessionsState(
-          conversations: [
-            _chat(id: 'c-1', projectId: 'p-1', at: DateTime(2026, 8, 1)),
-            _chat(id: 'c-2', projectId: 'p-2', at: DateTime(2026, 8, 13)),
-          ],
-        ),
+        chats: live,
       );
-      // The project talked in most recently: the only signal the app has about
+      // The chat talked in most recently: the only signal the app has about
       // what the person standing at the panel is working on.
       expect(route, isA<PanelVoiceGuessed>());
-      expect((route as PanelVoiceGuessed).projectId, 'p-2');
+      expect((route as PanelVoiceGuessed).chatId, 'c-2');
     });
 
-    test('an empty project id is the same as none — a missing key falls back '
-        'to a zero value on this wire, and "" is not a project', () {
+    test('an empty chat id is the same as none — a missing key falls back to '
+        'a zero value on this wire, and "" is not a chat', () {
       final route = panelVoiceRouteFor(
         spokenIn: '',
         projects: _projects,
-        chats: const ChatSessionsState(),
+        chats: live,
       );
       expect(route, isA<PanelVoiceGuessed>());
     });
 
-    test('with nothing said anywhere yet the guess is the first project the '
-        'app lists, which is the one at the front of the panel too', () {
+    test('with nothing said anywhere yet the guess is the first tile the app '
+        'lists, which is the one at the front of the panel too', () {
       final route = panelVoiceRouteFor(
         spokenIn: null,
         projects: _projects,
-        chats: const ChatSessionsState(),
+        chats: ChatSessionsState(
+          conversations: [_chat(id: 'c-9', projectId: 'p-1', at: _epoch)],
+        ),
       );
-      expect((route as PanelVoiceGuessed).projectId, 'p-1');
+      expect((route as PanelVoiceGuessed).chatId, 'c-9');
     });
 
-    test('a project this computer no longer has is refused in words rather '
-        'than quietly re-guessed', () {
+    test('a chat this computer no longer has is refused in words rather than '
+        'quietly re-guessed', () {
       // The user picked a tile. Sending their sentence somewhere else is the
       // exact failure the confirm step exists to prevent.
       final route = panelVoiceRouteFor(
-        spokenIn: 'p-gone',
+        spokenIn: 'c-gone',
         projects: _projects,
-        chats: const ChatSessionsState(),
+        chats: live,
       );
       expect(route, isA<PanelVoiceUnroutable>());
-      expect((route as PanelVoiceUnroutable).message, contains('project'));
+      expect((route as PanelVoiceUnroutable).message, contains('chat'));
     });
 
-    test('a computer with no projects at all names the step the user is '
-        'missing, instead of failing at them', () {
+    test('a chat whose project the app no longer lists is refused too — the '
+        'panel was never sent a tile for it', () {
+      final route = panelVoiceRouteFor(
+        spokenIn: 'c-orphan',
+        projects: _projects,
+        chats: ChatSessionsState(
+          conversations: [
+            _chat(id: 'c-orphan', projectId: 'p-gone', at: DateTime(2026, 8, 1)),
+          ],
+        ),
+      );
+      expect(route, isA<PanelVoiceUnroutable>());
+    });
+
+    test('a computer with no chats at all names the step the user is missing, '
+        'instead of failing at them', () {
       final route = panelVoiceRouteFor(
         spokenIn: null,
-        projects: const [],
+        projects: _projects,
         chats: const ChatSessionsState(),
       );
       expect(route, isA<PanelVoiceUnroutable>());
@@ -197,3 +229,5 @@ void main() {
     });
   });
 }
+
+final _epoch = DateTime(2026, 1, 1);

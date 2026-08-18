@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_permissions.dart';
+import 'package:grid_app/features/agents/logic/agent_steering.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/agents/logic/agent_server_error.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
@@ -99,6 +100,9 @@ class _FakeAcpSession implements HermesAcpSession {
 
   final List<List<HermesAcpEvent>> _turns;
   final prompts = <String>[];
+
+  /// What was handed to a turn already running, in order.
+  final steers = <String>[];
   int _turn = 0;
   bool _closed = false;
 
@@ -132,6 +136,12 @@ class _FakeAcpSession implements HermesAcpSession {
   void answerPermission(Object requestId, String? optionId) {}
 
   @override
+  Future<String?> steer(String text) async {
+    steers.add(text);
+    return null;
+  }
+
+  @override
   Future<void> close() async => _closed = true;
 }
 
@@ -152,6 +162,12 @@ class _LiveAcpSession implements HermesAcpSession {
   /// Every permission answered, as (request id, chosen option).
   final answers = <(Object, String?)>[];
 
+  /// What was handed to the turn while it ran, in order.
+  final steers = <String>[];
+
+  /// The raw reason the next steer is refused with, or null to take it.
+  String? refuseSteer;
+
   @override
   final String sessionId = 'sess-live';
 
@@ -168,6 +184,13 @@ class _LiveAcpSession implements HermesAcpSession {
   @override
   void answerPermission(Object requestId, String? optionId) =>
       answers.add((requestId, optionId));
+
+  @override
+  Future<String?> steer(String text) async {
+    if (refuseSteer != null) return refuseSteer;
+    steers.add(text);
+    return null;
+  }
 
   /// The turn ends: what the agent was going to say, then done.
   void finish(String reply) {
@@ -327,6 +350,33 @@ void main() {
       expect(updates.last, isA<ChatSendSuccess>());
     },
   );
+
+  test('while the turn runs the chat can hand it what the user typed; once it '
+      'ends there is nobody left to take it', () async {
+    final service = _LiveAcp();
+    final container = _container(service, tmp);
+
+    final finished = container
+        .read(hermesChatSenderProvider)
+        .send(network: _credential(), model: 'm', history: _history('go'))
+        .listen((_) {})
+        .asFuture<void>();
+
+    await _untilListening(service);
+    final steering = container.read(agentSteeringProvider.notifier);
+    expect(container.read(agentSteeringProvider), contains(_noChat));
+    expect(await steering.steer(_noChat, 'just the main file'), isTrue);
+    expect(service.session.steers, ['just the main file']);
+
+    service.session.finish('Only the main file, then.');
+    await finished;
+
+    // The turn is over: what is typed now belongs to the next one, and the
+    // chat's queue is the only thing that can hold it.
+    expect(container.read(agentSteeringProvider), isEmpty);
+    expect(await steering.steer(_noChat, 'and the tests'), isFalse);
+    expect(service.session.steers, ['just the main file']);
+  });
 
   test('a pending permission is the user’s time, not a hang — the idle watch '
       'does not fire while a card is waiting to be answered', () async {

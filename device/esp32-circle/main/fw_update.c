@@ -240,7 +240,7 @@ void fw_on_offer(const char *version, int size, const char *sha256)
     // stopped, waiting, and the desktop is showing the same card. Rebooting through it does not merely lose
     // work — it takes the panel's answer off the table while a person is looking at it, and the app's own
     // timer gives up 55 seconds later.
-    if (ui_any_project_busy() || voice_active() || ui_awaiting_answer()) {
+    if (ui_any_tile_busy() || voice_active() || ui_awaiting_answer()) {
         ESP_LOGI(TAG, "offer of %s declined for now — %s", version,
                  voice_active()        ? "a voice turn is in flight" :
                  ui_awaiting_answer()  ? "a question is waiting to be answered" :

@@ -5,13 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
 
-/// How many finished turns are remembered per project.
+/// How many finished turns are remembered per chat.
 ///
 /// Three, and the reason is the same one the reference gives: one turn is a
-/// skewed picture. A project whose last turn happened to be "fixed a typo" reads
-/// as a typo project, and the voice router then sends the next spoken sentence
+/// skewed picture. A chat whose last turn happened to be "fixed a typo" reads
+/// as a typo chat, and the voice router then sends the next spoken sentence
 /// somewhere else. Three turns is enough to show what someone is *working on*
-/// and still short enough that every project's history fits in one prompt.
+/// and still short enough that every chat's history fits in one prompt.
 const int kPanelRecapsKept = 3;
 
 /// One finished turn, as the panel was told about it.
@@ -50,9 +50,14 @@ class PanelTurnRecord {
   }
 }
 
-/// The last [kPanelRecapsKept] turns of every project, newest first.
+/// The last [kPanelRecapsKept] turns of every chat, newest first.
 ///
-/// Persisted as `~/.grid/app/panel_recaps.json`, keyed by project id. App-owned
+/// Persisted as `~/.grid/app/panel_recaps.json`, keyed by **chat id**. It was
+/// keyed by project id until 2026-08-18, when a panel tile stopped being a
+/// project and became a conversation. There is no migration and none is
+/// possible: a project's history was the merge of its chats', and splitting it
+/// back apart would be inventing which chat said what. Old keys match no chat,
+/// so they read as "no history yet" and fall away as new turns land. App-owned
 /// and lenient like the other app stores: a missing or corrupt file reads as "no
 /// history yet" rather than throwing, and an entry with no headline is dropped at
 /// the parse boundary — an empty headline in a prompt is a line that costs tokens
@@ -100,8 +105,8 @@ final panelRecapStoreProvider = Provider<PanelRecapStore>(
   (ref) => PanelRecapStore(),
 );
 
-/// Each project's recent turns: loaded once on start, written through on every
-/// turn that lands, so what a project has been doing survives the app closing.
+/// Each chat's recent turns: loaded once on start, written through on every
+/// turn that lands, so what a chat has been doing survives the app closing.
 final panelRecapsProvider =
     NotifierProvider<PanelRecaps, Map<String, List<PanelTurnRecord>>>(
       PanelRecaps.new,
@@ -112,14 +117,14 @@ class PanelRecaps extends Notifier<Map<String, List<PanelTurnRecord>>> {
   Map<String, List<PanelTurnRecord>> build() =>
       ref.read(panelRecapStoreProvider).load();
 
-  /// Remember how the last turn in [projectId] came out.
+  /// Remember how the last turn in [chatId] came out.
   ///
   /// Called for **every** turn that ends, not only the ones a model summarised:
-  /// the cheap headline is weaker signal but it is signal, and a project with no
+  /// the cheap headline is weaker signal but it is signal, and a chat with no
   /// history at all is one the router can only match by name.
-  void record(String projectId, {required String recap, String summary = ''}) {
+  void record(String chatId, {required String recap, String summary = ''}) {
     final headline = recap.trim();
-    if (projectId.isEmpty || headline.isEmpty) return;
+    if (chatId.isEmpty || headline.isEmpty) return;
     final turn = PanelTurnRecord(
       recap: headline,
       summary: summary.trim(),
@@ -130,20 +135,20 @@ class PanelRecaps extends Notifier<Map<String, List<PanelTurnRecord>>> {
     // the signal that decides a tie.
     final next = {
       ...state,
-      projectId: [turn, ...?state[projectId]?.take(kPanelRecapsKept - 1)],
+      chatId: [turn, ...?state[chatId]?.take(kPanelRecapsKept - 1)],
     };
     state = next;
     ref.read(panelRecapStoreProvider).save(next);
   }
 
-  /// A project's history as one block of prose for the router's prompt, or '' when
+  /// A chat's history as one block of prose for the router's prompt, or '' when
   /// it has none.
   ///
   /// Joined newest-first and separated by `;` rather than newlines: the whole
-  /// candidate list is one line per project in the prompt, and a newline inside a
-  /// line would make three projects look like nine.
-  String recentFor(String projectId) {
-    final turns = state[projectId];
+  /// candidate list is one line per chat in the prompt, and a newline inside a
+  /// line would make three chats look like nine.
+  String recentFor(String chatId) {
+    final turns = state[chatId];
     if (turns == null || turns.isEmpty) return '';
     return turns.map((t) => t.recap).join('; ');
   }

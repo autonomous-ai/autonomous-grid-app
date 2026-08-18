@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../../shared/theme/app_theme.dart';
+import '../theme/app_theme.dart';
 
-/// A control in the Review toolbar: 26px tall, and quiet unless it is the row's
+/// A control in a toolbar strip: 26px tall, and quiet unless it is the row's
 /// action.
 ///
 /// Its own construction rather than a `FilledButton`, because a filled accent
@@ -12,7 +12,9 @@ import '../../../../shared/theme/app_theme.dart';
 /// hardened into a button.
 ///
 /// Shared with the scope menu's button so the two ends of the toolbar are the
-/// same object in two colours — they were drawn twice before, and drifted.
+/// same object in two colours — they were drawn twice before, and drifted. It
+/// lives here rather than in Review, where it was written, because the node
+/// dashboard's sort and filter buttons are the same control (conventions §1).
 class ToolbarPill extends StatefulWidget {
   const ToolbarPill({
     super.key,

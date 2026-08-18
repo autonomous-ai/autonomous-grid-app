@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_changes.dart';
+import 'package:grid_app/features/agents/logic/agent_chat_scope.dart';
 
 /// The bar summarising the agent's edits is a transient notice, not a fixture:
 /// these pin the ways it should leave the screen — a hand dismiss, the auto-hide
@@ -16,7 +17,7 @@ void main() {
       overrides: [agentChangesAutoHideProvider.overrideWithValue(autoHide)],
     );
     addTearDown(c.dispose);
-    c.read(agentChangesScopeProvider.notifier).show(chatId);
+    c.read(agentChatScopeProvider.notifier).show(chatId);
     c.read(agentChangesProvider.notifier).beginTurn(chatId);
     // Read the bar so its listener on the change list is live before any edit.
     c.read(agentChangesBarProvider);
@@ -109,13 +110,13 @@ void main() {
     await settle();
     expect(c.read(agentChangesBarProvider), isTrue);
 
-    c.read(agentChangesScopeProvider.notifier).show('chat-2');
+    c.read(agentChatScopeProvider.notifier).show('chat-2');
     await settle();
     expect(c.read(agentChangesBarProvider), isFalse);
     // Leaving the chat hides the notice, it doesn't drop the undo behind it.
     expect(changesIn(c, 'chat-1'), hasLength(1));
 
-    c.read(agentChangesScopeProvider.notifier).show('chat-1');
+    c.read(agentChatScopeProvider.notifier).show('chat-1');
     await settle();
     expect(c.read(agentChangesBarProvider), isTrue);
   });

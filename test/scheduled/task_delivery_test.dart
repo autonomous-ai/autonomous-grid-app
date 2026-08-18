@@ -95,7 +95,21 @@ void main() {
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('grid_task_delivery_test');
   });
-  tearDown(() => tmp.delete(recursive: true));
+  // Retried, not just called. The sweep writes into this directory on a timer,
+  // so a save can land BETWEEN the recursive delete listing the folder and
+  // removing it — the delete then fails with "Directory not empty", from a test
+  // that had already passed. Intermittent, and only under load.
+  tearDown(() async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await tmp.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        if (attempt >= 3) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+  });
 
   ({ProviderContainer container, ChatStore chats, FakeCron cron}) harness(
     FakeCron cron,

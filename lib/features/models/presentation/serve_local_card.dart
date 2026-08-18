@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/cli/parsers/download_progress.dart';
+import '../../../infrastructure/state/auto_serve_store.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -15,34 +16,14 @@ import '../logic/advertise_name.dart';
 import '../logic/context_length.dart';
 import '../logic/engine_setup_controller.dart';
 import '../logic/engine_status.dart';
+import '../logic/model_download_status.dart';
 import '../logic/model_group.dart';
 import '../logic/model_pull_controller.dart';
+import '../logic/model_storage.dart';
 import '../logic/models_providers.dart';
+import 'auto_serve_row.dart';
 import 'context_length_field.dart';
 import 'model_manager_dialog.dart';
-
-/// A model download actively in flight — a manual pull in the model manager, the
-/// node-setup auto-download, or the background first-run download — reduced to
-/// what the engine block needs. Outer null means no live download; a null [pct]
-/// means "downloading, percent not known yet". A partial `.gguf.part` sitting on
-/// disk with no live stream is *not* this — that's [_resumeSection]'s job.
-({int? pct})? _modelDownloadStatus(
-  ModelPullState pull,
-  NodeSetupState setup,
-  ModelDownloadState background,
-) {
-  if (pull is ModelPulling) return (pct: _pctOf(pull.progress));
-  if (setup is NodeSetupRunning && setup.current.isDownload) {
-    return (pct: _pctOf(setup.progress));
-  }
-  if (background is ModelDownloadRunning) {
-    return (pct: _pctOf(background.progress));
-  }
-  return null;
-}
-
-int? _pctOf(DownloadProgress? p) =>
-    (p != null && !p.isIndeterminate) ? p.pct!.round() : null;
 
 /// The built-in llama.cpp engine block: serve a locally pulled GGUF model via
 /// `grid join <grid> --serve <gguf> --advertise-as <name>`. Downloading and
@@ -84,7 +65,84 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     });
   }
 
+  /// The model set to start when the app opens, if it's still on disk. The
+  /// block opens on it: it is the one this computer will actually serve, so
+  /// landing on an unrelated first-in-the-list would show a tick that looks off
+  /// while start-on-open is very much on.
+  ModelGroup? _armedGroup(List<ModelGroup> groups) {
+    final prefs = ref.read(autoServePrefsProvider);
+    if (!prefs.enabled || prefs.networkId != widget.network.networkId) {
+      return null;
+    }
+    return groups
+        .where((group) => group.primary.name == prefs.model)
+        .firstOrNull;
+  }
+
+  /// Whether *this* model is the one set to start when the app opens. Read from
+  /// the record, not from a bare on/off: the tick sits beside one model in a
+  /// picker, so it has to mean that model.
+  bool _autoServes(ModelGroup group) {
+    final prefs = ref.watch(autoServePrefsProvider);
+    return prefs.enabled &&
+        prefs.networkId == widget.network.networkId &&
+        prefs.model == group.primary.name;
+  }
+
+  /// The *other* model set to start on open, if there is one. Said out loud
+  /// beside an unticked box, because "off" next to this model would otherwise
+  /// read as "nothing starts on its own" while something does.
+  String? _armedElsewhere(ModelGroup group) {
+    final prefs = ref.watch(autoServePrefsProvider);
+    if (!prefs.enabled || _autoServes(group)) return null;
+    final model = prefs.model;
+    if (model == null || model.isEmpty) return null;
+    return ref
+        .read(modelGroupsProvider)
+        .where((other) => other.primary.name == model)
+        .map((other) => other.displayName)
+        .firstOrNull;
+  }
+
+  /// The pills beside a model in the picker: what it costs on disk, and — for
+  /// a split set — whether every part of it is actually here.
+  ///
+  /// The part count used to read "1 parts" for a download that had landed one
+  /// shard of three: wrong as grammar, and wrong as a fact, since it offered an
+  /// unloadable model as if it were ready to serve.
+  List<AppSelectBadge> _modelBadges(ModelGroup group) => [
+    AppSelectBadge(modelSizeLabel(group.sizeBytes)),
+    if (group.isComplete && group.isSplit)
+      AppSelectBadge('${group.expectedParts} parts')
+    else if (!group.isComplete)
+      AppSelectBadge(
+        'Unfinished · ${group.partCount} of ${group.expectedParts} parts',
+        tone: AppBadgeTone.warning,
+      ),
+  ];
+
+  /// Keeps the start-on-open record in step with the form. No-ops unless the
+  /// box is ticked *for this model*.
+  void _refreshAutoServe(String model) {
+    ref
+        .read(autoServePrefsProvider.notifier)
+        .refresh(
+          networkId: widget.network.networkId,
+          model: model,
+          advertiseAs: _advertiseName(model),
+          ctxSize: _ctxSize,
+        );
+  }
+
+  /// The name to announce [model] under: what the user typed, or the one
+  /// derived from the filename when they left the field alone.
+  String _advertiseName(String model) {
+    final typed = _advertise.text.trim();
+    return typed.isEmpty ? deriveAdvertiseName(model) : typed;
+  }
+
   void _start(String model) {
+    _refreshAutoServe(model);
     final advertise = _advertise.text.trim();
     // Fall back to the model's default (200k, capped to its max) when the user
     // hasn't moved the slider; if the max isn't read yet, leave --ctx-size off
@@ -110,10 +168,10 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     final theme = Theme.of(context);
     final groups = ref.watch(modelGroupsProvider);
     final llamaInstalled = ref.watch(engineStatusProvider).llamaInstalled;
-    final download = _modelDownloadStatus(
-      ref.watch(modelPullControllerProvider),
-      ref.watch(nodeSetupControllerProvider),
-      ref.watch(backgroundModelControllerProvider),
+    final download = liveModelDownload(
+      pull: ref.watch(modelPullControllerProvider),
+      setup: ref.watch(nodeSetupControllerProvider),
+      background: ref.watch(backgroundModelControllerProvider),
     );
     // A `.gguf.part` on disk with no live stream: a download that was
     // interrupted and can pick up where it left off.
@@ -130,7 +188,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         break;
       }
     }
-    selected ??= groups.isEmpty ? null : groups.first;
+    selected ??= _armedGroup(groups) ?? (groups.isEmpty ? null : groups.first);
     if (selected != null) _syncAdvertiseFor(selected.primary.name);
 
     return Column(
@@ -254,9 +312,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
           AppSelectOption(
             value: group.primary.name,
             label: group.displayName,
-            // A split model's shard count belongs on its own line, not crammed
-            // onto the name with a separator.
-            detail: group.isSplit ? '${group.partCount} parts' : null,
+            badges: _modelBadges(group),
           ),
       ],
       // Reset the context choice so the slider falls back to the new
@@ -277,32 +333,106 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         ContextLengthField(
           model: selected.primary.name,
           value: _ctxSize,
-          onChanged: (tokens) => setState(() => _ctxSize = tokens),
+          onChanged: (tokens) {
+            setState(() => _ctxSize = tokens);
+            // A start-on-open model has to open with the window shown here,
+            // not the one that was in the field when the box was ticked.
+            _refreshAutoServe(selected.primary.name);
+          },
         ),
       ],
     ),
-    const SizedBox(height: 16),
-    Align(
-      alignment: Alignment.centerLeft,
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          FilledButton.icon(
-            onPressed: () => _start(selected.primary.name),
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Start local engine'),
-          ),
-          TextButton.icon(
-            onPressed: () => showModelManager(context),
-            icon: const Icon(Icons.tune, size: 18),
-            label: const Text('Download or manage models'),
-          ),
-        ],
+    // Only offered for a model that can actually start. Ticking it against an
+    // unfinished download would arm a launch that fails where nobody is
+    // looking.
+    if (selected.isComplete) ...[
+      const SizedBox(height: 12),
+      AutoServeRow(
+        value: _autoServes(selected),
+        armedElsewhere: _armedElsewhere(selected),
+        modelLabel: selected.displayName,
+        onChanged: (enabled) => ref
+            .read(autoServePrefsProvider.notifier)
+            .set(
+              enabled: enabled,
+              networkId: widget.network.networkId,
+              model: selected.primary.name,
+              advertiseAs: _advertiseName(selected.primary.name),
+              ctxSize: _ctxSize,
+            ),
       ),
+    ],
+    const SizedBox(height: 16),
+    _ServeActions(
+      selected: selected,
+      onStart: () => _start(selected.primary.name),
+      onManage: () => showModelManager(context),
     ),
   ];
+}
+
+/// What the block offers for the selected model: start it, or — when it never
+/// finished downloading — say so and offer the one thing that helps.
+///
+/// A split model missing a part cannot load (llama.cpp opens the first shard
+/// and reads its siblings from the same folder), so starting it would fail
+/// seconds later in the CLI's own words. The count is said in parts, the unit
+/// the download itself is counted in.
+class _ServeActions extends StatelessWidget {
+  const _ServeActions({
+    required this.selected,
+    required this.onStart,
+    required this.onManage,
+  });
+
+  final ModelGroup selected;
+  final VoidCallback onStart;
+  final VoidCallback onManage;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!selected.isComplete) ...[
+          Text(
+            "This model didn't finish downloading — ${selected.partCount} of "
+            '${selected.expectedParts} parts are here. It needs all of them '
+            'before it can run.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.warn),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (selected.isComplete)
+              FilledButton.icon(
+                onPressed: onStart,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Start local engine'),
+              )
+            else
+              FilledButton.icon(
+                onPressed: onManage,
+                icon: const Icon(Icons.download_outlined, size: 18),
+                label: const Text('Finish downloading'),
+              ),
+            TextButton.icon(
+              onPressed: onManage,
+              icon: const Icon(Icons.tune, size: 18),
+              label: const Text('Download or manage models'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 /// A quiet disclosure holding the settings that are already right by default —

@@ -1,12 +1,32 @@
 import 'dart:convert';
 
 import 'agent_event.dart';
+import 'agent_question.dart';
 import 'claude_exec_event.dart';
 
 /// The tools Claude Code uses to change a file. Only these produce a
 /// [ClaudeFileWriteStarted] / [ClaudeFileWriteFinished] pair, so the chat offers
 /// to open what the agent actually wrote rather than every path it merely read.
 const Set<String> kClaudeFileWriteTools = {'Write', 'Edit', 'NotebookEdit'};
+
+/// Tools whose *result* is the CLI coaching the model, not telling the user
+/// anything.
+///
+/// `EnterPlanMode` answers with a page of instructions addressed to the
+/// assistant — "You should now focus on exploring the codebase… DO NOT write or
+/// edit any files yet" — and `ExitPlanMode` with the sentence that releases it.
+/// Both landed in the transcript verbatim, which read as the app telling the
+/// user what to do. The row still shows (the agent did switch modes), the
+/// payload behind it doesn't.
+const Set<String> kClaudeCoachingTools = {'EnterPlanMode', 'ExitPlanMode'};
+
+/// The plan-mode tools in the user's words. Every other tool row is titled by
+/// what it acted on ([claudeToolLabel]); these two act on nothing, so without
+/// this they show the CLI's own identifier and nothing else.
+const Map<String, String> kClaudePhrasedTools = {
+  'EnterPlanMode': 'Planning before changing anything',
+  'ExitPlanMode': 'Finished the plan',
+};
 
 /// Turns the JSONL of `claude -p --output-format stream-json` into the shapes
 /// the chat already renders.
@@ -54,7 +74,7 @@ class ClaudeStreamParser {
   /// throwing on a stream that shifts between releases.
   ///
   /// A line tagged with `parent_tool_use_id` did not come from the agent this
-  /// chat is talking to: it came from a sub-agent the `Task` tool started, whose
+  /// chat is talking to: it came from a sub-agent the `Agent` tool started, whose
   /// entire working life shares this one stream. Its *steps* are still worth
   /// showing (they are real work, and a sub-agent can run for minutes), but its
   /// *words* are not the answer — see [_readBlocks].
@@ -142,7 +162,7 @@ class ClaudeStreamParser {
         // that asked for it — "I'll explore the codebase systematically" — and
         // folding it in left the reply switching voice (and language) mid-turn,
         // with the agent's own sentence cut in half around it. What the
-        // sub-agent found still reaches the user: it is the `Task` call's
+        // sub-agent found still reaches the user: it is the `Agent` call's
         // result, under that step's own row.
         if (parent != null) return const [];
         final text = '${block['text'] ?? ''}';
@@ -191,6 +211,15 @@ class ClaudeStreamParser {
     // just produced.
     if (name == 'TodoWrite') {
       return [ClaudePlanEvent(parseAgentPlan(input['todos']))];
+    }
+
+    // Neither is a step the user watches happen: this one is a question, and it
+    // belongs where they can answer it, not folded into a row. Falls through to
+    // an ordinary row when the call carries nothing answerable, so a malformed
+    // question is still visible rather than swallowed.
+    if (name == 'AskUserQuestion') {
+      final questions = parseAgentQuestions(input['questions']);
+      if (questions.isNotEmpty) return [ClaudeQuestionsEvent(questions)];
     }
 
     final activity = AgentActivity(
@@ -253,7 +282,9 @@ class ClaudeStreamParser {
             status: failed
                 ? AgentActivityStatus.failed
                 : AgentActivityStatus.done,
-            result: claudeToolResult(block['content']),
+            result: kClaudeCoachingTools.contains(call.tool)
+                ? null
+                : claudeToolResult(block['content']),
           ),
         ),
       );
@@ -429,6 +460,13 @@ String? claudeToolRequest(String name, Map<String, dynamic> input) {
   if (name == 'Bash' && command is String && command.trim().isNotEmpty) {
     return clipToolPayload(command);
   }
+  // The plan itself, as the markdown the model wrote — the one payload here a
+  // user reads rather than inspects, and JSON quoting turns it into one long
+  // line of `\n`.
+  final plan = input['plan'];
+  if (name == 'ExitPlanMode' && plan is String && plan.trim().isNotEmpty) {
+    return clipToolPayload(plan.trim());
+  }
   try {
     return clipToolPayload(const JsonEncoder.withIndent('  ').convert(input));
   } on JsonUnsupportedObjectError {
@@ -467,11 +505,20 @@ String? claudeToolResult(Object? content) {
 /// eight times says nothing; the commands do.
 String claudeToolLabel(String name, Map<String, dynamic> input) {
   if (isBrowserTool(name)) return browserToolLabel(name, input);
+  if (kClaudePhrasedTools[name] case final phrase?) return phrase;
+  if (name.startsWith('mcp__')) return mcpToolLabel(name, input);
   final detail = switch (name) {
     'Bash' => input['command'],
     'WebSearch' => input['query'],
     'WebFetch' => input['url'],
-    'Task' => input['description'],
+    // `Agent` is what this tool is called in Claude Code 2.x; `Task` was its
+    // name before, and both are kept because the app pins no version of the
+    // CLI. Measured across the recent sessions on this machine: 31 `Agent`
+    // calls, no `Task` at all — so the row this line titles had been reading
+    // "Agent" and nothing else, with the description it carries thrown away.
+    'Agent' || 'Task' => input['description'],
+    // Which skill, not that a skill ran.
+    'Skill' => input['skill'],
     'Glob' || 'Grep' => input['pattern'],
     _ => _fileName(input['file_path'] ?? input['notebook_path']),
   };
@@ -500,6 +547,25 @@ String browserToolLabel(String name, Map<String, dynamic> input) {
     'Browser',
     if (action.isNotEmpty) action,
     if (text.isNotEmpty) text,
+  ].join(' · ');
+}
+
+/// A connector's tool, as `server · tool` rather than the wire identifier.
+///
+/// MCP names arrive as `mcp__<server>__<tool>` —
+/// `mcp__plugin_playwright_playwright__browser_navigate` is one real row — and
+/// a line of that spends its whole width on plumbing the user never chose by
+/// name. The browser servers have their own label ([browserToolLabel]) because
+/// their action words are worth reading; this is every other connector.
+String mcpToolLabel(String name, Map<String, dynamic> input) {
+  final parts = name.split('__').where((p) => p.isNotEmpty).toList();
+  final server = parts.length > 1 ? parts[1].replaceAll('_', ' ') : '';
+  final tool = parts.length > 2 ? parts.last.replaceAll('_', ' ') : '';
+  final detail = '${input['query'] ?? input['target'] ?? ''}'.trim();
+  return [
+    if (server.isNotEmpty) server,
+    if (tool.isNotEmpty) tool,
+    if (detail.isNotEmpty) detail,
   ].join(' · ');
 }
 

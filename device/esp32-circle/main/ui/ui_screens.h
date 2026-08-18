@@ -22,7 +22,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stddef.h>   // size_t (ui_project_id_at)
+#include <stddef.h>   // size_t (ui_tile_id_at)
 
 struct cJSON;
 
@@ -71,7 +71,7 @@ void ui_leave_error_screen(void);
 
 // --- Projects carousel (swipe left/right between the Overview and the projects) ---
 // The ring is Overview -> project 0 -> ... -> project N -> (wraps). No Settings tile, no Machines tile.
-void ui_show_projects(void);
+void ui_show_tiles(void);
 // Boot landing: park on the Overview tile with a spinner instead of the "No projects" empty page. The
 // projects have not loaded yet — grid-app has not even said welcome — and flashing an empty state at boot
 // says something false about a computer that may have a dozen.
@@ -89,26 +89,27 @@ void ui_set_connected(bool connected);
 // The machine's display name, from `welcome.machine.name`. Drawn as the Overview's eyebrow.
 void ui_set_machine_name(const char *name);
 
-// Ensure a tile exists for project_id (creates one if new) and set the human name shown on it. THIS is
+// Ensure a tile exists for chat_id (creates one if new) and set the human name shown on it. THIS is
 // what creates a tile, so it must be called before the three setters below.
-void ui_project_set_name(const char *project_id, const char *name);
+void ui_tile_set_project(const char *chat_id, const char *project);
+void ui_tile_set_name(const char *chat_id, const char *name);
 // The engine mark drawn on the chip row: claude | codex | hermes | pi. An id this build has no mark for
 // draws no mark rather than a placeholder — the row still reads (docs/panel-protocol.md, project shape).
-void ui_project_set_engine(const char *project_id, const char *engine);
+void ui_tile_set_engine(const char *chat_id, const char *engine);
 // The model chip's text. Display-only: nothing on this device can change a model, so a tap does nothing.
-void ui_project_set_selected_model(const char *project_id, const char *model);
+void ui_tile_set_selected_model(const char *chat_id, const char *model);
 
 // Remove a project's tile. No-op if the id isn't shown.
-void ui_project_remove(const char *project_id);
+void ui_tile_remove(const char *chat_id);
 // Copy the id of the project tile at index i into buf; false if out of range (used to reconcile removals).
-bool ui_project_id_at(int i, char *buf, size_t n);
+bool ui_tile_id_at(int i, char *buf, size_t n);
 // Number of project tiles currently shown.
-int ui_project_count(void);
+int ui_tile_count(void);
 // True once this project already has a recap card, so a `projects` list does not overwrite something
 // fuller that a finished turn already put there.
-bool ui_project_has_event(const char *project_id);
+bool ui_tile_has_event(const char *chat_id);
 // True while ANY project's turn is running — fw_update.c's "never mid-turn" guard.
-bool ui_any_project_busy(void);
+bool ui_any_tile_busy(void);
 // Clear any "Working…" tile orphaned when its turn.done was lost or never produced. Acts on ABSENCE:
 // nothing has stamped that project for >25s. A live turn keeps stamping (turn.parts) and is never cut
 // short. Call from the ~1s loop. Returns #cleared.
@@ -143,20 +144,21 @@ void ui_notif_swipe_up(void);
 void ui_set_creating(bool on);
 
 // Switch the carousel to a project's tile.
-void ui_focus_project(const char *project_id);
+void ui_focus_tile(const char *chat_id);
 // Drop every project tile (the app went away and its list is now a claim about a machine that is gone).
-void ui_project_clear_all(void);
+void ui_tile_clear_all(void);
 
 // Voice router result, from `voice.transcript`. `auto_sent` = grid-app already dispatched (just focus the
 // tile); otherwise `needsConfirm` was set, the transcript is held, and confirming sends `voice.confirm`.
 // `need_new` = the app named no project. Runs on the link task (takes the display lock).
-void ui_voice_routed(bool auto_sent, bool need_new, const char *route_id, const char *project_id,
+void ui_voice_routed(bool auto_sent, bool need_new, const char *route_id, const char *chat_id,
                      const char *transcript);
 // grid-app abandoned a routed voice turn (`voice.error`) → drop the loading overlay now instead of
 // waiting out the routing watchdog. No-op unless a route voice is waiting.
+void ui_voice_release(void);
 void ui_voice_route_abort(void);
 // A turn finished for this project → wake the screen (if off) and jump to that project's tile.
-void ui_notify_task_done(const char *project_id);
+void ui_notify_task_done(const char *chat_id);
 
 // --- The turn, as the panel draws it ---
 // One lifecycle event for a project's tile.
@@ -164,55 +166,55 @@ void ui_notify_task_done(const char *project_id);
 //         "done" | "error"  (the turn ended; `text` is the recap)
 //   `recap` (optional, may be NULL): a short headline shown on the tile; `text` is the fuller body the
 //   detail reader shows. When `recap` is NULL the tile previews `text`.
-void ui_project_emit(const char *project_id, const char *kind, const char *text, const char *recap);
+void ui_tile_emit(const char *chat_id, const char *kind, const char *text, const char *recap);
 // Restore a historical recap without touching the live turn lifecycle (a `projects` list arriving while
 // a turn is running must not clear the Working row).
-void ui_project_restore_event(const char *project_id, const char *kind, const char *text, const char *recap);
+void ui_tile_restore_event(const char *chat_id, const char *kind, const char *text, const char *recap);
 // The recap card's tint, from `recapKind`: done | failed | stopped. An unrecognised value is drawn as
 // `done`, NEVER as an error — guessing "failed" on a turn that worked is the worse of the two mistakes.
-void ui_project_set_recap_kind(const char *project_id, const char *recap_kind);
+void ui_tile_set_recap_kind(const char *chat_id, const char *recap_kind);
 // The long form of the last recap, from the `summary` message. Overwrites rather than appends: it is
-// keyed by projectId and describes the last COMPLETED turn. May never arrive.
-void ui_project_set_summary(const char *project_id, const char *text);
+// keyed by chatId and describes the last COMPLETED turn. May never arrive.
+void ui_tile_set_summary(const char *chat_id, const char *text);
 // Anchor the elapsed clock. `turn.started` is when the device starts counting; every step's `t0` is
 // milliseconds from THIS moment (docs/panel-protocol.md, `turn.parts`). The device must not timestamp a
 // step when it first sees it — onAttach re-sends the whole timeline after a reboot and every step would
 // read as having just begun.
-void ui_project_turn_started(const char *project_id);
+void ui_tile_turn_started(const char *chat_id);
 
 // The live "current step" block above the Working row. Two lines, overwritten each call:
 //   line 1 = `tool` (coloured by `kind`, never inferred from the tool's NAME) + `label` (muted)
 //   line 2 = `arg` (muted raw argument — the command/query/url; NULL/empty hides it, wraps to three
 //            lines then ellipsis)
 // `kind` is one of command | web | tool | thinking. Cleared when the turn ends.
-void ui_project_set_tool(const char *project_id, const char *tool_name, const char *label,
+void ui_tile_set_tool(const char *chat_id, const char *tool_name, const char *label,
                          const char *kind, const char *detail);
 
 // The sub-agent band: the steps of `turn.parts` that carry a `parent`. `rows` is a cJSON array of
 // {text, color} the caller has already composed — the wire carries no sub-agent TYPE, so the name is a
 // randomised gerund and the elapsed comes from the step's `t0`. NULL/empty clears it.
-void ui_project_set_agents(const char *project_id, const struct cJSON *rows);
+void ui_tile_set_agents(const char *chat_id, const struct cJSON *rows);
 
 // The plan, from `turn.parts.todos[]`: an array of {c, s} where `s` uses the step vocabulary
 // (running | done | failed | unknown). ABSENT means the agent has no plan, which is different from an
 // empty plan and is drawn as nothing at all. Windows to 4 rows centred on the running task.
-void ui_project_set_todos(const char *project_id, const struct cJSON *todos);
+void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos);
 
 // --- Questions (the `question` message) ---
 // Show the card: a summary, an optional command, and the app's own option list. `options` is the cJSON
 // array of {id, label} — the device must NOT invent an option and must NOT assume there are two.
 // `id` is opaque and is echoed back verbatim in `answer`.
-void ui_question_show(const char *project_id, const char *id, const char *summary,
+void ui_question_show(const char *chat_id, const char *id, const char *summary,
                       const char *command, const struct cJSON *options);
 // `question.cancel` — clear the card if it is this one. Arrives at any moment and WILL: the desktop shows
 // the same question and whichever surface answers first cancels the other.
-void ui_question_cancel(const char *project_id, const char *id);
+void ui_question_cancel(const char *chat_id, const char *id);
 // True while a question card is up (voice is refused then; a question is answered by tapping).
 bool ui_awaiting_answer(void);
 
 // --- Voice ---
 // The project id of the currently-visible tile, or "" on the Overview.
-const char *ui_get_active_project_id(void);
+const char *ui_active_tile_id(void);
 // Start/stop a capture for the visible project. Safe to call from a non-LVGL task.
 void ui_voice_start(void);
 void ui_voice_start_goal(void);

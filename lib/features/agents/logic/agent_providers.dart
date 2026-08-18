@@ -41,6 +41,7 @@ class AgentRun {
   const AgentRun({
     this.parts = const [],
     this.said = '',
+    this.pendingSaid = const [],
     this.sources = const [],
     this.plan = const [],
     this.startedAt,
@@ -66,6 +67,20 @@ class AgentRun {
   /// its status — [parts] with the prose taken out.
   List<AgentActivity> get steps => stepsOf(parts);
 
+  /// What the user has said into this turn that hasn't been placed yet.
+  ///
+  /// A message typed mid-sentence has nowhere honest to go: dropping it in where
+  /// it arrived cuts the agent's paragraph in half ("…image," / the message /
+  /// "list perf)."), which is how it read the first time this shipped. So it
+  /// waits for a seam — the next step, or the turn landing — which is also when
+  /// the agent actually reads it: every transport delivers a mid-turn message at
+  /// its next tool boundary.
+  final List<String> pendingSaid;
+
+  /// Whether the user spoke into this turn at all, placed or still waiting.
+  /// Read where a turn with no words of its own would otherwise be thrown away.
+  bool get spokenInto => hasSaid(parts) || pendingSaid.isNotEmpty;
+
   /// The web pages this turn has cited so far, deduplicated by url and kept in
   /// the order they were found. Pinned onto the answer when the turn lands, so
   /// the citations persist under the message.
@@ -90,12 +105,14 @@ class AgentRun {
   AgentRun copyWith({
     List<TurnPart>? parts,
     String? said,
+    List<String>? pendingSaid,
     List<WebSource>? sources,
     List<AgentPlanEntry>? plan,
     DateTime? startedAt,
   }) => AgentRun(
     parts: parts ?? this.parts,
     said: said ?? this.said,
+    pendingSaid: pendingSaid ?? this.pendingSaid,
     sources: sources ?? this.sources,
     plan: plan ?? this.plan,
     startedAt: startedAt ?? this.startedAt,
@@ -161,7 +178,11 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
     final existing = _run(chatId).parts.indexWhere(
       (part) => part is TurnStep && part.step.id == activity.id,
     );
-    if (existing == -1 && answer.isNotEmpty) say(chatId, answer);
+    // A new step is a seam: the passage before it closes here, and so does
+    // anything the user said while that passage was being written. Called even
+    // with no answer in hand — a step raised from outside a turn's stream still
+    // places what is waiting.
+    if (existing == -1) say(chatId, answer);
     final parts = _run(chatId).parts;
     final next = [...parts];
     if (existing == -1) {
@@ -181,7 +202,8 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
   }
 
   /// Close off everything of [answer] the timeline hasn't placed yet as the
-  /// turn's newest passage.
+  /// turn's newest passage — and place anything the user said while it was
+  /// being written, which was waiting for exactly this seam.
   ///
   /// Called when a step arrives (the passage before it has ended) and once more
   /// as the turn lands, so the closing words are in the timeline before it is
@@ -190,16 +212,53 @@ class AgentRuns extends Notifier<Map<String, AgentRun>> {
   /// handful of times a turn rather than once per token.
   void say(String chatId, String answer) {
     final run = _run(chatId);
-    if (answer.isEmpty || answer == run.said) return;
-    final tail = unsaidTail(said: run.said, answer: answer);
+    final fresh = answer.isNotEmpty && answer != run.said;
+    final tail = fresh ? unsaidTail(said: run.said, answer: answer) : '';
+    if (tail.isEmpty && run.pendingSaid.isEmpty) return;
     _write(
       chatId,
       run.copyWith(
-        said: answer,
-        parts: tail.isEmpty
-            ? run.parts
-            : List.unmodifiable([...run.parts, TurnText(tail)]),
+        said: fresh ? answer : run.said,
+        parts: List.unmodifiable([
+          ...run.parts,
+          if (tail.isNotEmpty) TurnText(tail),
+          // After the passage, not before it: the agent finished the sentence it
+          // was writing and only then read what the user typed.
+          for (final said in run.pendingSaid) TurnSaid(said),
+        ]),
+        pendingSaid: const [],
       ),
+    );
+  }
+
+  /// Put what the user said into the running turn, at the nearest seam.
+  ///
+  /// [answer] is the agent's reply as it stands, and what decides between the
+  /// two cases:
+  ///
+  /// - **Nothing written since the last passage was placed** — the agent is
+  ///   between blocks, typically running a tool — so the message goes in now,
+  ///   with nothing to break.
+  /// - **Mid-sentence** — it waits ([AgentRun.pendingSaid]) and lands at the
+  ///   next step or as the turn ends. Cutting the passage at the exact word the
+  ///   message arrived on is what shipped first, and it split the agent's
+  ///   sentence down the middle. The wait is also the truer account: every
+  ///   transport hands a mid-turn message to the model at its next tool
+  ///   boundary, not at the keystroke.
+  void interject(String chatId, String text, {String answer = ''}) {
+    final said = text.trim();
+    if (said.isEmpty) return;
+    final run = _run(chatId);
+    final open = unsaidTail(said: run.said, answer: answer);
+    _write(
+      chatId,
+      open.isEmpty
+          ? run.copyWith(
+              parts: List.unmodifiable([...run.parts, TurnSaid(said)]),
+            )
+          : run.copyWith(
+              pendingSaid: List.unmodifiable([...run.pendingSaid, said]),
+            ),
     );
   }
 
