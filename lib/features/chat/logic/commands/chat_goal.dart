@@ -83,11 +83,7 @@ enum GoalOwner {
   /// there is nobody on the other side to hand a goal to.
   bool get hasDriver => switch (this) {
     GoalOwner.app => true,
-    // TODO(BE): flip to true with the Claude passthrough driver — dispatch
-    // `/goal <condition>` as a bare prompt on the session, read the verdict off
-    // the `goal_status` attachment in the stream, and send `/goal clear` for
-    // Stop (measured: `off`/`none` do not clear).
-    GoalOwner.claude => false,
+    GoalOwner.claude => true,
     // TODO(BE): flip to true with the Codex driver — `thread/goal/set|get|clear`
     // plus the `thread/goal/updated|cleared` notifications.
     GoalOwner.codex => false,

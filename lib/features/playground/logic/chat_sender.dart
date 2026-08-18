@@ -135,6 +135,22 @@ abstract interface class ChatSender {
     /// and ignored by the relay sender, which has no agent to instruct.
     String? instructions,
 
+    /// Send **exactly this** as the turn's prompt, instead of building one from
+    /// [history].
+    ///
+    /// For a slash command the agent runs itself — today only `/goal`, which
+    /// Claude Code answers over `-p` (its definition carries
+    /// `supportsNonInteractive`). Such a command has to arrive as the first
+    /// characters of the prompt: buried under a replayed transcript, the
+    /// project's standing rules or Plan mode's preamble, the CLI reads it as
+    /// ordinary words and the goal is silently never set.
+    ///
+    /// It is separate from the message the chat shows, and deliberately: the
+    /// transcript keeps the user's own words ("write me a game"), while the wire
+    /// carries `/goal write me a game`. A sender with no commands of its own
+    /// ignores this and answers [history] as usual.
+    String? agentCommand,
+
     /// Run this as Plan mode's planning turn: read-only, with a preamble asking
     /// the agent to lay out a plan and touch nothing. The agent sender honours
     /// it; the relay sender has no plan/act distinction and ignores it.
@@ -224,6 +240,8 @@ class DefaultChatSender implements ChatSender {
     String? conversationId,
     // The relay has no agent to instruct, so project rules are irrelevant here.
     String? instructions,
+    // A relay call has no agent, so it has no commands to run either.
+    String? agentCommand,
     // No plan/act distinction on a relay call — a chat/completions request just
     // answers.
     bool planFirst = false,

@@ -37,16 +37,26 @@ mixin _ChatGoals on _ChatSessions {
     // chat would otherwise redo every turn: an objective handed between agents
     // mid-run is one no agent can finish, and a delegated goal would be left
     // behind in a session nobody reads from again.
-    _saveGoal(
-      chat.id,
-      ChatGoal(
-        condition: condition,
-        status: GoalStatus.active,
-        startedAt: DateTime.now(),
-        agent: ref.read(chatAgentForProjectProvider(chat.projectId)),
+    final goal = ChatGoal(
+      condition: condition,
+      status: GoalStatus.active,
+      startedAt: DateTime.now(),
+      agent: ref.read(chatAgentForProjectProvider(chat.projectId)),
+    );
+    _saveGoal(chat.id, goal);
+    // The transcript keeps the user's own words; the wire carries the command.
+    // Only the opening turn needs it — measured on `claude` 2.1.233, the goal is
+    // written into the session and re-arms itself on every later `--resume`, so
+    // repeating it would set the same goal again rather than continue it.
+    unawaited(
+      _sendGoalTurn(
+        chat.id,
+        condition,
+        agentCommand: goal.owner == GoalOwner.claude
+            ? '$kClaudeGoalCommand $condition'
+            : null,
       ),
     );
-    unawaited(_sendGoalTurn(chat.id, condition));
     return null;
   }
 
@@ -58,6 +68,30 @@ mixin _ChatGoals on _ChatSessions {
     final goal = chat?.goal;
     if (chat == null || goal == null) {
       return (message: 'No goal set.', failed: false);
+    }
+    // A delegated goal lives in the agent's own session, and dropping the app's
+    // copy would only hide it: the next turn is still taken by the loop, which
+    // now has nothing on screen saying so. Measured on `claude` 2.1.233 — a goal
+    // survives `--resume` and captures even an unrelated prompt — so Stop has to
+    // reach the agent, and it is the only way out (there is no turn ceiling).
+    if (goal.owner == GoalOwner.claude) {
+      // Not through [_sendGoalTurn]: that one refuses to send unless a goal is
+      // running, and the whole point here is that this one is being taken away
+      // in the same breath. It would race its own teardown and send nothing.
+      final network = ref.read(selectedNetworkProvider);
+      if (network != null) {
+        unawaited(
+          send(
+            network: network,
+            model: chat.model,
+            message: 'Stop working toward that goal.',
+            into: chat.id,
+            planFirst: false,
+            continuing: true,
+            agentCommand: kClaudeGoalClear,
+          ),
+        );
+      }
     }
     _saveAndReplace(chat.copyWith(clearGoal: true));
     return (message: 'Goal cleared: ${goal.condition}', failed: false);
@@ -207,7 +241,11 @@ mixin _ChatGoals on _ChatSessions {
   static const _judgeTimeout = Duration(seconds: 45);
 
   /// Send the goal's next turn into chat [id].
-  Future<void> _sendGoalTurn(String id, String message) async {
+  Future<void> _sendGoalTurn(
+    String id,
+    String message, {
+    String? agentCommand,
+  }) async {
     final chat = _find(id);
     final network = ref.read(selectedNetworkProvider);
     if (chat == null || chat.goal?.isRunning != true) return;
@@ -232,6 +270,7 @@ mixin _ChatGoals on _ChatSessions {
       // Every step continues the work of the one before it, so a goal stays
       // with one agent rather than being handed between them mid-objective.
       continuing: true,
+      agentCommand: agentCommand,
     );
   }
 

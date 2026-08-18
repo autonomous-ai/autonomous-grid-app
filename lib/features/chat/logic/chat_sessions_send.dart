@@ -24,6 +24,7 @@ mixin _ChatSend on _ChatSessions {
     bool? planFirst,
     String? into,
     bool continuing = false,
+    String? agentCommand,
   }) async {
     final text = message.trim();
     if (text.isEmpty) return;
@@ -154,6 +155,7 @@ mixin _ChatSend on _ChatSessions {
       autoChosen: autoChosen,
       continuedAgent: continuedAgent,
       question: text,
+      agentCommand: agentCommand,
     );
   }
 
@@ -229,6 +231,7 @@ mixin _ChatSend on _ChatSessions {
     required bool autoChosen,
     required AgentTool? continuedAgent,
     required String question,
+    String? agentCommand,
   }) async {
     final id = conversation.id;
     _retryableTurns[id] = _RetryableTurn(
@@ -300,6 +303,7 @@ mixin _ChatSend on _ChatSessions {
     }
 
     void dispatch() => _dispatch(
+      agentCommand: agentCommand,
       conversation: conversation,
       network: network,
       model: effectiveModel,
@@ -368,6 +372,7 @@ mixin _ChatSend on _ChatSessions {
     required AgentApprovalMode approval,
     required bool viaAgent,
     required AgentTool agent,
+    required String? agentCommand,
     required Completer<void> done,
   }) {
     final id = conversation.id;
@@ -456,6 +461,9 @@ mixin _ChatSend on _ChatSessions {
       workdir: workdir,
       // The project's house rules, prepended to the agent's first turn.
       instructions: instructions,
+      // A slash command the agent runs itself, sent as the whole prompt in
+      // place of one built from history — see [ChatSender.send].
+      agentCommand: agentCommand,
       // Lets the agent sender keep one live session per conversation and send
       // only the new turn (the API sender ignores it).
       conversationId: id,

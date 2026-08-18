@@ -20,6 +20,7 @@ import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_status.dart';
+import '../../agents/logic/adapters/claude_chat_sender.dart';
 import '../../agents/logic/auto_agent_router.dart';
 import '../../network/logic/node_display.dart' show kAutoModelId;
 import '../../auth/logic/session_controller.dart';
@@ -278,6 +279,11 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     bool? planFirst,
     String? into,
     bool continuing,
+
+    /// A slash command the agent runs itself, sent as the whole prompt in place
+    /// of one built from the transcript — see [ChatSender.send]. Separate from
+    /// [message], which is what the chat shows.
+    String? agentCommand,
   });
 
   /// Hold a turn typed while the chat was busy — [_ChatQueue].

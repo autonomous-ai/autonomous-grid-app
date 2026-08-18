@@ -195,13 +195,16 @@ void main() {
     test('an owner whose driver has not landed is still driven by the app — a '
         'goal nobody advances would sit active forever, having run only the '
         'turn that set it', () {
-      for (final owner in GoalOwner.values) {
-        expect(
-          owner.isAppDriven,
-          isTrue,
-          reason: '$owner has no driver yet, so the app must keep judging it',
-        );
-      }
+      // Codex's goals go over `thread/goal/*`, which is not wired yet.
+      expect(GoalOwner.codex.hasDriver, isFalse);
+      expect(GoalOwner.codex.isAppDriven, isTrue);
+    });
+
+    test('Claude Code drives its own goals, so the app judges none of them — '
+        'two evaluators on one condition can disagree, and both would send a '
+        'turn', () {
+      expect(GoalOwner.claude.hasDriver, isTrue);
+      expect(GoalOwner.claude.isAppDriven, isFalse);
     });
 
     test(

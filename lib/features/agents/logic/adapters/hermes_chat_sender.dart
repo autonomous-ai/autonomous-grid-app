@@ -128,6 +128,10 @@ class HermesChatSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
+    // Hermes' ACP server advertises nine commands and `goal` is not among
+    // them; an unknown one falls through to the model as prose — see
+    // GoalOwner.app. Not supported.
+    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     // Hermes holds its conversation in a live ACP process rather than in a file

@@ -44,6 +44,23 @@ import '../model_context_window.dart';
 /// this is checked against the binary rather than assumed.
 const String kClaudeCompactCommand = '/compact';
 
+/// Claude Code's own `/goal`, which the app delegates to rather than running a
+/// second, weaker loop beside it — see [GoalOwner].
+///
+/// Like [kClaudeCompactCommand] it is checked against the installed binary
+/// (`supportsNonInteractive: true`) rather than assumed, because an unrecognised
+/// `/name` is taken as literal prompt text: the goal would simply never be set,
+/// and the turn would look like it worked.
+const String kClaudeGoalCommand = '/goal';
+
+/// The one word that ends a Claude Code goal.
+///
+/// **Not** `kGoalClearWords`. Measured on 2.1.233: `/goal off` and `/goal none`
+/// do not clear — they are read as an empty condition and answer "No goal set",
+/// leaving the goal armed and every later turn still captured by it. Only
+/// `clear` works, so the app's six friendly words stop at its own loop.
+const String kClaudeGoalClear = '/goal clear';
+
 /// The activity-feed row a compaction runs under. Fixed, so the finished status
 /// replaces the running one instead of adding a second row (`upsertStep` keys on
 /// the id) — and so a chat that compacts twice doesn't grow two.
@@ -108,6 +125,7 @@ class ClaudeChatSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
+    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     AgentResumePoint? resume,
@@ -153,7 +171,15 @@ class ClaudeChatSender implements ChatSender {
       // the ones now open.
       adopt: _adoptable(resume, root),
     );
-    final prompt = planFirst ? withPlanPreamble(turn.text) : turn.text;
+    // A command the CLI runs itself goes out as the whole prompt, verbatim.
+    // All three wrappers below would bury it — the replayed transcript, the
+    // project's standing rules, Plan mode's preamble — and a `/goal` that is not
+    // the first thing in the prompt is read as words, so the goal is silently
+    // never set while the turn looks like it worked. See [ChatSender.send].
+    final command = agentCommand?.trim();
+    final prompt = command != null && command.isNotEmpty
+        ? command
+        : (planFirst ? withPlanPreamble(turn.text) : turn.text);
     // A conversation starting over carries none of the last one's standing
     // yeses — the chat that gave them is gone.
     if (turn.freshStart) {
@@ -239,10 +265,12 @@ class ClaudeChatSender implements ChatSender {
 
     yield* _runTurn(
       workdir: root,
-      prompt: withProjectInstructions(
-        prompt,
-        turn.freshStart ? instructions : null,
-      ),
+      prompt: command != null && command.isNotEmpty
+          ? prompt
+          : withProjectInstructions(
+              prompt,
+              turn.freshStart ? instructions : null,
+            ),
       // Off the slot, not off the plan, so what gets resumed is whatever the
       // compaction's own `init` line stated. The same id either way today (see
       // [_compact]) — reading it here is what keeps that a fact the CLI reports

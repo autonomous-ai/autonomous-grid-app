@@ -517,6 +517,7 @@ class _NeverSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
+    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     AgentResumePoint? resume,
