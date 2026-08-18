@@ -162,6 +162,19 @@ String? slashQuery(String text) {
   return rest;
 }
 
+/// The command the composer should badge itself with while [text] is being
+/// written, or null when the line is an ordinary message.
+///
+/// The `/` menu ([slashQuery]) covers *choosing* a command — a lone `/name` with
+/// no space yet. This covers the blind spot right after it: the moment a space
+/// is typed the menu closes, and `/goal the tests pass` reads as an ordinary
+/// prompt with nothing saying it will be set as a goal rather than sent — which
+/// is exactly the thing a user could not tell. The two hand off cleanly (menu
+/// while the name is picked, badge once the argument is written) so they never
+/// show at once.
+ChatCommand? activeComposerCommand(String text) =>
+    slashQuery(text) != null ? null : parseChatCommand(text)?.command;
+
 /// The command called [name], or null. Case-insensitive: a user who typed
 /// `/Clear` meant `/clear`.
 ChatCommand? chatCommandNamed(String name) {

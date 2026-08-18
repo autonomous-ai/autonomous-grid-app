@@ -88,6 +88,34 @@ void main() {
     );
   });
 
+  group('the badge that names the command while its argument is typed', () {
+    test('the badge takes over the moment the / menu lets go — a space past the '
+        'name is where a goal stopped looking like a message', () {
+      // `/goal` with no space: the menu owns it, so no badge.
+      expect(activeComposerCommand('/goal'), isNull);
+      expect(slashQuery('/goal'), isNotNull);
+      // A space in: the menu is gone (slashQuery null) and the badge is on.
+      expect(activeComposerCommand('/goal '), ChatCommand.goal);
+      expect(activeComposerCommand('/goal the tests in test/auth pass'),
+          ChatCommand.goal);
+    });
+
+    test('an ordinary message is never badged, however it starts', () {
+      expect(activeComposerCommand('make the font nice'), isNull);
+      // A path that only looks like a command stays a message (parseChatCommand).
+      expect(activeComposerCommand('/usr/local/bin is on PATH'), isNull);
+      // An agent's own command the app does not own is a message too.
+      expect(activeComposerCommand('/review the diff'), isNull);
+    });
+
+    test('every app command badges once it is being written, not just goal', () {
+      expect(activeComposerCommand('/loop 5m check the deploy'),
+          ChatCommand.loop);
+      expect(activeComposerCommand('/compact only the API decisions'),
+          ChatCommand.compact);
+    });
+  });
+
   group('what happens to the pictures attached beside a command', () {
     test('a repeating prompt goes out as words, so the picture is taken off '
         'the composer instead of riding onto the next message', () {
