@@ -185,6 +185,13 @@ class GridPaths {
   /// say otherwise, and the answer has to survive a restart. App-owned.
   static File get taskServingFile => File('${home.path}/app/task_serving.json');
 
+  /// The model this computer starts serving the moment the app opens, if the
+  /// user asked for that. Off unless they ticked the box, and it names the model
+  /// and grid explicitly rather than "whatever is first" — a launch that shares
+  /// a different model than the one chosen is worse than not starting at all.
+  /// App-owned.
+  static File get autoServeFile => File('${home.path}/app/auto_serve.json');
+
   /// Working directory for the agent that answers chat. It runs read-only here
   /// so its file tools have a stable, app-owned root instead of pointing at the
   /// user's home. App-owned — the CLI never touches it.

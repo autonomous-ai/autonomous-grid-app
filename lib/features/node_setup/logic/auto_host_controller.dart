@@ -22,6 +22,11 @@ import '../../provider_node/logic/provider_run_controller.dart';
 /// stopped (or that died with the machine) is their call, made on the Engines
 /// tab. The single caller is the first-run model download finishing; a launch
 /// hook here is a regression, not a convenience.
+///
+/// A user who *wants* that has the opt-in instead — the "start this when Grid
+/// opens" box in the engine block, off by default, which starts exactly the
+/// model they named through [AutoServeStarter]. That is a decision they made;
+/// this controller acting on launch would be one nobody made.
 sealed class AutoHostState {
   const AutoHostState();
 }
