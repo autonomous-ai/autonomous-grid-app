@@ -604,11 +604,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
   ///
   /// Some commands take a moment (a summary is a model call), so what they have
   /// to say arrives as a toast rather than as a return value nobody sees.
+  ///
+  /// The picked model rides along: `/goal` and `/loop` typed into a blank
+  /// composer start the chat themselves, and it answers with what the picker is
+  /// showing — the same model an ordinary message would have gone out on.
   Future<void> _runCommand(ChatCommandCall call) async {
     _message.clear();
     final outcome = await ref
         .read(chatSessionsProvider.notifier)
-        .runCommand(call);
+        .runCommand(call, model: _model.text.trim());
     if (outcome == null || !mounted) return;
     ToastScope.show(
       context,
