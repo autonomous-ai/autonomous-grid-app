@@ -1,41 +1,40 @@
 # Grid Desktop App — Architecture, Domain & Features
 
-> Full architecture note, built by reading all of `lib/` (**821 Dart files, ~154,300 lines, 30 feature domains**).
-> Updated: **2026-08-17** · branch **`device`** (= `main` + the panel work) · version `0.2.0+1`
+> Full architecture note, built by reading all of `lib/` (**845 Dart files, ~160,200 lines, 29 feature domains**).
+> Updated: **2026-08-18** · branch **`main`** · version `0.2.0+1`
 >
-> **On `device` only — a 30th domain and a fifth plane.** `main` measured 808 files / ~151,250 lines /
-> 29 domains; everything below that number is the **Grid Panel**: a physical companion device (an ESP32
-> board with a 480×480 screen) on the end of a USB cable, which the app answers, mirrors live turns to,
-> takes voice from, and reflashes. §2 (the fifth plane), §4.7 (the wire), §7.30 (the domain), and the
-> normative [`docs/panel-protocol.md`](panel-protocol.md). ⚠️ The **device half of that work — the
-> `esp32-square` firmware — was deleted from this repo on 2026-08-17**, keeping "the half that can meet
-> another device", so the protocol document is now the only place the two sides agree.
+> **The panel work is on `main` now.** The `device` branch this note was last written from has been merged,
+> so the **Grid Panel** — a physical companion device (an ESP32 board with a 480×480 screen) on the end of a
+> USB cable, which the app answers, mirrors live turns to, takes voice from, and reflashes — is simply part
+> of the tree. §2 (the fifth plane), §4.7 (the wire), §7.30 (the domain), and the normative
+> [`docs/panel-protocol.md`](panel-protocol.md). The device half is here as `device/esp32-circle/`
+> (**65 tracked files**); the older `esp32-square` firmware was deleted on 2026-08-17.
 >
 > ⚠️ **Two unrelated things are called "panel" here.** `lib/shared/panels/` + `PanelHost`/`PanelFeature`
 > are the **work panels around a conversation** (Review / Terminal / Files, §3, §7.22–§7.24).
 > `lib/features/panel/` + `lib/infrastructure/panel/` are the **hardware Grid Panel** (§7.30). Same word,
 > unrelated code.
 >
-> The 08/12 measurement read **775 files / ~140,300 lines / 29 domains**; 08/10 read **668 / ~120,900 / 26**;
-> 06/08 read **558 / ~105,000 / 23**. This time **no domain was added** — the ~11,000 new lines all landed
-> inside domains that already existed, and they are mostly one theme: **an agent turn is now a thing the app
-> records, replays and can pick back up.** Concretely:
+> **The runtime count went back down: there are three.** The prior version of this note corrected "three"
+> to **four** (Hermes, Codex, Claude Code, **Pi**). Pi was removed on 2026-08-18 — every `pi_*` file, the
+> adapter, the installer and the sealed event family — so it is **Hermes, Codex, Claude Code**, plus the
+> **Auto** meta-choice, which is now **developer-only** (`autoAgentIsOffered`). §4.3, §7.2.
 >
-> - **`TurnPart`** (`infrastructure/cli/agent_turn_part.dart`) — a turn is an ordered list of *what it said*
->   and *what it ran*, saved with the conversation, so a finished turn replays the timeline the user watched
->   instead of an answer with the steps swept underneath it (§4.3).
-> - **`AgentResumePoint`** — the agent's own session id, written down beside the chat. Quitting the app no
->   longer costs a chat its session, and it is what makes an **imported** chat continuable (§7.1).
-> - **Import from Claude Code / Codex** — `~/.claude/projects` and `~/.codex/sessions` read (never written),
->   parsed into real chats, with a ledger so a second run is a *sync* rather than a duplicate (§7.1).
-> - **Which models actually served a turn** — `GET /relay/v1/usage`, live in the working bubble and pinned
->   into the message footer (§4.2, §7.1).
-> - **Voice into the composer** (`grid stt transcribe`, §7.11), a **one-time welcome screen** (§7.14), the
->   **share-a-grid dialog + invites** and **per-node token telemetry** (§7.8).
+> The 08/17 measurement read **821 files / ~154,300 lines / 30 domains** (on `device`); 08/12 read
+> **775 / ~140,300 / 29**; 08/10 **668 / ~120,900 / 26**. The domain count *fell* by one while the panel
+> arrived, because **`prompts/` was deleted whole** — the `/` menu it owned now runs commands the app
+> performs itself. The ~6,000 new lines are three themes:
 >
-> The prior version of this note said the app drives **three** agent runtimes. That was already wrong when it
-> was written: **there are four** (Hermes, Codex, Claude Code, **Pi**) plus an **Auto** meta-choice — fixed
-> throughout, §4.3 and §7.2.
+> - **The slash menu became commands** (`chat/logic/commands/`, §7.1): `/clear`, `/compact`, `/goal`,
+>   `/loop`. Each does something no message could ask an agent to do, on state the app owns — which is the
+>   only kind of command that can work across three agents Grid does not speak the internals of.
+> - **Every agent can now ask permission.** Claude Code over `--permission-prompt-tool` + a stdin
+>   `stream-json` channel, Codex over `codex app-server`'s JSON-RPC — replacing `bypassPermissions` and
+>   `codex exec`. One decision function (`decideAgentPermission`) means the mode picked in the composer
+>   says the same thing whichever agent answers (§4.3, §7.2).
+> - **A chat is written off the UI isolate** (`ChatStore`, §7.1). Measured on a 9 MB conversation a `/loop`
+>   had worked in overnight, saving cost **98 ms to encode + 28 ms to write, on the UI thread**, and a loop
+>   iteration commits three or four times.
 
 ---
 
@@ -67,10 +66,10 @@ From one window, the app lets you:
 
 | Group | What you can do |
 |---|---|
-| **AI assistant** | Chat with a locally running agent (Hermes / Codex / Claude Code / Pi, or **Auto** to let the grid pick one per question) — the agent reads/writes files, runs commands, browses the web, drives a real browser, holds a long session |
+| **AI assistant** | Chat with a locally running agent (Hermes / Codex / Claude Code, or **Auto** — developer builds — to let the grid pick one per question) — the agent reads/writes files, runs commands, browses the web, drives a real browser, holds a long session |
 | **Bringing history with you** | Import the conversations Claude Code and Codex already have on this computer, and **carry them on** — the same session id, resumed from here (§7.1) |
 | **Extending the agent** | Install **skills** (folders of instructions), **plugins** (tool backends), **connectors** (OAuth into Gmail/Slack/Notion/… over MCP) |
-| **Automation** | **Scheduled tasks** on a cron; results drop into the Chat tab; a **goal** lets one chat run itself over many turns; **Messages** lets you reach this machine over Telegram/Discord/Slack |
+| **Automation** | **Scheduled tasks** on a cron; results drop into the Chat tab; `/goal` lets one chat run itself until a second model says the condition holds, `/loop` re-runs a prompt on a timer (§7.1); **Messages** lets you reach this machine over Telegram/Discord/Slack |
 | **Grid (network)** | Create / join a grid, manage members, see how strong the grid is (VRAM, nodes, tok/s), auto-router picking a model |
 | **Contributing a machine** | Run a provider node: local `llama.cpp`, an external server (Ollama/LM Studio), or an API engine (OpenAI key / Claude Code seat / Codex CLI seat) |
 | **Models** | Browse a catalog suggested for your hardware, download GGUF, serve it, set context length |
@@ -78,11 +77,11 @@ From one window, the app lets you:
 | **Projects (Home)** | A project = a folder the assistant may read, plus rules + memory joined onto the opening turn |
 | **Working beside the chat** | Two **panels** around the conversation, each with several tabs: **Review** (a project's diff, stage/commit/push, per-line comments), **Terminal** (a real shell over a pty), **Files** (browse & read project files). Their contents flow back into the composer: attach a terminal, attach a file, attach a highlighted snippet |
 | **Code (shared repos)** | A second half of the app: shared repositories a grid hosts, read as conversations, where you post a coding task and a teammate's machine runs an agent on it (§7.29) |
-| **Off the screen** (`device`) | A **Grid Panel** on the desk — a small screen on a USB cable showing what each project is doing, and taking a spoken instruction without touching the window (§7.30) |
+| **Off the screen** | A **Grid Panel** on the desk — a small screen on a USB cable showing what each project is doing, and taking a spoken instruction without touching the window (§7.30) |
 
 ### The essence
 
-> **The app is a GUI shell around the `grid` CLI (Python) plus a driver for four external agent
+> **The app is a GUI shell around the `grid` CLI (Python) plus a driver for three external agent
 > runtimes.** The CLI owns the grid's lifecycle; `~/.grid` is the source of truth. The app keeps **no**
 > state of its own — run the CLI from a terminal and the app redraws itself.
 
@@ -93,7 +92,7 @@ folder, and nothing in it is authoritative about the *grid* — it is the app's 
 The biggest gap with the README (and with every handover note before this one): they describe **two** planes
 — control = subprocess `grid`, data = HTTP relay. In reality there are **five**: the third, the **agent
 runtime**, is larger than the first two combined; the fourth is **local tooling** (`git` + a pty); and the
-fifth, on this branch, is **the device** on the end of a USB cable.
+fifth is **the device** on the end of a USB cable.
 
 ---
 
@@ -104,13 +103,13 @@ fifth, on this branch, is **the device** on the end of a USB cable.
 │                                                                                     │
 │  ┌── CONTROL PLANE ───────┐  ┌── DATA PLANE ────────┐  ┌── AGENT PLANE ──────────┐ │
 │  │ GridCliService         │  │ RelayApiClient       │  │ ClaudeExecService       │ │
-│  │  (3 methods: run/      │  │  models/overview/    │  │ CodexExecService        │ │
+│  │  (3 methods: run/      │  │  models/overview/    │  │ CodexAppServerService   │ │
 │  │   start/pull)          │  │  usage               │  │ HermesAcpService        │ │
-│  │ subprocess `grid …`    │  │ ConnectorGateway…    │  │ PiExecService           │ │
-│  │ auth · network ·       │  │ ManagedNetworkClient │  │ subprocess + stdio      │ │
-│  │ provider · models ·    │  │ ModelCatalogClient   │  │ stream-json / exec      │ │
-│  │ router · projects ·    │  │ SmitheryRegistry…    │  │ --json / ACP JSON-RPC / │ │
-│  │ stt                    │  │ HTTP + SSE           │  │ --mode json             │ │
+│  │ subprocess `grid …`    │  │ ConnectorGateway…    │  │ subprocess + stdio      │ │
+│  │ auth · network ·       │  │ ManagedNetworkClient │  │ stream-json (both ways) │ │
+│  │ provider · models ·    │  │ ModelCatalogClient   │  │ app-server JSON-RPC /   │ │
+│  │ router · projects ·    │  │ SmitheryRegistry…    │  │ ACP JSON-RPC            │ │
+│  │ stt                    │  │ HTTP + SSE           │  │ all three can ask       │ │
 │  └───────────┬────────────┘  └──────────┬───────────┘  └───────────┬─────────────┘ │
 │              │                          │                          │               │
 │              │              ┌───────────┴───────────┐              │               │
@@ -122,7 +121,7 @@ fifth, on this branch, is **the device** on the end of a USB cable.
 └──────────────┼──────────────────────────┼──────────────────────────────────────────┘
                ▼                          ▼                          ▼
    ┌───────────────────┐   ┌──────────────────────┐   ┌──────────────────────────┐
-   │  grid (Python)    │   │ the grid's relay     │   │ hermes·codex·claude·pi   │
+   │  grid (Python)    │   │ the grid's relay     │   │ hermes · codex · claude  │
    │  daemonize, PID   │   │ api-grid.autonomous  │   │ (binaries on the machine)│
    │                   │   │ Smithery, provider   │   │ + Chrome (CDP 9222)      │
    └─────────┬─────────┘   │ MCP servers          │   └───────────┬──────────────┘
@@ -183,7 +182,7 @@ a **login shell running in a pty**. Both go through their own seam in `infrastru
 > to type anything**. Turning the prompt off is what lets the screen say "sign in from Terminal" instead
 > of spinning. The machine's credential helper **still runs** — only the interactive branch is blocked.
 
-### The fifth plane — **the device** (`device` branch, 08/2026)
+### The fifth plane — **the device** (08/2026, on `main` since 08/18)
 
 A **Grid Panel** on the end of a USB cable is neither a subprocess nor an HTTP peer: it is a serial link
 the app opens for its whole life (`PanelScope`, above the router — §6) and **answers**.
@@ -213,14 +212,14 @@ lib/
 │                          # PanelScope (the USB device link)
 ├── core/                  # pure helpers: GridPaths, AppEnvironment, host_arch, composer_text
 ├── infrastructure/        # the backbone — NO business logic
-│   ├── cli/               # GridCliService + 4 agent runtimes + Chrome bridge + git seam + parsers
+│   ├── cli/               # GridCliService + 3 agent runtimes + Chrome bridge + git seam + parsers
 │   ├── api/               # HTTP clients + DTOs (+ stt_client, the `grid stt transcribe` seam)
 │   ├── mcp/               # ConnectorBridge, McpProxy, RestInvoker
 │   ├── panel/             # the Grid Panel wire: framing, messages, port, firmware  (Flutter-free)
 │   ├── state/             # stores that read/write ~/.grid
 │   ├── platform/          # clipboard, notification, PDF, font, window focus, mic_recorder
 │   └── logging/           # 4 disk sinks writing ~/.grid/logs + ErrorBurstFilter
-├── features/              # 30 domains, each with logic/ + presentation/
+├── features/              # 29 domains, each with logic/ + presentation/
 └── shared/                # theme (design system), widgets, layouts (shell/sidebar/settings),
                            # panels/ (the WORK panels around a conversation — not the device),
                            # code/ (syntax highlight), markdown/ (code block + stylesheet), skills/
@@ -458,45 +457,77 @@ copyable to a terminal that runs.
   `ConnectorGatewayClient`, `SmitheryRegistryClient`, `McpProxy`, `RestInvoker`, `FeedbackClient` **do not**
   appear in the Debug tab or in `app_https-*.log`.
 
-### 4.3. Agent plane — four runtimes
+### 4.3. Agent plane — three runtimes
 
-| | **Hermes** | **Codex** | **Claude Code** | **Pi** |
-|---|---|---|---|---|
-| Install | `uv tool install --force --python 3.13 'hermes-agent[acp,mcp]'` | download GitHub release + verify SHA-256 | `curl claude.ai/install.sh \| bash` | private Node install (`NodeToolInstall`) |
-| Command | `hermes acp` (1 arg) | `codex exec [resume] --json --skip-git-repo-check -c …` | `claude -p --output-format stream-json --include-partial-messages --verbose …` | `pi --mode json --model grid/<model> [--session <id>]` |
-| Protocol | **ACP JSON-RPC over stdio**, long session | `--json` event stream, 1 process/turn | `stream-json` JSONL, 1 process/turn | JSON lines, 1 process/turn |
-| Model routed by | `~/.hermes/config.yaml` (ACP has no model flag) | several `-c model_providers.grid-app.*` overrides | env `ANTHROPIC_BASE_URL` + `ANTHROPIC_*` | an app-owned `models.json` under `PI_CODING_AGENT_DIR` |
-| API key | config.yaml + `.env` | env `GRID_APP_API_KEY` | env `ANTHROPIC_AUTH_TOKEN`/`API_KEY` | the grid key named by that `models.json` |
-| Approval | ✅ **has a real ACP channel** | ❌ `sandbox_mode="danger-full-access"` | ❌ `--permission-mode bypassPermissions` | ❌ no sandbox; tools run unprompted |
-| Message event | **delta** (accumulated) | **whole text** (replaces) | **whole text** (replaces) | **whole text** (replaces) |
-| MCP | `mcp_servers:` in config.yaml | `~/.codex/config.toml` | `--mcp-config <file> --strict-mcp-config` | the folder's own `.pi/` |
-| Resume | session lives in the process | `exec resume <threadId>` | `--resume <sessionId>` | `--session <id>` (**no** separate subcommand) |
-| Survives a quit | ❌ the session **is** the process | ✅ written down (`AgentResumePoint`) | ✅ written down | resumes by id, but nothing records one |
-| Unique | cron, gateway messaging, plugins | — | browser lane (extension / CDP) | a deliberately minimal harness |
+| | **Hermes** | **Codex** | **Claude Code** |
+|---|---|---|---|
+| Install | `uv tool install --force --python 3.13 'hermes-agent[acp,mcp]'` | download GitHub release + verify SHA-256 | `curl claude.ai/install.sh \| bash` |
+| Command | `hermes acp` (1 arg) | `codex app-server` (JSON-RPC, one server per turn) | `claude -p --input-format stream-json --output-format stream-json --include-partial-messages --verbose …` |
+| Protocol | **ACP JSON-RPC over stdio**, long session | **JSON-RPC over stdio**, 1 server/turn | `stream-json` JSONL **both ways**, 1 process/turn |
+| Model routed by | `~/.hermes/config.yaml` (ACP has no model flag) | several `-c model_providers.grid-app.*` overrides | env `ANTHROPIC_BASE_URL` + `ANTHROPIC_*` |
+| API key | config.yaml + `.env` | env `GRID_APP_API_KEY` | env `ANTHROPIC_AUTH_TOKEN`/`API_KEY` |
+| Approval | ✅ ACP `session/request_permission` | ✅ `item/*/requestApproval` over the app-server | ✅ `--permission-mode default` + `--permission-prompt-tool stdio`, answered on the stdin control channel |
+| Message event | **delta** (accumulated) | **whole text** (replaces) | **whole text** (replaces) |
+| MCP | `mcp_servers:` in config.yaml | `~/.codex/config.toml` | `--mcp-config <file> --strict-mcp-config` |
+| Resume | session lives in the process | the thread id, over the app-server | `--resume <sessionId>` |
+| Survives a quit | ❌ the session **is** the process | ✅ written down (`AgentResumePoint`) | ✅ written down |
+| Unique | cron, gateway messaging, plugins | — | browser lane (extension / CDP) |
 
-**Auto** is a fifth *choice*, not a fifth runtime: `kAutoAgentId = 'auto'` stored where an `AgentTool.id`
-normally sits, and each turn asks the grid's auto model which of the installed four fits the question
+> **Pi was removed on 2026-08-18** — `pi_tool`, `pi_chat_sender`, `pi_extensions`, `pi_exec_service` and its
+> sealed event family are all gone from the tree, and `AgentTool` has three values. Anything still saying
+> "four" is older than this line.
+
+**Auto** is a fourth *choice*, not a fourth runtime: `kAutoAgentId = 'auto'` stored where an `AgentTool.id`
+normally sits, and each turn asks the grid's auto model which of the installed three fits the question
 (`auto_agent.dart`, prompt pinned by test) — mirroring how `kAutoModelId` names the model router without
-being a model.
+being a model. It is **developer-only** (`autoAgentIsOffered => AppEnvironment.isDeveloperMode`): a router
+that picks the wrong agent costs a whole turn, and that is not a first-time user's problem to debug.
+
+#### Every agent asks now — one decision, three channels
+
+This is the newest change in the plane and it reverses what this note said for weeks. `claude -p` and
+`codex exec` looked non-interactive, so the app ran them wide open (`bypassPermissions`,
+`sandbox_mode="danger-full-access"`) and the `ApprovalPicker` in the composer governed Hermes alone.
+**Both have a channel; measured 2026-08-18:**
+
+```
+Hermes       ACP session/request_permission (inside its long-lived session)
+Codex        codex app-server → JSON-RPC item/*/requestApproval
+Claude Code  --permission-mode default --permission-prompt-tool stdio --input-format stream-json
+             (control_request / can_use_tool — text-mode stdin is one-way, which is why
+              the input format had to change too; `default` is the mode that ASKS, and
+              `bypassPermissions` is the one that made the prompt tool a silent no)
+                          │
+                          ▼
+             decideAgentPermission(ref, agent, chat, request, approval, answer, grantKey)
+               readOnly / plan → refuse · ask → AgentPermissionCard · full → allow_once
+               a grant the chat already holds (agentSessionGrantsProvider) → allow, logged
+```
+
+`decideAgentPermission` (`agents/logic/agent_permission_decision.dart`) is **one function for all three**,
+sitting on top of the same `decideHermesPermission` policy: the mode the user picked in the composer has to
+mean the same thing whichever agent is answering, and the way to guarantee that is to have one place decide.
+`grantKey` exists because the transports remember differently — Codex holds its own `acceptForSession` for
+the life of a thread, Claude Code remembers nothing, so "Allow in this chat" is kept **by the app** for it.
 
 > ⚠️ **There is no type called `AgentEvent`.** `infrastructure/cli/agent_event.dart` is only a **shared
 > vocabulary** (`AgentActivity`, `AgentPlanEntry`, `AgentPermission`, `AgentApprovalMode`,
-> `AgentDetailMode`, `WebSource`, and now `TurnPart`). The runtimes keep **four fully separate sealed
-> families**: `HermesAcpEvent` (`hermes_acp_service.dart`), `CodexExecEvent` (`codex_exec_service.dart`),
-> `ClaudeExecEvent` (`claude_exec_event.dart`), `PiExecEvent` (`pi_exec_service.dart`). They meet only at
+> `AgentDetailMode`, `WebSource`, `TurnPart`). The runtimes keep **three fully separate sealed families**:
+> `HermesAcpEvent` (`hermes_acp_service.dart`), `CodexEvent` (`codex_agent_service.dart`, parsed by
+> `codex_app_server_parser.dart`), `ClaudeExecEvent` (`claude_exec_event.dart`). They meet only at
 > **`ChatSendUpdate`**.
 >
-> Practical consequence: adding one new concept to every agent (say "the agent asks for confirmation") =
-> editing 4 sealed families + 4 senders + 4 parsers, with **no compile error** to remind you if you forget
-> one. Semantic differences already exist that **no type records**: message is delta vs whole text; only
-> Hermes has permission; only Hermes has a long-lived session.
+> Practical consequence: adding one new concept to every agent = editing 3 sealed families + 3 senders +
+> 3 parsers, with **no compile error** to remind you if you forget one. Semantic differences already exist
+> that **no type records**: message is delta vs whole text; only Hermes has a long-lived session. Permission
+> used to be on that list — it is the one that got fixed, and it took a transport change on two of the three.
 
 **The real convergence point** is `ChatSendUpdate` (sealed, **5 branches** —
 `ChatSendGenerating`, `ChatSendStreaming`, `ChatSendAgentSession`, `ChatSendSuccess`, `ChatSendFailure`;
-`playground/logic/chat_sender.dart`) — **all five sending paths** (relay + 4 agents) drain into it.
+`playground/logic/chat_sender.dart`) — **all four sending paths** (relay + 3 agents) drain into it.
 `ChatSender` is a **1-method, 12-parameter** interface, but **at least one impl deliberately ignores 6 of
-the 12** (`workdir`/`instructions`/`planFirst`/`approval`/`conversationId`/`resume` with relay; `approval`
-with Codex, Claude and Pi) — the interface is **wider than the real contract**.
+the 12** (`workdir`/`instructions`/`planFirst`/`approval`/`conversationId`/`resume` with relay) — the
+interface is **wider than the real contract**.
 
 #### A turn is an ordered timeline, not an answer with steps attached
 
@@ -538,7 +569,7 @@ no longer matches means the user changed something the session can't follow, and
 older id would resume the very session that mismatch retired — and only when `adopt.seen < history.length`.
 Each sender re-checks `resume.matches(thisAgent:, thisWorkdir:)` before using it:
 
-> ⚠️ **`claude --resume` / `codex exec resume` take any id they are handed.** A foreign id fails loudly; the
+> ⚠️ **`claude --resume` and Codex's `thread/resume` take any id they are handed.** A foreign id fails loudly; the
 > *right* id in the wrong folder **succeeds**, and the agent carries on editing the files it remembers
 > rather than the ones the turn is pointed at. Both halves of the match are load-bearing.
 
@@ -639,7 +670,7 @@ bugs:
   up its child (a running `flutter run`) instead of leaving it holding a pty nobody reads.
   Windows only knows `SIGTERM`/`SIGKILL` — asking for anything else throws
 
-### 4.7. Device link — the Grid Panel over USB (`device` branch)
+### 4.7. Device link — the Grid Panel over USB
 
 `lib/infrastructure/panel/` is **Flutter-free**, for the same reason `ConnectorBridge` is: the whole
 protocol can be driven from `tool/panel_tap.dart` or a test with a pair of pipes and no cable. Four
@@ -684,7 +715,8 @@ normal case**, not the failure case.
 already talking on (frame type `0x03`). `esp32ImageVersion()` reads the version out of the ESP-IDF
 `esp_app_desc_t` at byte 32 of the image — pure, which is why nothing else has to record it.
 
-**The device half lives at `device/esp32-circle/`** — the Waveshare board, ported from
+**The device half lives at `device/esp32-circle/`** (merged to `main` on 2026-08-18) — the Waveshare
+board, ported from
 `autonomous-code/apps/esp32-circle` **by deletion**: `ui_screens.c` went 7,243 → 4,546 lines and
 everything else (`touch.c`, `display.c`, the fonts, the icons, `board/`, `audio_capture.c`) is
 byte-identical, verified with `diff`. That is not tidiness — the previous port measured it: what was
@@ -726,7 +758,6 @@ copied behaved, what was hand-rewritten stuttered.
 | `chat_prefs.json` | grid, model, approval, detail mode, themeMode, chatAgent, 2 font families + 2 sizes — **the app's defaults**, applied only to chats outside any project |
 | `projects.json` | `Project{id, name, path, instructions, memory, pinned, agent?, model?}` — `agent`/`model` null = follow the app default |
 | `project_tasks.json` | `{jobId → projectId}` |
-| `prompts.json` | The `/` prompt library |
 | `onboarding.json` | `{"decision": "local"\|"openai"\|"later"}` |
 | `welcome.json` | `{"seen": true}` — the one-time welcome screen. **Its own file, not a field on `onboarding.json`**: that one records a *choice* and routes on it, this only records that a screen was seen |
 | `imported_sessions.json` | The import ledger (§7.1): source agent + session id → the chat it became, its sha256, the file's size/mtime, and the importer's `formatVersion` |
@@ -801,7 +832,7 @@ copied behaved, what was hand-rewritten stuttered.
 
 The outermost scopes sit **outside the router** because connector tokens and skills belong to *the
 agent* — the agent answers chats whether or not the user has the Connectors/Skills screen open.
-`PanelScope` (on `device`) is there for a related reason and one of its own: **the device answers to the
+`PanelScope` is there for a related reason and one of its own: **the device answers to the
 desk, not to whichever screen happens to be open.** It draws nothing and does its work **after the first
 frame** — finding the panel shells out to `ioreg`, which costs the better part of a second, and nobody is
 waiting on a device that may not even be plugged in. The order inside it matters:
@@ -878,9 +909,11 @@ A hard kill can't be caught — that engine is **re-adopted** on the next run vi
 `~/.grid/app/chats/<id>.json`, send/stream/cancel state **per chat** (several chats can be answering at
 once), and all the UI around it.
 
-`ChatSessionsController` (`chat_sessions_controller.dart`, **669 lines** — split by the jobs it does into
-part files `chat_sessions_send` (732), `chat_sessions_state` (348), `chat_sessions_goals`,
-`chat_sessions_queue`, `chat_sessions_settle`; **2,452 lines across the six**) is the core. State:
+`ChatSessionsController` (`chat_sessions_controller.dart`, **957 lines** — split by the jobs it does into
+part files `chat_sessions_send` (849), `chat_sessions_state` (395), `chat_sessions_loops` (338),
+`chat_sessions_goals` (243), `chat_sessions_queue`, `chat_sessions_settle` (144); **~3,000 lines across the
+seven**) is the core, and the two newest parts are the two commands that run a chat by themselves (below).
+State:
 
 ```dart
 conversations: List<Conversation>   // all of them, including archived
@@ -918,18 +951,63 @@ running.
     projects — or **outside every project** — run in parallel. Relay/media turns touch no lane
 11. `return done.future` — `await send(...)` waits for the turn to settle (the goal loop relies on it)
 
+#### The `/` menu runs commands the app performs itself
+
+`prompts/` — a library of reusable message bodies pasted into the composer — was **deleted whole** on
+2026-08-17 and the slash it owned went to `ChatCommand` (`chat/logic/commands/`, pure: the catalog, the
+parse, the menu's prefix match). The argument for the shape is the one thing worth keeping in mind:
+
+> Grid drives **three agents over three transports**, and each agent's own `/commands` live inside the part
+> of it Grid does not talk to (Codex's are in its TUI crate). So a command that works "for every agent" can
+> only be one **the app performs itself, on state the app owns** — the transcript, the open chat, the turn
+> loop. That is why the list is four long and will stay short. `parseChatCommand` claims **only** names in
+> the enum, so an agent's own `/review` still goes out as the message it is.
+
+| Command | What it does |
+|---|---|
+| `/clear` | A new chat **where the user is standing** — same project, or the chat list. Issue #13: it used to reach the assistant as text, which is exactly nothing. It also **ends the goal and the loop** on the chat being left, so neither goes on firing turns into a conversation the user has walked away from |
+| `/compact` | Folds the history into a summary the next turn carries in its place (`ChatCompaction{summary, through, at}`, 90s, over the shared one-shot seam). Nothing is deleted — `historyForTurn` swaps `messages[0..through]` for the summary, and the transcript draws a divider at that point |
+| `/goal <condition>` | Work toward a condition across turns. **No turn or minute ceiling** — a 30-minute default is what shipped issue #33, and Grid's own agent turns routinely run 40 minutes. It ends when a model reading the conversation says `MET`, or says `IMPOSSIBLE`; `kMaxGoalCondition` 4000 (it is re-read every turn), judge timeout 45s, and `kGoalStallTurns = 3` turns that did no work hands control back with the goal still set |
+| `/loop [gap] <prompt>` | Re-run a prompt: on the user's gap, on one the assistant picks after each iteration (`kMinPacedDelay` 1m … `kMaxPacedDelay` 1h), or `continuous` (a `kContinuousLoopGap` of 3s, not a wait). Ceiling `kLoopExpiry` **7 days** |
+
+Both of the two that run by themselves share the same four rules, each of which was a bug first:
+
+- **A turn is stopped only when it has gone *silent*, not when it has run long.** `kLoopTurnStall` is
+  **60 minutes of no progress at all** (`_turnActivityAt` stamps on every update), because a turn still
+  streaming is doing the work the loop asked for. A wall-clock ceiling threw away real work.
+- **A loop survives a restart.** The timers are in memory by nature, so a relaunch used to *end* a loop —
+  and the only way on was `/loop` again, which is a **new** loop: count back to zero and the prompt sent
+  again on top of what the killed turn had already done. `_resumeLoops()` re-arms at launch, checks the
+  7-day ceiling first, waits `kLoopResumeSettle` (15s) before an overdue beat, and logs every resume.
+  A loop arriving in a **restored backup** is stopped instead (`_stopForeignLoop`) — that machine holds the
+  timer, and adopting the claim here would either double every turn or count down to a beat nobody arms.
+- **A goal or a loop that was running when the app closed reads back as stalled/stopped**, never active:
+  the recoverable answer is the one that doesn't start firing turns at a chat the moment it is opened.
+- **Typed into a blank composer, they start the chat** rather than answering "Open a chat first"
+  (`_startedChat`, 2026-08-18) — a chat isn't saved until its first message, but as far as anything on
+  screen says the user is already in one. Everything that can refuse is checked **before** that, so a
+  refused command leaves no empty chat in the sidebar.
+
+**Where they are seen is two places, deliberately.** While either is running it is **one dim line under the
+composer** (`ComposerStatus` → the shared `ComposerStatusLine`, which also carries services the agent left
+running); once it ends, that is **news, and news goes into the transcript at the point it happened** —
+`TranscriptEventRow`, anchored by `endedAfter`, the message count when it ended, stamped once. The stack of
+three or four cards over the composer that this replaced sat there until somebody closed it, and said
+"Goal met" above a conversation that had moved on.
+
 #### Sub-features
 
 | Feature | Mechanism |
 |---|---|
 | **Archive** | `archivedAt` is a **timestamp, not a bool**. `copyWith` needs a `clearArchivedAt` flag. `_commit` auto-unarchives when the user talks in the chat |
 | **Pin** | `liveConversations()` pushes pinned to the front |
-| **Goal** | `ChatGoal{objective, maxTurns=10, maxMinutes=30}`, pure state machine `advanceGoal`. A reply matching `^GOAL COMPLETE$` → done. `resumeGoal` grants a **brand-new budget** |
+| **Goal** (`/goal`) | `ChatGoal{condition, status, turnsEvaluated, reason, endedAfter}` — **no turn or minute ceiling**. After every turn a second model reads the conversation and answers `MET` / `NOT_YET` / `IMPOSSIBLE`; not yet → the next turn goes out with the evaluator's reason as its brief |
+| **Loop** (`/loop`) | `ChatLoop{prompt, interval?, continuous, iterations, nextAt, pacing, endedAfter}` — a prompt re-run on the user's gap, on one the assistant picks per iteration, or back-to-back. In-memory `Timer`s, **re-armed at launch** for a loop that outlived the app |
 | **Plan mode** | approval = `plan` → a read-only turn + `withPlanPreamble` → `PlanApproveBar` → "Approve & run" sends the approving line with `planFirst: false` |
 | **Queue follow-up** | Typing more while the agent runs → a queue with an X button; drained one at a time after the prior turn settles |
 | **Attachment** | 3 entry points (+ button, ⌘V, drag-drop). Images cap 4, files cap 5, 25 MB. Text extraction: PDF via native (macOS only), docx/xlsx/pptx OOXML-parsed, truncated at 20,000 chars |
 | **@-mention** | `activeMention(text, cursor)` — `@` must open a token; the menu reads `workdirEntriesProvider` (one level, cut at 60 rows) |
-| **`/`-prompt** | The prompt library; **mutually exclusive with `@`**, prompts win |
+| **`/`-command** | The command menu (above); **mutually exclusive with `@`**, commands win |
 | **Minimap** | A tick rail on the left, marking **user turns only**, shown only when content ≥ 1.5× the viewport |
 | **Chat from a scheduled task** | id = `task-<jobId>`; `deliverFromAgent` creates the chat if absent and **doesn't** change `activeId` |
 | **Voice into the composer** | The mic button drives `RecordingController` (§7.11) and feeds the transcript into the **input field**, never the transcript |
@@ -1106,27 +1184,36 @@ now"*, unlike the project rail (*"do I want this project's card"* — that one s
 - `_restore` has to open the first **live** chat, not `conversations.first`
 - Everything that reads chat history uses `state.live`, **not** `.conversations` — 4 sites had to be fixed
 - `_syncModelField` must **wait for `options` to be non-empty** before marking synced
-- `ChatStore.save` is a **synchronous write on the UI thread**, rewriting the whole file every turn
-- ⚠️ `chat_header.dart` `_menuSize` computes **4 rows + 1 divider** but `_ChatMenuContent` builds
-  **7 rows + 1 divider** → off by ~108px. **Still wrong** (re-checked 2026-08-17). It now feeds
-  `anchoredMenuPosition` (§9), whose `maxHeight` clamp bounds the *over*-estimate case — an under-estimate
-  like this one is exactly what neither end corrects.
+- ~~`ChatStore.save` is a **synchronous write on the UI thread**~~ — **fixed 2026-08-18.** It queues the
+  newest snapshot per chat and hands it to a spawned isolate, which does `toJson`, the encode and the
+  write; `save()` returns in ~0 ms and the bytes land ~40 ms later. Measured on a 9 MB / 110-message chat
+  a `/loop` had worked in overnight: encoding pretty-printed cost **98 ms** *per commit*, and a loop
+  iteration commits three or four times. Two consequences to keep: writes are **compact**, not indented
+  (0.7 MB off that chat and off every launch's decode), and **`loadAll()` awaits the writes in flight**
+  (`ChatStore._inFlight` is `static` — the folder is the shared thing, not the object), which is what makes
+  reading the folder from a second store safe
+- ~~`chat_header.dart` `_menuSize` under-counts its own rows~~ — **fixed**: re-checked 2026-08-18, the
+  constant computes **6 rows + 1 divider** and `_ChatMenuContent` builds exactly that. It feeds
+  `anchoredMenuPosition` (§9), whose `maxHeight` clamp bounds only the *over*-estimate case, so the
+  under-estimate this used to be was the one neither end corrects. The estimate is hand-summed, so it
+  breaks again the day a row is added without touching the constant.
 
-### 7.2. `agents/` — the agent abstraction layer (78 files, ~15,070 lines — the largest)
+### 7.2. `agents/` — the agent abstraction layer (80 files, ~15,800 lines — the second largest)
 
-**The single seam** between the `chat`/`skills`/`plugins`/`connectors` features and the four concrete
-runtimes: nothing outside `agents/logic/adapters/` knows the class names `Hermes*`/`Codex*`/`Claude*`/`Pi*`.
+**The single seam** between the `chat`/`skills`/`plugins`/`connectors` features and the three concrete
+runtimes: nothing outside `agents/logic/adapters/` knows the class names `Hermes*`/`Codex*`/`Claude*`.
 
 #### Adapter matrix
 
-| Axis | Hermes | Codex | Claude Code | Pi |
-|---|---|---|---|---|
-| Probe binary | `hermes_tool.dart` | `codex_tool.dart` | `claude_tool.dart` | `pi_tool.dart` |
-| Chat sender | `hermes_chat_sender.dart` | `codex_chat_sender.dart` | `claude_chat_sender.dart` | `pi_chat_sender.dart` |
-| Extensions | `hermes_extensions.dart` | `codex_extensions.dart` | `claude_extensions.dart` | `pi_extensions.dart` |
-| MCP config | YAML | TOML | JSON | the folder's own `.pi/` |
-| Connector projection | + `hermes_token_projection` | sidecar marker | in-entry marker | — |
-| Unique | `hermes_grid_link`, `hermes_auth_store` (§5), `hermes_skill_scanner`, `hermes_shared_skills` | — | `claude_browser`, `claude_turn_mcp_config` | — |
+| Axis | Hermes | Codex | Claude Code |
+|---|---|---|---|
+| Probe binary | `hermes_tool.dart` | `codex_tool.dart` | `claude_tool.dart` |
+| Chat sender | `hermes_chat_sender.dart` | `codex_chat_sender.dart` | `claude_chat_sender.dart` |
+| Extensions | `hermes_extensions.dart` | `codex_extensions.dart` | `claude_extensions.dart` |
+| MCP config | YAML | TOML | JSON |
+| Connector projection | + `hermes_token_projection` | sidecar marker | in-entry marker |
+| Permission | ACP request | `item/*/requestApproval` | `--permission-prompt-tool` + stdin |
+| Unique | `hermes_grid_link`, `hermes_auth_store` (§5), `hermes_skill_scanner`, `hermes_shared_skills` | `codex_app_server_*` (transport + parser) | `claude_browser`, `claude_turn_mcp_config`, `claude_permission` |
 
 #### Who answers a turn
 
@@ -1145,8 +1232,8 @@ ChatSessionsController.send()
 ```
 
 The user's pick is **never overwritten** → switching grids and back restores it. `agentSupportsModel` is the
-one rule about pairings (Codex ✗ `claude:*`, Claude Code ✗ `codex*`, Hermes ✗ `codex:*`, Pi ✗ CLI seats):
-the picker greys the row rather than letting a turn fail on a model the harness can't speak to.
+one rule about pairings (Codex ✗ `claude:*`, Claude Code ✗ `codex*`, Hermes ✗ `codex:*`): the picker greys
+the row rather than letting a turn fail on a model the harness can't speak to.
 
 #### Agent + model follow the project
 
@@ -1166,24 +1253,31 @@ open chat: a follow-up queued in project A must be answered by A's agent even if
 project B. `ProjectAssistantCard` in the rail only *shows* it + a "back to app default" button — the real
 pick is in the composer.
 
-#### Approval flow — **only Hermes has a channel**
+#### Approval flow — **all three have a channel** (2026-08-18)
 
 ```
-ACP permission request
-  → decideHermesPermission(toolKind, options, mode)
-      toolKind ∈ {read, search, fetch, think}  → allow at once, no prompt
-      readOnly / plan                          → HermesRefuse
-      ask                                      → HermesAskUser
-      full                                     → allow_once (NEVER allow_always)
+a permission request, from whichever transport carries it (§4.3)
+  → decideAgentPermission(...)      one function, all three agents
+      a grant this chat already holds (agentSessionGrantsProvider) → allow, and log it
+      → decideHermesPermission(toolKind, options, mode)      the policy, shared
+          toolKind ∈ {read, search, fetch, think}  → allow at once, no prompt
+          readOnly / plan                          → refuse
+          ask                                      → ask the user
+          full                                     → allow_once (NEVER allow_always)
   → AgentPermissionController.ask(), 55s timeout (Hermes gives up at 60s)
   → AgentPermissionCard pinned ABOVE the composer (not in the transcript, not scrolled away)
+     — and, at the same time, a card on the Grid Panel if one is plugged in (§7.30)
 ```
 
-> ⚠️ **Codex, Claude Code and Pi run with no approval channel at all** — `danger-full-access` /
-> `bypassPermissions` / no sandbox: they write files and run commands **anywhere on the machine, asking no
-> one**. `claude -p`, `codex exec` and `pi --mode json` are non-interactive. The `ApprovalPicker` in the
-> composer shows for every agent but **governs only Hermes**. This is a `TODO(BE)` spelled out in each of
-> those three senders.
+> **This reverses what this note said for weeks, and the old state was the bug.** Codex and Claude Code ran
+> `sandbox_mode="danger-full-access"` / `--permission-mode bypassPermissions` — writing files and running
+> commands anywhere on the machine, asking no one — while the `ApprovalPicker` in the composer implied
+> otherwise for all three. Both were moved onto transports that *can* ask: Codex to `codex app-server`,
+> Claude Code to `--permission-prompt-tool` with a `stream-json` stdin. The picker now means what it says.
+>
+> ⚠️ Two things that follow, and neither is obvious: **the widest grant is never handed out** (`allow_always`
+> would outlive the chat), and **"Allow in this chat" is remembered by the app for Claude Code** because
+> that transport remembers nothing itself — `grantKey`, keyed by chat.
 
 #### Five built-in `grid_*` skills
 
@@ -1195,7 +1289,7 @@ ACP permission request
 | `grid-research` | (uses `grid-web`'s scripts) | A research method: many queries, read real pages, a "Not verified" section |
 | `grid-chart` | — | Teaches the agent the ```` ```chart ```` format the transcript renders. Without it the chart feature is **invisible** |
 
-Installed at launch via `GridSkillsScope` for **all four agents**, written to **two** places (the library +
+Installed at launch via `GridSkillsScope` for **all three agents**, written to **two** places (the library +
 the agent's folder) and **rebuilt rather than copied** (the card embeds an absolute path to its own script).
 
 > **This changed, and the old behaviour had shipped a bug that could not be fixed.** The installer used to
@@ -1262,9 +1356,9 @@ reports the path the agent typed verbatim (sometimes with `~/`) → must `expand
 
 **Owns:** a catalog to browse, **two** OAuth flows, the credential store, MCP servers the user types by
 hand, and projecting all of it into **the three agents that have an MCP plane** so one sign-in works
-everywhere. **Pi is the fourth agent and takes none of this**: it ships no MCP, no plugin manager and no
-connector concept, so both planes are `null` — the null-plane rule doing its job rather than a gap. Skills
-still reach it, because those are files.
+everywhere — which today is all three of them. The **null-plane rule** stays in `AgentExtensions` for the
+same reason it was written: Codex has no plugin manager at all, so that plane is permanently `null`, and an
+agent with no MCP would be `null` on both. A null plane is a valid answer, not an error.
 
 #### Path B — gateway-brokered
 
@@ -1764,13 +1858,16 @@ Ranked in 3 tiers: label starts with the query > has a word starting with the qu
   to a navigator outliving the palette
 - ⚠️ `AppTheme.watch` is **entirely absent** from both files → a theme-flip bug
 
-### 7.17. `prompts/` — the `/` library
+### 7.17. `prompts/` — **deleted 2026-08-17**
 
-Deliberately simple — just named boilerplate, quite unlike a skill. `slashQuery` requires a leading `/` and
-the rest to contain **no whitespace** (`/a b` → null, the user is writing a real sentence).
-`edit()` **overwrites** the whole box (unlike `_insertMention`, which inserts at the caret).
-Names are slugged **the moment the file is read** — the library saves the slug-fixed name without waiting
-for the user to reopen it.
+The `/` library of named boilerplate is gone: the whole domain, its `prompts.json` entry in the sync
+snapshot, and `GridPaths.promptsFile`. The slash it owned now runs the commands the app performs itself
+(§7.1). What survived the move is the one part that was doing real work — `slashQuery`, which requires a
+leading `/` and **no whitespace** after it (`/a b` → null, the user is writing a real sentence) — now in
+`chat/logic/commands/chat_command.dart` beside the parse and the menu's prefix match.
+
+**Nothing deletes `~/.grid/app/prompts.json`.** A user's saved prompts stay on disk, unread, rather than
+being thrown away by a version they never chose to install.
 
 ### 7.18. `appearance/` — theme, font, detail mode
 
@@ -2071,8 +2168,9 @@ deliberately inert `GhostButton`s. The whole feature has **not one `AppTheme.wat
 (`SyncController`), logic in `sync_bundle`/`sync_envelope`/`sync_merge`/`sync_state`/`sync_client`/
 `sync_controller`/`sync_workspace`/`sync_keyring`.
 
-`upload()` packs the machine's data — chats (`~/.grid/app/chats/`), prompts (`prompts.json`), projects
-(`projects.json`), and media under `~/.grid/outputs/` — into an encrypted envelope. `download()` decrypts and
+`upload()` packs the machine's data — chats (`~/.grid/app/chats/`), projects (`projects.json`), and media
+under `~/.grid/outputs/` — into an encrypted envelope. (`prompts.json` left the snapshot with the `prompts/`
+domain on 2026-08-17; a few doc comments in `sync_*` still name it.) `download()` decrypts and
 **merges** an incoming snapshot with local state, **backing local up first** into `~/.grid/app/backups/<stamp>.zip`.
 `~/.grid/app/sync_state.json` is the marker read to warn that the cloud has moved on. Each backup version is
 password-protected (envelope crypto handles sealing/unsealing media; `sync_keyring` holds the key material).
@@ -2155,12 +2253,13 @@ The `CodePane` screen has its own ordered empty states, none of them blank: the 
 shared projects at all (`CliTooOldView`), no grid may be selected (`_NoGrid`), no project may be open
 (`_NoProjectOpen`), or the open project may have no code yet (`_NeedsImport` → "Bring in a repository").
 
-### 7.30. `panel/` — the Grid Panel on the desk (new domain, `device` branch)
+### 7.30. `panel/` — the Grid Panel on the desk
 
 **Owns:** the app's side of the conversation with a physical **Grid Panel** — an ESP32 board with a
 480×480 screen, plugged in by USB, that shows what each project is doing and lets the user start, stop or
-**speak** a turn without touching the window. 4 files, ~1,474 lines, over the Flutter-free wire in
-`lib/infrastructure/panel/` (§4.7) and opened by `lib/app/panel_scope.dart` (§6).
+**speak** a turn without touching the window. **8 files, ~3,180 lines**, over the Flutter-free wire in
+`lib/infrastructure/panel/` (9 files, ~1,770 lines — §4.7) and opened by `lib/app/panel_scope.dart` (§6).
+The domain is `logic/` only: the panel draws on the device, so there is nothing here to render.
 
 #### `PanelController` — the switchboard
 
@@ -2258,8 +2357,8 @@ panel. `panel_question_mirror.dart` keeps them one thing.
   narrower than what the agent offered: the widest grant (`allow_always`, which Hermes would persist
   forever) is one the app refuses to hand out, and a button whose only outcome is a refusal is worse
   than no button.
-- Only Hermes ever asks. Codex and Claude run with permission checks off (§4.3), so a panel that never
-  shows a card is not necessarily broken.
+- **All three agents ask now** (§4.3), so a card can come from any of them. It used to be Hermes alone,
+  and a panel that never showed one was normal; today a run that never asks means the mode allows it.
 
 #### The summary — a second message, deliberately late
 
@@ -2328,6 +2427,8 @@ device with no app running.
     chat_composer.dart → ComposerKeys._onKeyEvent
       Enter (no Shift) && canSend → onSend()
       SWALLOW Enter regardless — a turn that couldn't send mustn't drop a stray line break
+      a leading /name in ChatCommand → runCommand(call, model: <the picker's>) and STOP: the app
+      performs it, nothing goes on the wire (§7.1)
 
 [2] chat_view.dart  _send(modality)
       messageWithSnippets(message, _snippets)      ← highlighted runs FOLDED INTO the text
@@ -2385,17 +2486,21 @@ device with no app running.
 │      edit → agentChangesProvider.record(before, after) → AgentChangesBar (real undo)          │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌────────────────────────── BRANCH C: CODEX (exec, 1 process/turn) ────────────────────────────┐
-│ [6c] codex exec [resume] --json --skip-git-repo-check                                        │
-│        -c sandbox_mode="danger-full-access"  ← asks NO ONE                                   │
+┌───────────────── BRANCH C: CODEX (app-server, JSON-RPC, 1 server/turn) ──────────────────────┐
+│ [6c] codex app-server --stdio  -c <the run's config>                                         │
 │        -c model / model_provider / model_providers.grid-app.{name,base_url,env_key,           │
 │           wire_api="responses", supports_websockets=false}                                    │
-│        (resume ? <threadId> : -C <workdir>)                                                   │
+│        the SANDBOX is no longer among them — it is negotiated per thread, from the chat's     │
+│        mode: codexApprovalPolicy(readOnly→never/read-only · plan,ask→untrusted/workspace-write │
+│                                  · full→never/danger-full-access)                             │
+│      handshake ≤ kCodexHandshakeTimeout (45s, covers a cold start) → newThread(cwd) or resume │
 │      env {GRID_APP_API_KEY}  ← NOT GRID_API_KEY: Codex loads ~/.codex/.env and that           │
 │                                dotenv WINS over the parent process env                        │
-│      prompt over STDIN (avoids argv overflow when replaying history)                          │
-│ [7c] parseCodexEvent: agent_message (WHOLE text) · command_execution/web_search/mcp_tool_call │
-│                       · todo_list → plan · file_change (only when status == completed)         │
+│ [7c] codex_app_server_parser: agent_message (WHOLE text) · command_execution/web_search/      │
+│      mcp_tool_call · todo_list → plan · file_change (only when status == completed)           │
+│      item/*/requestApproval → decideAgentPermission → the card above the composer (§7.2)      │
+│      no `app-server` in this build → SAY SO (kCodexNoAppServer); never fall back to `exec`,   │
+│      which would be the app promising to ask and then not asking                              │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ┌───────────────────────── BRANCH D: CLAUDE CODE (-p, 1 process/turn) ─────────────────────────┐
@@ -2403,12 +2508,15 @@ device with no app running.
 │      ClaudeTurnMcpConfig().write(extra) → ~/.grid/app/claude-mcp-config.json                  │
 │        read ~/.claude.json, keep ONLY entries marked `_grid`, + browser extra                 │
 │        write fails → null → DROP BOTH FLAGS (a nonexistent path kills the turn)               │
-│ [7d] claude -p --output-format stream-json --include-partial-messages --verbose               │
-│        --permission-mode bypassPermissions --model <m>                                        │
-│        [--chrome] [--mcp-config <p> --strict-mcp-config] [--resume <sid>]                     │
+│ [7d] claude -p --input-format stream-json --output-format stream-json                         │
+│        --include-partial-messages --verbose --model <m>                                       │
+│        --permission-mode default --permission-prompt-tool stdio         ← IT ASKS NOW         │
+│        [--chrome] [--disallowedTools <server web tools>] [--mcp-config <p>                    │
+│         --strict-mcp-config] [--resume <sid>]                                                 │
+│      can_use_tool over the stdin control channel → decideAgentPermission → the card (§7.2)    │
 │      env: claudeCodeEnv(...) — ANTHROPIC_BASE_URL/AUTH_TOKEN/API_KEY/MODEL/…                  │
 │           lane extension → EMPTY env + dropEnvironment: kClaudeRelayEnvKeys                    │
-│      prompt over STDIN                                                                        │
+│      prompt over STDIN, as a JSON envelope (the input format is stream-json both ways now)     │
 │ [8d] ClaudeStreamParser (stateful):                                                           │
 │        stream_event.content_block_delta.text_delta → _partial → ClaudeMessageEvent(WHOLE)     │
 │        assistant.text → clear _partial, push _completed   ← stops double-counting             │
@@ -2445,7 +2553,10 @@ device with no app running.
        ChatSendFailure     → KEEP the streamed part (partial ?? SendStreaming.text)
        Every update checks _find(id) == null → a chat deleted mid-turn is dropped, not resurrected
 
-[12] _finish(id) → _releaseAgentSlot → _drainQueue(id) FIRST; only an empty queue then _advanceGoal
+[12] _finish(id) → _releaseAgentSlot → _drainQueue(id) FIRST; only an empty queue then the goal's judge
+       goal running? → a second model reads the transcript → MET/IMPOSSIBLE stops it, NOT_YET sends the
+                       next turn with the evaluator's reason (a failed or stopped turn is NOT judged)
+       loop running? → _scheduleNextIteration: the user's gap, the pace the assistant picked, or 3s
 
 [13] Render: _Transcript caches the widget by the IDENTITY of a ChatMessage
        → MessageContent → parseMessageSegments → SelectionArea → MarkdownBody
@@ -2561,9 +2672,11 @@ theme-flip bug.
 
 | Feature | State | Evidence |
 |---|---|---|
-| Chat + agent (4 runtimes + Auto) | ✅ **Shipped** | 669-line controller + 5 part files, resume/queue/goal/plan, turn timeline |
+| Chat + agent (3 runtimes + Auto) | ✅ **Shipped** | 957-line controller + 6 part files, resume/queue/plan, turn timeline. Auto is **devOnly** |
+| **Chat commands** (`/clear`, `/compact`, `/goal`, `/loop`) | ✅ **Shipped** | `chat/logic/commands/` (pure) + two controller parts; the `/` menu; `prompts/` deleted for them; §7.1 |
+| **A chat is written off the UI isolate** | ✅ **Shipped** | `ChatStore` spawns an isolate per write, newest-snapshot-per-chat; `loadAll()` awaits what's in flight |
 | **Import chats (Claude Code, Codex)** | ✅ **Shipped** | Scanner + 2 parsers + ledger + sync, `ImportSessionsView`; §7.1 |
-| **Resume across a quit** | ✅ **Shipped** | `AgentResumePoint` on the conversation; Claude + Codex only (Hermes has no on-disk session, Pi records none) |
+| **Resume across a quit** | ✅ **Shipped** | `AgentResumePoint` on the conversation; Claude + Codex only (Hermes has no on-disk session) |
 | **Which models served a turn** | ⚠️ **Needs a new relay** | `GET /relay/v1/usage`; an older master 404s and the caption stays empty — by design, but it means most grids show nothing yet |
 | **Voice into the composer** | ✅ Shipped | `grid stt transcribe`; disabled with a reason when `grid` can't be resolved |
 | **Welcome screen** | ✅ Shipped | One-time, `~/.grid/app/welcome.json`; §7.14 |
@@ -2574,9 +2687,9 @@ theme-flip bug.
 | **Files** | ✅ **Shipped** | tree + breadcrumb + viewer, 2-mode Markdown, "Add to chat" |
 | **Git (install/adopt)** | ✅ Shipped | Background install + Settings ▸ Coding ▸ Git |
 | **Code half (shared repos)** | 🔒 **devOnly** | ProjectFlow catch-up/publish, task transcript, PanelHost.code — relay has no projects plane in prod |
-| **Grid Panel (USB device)** | ✅ **Both halves, `device` branch** | App half: protocol, controller, 4 mirrors, voice, reflash, 153 tests. Device half: `device/esp32-circle/` — the Waveshare 466×466 round board, ported from the reference by **deletion** (7,243 → 4,546 lines of `ui_screens.c`, everything else byte-identical), builds to a 2.1 MB image with 74% of the OTA slot free. `docs/panel-protocol.md` is the only thing the two share. §4.7, §7.30 |
+| **Grid Panel (USB device)** | ✅ **Both halves, on `main`** | App half: protocol, controller, 4 mirrors, voice, reflash, **180 tests in 8 files**. Device half: `device/esp32-circle/` — the Waveshare 466×466 round board, ported from the reference by **deletion** (7,243 → 4,546 lines of `ui_screens.c`, everything else byte-identical), builds to a 2.1 MB image with 74% of the OTA slot free. `docs/panel-protocol.md` is the only thing the two share. §4.7, §7.30 |
 | **Sync & Backup** | ✅ Shipped | Encrypted upload/download + merge; §7.27 |
-| **Feedback** | ⚠️ **Consent surface commented out** | The dialog still zips and sends `~/.grid/logs`, but `AttachLogsField` is commented out in `feedback_dialog.dart` (commit `be506eec` "hide AttachLogField"), so `_attachLogs` is a `true` nobody can change and the logs ride along **unseen**. Two of the repo's two analyzer issues are this. §13 |
+| **Feedback** | ⚠️ **Consent surface gone, the behaviour stayed** | The commented-out `AttachLogsField` lines have been deleted, but `_attachLogs` is still `true` and written by nothing, so `_send()` always zips and uploads `~/.grid/logs` **unseen**. It is the repo's only analyzer issue. §13 |
 | Skills | ✅ Shipped | 3 bugs found (§7.4), "Draft with AI" hard-off (`_showAiDraft = false`) |
 | Connectors (gateway + DCR) | ✅ Shipped | `rest_entry_fallback.dart` is scaffolding awaiting the gateway |
 | Scheduled tasks | ✅ Shipped | Model pinned via Hermes's own Python (`TODO(BE)`) |
@@ -2598,7 +2711,7 @@ theme-flip bug.
 | Windows auto-update | ❌ Deferred | `isSupported => Platform.isMacOS` |
 | `GridResolver.configuredPath` | ❌ Not wired to UI | `providers.dart` builds a bare `GridResolver()` |
 | Agent switcher (Skills/Connectors/Plugins) | ❌ Not built | `extensionAgentProvider` **always** returns `hermes` |
-| Approval for Codex/Claude/Pi | ❌ **No channel** | `TODO(BE)` — all three run full access |
+| Approval for every agent | ✅ **Shipped 08/18** | Codex over `codex app-server`, Claude Code over `--permission-prompt-tool` + stdin `stream-json`, Hermes over ACP — one `decideAgentPermission` behind all three (§7.2) |
 
 ---
 
@@ -2611,7 +2724,12 @@ This list is things that **each was once a real bug**. Reversing one recreates t
 1. **Secrets go only through the `environment` channel, never into argv.** The log records only the *name* of
    a variable; the `Authorization` header is never written
 2. **`ConnectorBridge` authenticates nothing** — the only fence is the loopback-only bind
-3. **Codex/Claude/Pi run full access, asking no one.** `ApprovalPicker` **governs only Hermes**
+3. **Every agent asks now, through one decision.** `decideAgentPermission` is the single place the
+    composer's mode is turned into an answer — Hermes over ACP, Codex over the app-server, Claude Code over
+    `--permission-prompt-tool`. Two rules inside it are load-bearing: `allow_always` is **never** handed out
+    (it would outlive the chat), and a transport that can't remember "allow in this chat" has it remembered
+    **for** it (`grantKey`). Reversing any of this puts back the state where the picker promised something
+    the app didn't do
 4. **The Telegram/Discord/Slack bot allowlist is a security boundary**, not a convenience — toolset pinning
    was removed
 5. **A refresh-token failure NEVER deletes anything** — the `refresh_token` is the one thing that can still
@@ -2650,45 +2768,58 @@ This list is things that **each was once a real bug**. Reversing one recreates t
 22. **`saveRefreshed` merges, doesn't assign**
 23. **`null` ≠ `ConnectorTransport.none`**; **`advertises_*` is tri-state**, `null` ≠ `false`
 24. **An empty `served` = "not loaded yet"**, not "the grid serves nothing"
-25. **A step stored as `running` reads back as `unknown`**, at both ends (`settledParts` on the way out,
+25. **A chat is written off the UI isolate, and a read waits for the writes in flight.** `ChatStore` keeps
+    the newest snapshot per chat (not a queue — two commits in a breath are two versions of one file) and
+    `_inFlight` is **static**, because the folder is the shared thing, not the object: a second store over
+    the same directory must not read a file mid-write
+26. **A loop that arrives in a restored backup is stopped, not adopted** — the machine it came from holds
+    the timer, and the difference is invisible from this side; adopting it either doubles every turn or
+    counts down to a beat nobody arms
+27. **A loop turn is cancelled only after 60 minutes of *no progress*, never on wall-clock** — a turn still
+    streaming is doing the work that was asked for
+28. **A step stored as `running` reads back as `unknown`**, at both ends (`settledParts` on the way out,
     `_statusByName` on the way in) — a turn that ended is over, and a spinner in last week's transcript is a
     chat that looks like it is still working on something nothing is working on
-26. **`resume: null` from a turn leaves the old point standing** — a relay turn (a picture) has no session of
+29. **`resume: null` from a turn leaves the old point standing** — a relay turn (a picture) has no session of
     its own and must not erase the one the agent is still holding
-27. **The import ledger is read against the chats that exist** — a record whose chat was deleted must offer
+30. **The import ledger is read against the chats that exist** — a record whose chat was deleted must offer
     the session again, not hide it forever
 
 ### Riverpod / render
 
-28. **`gridOverviewSnapshot` is the only door** — `.asData` zeroes the numbers per poll; watching both an
+31. **`gridOverviewSnapshot` is the only door** — `.asData` zeroes the numbers per poll; watching both an
     `AsyncValue` and a family in one body → `setState() during build`
-29. **Value equality on `GridOverview` is load-bearing**
-30. **`routeFor` takes a `GridOverview?`, not an `AsyncValue`**
-31. **`CommandLogNotifier._schedule` = `Future.microtask`** is mandatory, not an optimisation
-32. **Every widget that reads a token must call `AppTheme.watch(context)`**
+32. **Value equality on `GridOverview` is load-bearing**
+33. **`routeFor` takes a `GridOverview?`, not an `AsyncValue`**
+34. **`CommandLogNotifier._schedule` = `Future.microtask`** is mandatory, not an optimisation
+35. **Every widget that reads a token must call `AppTheme.watch(context)`**
 
 ### Wire protocol
 
-33. **`ChatSendStreaming.text` is the WHOLE text; `ChatDelta.text` is a fragment.** Hermes's message is a
+36. **`ChatSendStreaming.text` is the WHOLE text; `ChatDelta.text` is a fragment.** Hermes's message is a
     **delta**; Claude/Codex are **whole text**
-34. **`--mcp-config` must come with `--strict-mcp-config`**; a broken write → `null` → drop **both**
-35. **`codex exec resume` takes neither `--sandbox` nor `-C`**, but the `-c` overrides must ride **every** turn
-36. **`Accept: application/json, text/event-stream`** — both required (Canva returns 406)
-37. **SSE takes the LAST `data:`**, not the first
-38. **`CliResult.sessionExpired` is a string-match on four English sentences** — a CLI wording change makes
+37. **`--mcp-config` must come with `--strict-mcp-config`**; a broken write → `null` → drop **both**
+38. **The Codex sandbox is negotiated per thread, not passed as `-c`** — it follows the chat's mode
+    (`codexApprovalPolicy`), while the grid/model/provider `-c` overrides still ride **every** turn. Under
+    the old `codex exec` transport this line read "`exec resume` takes neither `--sandbox` nor `-C`"; the
+    trap it recorded — flags are per-subcommand, and a wrong one fails exactly like a model that wouldn't
+    answer — is why `codexAppServerArgs` is a pure, tested function
+39. **`Accept: application/json, text/event-stream`** — both required (Canva returns 406)
+40. **SSE takes the LAST `data:`**, not the first
+41. **`CliResult.sessionExpired` is a string-match on four English sentences** — a CLI wording change makes
     the app silently stop detecting it
-39. **`GET /relay/v1/usage` answering 404 means "no data yet"**, never an error the user sees — every grid
+42. **`GET /relay/v1/usage` answering 404 means "no data yet"**, never an error the user sees — every grid
     whose master predates the endpoint answers that way
-40. **A panel frame type this build can't read is surfaced, not dropped** — a peer running ahead must read
+43. **A panel frame type this build can't read is surfaced, not dropped** — a peer running ahead must read
     as a version mismatch someone can act on, never as a link that connects and then goes quiet
-41. **Resyncing the panel stream discards ONE byte on a bad length or CRC**, not the candidate frame — the
+44. **Resyncing the panel stream discards ONE byte on a bad length or CRC**, not the candidate frame — the
     magic may have been a coincidence inside noise, and a real frame can start one byte further in
-42. **A step `status` you don't recognise is FINISHED, never running** — `unknown` is what a step settles
+45. **A step `status` you don't recognise is FINISHED, never running** — `unknown` is what a step settles
     to when the turn ended without it reporting, and reading it as running leaves a spinner turning forever
-43. **A *todo* status you don't recognise is PENDING, never done** — the opposite default to #42, because
+46. **A *todo* status you don't recognise is PENDING, never done** — the opposite default to #45, because
     the opposite mistake is the costly one: a tick against work nobody has begun. The two must not share
     an enum, however alike the words look
-44. **What the panel is told must never be a live number.** `t0` is a fixed offset, not elapsed seconds;
+47. **What the panel is told must never be a live number.** `t0` is a fixed offset, not elapsed seconds;
     a value that changes every second defeats `PanelTurnMirror`'s payload comparison and turns an idle
     cable into 3 KB/s. Anything that ticks is the device's job to count
 
@@ -2725,18 +2856,23 @@ flutter test test/<area>        # logic tests — do NOT write new widget tests
 dart format .
 ```
 
-**Measured on `main`, 2026-08-17:**
+**Measured on `main`, 2026-08-18:**
 
 | | Result |
 |---|---|
-| `flutter analyze lib test` | **2 issues** — both `features/feedback/presentation/feedback_dialog.dart`: an unused import of `attach_logs_field.dart`, and `_attachLogs` that could be `final`. Both are the same commented-out widget (§13) |
-| `flutter test --concurrency=12` | **1888 passing, 0 failing**, 175 files, **37s** wall clock |
+| `flutter analyze lib test` | **1 issue** — `features/feedback/presentation/feedback_dialog.dart`: `_attachLogs` could be `final`. The unused import went with the commented-out widget; the field the linter is pointing at is the behaviour change that outlived it (§13) |
+| `flutter test --concurrency=12` | **2204 passing, 0 failing**, 188 files, **26s** wall clock |
 | Widget tests | **0** — `grep -rl 'testWidgets\|pumpWidget\|WidgetTester' test` is empty, as §8 of the conventions requires |
-| Test areas | the 14 the conventions name, **plus `code/`** |
+| Test areas | the 14 the conventions name, **plus `code/` and `panel/`** |
 
-> **The bar is 0 analyzer issues, and the repo is not at it.** Those two are the only ones, they are in one
-> file, and they are the visible end of a real behaviour change — not lint noise to wave through.
+> **The bar is 0 analyzer issues, and the repo is not at it.** That one is the only one, and it is the
+> visible end of a real behaviour change — not lint noise to wave through.
 > Re-measure before quoting any of this; the numbers in this table have gone stale repeatedly.
+>
+> ⚠️ **Two tests in `test/chat` flake on a temp directory, not on their assertions** (seen 2026-08-18):
+> `tearDown`'s `Directory.delete` loses a race with a write that is now off-isolate, and the failure reads
+> `Directory not empty`. A rerun is green. It is a real hole in the harness — a test that fails for a
+> reason unrelated to what it checks teaches people to rerun rather than read.
 
 ### Build & release
 
@@ -2749,6 +2885,19 @@ DEV_ID="…" NOTARY_PROFILE=grid-notary ./scripts/notarize_macos.sh
 Push a `v*` tag → `.github/workflows/release.yml` → a draft release with
 `Grid-<ver>-macOS-Apple-Silicon.dmg` + `Grid-<ver>-macOS-Intel.dmg` (both signed + notarized).
 The Windows job is commented out until code-signing exists.
+
+Two things in that workflow are load-bearing, and both were bugs that shipped:
+
+- **Flutter is pinned (`flutter-version: 3.44.4`), not just `channel: stable`.** An unpinned stable built
+  v0.3.41+ on an engine two minor versions ahead of the one the team develops on, and the shipped DMG
+  rendered corrupt — proven by diffing the shipped `FlutterMacOS` against a local build. `channel: stable`
+  alone is not a version.
+- **The Intel DMG ships with `FLTEnableImpeller = false`.** On an Intel Mac under Impeller the whole content
+  layer fails to rasterize a few times a second and is replaced by fans of stretched geometry, while the
+  sidebar beside it keeps drawing (screen recording, 2026-08-17). The key is written into `Info.plist`
+  **before signing** and **read back**, because a build that silently kept Impeller looks exactly like a fix
+  that didn't work. Apple Silicon is untouched. `TODO(BE)`: a workaround, not a diagnosis — Intel users now
+  run a backend nothing we test runs on, so re-check it on every Flutter bump.
 
 **Not bundled at runtime:** `llama-server` (`grid engine install llama.cpp`), ComfyUI
 (`grid media install`). Provider node targets **macOS Apple Silicon** and **Linux NVIDIA**; on Windows the
@@ -2811,8 +2960,8 @@ file, not the logic.
 | `chat` ⇄ `agents` (**new, 08/17**) | `chat/logic/import/session_scanner.dart` → `agents/logic/agent_prompt.dart`; back the other way `agents/presentation/agent_working_bubble.dart` → `chat/logic/turn_model_{share,usage}.dart` | logic ⇄ **presentation** |
 
 **`panel/` has the widest fan-out in the repo, and every edge points out.** Its `logic/` reads six other
-domains — `chat` (5 imports), `projects` (3), `agents` (2), `provider_node`, `playground`, `auth` — while
-**nothing imports `panel/`** except `app/panel_scope.dart` (measured 2026-08-17). That direction is the
+domains — `chat` (7 imports), `projects` (5), `playground` (4), `agents` (3), `provider_node`, `auth` —
+while **nothing imports `panel/`** except `app/panel_scope.dart` (re-measured 2026-08-18). That direction is the
 domain's whole point: the panel is a *second view of the same state*, so it must read the providers the
 window reads rather than keep its own (§7.30). Watch it — the day a feature imports `panel/` to "tell the
 panel something", the boundary is gone and the panel becomes a second source of truth, the exact bug §7.30
@@ -2882,45 +3031,43 @@ sentence twice), and nothing pins it.
 > When a user reports "the connector doesn't work" or "the agent's tool call failed", **the on-disk HTTP
 > transcript holds nothing.** You debug via `appLog`.
 
-### Current measurements (2026-08-17, branch `device`)
+### Current measurements (2026-08-18, `main`)
 
-- `lib/`: **821 Dart files, ~154,300 lines, 30 feature domains** — `main` at the same date measured
-  **808 / ~151,250 / 29**; the difference is `panel/` and its wire (§7.30).
-- **`TODO` in `lib/`: 40 total, of which 34 are `TODO(BE)`** (awaiting the backend).
-- **`AppTheme.watch`: 587 call sites.**
-- `test/`: **181 files, 2,004 tests, all passing** (measured on the `main`→`device` merge, 2026-08-17).
-- Largest domains by line count: `chat` 15,758 (61 files) · `agents` 15,069 (78) · `connectors` 11,251 (33)
-  · `network` 10,172 (43) · `review` 7,237 (45) · `playground` 6,299 (34) · `code` 6,192 (44).
+- `lib/`: **845 Dart files, ~160,200 lines, 29 feature domains** — the panel work merged in and `prompts/`
+  was deleted, so the domain count fell by one while ~6,000 lines arrived.
+- **`TODO` in `lib/`: 37 total, of which 31 are `TODO(BE)`** (awaiting the backend).
+- **`AppTheme.watch`: 600 call sites.**
+- `test/`: **188 files, 2,204 tests, all passing**, 26s at `--concurrency=12` (2026-08-18).
+- Largest domains by line count: `chat` 18,091 (70 files) · `agents` 15,805 (80) · `connectors` 11,249 (33)
+  · `network` 10,287 (43) · `review` 7,216 (45) · `code` 6,489 (46) · `playground` 6,294 (34).
 - Gateway connectors (measured earlier, re-measure before quoting): ~12 rows, mostly `auth_type: app`, many
   with a `mcp_url`, many returning `description: ""` (which is why `connector_blurb_fallback.dart` exists).
 
-| | 06/08 | 10/08 | 12/08 | 17/08 `main` | 17/08 `device` |
+| | 06/08 | 10/08 | 12/08 | 17/08 `device` | 18/08 `main` |
 |---|---|---|---|---|---|
-| Dart files in `lib/` | 558 | 668 | 775 | 808 | **821** |
-| Lines | ~105,000 | ~120,900 | ~140,300 | ~151,250 | **~154,300** |
-| Feature domains | 23 | 26 | 29 | 29 | **30** |
-| `AppTheme.watch` | 399 | 486 | ~540 | 573 | **587** |
-| Test files | — | — | 172 | 175 | **181** |
-| Tests passing | — | — | 1599 | 1888 | **2004** |
+| Dart files in `lib/` | 558 | 668 | 775 | 821 | **845** |
+| Lines | ~105,000 | ~120,900 | ~140,300 | ~154,300 | **~160,200** |
+| Feature domains | 23 | 26 | 29 | 30 | **29** |
+| `AppTheme.watch` | 399 | 486 | ~540 | 587 | **600** |
+| Test files | — | — | 172 | 181 | **188** |
+| Tests passing | — | — | 1599 | 2004 | **2204** |
 
 > Re-measure before quoting any number here. This table has gone stale repeatedly.
 
-### Newest debt: a feature hidden by commenting it out
+### Standing debt: a consent surface that was deleted, not decided
 
-`feedback_dialog.dart` still holds the `AttachLogsField` call as **four commented-out lines** (commit
-`be506eec`, *"hide AttachLogField, function still working…"*). What that leaves behind:
+The commented-out `AttachLogsField` lines in `feedback_dialog.dart` are gone (as conventions §3 requires),
+but **the behaviour they hid is still there**:
 
 - `_attachLogs` is initialised `true` and **written by nothing**, so `_send()` always builds and uploads the
-  log bundle — the field's own doc comment still says the switch is *shown*, and *readable in full before
-  the send, because these logs carry file paths and command output, not just a version string*. It isn't
-  shown, so none of that is true any more. Sending someone's shell output is not a default to leave
-  invisible.
-- It is the repo's **only** analyzer noise (§12): the unused import, and a `_attachLogs` the linter can see
-  is never reassigned.
-- Conventions §3 is explicit — *no dead or commented-out code, delete it*. Hiding a control is a two-line
-  change (`if (false)` is not it either): either drop the field and say plainly in the dialog that logs are
-  attached, or keep the switch. The current state is the one shape that is both dead code **and** a silent
-  behaviour change.
+  log bundle. Its own doc comment still says the switch is *shown*, and *readable in full before the send,
+  because these logs carry file paths and command output, not just a version string* — none of which is
+  true any more. Sending someone's shell output is not a default to leave invisible.
+- It is the repo's **only** analyzer issue (§12): a `final` the linter can see is never reassigned. The lint
+  is the last visible trace of the decision.
+- Two honest endings, and the code is at neither: bring the switch back, or drop the field and **say plainly
+  in the dialog that the logs are attached**. Deleting the control while keeping the upload is the one shape
+  that is neither.
 
 ### Contradiction: what a `private-domain` grid actually admits
 
@@ -2936,10 +3083,10 @@ their grid is closed when it is not — the honest-labels failure §5 of the con
 than a wording problem. If the first is right, the Members tab is hiding a Remove button that would work.
 **One of the two has to be wrong; the control plane's `source` field is the thing to check.**
 
-### Measured dead code (re-checked 2026-08-17)
+### Measured dead code (re-checked 2026-08-18)
 
-Still dead, every one re-grepped today: `overlord/**` (**20 files, 1,417 lines**, and **0 references from
-outside the folder**) · `models/presentation/{download_row,manager_search_field}.dart` · `catalogModelsProvider`
+Still dead, every one re-grepped on 2026-08-18: `overlord/**` (**20 files, 1,417 lines**, and **0
+references from outside the folder**) · `models/presentation/{download_row,manager_search_field}.dart` · `catalogModelsProvider`
 (only its own definition left) · `shared/layouts/widgets/{hosting_summary,plan_type_pill}.dart` ·
 `shared/widgets/{pulse.dart::PulseDot, coming_soon_view.dart, not_yet_badge.dart}` — the last two die **as a
 pair**: `coming_soon_view` is the only call site of `NotYetBadge` · `api/models/chat_chunk.dart` ·
@@ -2956,10 +3103,10 @@ kind of dead code is harder to spot than the old kind: grepping "0 imports" **no
 
 ### Design-system debt
 
-| Violation | Count (2026-08-17) | Where |
+| Violation | Count (2026-08-18) | Where |
 |---|---|---|
 | Bare `IconButton` | **90** sites in 61 files | spread; each needs its own hover (§9) |
-| `backgroundColor: AppPalette.windowBg` (dialog sinks in dark) | **10** | login_screen, project_instructions_dialog, create_project_dialog, agent_changes_bar, prompt_dialog, onboarding_page, home_shell… |
+| `backgroundColor: AppPalette.windowBg` (dialog sinks in dark) | **9** | login_screen, project_instructions_dialog, create_project_dialog, agent_changes_bar, prompt_dialog, onboarding_page, home_shell… |
 | Bare `MenuItemButton` | **3** | agent_picker, approval_picker, task_power_bar — unchanged |
 | Bare `CircularProgressIndicator` | **7** | `models/` ×5, `data_sync/` ×2; the one inside `AppSpinner` is the valid one |
 | Bare `Card()` (Material) | **1** | node_setup_card.dart |
@@ -2995,8 +3142,8 @@ Also, **inside `shared/` itself**:
 
 ### Stale documentation
 
-**`docs/` is four tracked files now** — `.gitignore` keeps `conventions.md`, `style-guide-grid-app.md`,
-`architecture.md`, `git-auto-install.md` and ignores the rest, and the local-only notes this table used to
+**`docs/` is five tracked files now** — `.gitignore` keeps `conventions.md`, `style-guide-grid-app.md`,
+`architecture.md`, `git-auto-install.md`, `panel-protocol.md` and ignores the rest, and the local-only notes this table used to
 list (`OVERVIEW.md`, `design-system.md`, `messages-tab.md`, `features/connectors/*`) **are gone from this
 checkout**. Earlier versions of this note pointed at them anyway; those pointers have been removed rather
 than left as a trail to nothing.
@@ -3004,7 +3151,8 @@ than left as a trail to nothing.
 | File | Wrong where |
 |---|---|
 | `README.md` | Says Provider/Models gate by role — they gate by `devOnly × build mode`. Points at `docs/` files that **don't exist** |
-| This file, §7.10 | The four `models/` regressions are quoted from the 08/12 read and **were not re-verified on 08/17** — treat them as "probably still true", not as measured |
+| This file, §7.10 | The four `models/` regressions are quoted from the 08/12 read and **have not been re-verified since** — treat them as "probably still true", not as measured |
+| This file, §§7.3–7.29 | Re-read on 08/17 and only spot-checked on 08/18. The 08/18 pass covered what changed: the header, §§2–4, §6, §7.1, §7.2, §7.17, §7.30, and §§8–13 |
 | Anything quoting a count | Every measured number here carries its date. A number without one is older than it looks |
 
 ### `TODO(BE)` — awaiting the backend
@@ -3019,7 +3167,6 @@ than left as a trail to nothing.
   forgetting to bump here ⇒ a hash mismatch ⇒ **every** install fails. Proposal: `grid agent spec --json`
 - `kHermesAcpRequirement = 'hermes-agent[acp,mcp]'` but the CLI's installer still only asks for `[acp]` →
   `grid agent install` from a terminal builds an env **with no MCP SDK**, and every connector dies silently
-- Per-action approval for Codex, Claude Code and Pi
 - **The Code half's "publish on completion" watch is client-side** (§7.29) — the durable place for it is the
   relay
 - **`GET /relay/v1/usage` carries no chat id**, so "which models served this turn" is correlated by time
