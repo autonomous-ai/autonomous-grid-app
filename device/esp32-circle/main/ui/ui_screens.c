@@ -3,7 +3,7 @@
 // The vocabulary here is grid-app's: a PROJECT is the working unit with a workspace, and an AGENT is the
 // runtime that answers in it (claude · codex · hermes · pi). The reference firmware this file is a cut-down
 // copy of uses those two words the OTHER WAY ROUND — its "agent" is what grid-app calls a project — and
-// its comments, its statics (`s_proj[]` is still indexed by what it called an agent), its helper names
+// its comments, its statics (`s_tiles[]` is still indexed by what it called an agent), its helper names
 // (`ring_of_agent`, `agent_actions_apply`) and its geometry notes came across with it.
 //
 // Every string a USER can read has been converted. The internal names have not, deliberately: renaming
@@ -102,7 +102,7 @@ extern const lv_font_t geist_sem_24;  // largest display: tile agent name + over
 #define OV_ROW2_Y    (OV_ACT_H + OV_ACT_GAP)                        // 86
 #define OV_ACT_BLK_H (2 * OV_ACT_H + OV_ACT_GAP)                    // 159 — the whole two-row block
 #define SAFE_W       lv_pct(72)  // ~335px — wrapped text on the side screens stays inside the curve
-// MAX_PROJECTS comes from panel_client.h, so the layer that RECEIVES the list and the layer that renders
+// MAX_TILES comes from panel_client.h, so the layer that RECEIVES the list and the layer that renders
 // it cannot disagree about how many there can be. The UI keeps only a thin shell per project and
 // materialises the heavy content for the active tile ± a window.
 #define MAX_EVENTS   1      // tile shows only the latest event (the most recent summary)
@@ -249,7 +249,7 @@ static bool s_connected;
 // The Goal / Voice / Loop cluster on a project tile. Built ONCE on scr_projects, not per tile: all three
 // act on whichever project is centred, so N copies would be N times the LVGL objects for identical buttons.
 static lv_obj_t *s_agent_acts;
-static lv_obj_t *s_no_agents_tile;   // persistent "No projects yet" page, shown at ring RING_LEAD ONLY when s_proj_count==0
+static lv_obj_t *s_no_agents_tile;   // persistent "No projects yet" page, shown at ring RING_LEAD ONLY when s_tile_count==0
 static lv_obj_t *s_no_agents_hint_lbl; // the closing line under the command
 static lv_obj_t *s_na_eyebrow;       // machine name above the no-projects headline
 static lv_obj_t *s_na_title;         // "No projects yet"
@@ -347,7 +347,7 @@ static void overview_goal_tap(lv_event_t *e);    // start recording a GOAL turn
 static void overview_loop_tap(lv_event_t *e);    // start recording a LOOP turn
 static void overview_mod_apply(void);            // dim/undim the Goal + Loop pills with the rest of the row
 static void update_content_window(void); // (re)materialize the active-tile±window; position the fixed tiles
-static void clear_removed_project_transients_locked(const char *project_id, bool voice_aborted);
+static void clear_removed_project_transients_locked(const char *chat_id, bool voice_aborted);
 static int find_proj(const char *id);            // index of the project with this id, or -1 (defined below)
 static void voice_start_impl(voice_cmd_t cmd);
 static void ev_card_free(lv_event_t *e); // free an event card's stored full text (defined below)
@@ -358,7 +358,9 @@ static void voice_overlay_set(bool on);  // voice: dark overlay + free/restore t
 
 typedef struct {
     char id[48];
-    char name[80];       // MODEL: display name (clipped) — source of truth, was only in name_lbl (view)
+    char name[80];       // MODEL: the chat's title (clipped) — source of truth, was only in name_lbl (view)
+    char project[48];    // MODEL: the project it lives in, drawn under the title. A tile is one CHAT, and two
+                         // chats in one folder read as the same work without it.
     char engine[12];      // MODEL: claude|codex|cursor|opencode|pi|hermes|commandcode|devin; empty hides the mark
     char mode[8];        // MODEL: per-agent autonomy for voice turns — "plan" | "" (empty = auto/bypass)
     // The model, as `model` on the project shape — a PLAIN STRING ("auto", "opus", "gpt-5.6-sol"), not the
@@ -371,6 +373,7 @@ typedef struct {
     lv_obj_t *dot;
     lv_obj_t *header;    // one top-level flex child containing name + engine (keeps body geometry stable)
     lv_obj_t *name_lbl;
+    lv_obj_t *project_lbl;   // the subtitle under the title, hidden while the tile has no project
     lv_obj_t *engine_lbl;
     lv_obj_t *engine_text_lbl; // hidden compatibility fallback; known engines use product-mark images
     lv_obj_t *model_lbl;  // tappable Model chip above the name → opens the model picker (remote machines)
@@ -404,9 +407,9 @@ typedef struct {
     lv_color_t m_col;        // color of the last event card (kind_style result)
     char     *m_preview;     // PSRAM: tile-preview text of the last event (NULL = none → "No activity yet")
     char     *m_full;        // PSRAM: full text of the last event (for the tap-to-read reader)
-} proj_t;
-static proj_t *s_proj;   // MAX_PROJECTS array, allocated in PSRAM at ui_init (off the internal .bss)
-static int s_proj_count;
+} tile_t;
+static tile_t *s_tiles;   // MAX_TILES array, allocated in PSRAM at ui_init (off the internal .bss)
+static int s_tile_count;
 static int s_active_idx;   // currently-visible agent index (updated on swipe; defaults to 0)
 
 // --- Carousel scroll helpers ---
@@ -439,7 +442,7 @@ static lv_obj_t *s_carousel_spacer;
 #define RING_LEAD  1                    // number of leading fixed tiles (the Overview) before the projects
 #define RING_FIXED 1                    // number of trailing fixed tiles — the Settings tile
 static void resize_spacer(void) { if (s_carousel_spacer) lv_obj_set_width(s_carousel_spacer, CAROUSEL_M * carousel_w()); }
-static int ring_len(void)      { return RING_LEAD + (s_proj_count > 0 ? s_proj_count : 1) + RING_FIXED; }
+static int ring_len(void)      { return RING_LEAD + (s_tile_count > 0 ? s_tile_count : 1) + RING_FIXED; }
 static int ring_agents_end(void) { return ring_len() - RING_FIXED; }   // first ring AFTER the projects
 static int ring_settings(void) { return ring_agents_end(); }   // the trailing Settings tile
 static int agent_of_ring(int r) { return r - RING_LEAD; }   // ring → agent index (valid RING_LEAD..ring_agents_end()-1)
@@ -618,8 +621,8 @@ static void set_hidden(lv_obj_t *obj, bool hidden)
 static void refresh_conn_ui(void)
 {
     lv_color_t dotc = s_connected ? COL_GREEN : COL_MUTED;
-    for (int i = 0; i < s_proj_count; i++)
-        if (s_proj[i].dot) lv_obj_set_style_bg_color(s_proj[i].dot, dotc, 0);   // only windowed tiles have a dot
+    for (int i = 0; i < s_tile_count; i++)
+        if (s_tiles[i].dot) lv_obj_set_style_bg_color(s_tiles[i].dot, dotc, 0);   // only windowed tiles have a dot
 
     if (!s_reconnect_badge) return;
     // Not while the Overview is already SAYING the app is off — the badge would repeat the headline in
@@ -665,7 +668,7 @@ static void fmt_elapsed(int64_t s, char *out, size_t cap)
 }
 // Refresh a project's working-status verb line (Figma "working"): a single green "<verb> <elapsed>" label
 // (e.g. "Cooking… 34s"). The grey teaser below is the last recap, set once in render_busy_row (unchanged here).
-static void busy_compose(proj_t *p)
+static void busy_compose(tile_t *p)
 {
     if (!p->busy_verb) return;
     int64_t sec = (esp_timer_get_time() - p->busy_since) / 1000000LL;
@@ -877,11 +880,11 @@ static void busy_dots_tick(lv_timer_t *t)
     // screen mid-task. Count "recording/uploading" and "the visible tile's turn is still processing" as
     // activity so the screen stays on until ~IDLE_MS after the turn actually ends.
     if (voice_active() || s_voice_routing ||
-        (s_active_idx >= 0 && s_active_idx < s_proj_count && s_proj[s_active_idx].busy_model))
+        (s_active_idx >= 0 && s_active_idx < s_tile_count && s_tiles[s_active_idx].busy_model))
         display_bump_activity();
     if (display_is_asleep() || s_overview_active) return;
-    if (s_active_idx < 0 || s_active_idx >= s_proj_count) return;
-    proj_t *p = &s_proj[s_active_idx];
+    if (s_active_idx < 0 || s_active_idx >= s_tile_count) return;
+    tile_t *p = &s_tiles[s_active_idx];
     // Pulse the in_progress todo row's glyph (~3Hz) so the active task stands out.
     if (p->todo_active) {
         static int tphase;
@@ -902,12 +905,12 @@ void ui_init(void)
 {
     display_lock();
 
-    // Project array in PSRAM (off internal BSS): about 28KB at MAX_PROJECTS.
+    // Project array in PSRAM (off internal BSS): about 28KB at MAX_TILES.
     // The board requires working PSRAM, so never silently consume internal heap here.
-    if (!s_proj) {
-        s_proj = ram_psram_calloc(MAX_PROJECTS, sizeof(proj_t), "project_models");
-        if (!s_proj) {
-            ESP_LOGE(TAG, "required project model allocation failed");
+    if (!s_tiles) {
+        s_tiles = ram_psram_calloc(MAX_TILES, sizeof(tile_t), "tile_models");
+        if (!s_tiles) {
+            ESP_LOGE(TAG, "required tile model allocation failed");
             abort();
         }
     }
@@ -973,7 +976,7 @@ void ui_init(void)
     lv_obj_set_style_text_color(s_na_title, COL_FG, 0);
     lv_obj_set_style_text_align(s_na_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_na_title, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(s_na_title, "No projects yet");
+    lv_label_set_text(s_na_title, "No chats yet");
     s_na_cmd_lbl = code_pill(s_no_agents_tile, "grid new");
     s_no_agents_hint_lbl = lv_label_create(s_no_agents_tile);
     lv_obj_set_width(s_no_agents_hint_lbl, SAFE_CONTENT_W);
@@ -1010,7 +1013,7 @@ void ui_init(void)
     s_overview_count_lbl = lv_label_create(s_overview_tile);    // "N projects" (largest font available)
     lv_obj_set_style_text_font(s_overview_count_lbl, &geist_med_38, 0);
     lv_obj_set_style_text_color(s_overview_count_lbl, COL_FG, 0);
-    lv_label_set_text(s_overview_count_lbl, "0 projects");
+    lv_label_set_text(s_overview_count_lbl, "0 chats");
 
     // What the Overview says once grid-app has been silent past the heartbeat. Two quiet lines under the
     // headline, and deliberately NOT an error: the app being closed is this panel's ordinary resting
@@ -1620,7 +1623,7 @@ void ui_show_error(const char *title, const char *detail)
 // machine: assert the huge scroll range, then park the "No agents" page (ring RING_LEAD) at CAROUSEL_M/2.
 static void carousel_center_empty(void)
 {
-    if (s_proj_count != 0) return;
+    if (s_tile_count != 0) return;
     resize_spacer();
     // Only recenter when pinned near an EDGE of the huge range (i.e. never centered yet). Once we're at
     // ~M/2, leave the user's current swipe position on the empty ring alone.
@@ -1632,7 +1635,7 @@ static void carousel_center_empty(void)
     rebuild_page_dots();
 }
 
-void ui_show_projects(void)
+void ui_show_tiles(void)
 {
     display_lock();
     rebuild_overview_tile();
@@ -1719,7 +1722,7 @@ void ui_enter_remote_offline(void)
 
     // Every tile is now a claim about a machine that has stopped answering. Drop the model before exposing
     // the carousel, so nothing can be swiped to and acted on while grid-app is not there to hear it.
-    ui_project_clear_all();
+    ui_tile_clear_all();
     rebuild_overview_tile();
     if (lv_screen_active() != scr_projects) lv_screen_load(scr_projects);
     carousel_goto(col_for_ring_near(carousel_col(), 0 /* overview */), LV_ANIM_OFF);
@@ -2425,7 +2428,7 @@ static void rebuild_overview_tile(void)
     } else {
         if (s_overview_spin) { lv_obj_del(s_overview_spin); s_overview_spin = NULL; }   // stop its timer
         char t[24];
-        snprintf(t, sizeof t, s_proj_count == 1 ? "%d project" : "%d projects", s_proj_count);
+        snprintf(t, sizeof t, s_tile_count == 1 ? "%d chat" : "%d chats", s_tile_count);
         lv_label_set_text(s_overview_count_lbl, t);
         lv_obj_clear_flag(s_overview_count_lbl, LV_OBJ_FLAG_HIDDEN);
     }
@@ -2446,7 +2449,7 @@ static void overview_working_apply(void)
     if (!s_overview_working_lbl) return;
     int working = 0;
     if (!s_overview_loading && !s_remote_offline_view)
-        for (int i = 0; i < s_proj_count; i++) if (s_proj[i].busy_model) working++;
+        for (int i = 0; i < s_tile_count; i++) if (s_tiles[i].busy_model) working++;
     if (working > 0) {
         int64_t sec = esp_timer_get_time() / 1000000LL;   // shared clock → verb rotates every 6s (like agent tiles)
         lv_label_set_text_fmt(s_overview_working_lbl, "%d %s\xE2\x80\xA6", working, GERUNDS[(sec / 6) % N_GERUNDS]);
@@ -2474,7 +2477,7 @@ static void overview_actions_apply(void)
     set_hidden(s_overview_actions, s_overview_loading || s_remote_offline_view);
     // A routed voice turn needs at least one project to dispatch to — disable all three when the list is
     // empty, since every one of them would start an utterance with nowhere to go.
-    bool ready = s_connected && !s_overview_loading && !s_remote_offline_view && s_proj_count > 0;
+    bool ready = s_connected && !s_overview_loading && !s_remote_offline_view && s_tile_count > 0;
     lv_obj_t *btns[] = { s_overview_voice_btn, s_overview_goal_btn, s_overview_loop_btn };
     for (int i = 0; i < 3; i++) {
         if (!btns[i]) continue;
@@ -2508,7 +2511,7 @@ static void overview_mod_apply(void)
 // has nowhere to go. voice_active() is checked too — the overlay owns the screen mid-capture.
 static bool overview_action_ready(void)
 {
-    return s_connected && !s_overview_loading && !s_remote_offline_view && s_proj_count > 0
+    return s_connected && !s_overview_loading && !s_remote_offline_view && s_tile_count > 0
            && !voice_active();
 }
 
@@ -2518,7 +2521,7 @@ static bool overview_action_ready(void)
 static bool agent_action_ready(void)
 {
     return s_connected && !voice_active()
-           && s_active_idx >= 0 && s_active_idx < s_proj_count;
+           && s_active_idx >= 0 && s_active_idx < s_tile_count;
 }
 static void agent_voice_tap(lv_event_t *e) { (void)e; if (agent_action_ready()) voice_start_impl(VOICE_CMD_NONE); }
 static void agent_goal_tap (lv_event_t *e) { (void)e; if (agent_action_ready()) voice_start_impl(VOICE_CMD_GOAL); }
@@ -2530,10 +2533,10 @@ static void agent_actions_apply(void)
 {
     if (!s_agent_acts) return;
     bool on = on_project_page() && !s_notif_open && !display_is_asleep()
-              && s_active_idx >= 0 && s_active_idx < s_proj_count
+              && s_active_idx >= 0 && s_active_idx < s_tile_count
               // ...and not while this agent is WORKING: the tile then belongs to the live status row, and
               // all three actions would start a NEW turn on an agent already running one.
-              && !s_proj[s_active_idx].busy_model;
+              && !s_tiles[s_active_idx].busy_model;
     set_hidden(s_agent_acts, !on);
 }
 
@@ -2572,8 +2575,19 @@ static void build_agent_actions(void)
     // of the time pinned the LVGL task hard enough to trip the task watchdog every 5 seconds. Goal is drawn
     // from plain objects, so it never touches that path.
     //
+    // ⚠️ THE THREE Y VALUES BELOW MOVE TOGETHER, and 20px is what was added on 2026-08-18. Two things
+    // bound how far down this cluster can go, and only one of them is obvious:
+    //
+    //   • THE GLASS. The panel is a 466px circle, so the usable radius is 233 from (233,233). The tap
+    //     targets are 80px but the MARK is 40px centred in one, and the mark is what has to stay on
+    //     glass: at these positions the farthest icon edge sits ~221px out. Another 20px would put it at
+    //     ~237 — off the arc. This row has no more room below it.
+    //   • THE HOME SWIPE. touch.c treats a gesture STARTING below y=400 as the bottom-edge up-swipe to
+    //     Overview, and Voice now sits inside that band. It costs nothing: that rule fires only for an
+    //     upward SWIPE (dy < -SWIPE_MIN_PX), and a near-still tap below the line is still a tap.
+    //
     // Goal — three rings at the design's 36 / 20 / 9 with a 4px stroke, innermost filled.
-    { lv_obj_t *b = agent_act_btn(83, 339, agent_goal_tap);
+    { lv_obj_t *b = agent_act_btn(83, 359, agent_goal_tap);
       lv_obj_t *ring = lv_obj_create(b);
       lv_obj_remove_style_all(ring);
       lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
@@ -2593,12 +2607,12 @@ static void build_agent_actions(void)
           lv_obj_set_style_border_color(c, COL_YELLOW, 0);
       } }
     // Voice — sits 35px lower than its neighbours, per the design's arc.
-    { lv_obj_t *b = agent_act_btn(193, 374, agent_voice_tap);
+    { lv_obj_t *b = agent_act_btn(193, 394, agent_voice_tap);
       lv_obj_t *ic = lv_image_create(b);
       lv_image_set_src(ic, &icon_act_voice);      // 40px native, colour baked — see the note on the asset
       lv_obj_center(ic); }
     // Loop — the exported Figma repeat arrows, the same mark the Overview carries.
-    { lv_obj_t *b = agent_act_btn(303, 339, agent_loop_tap);
+    { lv_obj_t *b = agent_act_btn(303, 359, agent_loop_tap);
       lv_obj_t *ic = lv_image_create(b);
       lv_image_set_src(ic, &icon_act_loop);       // 40px native, colour baked
       lv_obj_center(ic); }
@@ -2737,7 +2751,7 @@ static void format_model_label(const char *alias, char *out, size_t cap)
 }
 
 // Format p->model for its chip. Empty (the app omits `model` rather than sending null when absent) → Auto.
-static void parse_and_store(proj_t *p)
+static void parse_and_store(tile_t *p)
 {
     format_model_label(p->model, p->model_label, sizeof(p->model_label));
 }
@@ -2783,7 +2797,7 @@ static inline int32_t ctl_band_h(void) { return ctl_pill_h() + CTL_NAME_GAP; }
 
 // Is the row actually on screen for this agent? It is hidden on local machines and when the feature is off,
 // and the working layout has to reserve its band only when it is really there.
-static inline bool ctl_row_shown(proj_t *p)
+static inline bool ctl_row_shown(tile_t *p)
 {
     return p && p->ctl_row && !lv_obj_has_flag(p->ctl_row, LV_OBJ_FLAG_HIDDEN);
 }
@@ -2849,7 +2863,7 @@ static void chip_clip(const char *src, char *out, size_t cap, size_t max_glyphs)
     out[keep] = '\0';
 }
 
-static void model_chip_paint(proj_t *p)
+static void model_chip_paint(tile_t *p)
 {
     if (!p || !p->model_lbl) return;
     bool has = p->model[0] != '\0';
@@ -2867,7 +2881,7 @@ static void model_chip_paint(proj_t *p)
 // because the row is the tile's identity line — engine mark, model, effort — and a two-chip row reads as a
 // row with something missing. It is drawn muted, like every other value this panel reports but cannot
 // change, and it does nothing when tapped because there is nothing it could do.
-static void effort_chip_paint(proj_t *p)
+static void effort_chip_paint(tile_t *p)
 {
     if (!p || !p->effort_lbl) return;
     if (!p->model[0]) {                 // nothing known about the runtime at all → don't claim "Auto"
@@ -2899,8 +2913,8 @@ void ui_set_creating(bool on)
 // Find a project by id, or -1.
 static int find_proj(const char *id)
 {
-    for (int i = 0; i < s_proj_count; i++)
-        if (strcmp(s_proj[i].id, id) == 0) return i;
+    for (int i = 0; i < s_tile_count; i++)
+        if (strcmp(s_tiles[i].id, id) == 0) return i;
     return -1;
 }
 
@@ -2920,9 +2934,9 @@ static char *dup_str(const char *s)
     return ram_psram_strdup(s, "ui_event_text");
 }
 
-// Build the single event-card label into p->list (shared by ui_project_emit's live path and by
+// Build the single event-card label into p->list (shared by ui_tile_emit's live path and by
 // materialize_content). `full` may be NULL (model had only a preview) — the reader then shows preview.
-static void render_event_card(proj_t *p, const char *preview, const char *full, lv_color_t col)
+static void render_event_card(tile_t *p, const char *preview, const char *full, lv_color_t col)
 {
     if (!p->list || !preview) return;
     char *reader_text = dup_str(full ? full : preview);
@@ -2958,7 +2972,7 @@ static void render_event_card(proj_t *p, const char *preview, const char *full, 
 // Build the Figma "working" status into p->body from the model. A centred block: a green "<verb> <elapsed>"
 // line + a grey teaser (last recap). No spinning sparkle — the green LED ring is the loading indicator now.
 // Also recentres the whole tile ([name][busy]) vertically for this state (clear_busy restores the recap layout).
-static void render_busy_row(proj_t *p)
+static void render_busy_row(tile_t *p)
 {
     if (!p->body || p->busy) return;
     // Centre the [name + busy] group vertically for the working screen (recap keeps top-anchored name).
@@ -2990,17 +3004,23 @@ static void render_busy_row(proj_t *p)
 }
 
 // Agent-tile vertical rhythm. Set in TWO places (build + the restore after a busy turn), so keep it here:
-// a mismatch shows up as the tile shifting after every turn. Nudged down 5px and given 1px more air between
-// the chip row, the name and the recap card — the screen was crowded at the top with dead space below
-// (84 -> 89 -> 94 -> 99 across three passes on the real panel; the name→card gap gained 1px then 2px).
-// The chip row's own offset is NOT here — it is derived from the chip metrics in ctl_row_y().
-#define TILE_PAD_TOP    117         // was 84 (Figma recap: name ~top84, card ~top157)
+// a mismatch shows up as the tile shifting after every turn.
+//
+// ONE number moves the whole block — the chip row, the agent name, the project subtitle and the recap card
+// below them. The chip row looks independent and is not: ctl_row_y() anchors it to the HEADER, so it rides
+// whatever this value does. Tuned on the real panel rather than from the Figma: 84 -> 89 -> 94 -> 99 -> 117
+// while the top was crowded and the bottom had dead space, then back to 112 on 2026-08-18 once the action
+// icons moved down 20px and the block wanted to sit higher against them.
+//
+// The floor is the notification pull-zone: touch.c owns y < 44 for the drawer, and the chip row starts at
+// this value minus the chip band (~40), so much under ~90 and the chips stop being tappable.
+#define TILE_PAD_TOP    112         // was 117 (Figma recap: name ~top84, card ~top157)
 #define TILE_NAME_GAP   27          // name → recap card, minus the engine line the header adds
 
 // Create the empty tile container for an agent (UNpositioned — update_content_window places it at its
 // current ring column). Called by materialize_content on window entry; free_content deletes the whole tile
 // on exit, so a far-off agent holds ZERO LVGL objects (the spacer reserves the whole virtual scroll range).
-static void create_tile(proj_t *p)
+static void create_tile(tile_t *p)
 {
     if (p->tile) return;
     p->tile = lv_obj_create(tileview);
@@ -3024,7 +3044,7 @@ static void create_tile(proj_t *p)
 // rebuild correctly after free_content deletes the tile outside the active window.
 // Engine badge = product mark. Claude is a recolored monochrome mask; other marks retain the exact
 // colors from the same vendored assets used by the web app.
-static void apply_engine_label(proj_t *p)
+static void apply_engine_label(tile_t *p)
 {
     if (!p->engine_lbl || !p->engine_text_lbl) return;
     const lv_image_dsc_t *src = NULL;
@@ -3061,7 +3081,7 @@ static void apply_engine_label(proj_t *p)
     }
 }
 
-static void build_shell(proj_t *p)
+static void build_shell(tile_t *p)
 {
     if (!p->tile || p->header) return;      // no tile, or shell already built
     p->dot = NULL;                          // recap design drops the status dot (its only reader is guarded)
@@ -3071,7 +3091,11 @@ static void build_shell(proj_t *p)
     p->header = lv_obj_create(p->tile);
     lv_obj_remove_style_all(p->header);
     lv_obj_clear_flag(p->header, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(p->header, SAFE_CONTENT_W, lv_font_get_line_height(&geist_med_38));   // name only; engine moved to the chip row above
+    // Title + subtitle. Sized for both lines so the body below keeps the geometry it had when the header
+    // was one line: growing the header rather than overlaying the subtitle is what stops the recap card
+    // from being pushed into the round screen's bottom margin.
+    lv_obj_set_size(p->header, SAFE_CONTENT_W,
+                    lv_font_get_line_height(&geist_med_38) + lv_font_get_line_height(&geist_reg_20));
     lv_obj_set_flex_flow(p->header, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(p->header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(p->header, 0, 0);
@@ -3082,7 +3106,19 @@ static void build_shell(proj_t *p)
     lv_obj_set_size(p->name_lbl, SAFE_CONTENT_W, lv_font_get_line_height(&geist_med_38));
     lv_obj_set_style_text_align(p->name_lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(p->name_lbl, LV_LABEL_LONG_DOT);
-    lv_label_set_text(p->name_lbl, p->name[0] ? p->name : "\xE2\x80\xA6");  // model name, or "…" placeholder
+    lv_label_set_text(p->name_lbl, p->name[0] ? p->name : "\xE2\x80\xA6");  // chat title, or "…" placeholder
+
+    // The project, under the title and quieter than it. A tile is one conversation now, and several of a
+    // project's chats sit next to each other on the carousel — without this they are a row of titles with
+    // nothing saying which folder any of them works in.
+    p->project_lbl = lv_label_create(p->header);
+    lv_obj_set_style_text_color(p->project_lbl, COL_MUTED, 0);
+    lv_obj_set_style_text_font(p->project_lbl, &geist_reg_20, 0);
+    lv_obj_set_size(p->project_lbl, SAFE_CONTENT_W, lv_font_get_line_height(&geist_reg_20));
+    lv_obj_set_style_text_align(p->project_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(p->project_lbl, LV_LABEL_LONG_DOT);
+    lv_label_set_text(p->project_lbl, p->project);
+    if (!p->project[0]) lv_obj_add_flag(p->project_lbl, LV_OBJ_FLAG_HIDDEN);
 
     // Per-agent controls row FLOATING in the band ABOVE the name: [Engine] [Model] [Effort] pills, one style.
     // Remote machines only; a tap opens the model/effort picker. The notif pull-down zone was narrowed to
@@ -3127,7 +3163,7 @@ static void build_shell(proj_t *p)
 // already live. tool_line/agents/todo are NOT rebuilt — they stream from the next live event.
 static void materialize_content(int i)
 {
-    proj_t *p = &s_proj[i];
+    tile_t *p = &s_tiles[i];
     if (p->content_live) return;
     // Voice mode: the overlay is up and we deliberately keep ALL content freed so the PCM upload has
     // internal-RAM headroom. Don't let a swipe / live event re-materialize it mid-upload — it rebuilds
@@ -3170,12 +3206,13 @@ static void materialize_content(int i)
 // frees its stashed full text). The model (m_preview/m_full/busy_model) is preserved for re-entry.
 static void free_content(int i)
 {
-    proj_t *p = &s_proj[i];
+    tile_t *p = &s_tiles[i];
     if (!p->content_live) return;
     if (p->tile) { lv_obj_delete(p->tile); p->tile = NULL; }   // delete the WHOLE tile → 0 objects for a far agent
     p->body = p->list = p->empty = NULL;
     p->busy = p->busy_verb = p->busy_meta = p->busy_icon = NULL;
     p->tool_line = p->agents = p->todo = p->todo_active = NULL;
+    p->project_lbl = NULL;
     p->dot = p->header = p->name_lbl = p->engine_lbl = p->engine_text_lbl = p->model_lbl = p->effort_lbl = NULL;
     p->ctl_row = NULL;
     p->content_live = false;
@@ -3198,10 +3235,10 @@ static void update_content_window(void)
     //    the ring at its column no longer maps to it (N changed → the modulo remapped that column to a
     //    different agent). Without the ring check, adding agents (which shifts N+1) would pile stale tiles
     //    at the same columns and leak the pool.
-    for (int i = 0; i < s_proj_count; i++) {
-        if (s_proj[i].content_live) {
-            int d = s_proj[i].tile_col - cc; if (d < 0) d = -d;
-            if (d > CONTENT_WINDOW || ring_of_col(s_proj[i].tile_col) != ring_of_agent(i)) free_content(i);
+    for (int i = 0; i < s_tile_count; i++) {
+        if (s_tiles[i].content_live) {
+            int d = s_tiles[i].tile_col - cc; if (d < 0) d = -d;
+            if (d > CONTENT_WINDOW || ring_of_col(s_tiles[i].tile_col) != ring_of_agent(i)) free_content(i);
         }
     }
 
@@ -3224,13 +3261,13 @@ static void update_content_window(void)
             // would read it as an index past the end.
             if (ad < settings_best) { settings_best = ad; settings_col = col; }
             settings_shown = true;
-        } else if (s_proj_count == 0) {                 // no projects → ring RING_LEAD is the "No projects" page
+        } else if (s_tile_count == 0) {                 // no projects → ring RING_LEAD is the "No projects" page
             if (ad < noagents_best) { noagents_best = ad; noagents_col = col; }
             noagents_shown = true;
         } else {                                        // project at this column
             int ai = agent_of_ring(r);
-            if (ai >= 0 && ai < s_proj_count) {
-                proj_t *p = &s_proj[ai];
+            if (ai >= 0 && ai < s_tile_count) {
+                tile_t *p = &s_tiles[ai];
                 if (!p->content_live) materialize_content(ai);
                 if (p->tile) { lv_obj_set_x(p->tile, col * w); p->tile_col = col; }
             }
@@ -3260,11 +3297,11 @@ static void update_content_window(void)
 
 #if LAZY_MEM_DEBUG
     int live = 0;
-    for (int i = 0; i < s_proj_count; i++) if (s_proj[i].content_live) live++;
+    for (int i = 0; i < s_tile_count; i++) if (s_tiles[i].content_live) live++;
     lv_mem_monitor_t mon; lv_mem_monitor(&mon);
     ESP_LOGI(TAG, "lvmem free=%u biggest=%u used=%d%% frag=%d%% | projects=%d live=%d cc=%d ring=%d",
              (unsigned)mon.free_size, (unsigned)mon.free_biggest_size, (int)mon.used_pct,
-             (int)mon.frag_pct, s_proj_count, live, cc, ring_of_col(cc));
+             (int)mon.frag_pct, s_tile_count, live, cc, ring_of_col(cc));
 #endif
 }
 
@@ -3292,15 +3329,15 @@ static void carousel_cover_leading(void)
                 lv_obj_set_x(s_overview_tile, col * w);
                 lv_obj_clear_flag(s_overview_tile, LV_OBJ_FLAG_HIDDEN);
             }
-        } else if (s_proj_count == 0) {               // no projects → ring 1 is the "No projects" page
+        } else if (s_tile_count == 0) {               // no projects → ring 1 is the "No projects" page
             if (s_no_agents_tile) {
                 lv_obj_set_x(s_no_agents_tile, col * w);
                 lv_obj_clear_flag(s_no_agents_tile, LV_OBJ_FLAG_HIDDEN);
             }
         } else {                                      // agent r-1 (kept materialized as a neighbour when N==1)
             int ai = r - 1;
-            if (ai >= 0 && ai < s_proj_count) {
-                proj_t *p = &s_proj[ai];
+            if (ai >= 0 && ai < s_tile_count) {
+                tile_t *p = &s_tiles[ai];
                 if (!p->content_live) materialize_content(ai);
                 if (p->tile) { lv_obj_set_x(p->tile, col * w); p->tile_col = col; }
             }
@@ -3321,7 +3358,7 @@ static void voice_overlay_set(bool on)
     // mode is decided by which one was pressed and dies with the utterance on its own.
     if (s_voice_overlay) set_hidden(s_voice_overlay, !on);
     if (on) {
-        for (int i = 0; i < s_proj_count; i++) free_content(i);
+        for (int i = 0; i < s_tile_count; i++) free_content(i);
     } else {
         update_content_window();
     }
@@ -3330,37 +3367,37 @@ static void voice_overlay_set(bool on)
 // Remove a project's tile (its session ended and the tmux pane is gone). Deletes the tile's LVGL
 // subtree, shifts the model over the hole, re-columns the remaining tiles so the swipe stays
 // gap-free, rebuilds the trailing settings tile, and re-focuses a valid tile. Safe if id is unknown.
-void ui_project_remove(const char *project_id)
+void ui_tile_remove(const char *chat_id)
 {
-    if (!project_id) return;
+    if (!chat_id) return;
     char active_id[48];
-    snprintf(active_id, sizeof(active_id), "%s", ui_get_active_project_id());
-    bool voice_aborted = active_id[0] && strcmp(active_id, project_id) == 0 && voice_active();
+    snprintf(active_id, sizeof(active_id), "%s", ui_active_tile_id());
+    bool voice_aborted = active_id[0] && strcmp(active_id, chat_id) == 0 && voice_active();
     if (voice_aborted) voice_abort();
 
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     if (i < 0) { display_unlock(); return; }
-    clear_removed_project_transients_locked(project_id, voice_aborted);
+    clear_removed_project_transients_locked(chat_id, voice_aborted);
 
     // Capture the page centered NOW (old modulo) so we keep viewing the SAME agent after the shift + remodulo.
     // By id, because delete shifts indices; if the removed agent itself was centered, we land on a neighbour.
     int cc_ring = ring_of_col(carousel_col());
     char keep_id[48] = "";
     if (cc_ring >= RING_LEAD && cc_ring < ring_agents_end())   // on a project
-        snprintf(keep_id, sizeof keep_id, "%s", s_proj[agent_of_ring(cc_ring)].id);
+        snprintf(keep_id, sizeof keep_id, "%s", s_tiles[agent_of_ring(cc_ring)].id);
 
     // Windowed model: free EVERY materialized agent tile first so the model shift below can't strand a tile
     // at a stale column — update_content_window rebuilds the window at the new columns. Free the removed
     // agent's PSRAM strings too (free_content only tears down LVGL, it preserves the model strings).
-    for (int k = 0; k < s_proj_count; k++) free_content(k);
-    free(s_proj[i].m_preview);
-    free(s_proj[i].m_full);
+    for (int k = 0; k < s_tile_count; k++) free_content(k);
+    free(s_tiles[i].m_preview);
+    free(s_tiles[i].m_full);
 
     // Shift the model down over the hole, then clear the vacated slot (pointers now live below it).
-    for (int k = i; k < s_proj_count - 1; k++) s_proj[k] = s_proj[k + 1];
-    s_proj_count--;
-    memset(&s_proj[s_proj_count], 0, sizeof(proj_t));
+    for (int k = i; k < s_tile_count - 1; k++) s_tiles[k] = s_tiles[k + 1];
+    s_tile_count--;
+    memset(&s_tiles[s_tile_count], 0, sizeof(tile_t));
 
     resize_spacer();           // scroll range shrank by one column
     rebuild_overview_tile();
@@ -3370,11 +3407,11 @@ void ui_project_remove(const char *project_id)
     // The viewed agent → its NEW index (re-found by id). If the removed agent WAS centered → the agent now
     // occupying its slot (clamped to the last).
     int target_ring;
-    if (s_proj_count == 0) {
+    if (s_tile_count == 0) {
         target_ring = ring_of_agent(0);        // empty slot at RING_LEAD = the "No projects" page
     } else {
         int ni = find_proj(keep_id);
-        int ai = (ni >= 0) ? ni : (i < s_proj_count ? i : s_proj_count - 1);
+        int ai = (ni >= 0) ? ni : (i < s_tile_count ? i : s_tile_count - 1);
         target_ring = ring_of_agent(ai);       // project index → ring
     }
     carousel_goto(col_for_ring_near(carousel_col(), target_ring), LV_ANIM_OFF);
@@ -3383,16 +3420,16 @@ void ui_project_remove(const char *project_id)
     display_unlock();
 }
 
-void ui_project_clear_all(void)
+void ui_tile_clear_all(void)
 {
     display_lock();
-    for (int i = 0; i < s_proj_count; i++) {
+    for (int i = 0; i < s_tile_count; i++) {
         free_content(i);
-        free(s_proj[i].m_preview);
-        free(s_proj[i].m_full);
+        free(s_tiles[i].m_preview);
+        free(s_tiles[i].m_full);
     }
-    memset(s_proj, 0, MAX_PROJECTS * sizeof(*s_proj));
-    s_proj_count = 0;
+    memset(s_tiles, 0, MAX_TILES * sizeof(*s_tiles));
+    s_tile_count = 0;
     resize_spacer();
     rebuild_overview_tile();
     rebuild_page_dots();
@@ -3405,16 +3442,16 @@ void ui_project_clear_all(void)
 // Create a tile for a new project (caller holds the lock). Returns index or -1 if full.
 static int add_proj(const char *id)
 {
-    if (s_proj_count >= MAX_PROJECTS) return -1;
+    if (s_tile_count >= MAX_TILES) return -1;
     // Adding a project grows the ring (N+1), which remaps EVERY column → the page you're viewing would
     // jump. Capture the ring centered now (old modulo). Project indices don't shift on append, so the ring
     // value still identifies the same page; re-anchor to it under the new modulo below.
-    int cc_ring = (s_proj_count > 0) ? ring_of_col(carousel_col()) : -1;
+    int cc_ring = (s_tile_count > 0) ? ring_of_col(carousel_col()) : -1;
     int  on_agent    = (cc_ring >= RING_LEAD && cc_ring < ring_agents_end()) ? agent_of_ring(cc_ring) : -1;
     bool keep_remote_reload_page = s_remote_online_reload &&
         (lv_screen_active() != scr_projects || !s_overview_active);
-    int i = s_proj_count++;
-    proj_t *p = &s_proj[i];
+    int i = s_tile_count++;
+    tile_t *p = &s_tiles[i];
     snprintf(p->id, sizeof(p->id), "%s", id);
     p->busy = NULL;
 
@@ -3458,19 +3495,40 @@ static void name_clip(const char *in, char *out, size_t cap)
     out[o] = '\0';
 }
 
-void ui_project_set_name(const char *project_id, const char *name)
+// The project a tile's chat lives in — the subtitle under its title. Empty hides the row rather than
+// drawing a blank line, so a tile whose project the app did not name keeps the geometry it had.
+void ui_tile_set_project(const char *chat_id, const char *project)
 {
-    if (!project_id || !name) return;
+    if (!chat_id || !project) return;
     display_lock();
-    int i = find_proj(project_id);
-    if (i < 0) i = add_proj(project_id);
+    int i = find_proj(chat_id);
+    if (i < 0) i = add_proj(chat_id);
+    if (i >= 0) {
+        char filtered[48];
+        utf8_filter(project, filtered, sizeof(filtered));   // same tofu-box guard the title gets
+        snprintf(s_tiles[i].project, sizeof s_tiles[i].project, "%s", filtered);
+        if (s_tiles[i].project_lbl) {
+            lv_label_set_text(s_tiles[i].project_lbl, s_tiles[i].project);
+            if (s_tiles[i].project[0]) lv_obj_clear_flag(s_tiles[i].project_lbl, LV_OBJ_FLAG_HIDDEN);
+            else                       lv_obj_add_flag(s_tiles[i].project_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    display_unlock();
+}
+
+void ui_tile_set_name(const char *chat_id, const char *name)
+{
+    if (!chat_id || !name) return;
+    display_lock();
+    int i = find_proj(chat_id);
+    if (i < 0) i = add_proj(chat_id);
     if (i >= 0) {
         char filtered[80];
         utf8_filter(name, filtered, sizeof(filtered));   // drop glyphs the font can't render (emoji/CJK) → no tofu box
         char clipped[80];
         name_clip(filtered, clipped, sizeof(clipped));
-        snprintf(s_proj[i].name, sizeof s_proj[i].name, "%s", clipped);   // MODEL: source of truth
-        if (s_proj[i].name_lbl) lv_label_set_text(s_proj[i].name_lbl, clipped);   // VIEW mirrors model (may be NULL when off-window)
+        snprintf(s_tiles[i].name, sizeof s_tiles[i].name, "%s", clipped);   // MODEL: source of truth
+        if (s_tiles[i].name_lbl) lv_label_set_text(s_tiles[i].name_lbl, clipped);   // VIEW mirrors model (may be NULL when off-window)
     }
     display_unlock();
 }
@@ -3489,7 +3547,7 @@ static const char *normalized_engine(const char *engine)
 
 // Store an agent's runtime-v1 profile (or "") and repaint its Model/Effort chips. Shared by the
 // authoritative setter (agent_synced) and the guarded reconcile (poll).
-static void apply_selected_model(proj_t *p, const char *model)
+static void apply_selected_model(tile_t *p, const char *model)
 {
     snprintf(p->model, sizeof(p->model), "%s", model ? model : "");
     parse_and_store(p);
@@ -3498,87 +3556,87 @@ static void apply_selected_model(proj_t *p, const char *model)
 }
 
 // Authoritative update (from agent_synced): always applies and clears any pending optimistic hold.
-void ui_project_set_selected_model(const char *project_id, const char *model)
+void ui_tile_set_selected_model(const char *chat_id, const char *model)
 {
-    if (!project_id) return;
+    if (!chat_id) return;
     display_lock();
-    int i = find_proj(project_id);
-    if (i >= 0) apply_selected_model(&s_proj[i], model);
+    int i = find_proj(chat_id);
+    if (i >= 0) apply_selected_model(&s_tiles[i], model);
     display_unlock();
 }
 
-void ui_project_set_engine(const char *project_id, const char *engine)
+void ui_tile_set_engine(const char *chat_id, const char *engine)
 {
-    if (!project_id) return;
+    if (!chat_id) return;
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     if (i >= 0) {
         const char *valid = normalized_engine(engine);
-        if (valid) snprintf(s_proj[i].engine, sizeof(s_proj[i].engine), "%s", valid);
-        else s_proj[i].engine[0] = '\0';
-        apply_engine_label(&s_proj[i]);
+        if (valid) snprintf(s_tiles[i].engine, sizeof(s_tiles[i].engine), "%s", valid);
+        else s_tiles[i].engine[0] = '\0';
+        apply_engine_label(&s_tiles[i]);
     }
     display_unlock();
 }
 
-void ui_project_fill_missing_engine(const char *engine)
+void ui_tile_fill_missing_engine(const char *engine)
 {
     const char *valid = normalized_engine(engine);
     if (!valid) return;
     display_lock();
-    for (int i = 0; i < s_proj_count; i++) {
-        if (s_proj[i].engine[0]) continue;
-        snprintf(s_proj[i].engine, sizeof(s_proj[i].engine), "%s", valid);
-        apply_engine_label(&s_proj[i]);
+    for (int i = 0; i < s_tile_count; i++) {
+        if (s_tiles[i].engine[0]) continue;
+        snprintf(s_tiles[i].engine, sizeof(s_tiles[i].engine), "%s", valid);
+        apply_engine_label(&s_tiles[i]);
     }
     display_unlock();
 }
 
-int ui_project_count(void)
+int ui_tile_count(void)
 {
-    return s_proj_count;
+    return s_tile_count;
 }
 
-int ui_get_active_project_index(void)
+int ui_active_tile_index(void)
 {
     display_lock();
-    int idx = (s_active_idx >= 0 && s_active_idx < s_proj_count ) ? s_active_idx : -1;
+    int idx = (s_active_idx >= 0 && s_active_idx < s_tile_count ) ? s_active_idx : -1;
     display_unlock();
     return idx;
 }
 
 // Copy the id of the tile at index `i` into `buf`. Returns false if out of range. For the
 // refresh poll's reconcile (drop tiles whose project is no longer in the fetched list).
-bool ui_project_id_at(int i, char *buf, size_t n)
+bool ui_tile_id_at(int i, char *buf, size_t n)
 {
     display_lock();
-    bool ok = (i >= 0 && i < s_proj_count);
-    if (ok && buf && n) snprintf(buf, n, "%s", s_proj[i].id);
+    bool ok = (i >= 0 && i < s_tile_count);
+    if (ok && buf && n) snprintf(buf, n, "%s", s_tiles[i].id);
     display_unlock();
     return ok;
 }
 
-bool ui_project_has_event(const char *project_id)
+bool ui_tile_has_event(const char *chat_id)
 {
-    if (!project_id || !project_id[0]) return false;
+    if (!chat_id || !chat_id[0]) return false;
     display_lock();
-    int i = find_proj(project_id);
-    bool has = i >= 0 && i < s_proj_count && s_proj[i].m_preview && s_proj[i].m_preview[0];
+    int i = find_proj(chat_id);
+    bool has = i >= 0 && i < s_tile_count && s_tiles[i].m_preview && s_tiles[i].m_preview[0];
     display_unlock();
     return has;
 }
 
-bool ui_project_is_busy(const char *project_id)
+bool ui_tile_is_busy(const char *chat_id)
 {
-    if (!project_id || !project_id[0]) return false;
+    if (!chat_id || !chat_id[0]) return false;
     display_lock();
-    int i = find_proj(project_id);
-    bool busy = i >= 0 && i < s_proj_count && s_proj[i].busy_model;
+    int i = find_proj(chat_id);
+    bool busy = i >= 0 && i < s_tile_count && s_tiles[i].busy_model;
     display_unlock();
     return busy;
 }
 
-bool ui_is_projects_active(void)
+bool ui_is_tiles_active(void)
 {
     return lv_screen_active() == scr_projects;
 }
@@ -3600,11 +3658,11 @@ int ui_notif_pull_zone_px(void)
     return on_project_page() ? 44 : 90;
 }
 
-void ui_focus_project(const char *project_id)
+void ui_focus_tile(const char *chat_id)
 {
-    if (!project_id) return;
+    if (!chat_id) return;
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     if (i >= 0) {
         carousel_goto(col_for_ring_near(carousel_col(), ring_of_agent(i)), LV_ANIM_OFF);   // nearest column showing agent i
         s_active_idx = i;
@@ -3631,11 +3689,11 @@ void ui_home_overview(void)
     display_unlock();
 }
 
-void ui_voice_routed(bool auto_sent, bool need_new, const char *route_id, const char *project_id,
+void ui_voice_routed(bool auto_sent, bool need_new, const char *route_id, const char *chat_id,
                      const char *transcript)
 {
     ESP_LOGI(TAG, "voice.transcript: auto=%d need_route=%d project='%s' heard='%s'",
-             auto_sent, need_new, project_id ? project_id : "", transcript ? transcript : "");
+             auto_sent, need_new, chat_id ? chat_id : "", transcript ? transcript : "");
     // grid-app answered → the routing wait is over. Drop the "Sending…" overlay so the UI is interactive
     // again (and busy_dots_tick stops holding it).
     display_lock();
@@ -3645,9 +3703,9 @@ void ui_voice_routed(bool auto_sent, bool need_new, const char *route_id, const 
     display_unlock();
     // The app named no project and could not work one out. Stay on the Overview: there is nothing to
     // focus and nothing this panel could pick that the app has not already declined to.
-    if (need_new || !project_id || !project_id[0]) return;
+    if (need_new || !chat_id || !chat_id[0]) return;
     // Switch the carousel to the project so the user sees it working.
-    ui_focus_project(project_id);
+    ui_focus_tile(chat_id);
     // `needsConfirm` was set: grid-app GUESSED the project and is holding the transcript until this panel
     // agrees. It agrees IMMEDIATELY, and that is worth saying plainly rather than dressing up: nobody is
     // asked. The carousel has just been moved to the guessed project, so the user does see where their
@@ -3659,7 +3717,28 @@ void ui_voice_routed(bool auto_sent, bool need_new, const char *route_id, const 
     // confirm" and the turn started in the same second. Making it real means a card here with the guessed
     // project and a way to pick another, which is UI that does not exist yet. Until it does, routing
     // accuracy is entirely the router's job (see kPanelRouteDeadline).
-    if (!auto_sent && route_id && route_id[0]) panel_client_voice_confirm(route_id, project_id);
+    if (!auto_sent && route_id && route_id[0]) panel_client_voice_confirm(route_id, chat_id);
+}
+
+// Put the voice UI away, whatever state it is in.
+//
+// UNCONDITIONAL, and that is the point. Every other release path is a condition — the periodic tick
+// clears the "Sending…" state only when it happens to observe `VIC_SEND && !voice_active() &&
+// !s_voice_routing`, and ui_voice_route_abort only fires for a route capture. A capture that ends with
+// NOTHING SENT (the speech gate never latched, or the link went) has no answer coming from anywhere, so
+// the screen must not be left depending on someone noticing: pressing Voice and stopping straight away
+// left the panel on the loading overlay, and the app-side log for it is empty — which is the tell, since
+// the app was never told a capture happened at all.
+//
+// Safe from any task: takes the lock itself, and every call inside is idempotent.
+void ui_voice_release(void)
+{
+    display_lock();
+    s_voice_routing = false;
+    s_voice_route_ms = 0;
+    voice_icon_apply(VIC_NONE);
+    voice_overlay_set(false);
+    display_unlock();
 }
 
 // Backend gave up on this route voice (empty transcript / STT or router error) — no agent will be picked.
@@ -3729,11 +3808,11 @@ static void notif_remove(const char *proj_id)
 static void open_agent_detail(const char *proj_id)
 {
     if (!proj_id || !proj_id[0]) return;
-    ui_focus_project(proj_id);          // takes the lock itself
+    ui_focus_tile(proj_id);          // takes the lock itself
     const char *text = NULL;
     display_lock();
     int i = find_proj(proj_id);
-    if (i >= 0 && !s_proj[i].busy_model) text = s_proj[i].m_full ? s_proj[i].m_full : s_proj[i].m_preview;
+    if (i >= 0 && !s_tiles[i].busy_model) text = s_tiles[i].m_full ? s_tiles[i].m_full : s_tiles[i].m_preview;
     display_unlock();
     if (text && text[0]) open_reader_text(text);   // takes the lock itself — must not nest
 }
@@ -3869,9 +3948,9 @@ static void notif_push(const char *proj_id, int i)
 {
     notif_t rec = {0};
     snprintf(rec.proj_id, sizeof rec.proj_id, "%s", proj_id);
-    const char *nm = s_proj[i].name[0] ? s_proj[i].name : proj_id;   // MODEL, not the widget
+    const char *nm = s_tiles[i].name[0] ? s_tiles[i].name : proj_id;   // MODEL, not the widget
     snprintf(rec.name, sizeof rec.name, "%s", nm ? nm : proj_id);
-    const char *sm = s_proj[i].m_preview ? s_proj[i].m_preview : "";
+    const char *sm = s_tiles[i].m_preview ? s_tiles[i].m_preview : "";
     snprintf(rec.summary, sizeof rec.summary, "%s", sm);
     rec.ms = lv_tick_get();
     rec.unread = true; rec.used = true;
@@ -3889,19 +3968,19 @@ static void notif_push(const char *proj_id, int i)
 //   open the drawer when ready — DON'T yank them off A.
 // - Screen OFF (user away): wake the panel and open the NOTIFICATION LIST (drawer) so they land straight
 //   on what finished.
-// Runs on the WS task under display_lock (like ui_project_emit); display_lock is recursive, so calling
+// Runs on the WS task under display_lock (like ui_tile_emit); display_lock is recursive, so calling
 // ui_notif_open (which locks) from here is safe.
-void ui_notify_task_done(const char *project_id)
+void ui_notify_task_done(const char *chat_id)
 {
-    if (!project_id || !project_id[0]) return;
+    if (!chat_id || !chat_id[0]) return;
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     if (i >= 0) {
         bool viewing = !display_is_asleep() && !s_overview_active && !s_settings_active
                        && !s_notif_open && s_active_idx == i;
         if (!viewing) {
             bool was_asleep = display_is_asleep();
-            notif_push(project_id, i);   // record it so the drawer/badge has the entry
+            notif_push(chat_id, i);   // record it so the drawer/badge has the entry
             if (was_asleep) {
                 // Woke from an off screen → open the notification list directly. ui_notif_open only opens
                 // over the projects carousel (not settings), so land there first.
@@ -3985,6 +4064,14 @@ static void ev_card_free(lv_event_t *e)
 }
 
 // Open the full-text reader on some event's text. Called by the swipe-up gesture (ui_swipe_vert).
+// What the reader shows for a turn that has a headline and no body.
+//
+// NOT the headline again. The tile is already showing it, unclipped, two centimetres away — repeating it
+// is the "two zones, one sentence" this protocol calls a bug in the reader, and it is worse than saying
+// nothing because it looks like the long form failed to load. A turn has no body until a model has
+// written one (docs/panel-protocol.md, "The tile shape").
+static const char *READER_NO_BODY = "No longer form for this one yet.";
+
 static void open_reader_text(const char *full)
 {
     if (!full || !full[0]) return;
@@ -3992,8 +4079,8 @@ static void open_reader_text(const char *full)
     lv_label_set_text(reader_lbl, full);   // no leading indent — the name pill now heads the screen
     // Top pill = the active tile's project/agent name (Figma "detail screen").
     if (s_reader_name) {
-        int i = (s_active_idx >= 0 && s_active_idx < s_proj_count) ? s_active_idx : -1;
-        const char *nm = (i >= 0 && s_proj[i].name[0]) ? s_proj[i].name : NULL;   // MODEL, not the widget
+        int i = (s_active_idx >= 0 && s_active_idx < s_tile_count) ? s_active_idx : -1;
+        const char *nm = (i >= 0 && s_tiles[i].name[0]) ? s_tiles[i].name : NULL;   // MODEL, not the widget
         lv_label_set_text(s_reader_name, (nm && nm[0] && strcmp(nm, "…") != 0) ? nm : "");
     }
     lv_obj_scroll_to_y(scr_reader, 0, LV_ANIM_OFF);
@@ -4024,7 +4111,7 @@ static void kind_style(const char *kind, const char **sym, lv_color_t *col)
 
 // Drop the transient "processing" dot row (if any) and restore the event card to full opacity.
 // The card is faded while processing so the blinking dots stand out; this un-fades it. Caller holds lock.
-static void clear_busy(proj_t *p)
+static void clear_busy(tile_t *p)
 {
     p->busy_model = false;   // model: turn is no longer processing (matters for off-window tiles too)
     if (p->tool_line) { lv_obj_delete(p->tool_line); p->tool_line = NULL; }  // drop the current-tool row
@@ -4045,12 +4132,12 @@ static void clear_busy(proj_t *p)
 
 // Update the working-status token counter for a project (from the backend's processing event).
 // No-op if the project isn't currently processing.
-void ui_project_set_busy_tokens(const char *project_id, int tokens)
+void ui_tile_set_busy_tokens(const char *chat_id, int tokens)
 {
-    if (!project_id || tokens < 0) return;
+    if (!chat_id || tokens < 0) return;
     display_lock();
-    int i = find_proj(project_id);
-    if (i >= 0 && s_proj[i].busy) { s_proj[i].busy_tokens = tokens; busy_compose(&s_proj[i]); }
+    int i = find_proj(chat_id);
+    if (i >= 0 && s_tiles[i].busy) { s_tiles[i].busy_tokens = tokens; busy_compose(&s_tiles[i]); }
     display_unlock();
 }
 
@@ -4071,8 +4158,8 @@ int ui_prune_stale_busy(void)
     int cleared = 0;
     display_lock();
     int64_t now = esp_timer_get_time();
-    for (int i = 0; i < s_proj_count; i++) {
-        proj_t *p = &s_proj[i];
+    for (int i = 0; i < s_tile_count; i++) {
+        tile_t *p = &s_tiles[i];
         if (!p->busy_model) { p->busy_last_ms = 0; continue; }
         if (p->busy_last_ms == 0) { p->busy_last_ms = now; continue; } // busy set without a stamp yet → arm it
         if (now - p->busy_last_ms < BUSY_TIMEOUT_US) continue;         // still receiving heartbeats → live turn
@@ -4118,14 +4205,14 @@ static lv_color_t kind_color(const char *kind)
 //   row 1 (inner ROW): the `tool` name in its kind's colour + the step's `label` (muted)
 //   row 2 (dt):        the raw `arg` — the command / query / url — hidden when empty
 // Overwrites each call; only while processing (needs p->busy).
-void ui_project_set_tool(const char *project_id, const char *tool_name, const char *title,
+void ui_tile_set_tool(const char *chat_id, const char *tool_name, const char *title,
                          const char *kind, const char *detail)
 {
-    if (!project_id || !tool_name || !tool_name[0]) return;
+    if (!chat_id || !tool_name || !tool_name[0]) return;
     display_lock();
-    int i = find_proj(project_id);
-    if (i < 0 || !s_proj[i].busy) { display_unlock(); return; }   // only during processing
-    proj_t *p = &s_proj[i];
+    int i = find_proj(chat_id);
+    if (i < 0 || !s_tiles[i].busy) { display_unlock(); return; }   // only during processing
+    tile_t *p = &s_tiles[i];
     // When a todo checklist or a sub-agent list is on screen it already fills the space — don't also
     // show the current-tool block. Otherwise show it as usual.
     if (p->todo || p->agents) {
@@ -4235,14 +4322,14 @@ void ui_project_set_tool(const char *project_id, const char *tool_name, const ch
 // backend as {text, color} (title unused). text = "› {desc}" (orange, running) / "✓ {desc} · Xs" (green,
 // done) — the description of the work, not the agent type. Backend sends the FULL list each change (like
 // todos); this rebuilds it. Only while processing (needs p->busy). Empty/NULL array clears the list.
-void ui_project_set_agents(const char *project_id, const struct cJSON *agents_)
+void ui_tile_set_agents(const char *chat_id, const struct cJSON *agents_)
 {
     const cJSON *agents = (const cJSON *)agents_;
-    if (!project_id) return;
+    if (!chat_id) return;
     display_lock();
-    int i = find_proj(project_id);
-    if (i < 0 || !s_proj[i].busy) { display_unlock(); return; }   // only during processing
-    proj_t *p = &s_proj[i];
+    int i = find_proj(chat_id);
+    if (i < 0 || !s_tiles[i].busy) { display_unlock(); return; }   // only during processing
+    tile_t *p = &s_tiles[i];
     if (p->agents) { lv_obj_delete(p->agents); p->agents = NULL; }   // rebuild from scratch each time
 
     int n = (agents && cJSON_IsArray(agents)) ? cJSON_GetArraySize(agents) : 0;
@@ -4309,16 +4396,16 @@ void ui_project_set_agents(const char *project_id, const struct cJSON *agents_)
 // equivalent of "ran, but never reported back". Sharing one code path between the two would make one of
 // them wrong, which is why this reads `text`/`status` and its own three words rather than calling out to
 // whatever the step side does.
-void ui_project_set_todos(const char *project_id, const struct cJSON *todos_)
+void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
 {
     const cJSON *todos = (const cJSON *)todos_;
-    if (!project_id) return;
+    if (!chat_id) return;
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     // Only render into a materialized tile (todos build into p->body). Off-window: skip — the checklist
     // re-streams from the next live todos event once the tile is swiped into view.
-    if (i < 0 || !s_proj[i].content_live) { display_unlock(); return; }
-    proj_t *p = &s_proj[i];
+    if (i < 0 || !s_tiles[i].content_live) { display_unlock(); return; }
+    tile_t *p = &s_tiles[i];
     if (p->todo) { lv_obj_delete(p->todo); p->todo = NULL; p->todo_active = NULL; }
 
     int n = (todos && cJSON_IsArray(todos)) ? cJSON_GetArraySize(todos) : 0;
@@ -4419,15 +4506,15 @@ void ui_project_set_todos(const char *project_id, const struct cJSON *todos_)
 
 // Apply either a live commander event or a persisted historical recap. A restored recap updates the
 // card underneath Working but must never own/clear the live turn lifecycle.
-static void project_apply_event(const char *project_id, const char *kind,
+static void project_apply_event(const char *chat_id, const char *kind,
                                 const char *text, const char *recap, bool restored)
 {
-    const char *pid = (project_id && project_id[0]) ? project_id : "(none)";
+    const char *pid = (chat_id && chat_id[0]) ? chat_id : "(none)";
     display_lock();
     int i = find_proj(pid);
     if (i < 0) i = add_proj(pid);
     if (i < 0) { display_unlock(); return; }
-    proj_t *p = &s_proj[i];
+    tile_t *p = &s_tiles[i];
 
     bool live = p->content_live;   // is this tile's content on-screen? if not, we only update the model
 
@@ -4544,23 +4631,23 @@ static void project_apply_event(const char *project_id, const char *kind,
 }
 
 // Append a live commander event to a project's tile, keeping only the last MAX_EVENTS.
-void ui_project_emit(const char *project_id, const char *kind, const char *text, const char *recap)
+void ui_tile_emit(const char *chat_id, const char *kind, const char *text, const char *recap)
 {
-    project_apply_event(project_id, kind, text, recap, false);
+    project_apply_event(chat_id, kind, text, recap, false);
 }
 
-void ui_project_restore_event(const char *project_id, const char *kind, const char *text, const char *recap)
+void ui_tile_restore_event(const char *chat_id, const char *kind, const char *text, const char *recap)
 {
-    project_apply_event(project_id, kind, text, recap, true);
+    project_apply_event(chat_id, kind, text, recap, true);
 }
 
-void ui_project_clear_event(const char *project_id)
+void ui_tile_clear_event(const char *chat_id)
 {
-    if (!project_id || !project_id[0]) return;
+    if (!chat_id || !chat_id[0]) return;
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     if (i < 0) { display_unlock(); return; }
-    proj_t *p = &s_proj[i];
+    tile_t *p = &s_tiles[i];
     free(p->m_preview); p->m_preview = NULL;
     free(p->m_full);    p->m_full = NULL;
     p->m_col = COL_FG;
@@ -4749,9 +4836,9 @@ static void q_cancel(void)
     if (ri >= 0) { carousel_goto(col_for_ring_near(carousel_col(), ring_of_agent(ri)), LV_ANIM_OFF); s_active_idx = ri; update_content_window(); }
 }
 
-// Called by ui_project_remove while the display lock is held. Process lifetime wins over transient UI:
+// Called by ui_tile_remove while the display lock is held. Process lifetime wins over transient UI:
 // a deleted active/busy agent cannot leave a capture overlay or an AskUserQuestion screen orphaned.
-static void clear_removed_project_transients_locked(const char *project_id, bool voice_aborted)
+static void clear_removed_project_transients_locked(const char *chat_id, bool voice_aborted)
 {
     if (voice_aborted) {
         s_voice_routing = false;
@@ -4760,7 +4847,7 @@ static void clear_removed_project_transients_locked(const char *project_id, bool
         voice_overlay_set(false);
         update_stop_btn();
     }
-    if (s_q.active && strcmp(s_q.project, project_id) == 0) {
+    if (s_q.active && strcmp(s_q.project, chat_id) == 0) {
         memset(&s_q, 0, sizeof(s_q));
         if (lv_screen_active() == scr_question) lv_screen_load(scr_projects);
     }
@@ -4783,7 +4870,7 @@ static void q_opt_tap(lv_event_t *e)
     display_unlock();
 }
 
-void ui_question_show(const char *project_id, const char *id, const char *summary,
+void ui_question_show(const char *chat_id, const char *id, const char *summary,
                       const char *command, const struct cJSON *options)
 {
     if (!id || !id[0] || !options) return;
@@ -4792,7 +4879,7 @@ void ui_question_show(const char *project_id, const char *id, const char *summar
     if (s_q.active && strcmp(s_q.id, id) == 0) { display_unlock(); return; }
     memset(&s_q, 0, sizeof(s_q));
     snprintf(s_q.id, sizeof(s_q.id), "%s", id);
-    snprintf(s_q.project, sizeof(s_q.project), "%s", project_id ? project_id : "");
+    snprintf(s_q.project, sizeof(s_q.project), "%s", chat_id ? chat_id : "");
     snprintf(s_q.summary, sizeof(s_q.summary), "%s", summary ? summary : "");
     snprintf(s_q.command, sizeof(s_q.command), "%s", command ? command : "");
 
@@ -4827,9 +4914,9 @@ void ui_question_show(const char *project_id, const char *id, const char *summar
 //
 // Matched on the id so a cancel for a question this panel already answered, or never saw, is a no-op
 // rather than a screen change.
-void ui_question_cancel(const char *project_id, const char *id)
+void ui_question_cancel(const char *chat_id, const char *id)
 {
-    (void)project_id;
+    (void)chat_id;
     display_lock();
     if (s_q.active && id && strcmp(s_q.id, id) == 0) {
         ESP_LOGI(TAG, "question.cancel %s", id);
@@ -4872,8 +4959,8 @@ static void tile_changed(lv_event_t *e)
     rebuild_page_dots();       // move the green sparkle to the newly-centered page
     // Swiping onto an agent's tile = the user saw it → drop that agent's notification (if any).
     if (!s_overview_active && !s_settings_active &&
-        s_active_idx >= 0 && s_active_idx < s_proj_count && s_proj[s_active_idx].id[0]) {
-        notif_remove(s_proj[s_active_idx].id);
+        s_active_idx >= 0 && s_active_idx < s_tile_count && s_tiles[s_active_idx].id[0]) {
+        notif_remove(s_tiles[s_active_idx].id);
     }
     update_stop_btn();    // STOP follows the newly-visible tile's processing state (hidden on settings)
     voice_btn_apply_visibility();
@@ -4902,12 +4989,14 @@ bool ui_voice_is_active(void)    { return voice_active(); }
 void ui_tap(void)
 {
     if (lv_screen_active() == scr_reader) { reader_close(NULL); return; }
-    if (on_project_page() && s_active_idx >= 0 && s_active_idx < s_proj_count) {
-        proj_t *p = &s_proj[s_active_idx];
+    if (on_project_page() && s_active_idx >= 0 && s_active_idx < s_tile_count) {
+        tile_t *p = &s_tiles[s_active_idx];
         // While the agent is working, the tile shows the LIVE status ("Cooking… 34s" + tool line); the
         // reader would only show the PREVIOUS turn's stale text. Keep the live view — don't open detail.
         if (p->busy_model) return;
-        open_reader_text(p->m_full ? p->m_full : p->m_preview);   // no-op if the project has no content yet
+        // The headline is on the tile; the reader shows the BODY or says there is none. Still a no-op
+        // when the tile has nothing at all — there is no turn to read about.
+        if (p->m_preview) open_reader_text(p->m_full && p->m_full[0] ? p->m_full : READER_NO_BODY);
     }
 }
 
@@ -4917,10 +5006,10 @@ void ui_swipe_vert(int dir)
 {
     if (dir > 0) {                   // swipe up
         if (!on_project_page()) return;
-        if (s_active_idx < 0 || s_active_idx >= s_proj_count) return;
-        proj_t *p = &s_proj[s_active_idx];
+        if (s_active_idx < 0 || s_active_idx >= s_tile_count) return;
+        tile_t *p = &s_tiles[s_active_idx];
         if (p->busy_model) return;   // working → keep the live tile, don't open the stale detail reader
-        open_reader_text(p->m_full ? p->m_full : p->m_preview);
+        if (p->m_preview) open_reader_text(p->m_full && p->m_full[0] ? p->m_full : READER_NO_BODY);
     } else {                         // swipe down
         if (lv_screen_active() != scr_reader) return;
         if (lv_obj_get_scroll_y(scr_reader) > 0) return;   // not at the top → let LVGL scroll instead
@@ -4946,9 +5035,9 @@ void ui_boot_pressed(void)
     // the projects screen) so an accidental press can't kill it. Nothing running → ignore.
     display_lock();
     bool q = s_q.active;
-    int idx = (s_active_idx >= 0 && s_active_idx < s_proj_count) ? s_active_idx : 0;
-    bool processing = (!q && s_proj_count > 0 && !s_overview_active && !s_settings_active
-                       && s_proj[idx].busy != NULL);
+    int idx = (s_active_idx >= 0 && s_active_idx < s_tile_count) ? s_active_idx : 0;
+    bool processing = (!q && s_tile_count > 0 && !s_overview_active && !s_settings_active
+                       && s_tiles[idx].busy != NULL);
     if (q) { display_unlock(); q_back_tap(NULL); return; }
     if (processing) {
         ESP_LOGI(TAG, "BOOT → show 'Cancel task?' confirm");
@@ -4976,18 +5065,18 @@ static void cancel_confirm_yes(lv_event_t *e)
 
 // Interrupt the visible project's turn.
 //
-// KEYED ON THE PROJECT, where the reference keyed on a session id. `turn.stop` carries `projectId` and
+// KEYED ON THE CHAT, where the reference keyed on a session id. `turn.stop` carries `chatId` and
 // nothing else, and the id travels precisely because the panel can stop a project the desktop does not
 // have open (docs/panel-protocol.md §2). The panel never sees a conversation, so there is no session here
 // to name one with.
 void ui_stop_active_turn(void)
 {
     display_lock();
-    int idx = (s_active_idx >= 0 && s_active_idx < s_proj_count) ? s_active_idx : 0;
-    bool processing = (s_proj_count > 0 && !s_overview_active && !s_settings_active
-                       && s_proj[idx].busy != NULL);
+    int idx = (s_active_idx >= 0 && s_active_idx < s_tile_count) ? s_active_idx : 0;
+    bool processing = (s_tile_count > 0 && !s_overview_active && !s_settings_active
+                       && s_tiles[idx].busy != NULL);
     char pid[ID_MAX];
-    snprintf(pid, sizeof(pid), "%s", processing ? s_proj[idx].id : "");
+    snprintf(pid, sizeof(pid), "%s", processing ? s_tiles[idx].id : "");
     display_unlock();
     if (!processing || !pid[0]) return;   // nothing running → do nothing
     ESP_LOGI(TAG, "STOP → turn.stop %s", pid);
@@ -4995,7 +5084,7 @@ void ui_stop_active_turn(void)
     // Optimistic: drop the tile's Working row now. `turn.done` will also clear it — the app answers a stop
     // with one — so this only makes the tap feel immediate.
     display_lock();
-    if (s_proj_count > 0) clear_busy(&s_proj[idx]);
+    if (s_tile_count > 0) clear_busy(&s_tiles[idx]);
     update_stop_btn();
     display_unlock();
 }
@@ -5013,7 +5102,7 @@ static void stop_event(lv_event_t *e)
 // The reference had a companion ui_get_active_session_id(); it is gone. `turn.send`, `turn.stop` and
 // `answer` all key on the PROJECT — the panel never sees a conversation, and grid-app decides which one
 // the words go into (docs/panel-protocol.md §2).
-const char *ui_get_active_project_id(void)
+const char *ui_active_tile_id(void)
 {
     static char out[ID_MAX];
     out[0] = '\0';
@@ -5021,9 +5110,9 @@ const char *ui_get_active_project_id(void)
     // Settings excluded deliberately: this is what voice_start_impl asks to decide whether the user named
     // a project or spoke from a screen that names none. Answering with the last project looked at would
     // make a sentence spoken on the Settings page dispatch itself into it.
-    if (s_proj_count > 0 && !s_overview_active && !s_settings_active) {
-        int idx = (s_active_idx >= 0 && s_active_idx < s_proj_count) ? s_active_idx : 0;
-        snprintf(out, sizeof(out), "%s", s_proj[idx].id);
+    if (s_tile_count > 0 && !s_overview_active && !s_settings_active) {
+        int idx = (s_active_idx >= 0 && s_active_idx < s_tile_count) ? s_active_idx : 0;
+        snprintf(out, sizeof(out), "%s", s_tiles[idx].id);
     }
     display_unlock();
     return out;
@@ -5055,15 +5144,15 @@ static void voice_start_impl(voice_cmd_t cmd)
     // with the lead in, including one with grid-app closed. Recording into that is recording into nothing.
     if (!panel_client_is_connected()) { ESP_LOGW(TAG, "voice: no session with grid-app"); return; }
     char pid_buf[ID_MAX];
-    snprintf(pid_buf, sizeof(pid_buf), "%s", ui_get_active_project_id());   // its buffer is static; copy it
+    snprintf(pid_buf, sizeof(pid_buf), "%s", ui_active_tile_id());   // its buffer is static; copy it
     const char *pid = pid_buf;
     bool route = false;
     if (!pid[0]) {
         // No focused project tile. From the OVERVIEW both a normal voice turn and a GOAL press are ROUTE
-        // turns: `voice.begin` OMITS `projectId` and grid-app has to work out where the transcript goes —
+        // turns: `voice.begin` OMITS `chatId` and grid-app has to work out where the transcript goes —
         // and, when it has to guess, answer with `needsConfirm` rather than dispatch.
         display_lock(); bool overview = s_overview_active; display_unlock();
-        if (!overview) { ESP_LOGW(TAG, "voice: no active project tile"); return; }
+        if (!overview) { ESP_LOGW(TAG, "voice: no active chat tile"); return; }
         route = true;
     }
     ESP_LOGI(TAG, "voice start: %s", route ? "ROUTE(overview)" : pid);
@@ -5071,8 +5160,8 @@ static void voice_start_impl(voice_cmd_t cmd)
     // behind it. Guarded on the tile actually processing: `turn.stop` on an idle project is not a no-op at
     // the far end — it ends a turn that was not running and the tile reports the cancellation.
     display_lock();
-    int aidx = (s_active_idx >= 0 && s_active_idx < s_proj_count) ? s_active_idx : 0;
-    bool processing = (!route && s_proj_count > 0 && s_proj[aidx].busy != NULL);   // route has no focused project
+    int aidx = (s_active_idx >= 0 && s_active_idx < s_tile_count) ? s_active_idx : 0;
+    bool processing = (!route && s_tile_count > 0 && s_tiles[aidx].busy != NULL);   // route has no focused project
     display_unlock();
     if (processing) { ESP_LOGI(TAG, "voice → interrupt the running turn first (%s)", pid); panel_client_stop_project(pid); }
     // Show the mic indicator (red) — it's hidden whenever we're not recording. Clear the active tile's
@@ -5092,7 +5181,7 @@ static void voice_start_impl(voice_cmd_t cmd)
     voice_icon_apply(VIC_MIC);                    // press → mic icon
     voice_overlay_set(true);                      // dark overlay + free all tile content (RAM for the upload)
     lv_timer_create(vic_to_rec_cb, 450, NULL);    // → recording bars after a brief beat
-    if (!route && s_proj_count > 0) clear_busy(&s_proj[aidx]);
+    if (!route && s_tile_count > 0) clear_busy(&s_tiles[aidx]);
     update_stop_btn();
     display_unlock();
     // NULL project id on a route turn: `voice.begin` then omits the key entirely, and that ABSENCE is the
@@ -5143,7 +5232,7 @@ void ui_scroll_benchmark(int passes)
 {
     if (passes < 1) passes = 1;
     if (passes > 20) passes = 20;
-    // No guard on s_proj_count: with none the ring is still two pages (the Overview and the empty page)
+    // No guard on s_tile_count: with none the ring is still two pages (the Overview and the empty page)
     // and scrolling between them is exactly the measurement that isolates the frame from the content.
     for (int p = 0; p < passes; p++) {
         for (int r = 0; r < ring_len(); r++) {
@@ -5237,11 +5326,11 @@ void ui_fw_failed(const char *message)
 //
 // Reads the MODEL, not the widgets — an off-window project holds no LVGL objects at all but its turn is
 // just as real.
-bool ui_any_project_busy(void)
+bool ui_any_tile_busy(void)
 {
     display_lock();
     bool busy = false;
-    for (int i = 0; i < s_proj_count && !busy; i++) busy = s_proj[i].busy_model;
+    for (int i = 0; i < s_tile_count && !busy; i++) busy = s_tiles[i].busy_model;
     display_unlock();
     return busy;
 }
@@ -5257,19 +5346,19 @@ bool ui_any_project_busy(void)
 //
 // ⚠️ THE DEVICE MUST NOT TIMESTAMP A STEP WHEN IT FIRST SEES IT. The app re-sends the whole timeline
 // after a panel reboot, and every step would then read as having just begun.
-void ui_project_turn_started(const char *project_id)
+void ui_tile_turn_started(const char *chat_id)
 {
-    if (!project_id || !project_id[0]) return;
+    if (!chat_id || !chat_id[0]) return;
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     if (i >= 0) {
-        s_proj[i].busy_since = esp_timer_get_time();
-        s_proj[i].busy_tokens = 0;
+        s_tiles[i].busy_since = esp_timer_get_time();
+        s_tiles[i].busy_tokens = 0;
     }
     display_unlock();
     // Outside the branch on purpose: `turn.started` for a project this panel has never heard of still has
     // to create its tile, and emit does that.
-    ui_project_emit(project_id, "processing", "", NULL);
+    ui_tile_emit(chat_id, "processing", "", NULL);
 }
 
 // The recap card's tint, from `recapKind`.
@@ -5277,21 +5366,21 @@ void ui_project_turn_started(const char *project_id)
 // **An unrecognised value is drawn as `done`, never as an error.** Guessing "failed" on a turn that worked
 // is the worse of the two mistakes: it invites someone to go and look for a problem that is not there,
 // where the reverse merely under-sells one they will find in the recap anyway.
-void ui_project_set_recap_kind(const char *project_id, const char *recap_kind)
+void ui_tile_set_recap_kind(const char *chat_id, const char *recap_kind)
 {
-    if (!project_id || !project_id[0]) return;
+    if (!chat_id || !chat_id[0]) return;
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     if (i >= 0) {
         lv_color_t col = COL_FG;
         if (recap_kind && strcmp(recap_kind, "failed") == 0) col = COL_RED;
         else if (recap_kind && strcmp(recap_kind, "stopped") == 0) col = COL_MUTED;
-        s_proj[i].m_col = col;
+        s_tiles[i].m_col = col;
         // Repaint only a card that is actually on screen; an off-window tile rebuilds from m_col on entry.
-        if (s_proj[i].content_live && s_proj[i].list) {
-            uint32_t n = lv_obj_get_child_count(s_proj[i].list);
+        if (s_tiles[i].content_live && s_tiles[i].list) {
+            uint32_t n = lv_obj_get_child_count(s_tiles[i].list);
             if (n > 0) {
-                lv_obj_t *card = lv_obj_get_child(s_proj[i].list, n - 1);
+                lv_obj_t *card = lv_obj_get_child(s_tiles[i].list, n - 1);
                 lv_obj_t *lbl = card ? lv_obj_get_child(card, 0) : NULL;
                 if (lbl) lv_obj_set_style_text_color(lbl, col, 0);
             }
@@ -5302,17 +5391,17 @@ void ui_project_set_recap_kind(const char *project_id, const char *recap_kind)
 
 // The long form of the last recap, from the `summary` message — what the detail reader shows.
 //
-// OVERWRITES, never appends: it is keyed by projectId and describes THE LAST COMPLETED TURN. It also
+// OVERWRITES, never appends: it is keyed by chatId and describes THE LAST COMPLETED TURN. It also
 // arrives late and may never arrive at all (no model reachable, the call failed), which is why the reader
 // has to read as "nothing more to show" rather than as loading forever — it does, because it simply keeps
 // showing the one-line recap the tile already has.
-void ui_project_set_summary(const char *project_id, const char *text)
+void ui_tile_set_summary(const char *chat_id, const char *text)
 {
-    if (!project_id || !project_id[0] || !text || !text[0]) return;
+    if (!chat_id || !chat_id[0] || !text || !text[0]) return;
     display_lock();
-    int i = find_proj(project_id);
+    int i = find_proj(chat_id);
     if (i < 0) { display_unlock(); return; }
-    proj_t *p = &s_proj[i];
+    tile_t *p = &s_tiles[i];
     static char clean[2100];
     utf8_filter(text, clean, sizeof(clean));
     char *next = dup_str(clean);

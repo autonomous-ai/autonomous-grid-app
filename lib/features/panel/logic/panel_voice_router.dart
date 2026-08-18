@@ -24,6 +24,19 @@ import '../../playground/logic/one_shot_target.dart';
 /// is a turn someone has to notice, stop, and say again.
 const Duration kPanelRouteDeadline = Duration(seconds: 30);
 
+/// How many chats the router is shown at once.
+///
+/// A tile per chat means the machine can have a hundred of them, and the whole
+/// list is neither affordable nor useful: the model would be asked to hold every
+/// conversation on the computer in mind to place one sentence, and long lists
+/// are where it starts picking on surface word-matches. Twenty, from the front
+/// of the panel's own tile order — which is "talked in most recently" — is where
+/// a spoken sentence belongs nearly every time.
+///
+/// The prompt says the list was cut, so a model that recognises none of them
+/// still answers with the closest rather than inventing one.
+const int kPanelRouteCandidates = 20;
+
 /// Above this the app treats the pick as settled and dispatches; below it, the
 /// panel is asked to confirm.
 ///
@@ -33,7 +46,7 @@ const Duration kPanelRouteDeadline = Duration(seconds: 30);
 /// repository is the failure the confirm step exists to prevent.
 const double kPanelRouteConfident = 0.85;
 
-/// One project the router may choose between.
+/// One conversation the router may choose between.
 class PanelRouteCandidate {
   const PanelRouteCandidate({
     required this.id,
@@ -44,20 +57,20 @@ class PanelRouteCandidate {
   final String id;
   final String name;
 
-  /// The project's last few headlines, newest first, joined. Empty when it has
-  /// no history — which the prompt says out loud rather than leaving blank.
+  /// The chat's last few headlines, newest first, joined. Empty when it has no
+  /// history — which the prompt says out loud rather than leaving blank.
   final String recent;
 }
 
 /// Where the router decided a spoken sentence belongs.
 class PanelRouteDecision {
   const PanelRouteDecision({
-    required this.projectId,
+    required this.chatId,
     required this.confidence,
     required this.reason,
   });
 
-  final String projectId;
+  final String chatId;
 
   /// 0..1. Drives whether the panel is asked to confirm.
   final double confidence;
@@ -97,7 +110,7 @@ class PanelVoiceRouter {
     // answer cannot be wrong and the call costs a second of someone's attention.
     if (candidates.length == 1) {
       return PanelRouteDecision(
-        projectId: candidates.first.id,
+        chatId: candidates.first.id,
         confidence: 1,
         reason: 'the only project on this computer',
       );
@@ -156,23 +169,24 @@ String buildPanelRoutePrompt(
       )
       .join('\n');
   return 'You are a ROUTER. Assign ONE incoming voice task to the single best-fit '
-      'project from the fixed list below. You MUST always choose exactly one '
-      'project from the list — there is NO "none" option and you may NOT '
-      'decline. The project NAME is a strong signal — people name a project '
-      'after the thing it is ("payments-api", "Tài chính", "DevOps"). Each '
-      "project's RECENT activity disambiguates when names alone are ambiguous. "
-      'If nothing matches well, still pick the CLOSEST project and give it a low '
-      'confidence.\n\n'
+      'conversation from the fixed list below. The list is the most recently '
+      'used conversations on this computer and MAY NOT contain the ideal one. '
+      'You MUST always choose exactly one from the list — there is NO "none" '
+      'option and you may NOT decline. Each entry is "<chat title> — <project>"; '
+      'both matter, and the TITLE is the stronger signal because a chat is named '
+      "after what it is about. Each one's RECENT activity disambiguates when "
+      'titles alone are ambiguous. If nothing matches well, still pick the '
+      'CLOSEST and give it a low confidence.\n\n'
       'Voice task (verbatim; may be Vietnamese — do NOT translate it): '
       '"$transcript"\n\n'
-      'Projects:\n$lines\n\n'
-      'Always pick exactly one project id from the list above. Set confidence '
+      'Conversations:\n$lines\n\n'
+      'Always pick exactly one id from the list above. Set confidence '
       '0..1 for how good the fit is:\n'
-      '- 0.85+ when the name and/or recent activity clearly match\n'
+      '- 0.85+ when the title and/or recent activity clearly match\n'
       "- ~0.6 when it's a reasonable but not certain match\n"
-      '- ~0.3 when nothing fits well but this is the closest project.\n\n'
+      '- ~0.3 when nothing fits well but this is the closest one.\n\n'
       'Respond with ONLY a single JSON object, no prose, no markdown fence:\n'
-      '{"projectId":"<one id from the list>","confidence":<0..1>,'
+      '{"chatId":"<one id from the list>","confidence":<0..1>,'
       '"reason":"<max 12 words>"}';
 }
 
@@ -194,7 +208,7 @@ PanelRouteDecision parsePanelRoute(
 ) {
   final ids = {for (final c in candidates) c.id};
   final fallback = PanelRouteDecision(
-    projectId: candidates.first.id,
+    chatId: candidates.first.id,
     confidence: 0,
     reason: 'closest project (the router did not answer)',
   );
@@ -209,7 +223,7 @@ PanelRouteDecision parsePanelRoute(
   }
   if (decoded is! Map) return fallback;
 
-  final projectId = '${decoded['projectId'] ?? ''}'.trim();
+  final chatId = '${decoded['chatId'] ?? ''}'.trim();
   final confidence = switch (decoded['confidence']) {
     final num value => value.toDouble(),
     final String value => double.tryParse(value) ?? 0,
@@ -221,15 +235,15 @@ PanelRouteDecision parsePanelRoute(
   // An id the app never offered is the model inventing a project. Treated as a
   // parse failure rather than trusted, but its confidence is capped instead of
   // discarded: it still read the list, so its uncertainty is worth keeping.
-  if (projectId.isEmpty || !ids.contains(projectId)) {
+  if (chatId.isEmpty || !ids.contains(chatId)) {
     return PanelRouteDecision(
-      projectId: candidates.first.id,
+      chatId: candidates.first.id,
       confidence: confidence < 0.3 ? confidence : 0.3,
-      reason: clipped.isEmpty ? 'closest project' : clipped,
+      reason: clipped.isEmpty ? 'closest chat' : clipped,
     );
   }
   return PanelRouteDecision(
-    projectId: projectId,
+    chatId: chatId,
     confidence: confidence,
     reason: clipped,
   );
