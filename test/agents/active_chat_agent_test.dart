@@ -6,7 +6,6 @@ import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
-import 'package:grid_app/features/agents/logic/adapters/pi_tool.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_grid_support.dart';
@@ -38,7 +37,6 @@ ProviderContainer _container({
   required bool hermes,
   required bool codex,
   bool claude = false,
-  bool pi = false,
   Set<AgentTool> blocked = const {},
   Project? project,
 }) {
@@ -53,11 +51,6 @@ ProviderContainer _container({
       hermesInstalledProvider.overrideWithValue(hermes),
       codexInstalledProvider.overrideWithValue(codex),
       claudeInstalledProvider.overrideWithValue(claude),
-      // Every agent is answered for, including the ones a test doesn't care
-      // about: an un-stubbed one falls through to the real machine's PATH, and
-      // on a computer with Pi installed "nothing is installed" quietly became
-      // "Pi is" — two tests then asserted about this machine, not about the code.
-      piInstalledProvider.overrideWithValue(pi),
       agentRunsOnGridProvider.overrideWith(
         (ref, tool) => !blocked.contains(tool),
       ),

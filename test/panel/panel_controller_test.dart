@@ -9,7 +9,6 @@ import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
-import 'package:grid_app/features/agents/logic/adapters/pi_tool.dart';
 import 'package:grid_app/features/agents/logic/agent_permissions.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
@@ -1447,7 +1446,6 @@ void main() {
           ),
           codexPathProvider.overrideWithValue(null),
           claudePathProvider.overrideWithValue(null),
-          piPathProvider.overrideWithValue(null),
           hermesChatSenderProvider.overrideWithValue(agent ?? _HeldTurn()),
           chatSenderProvider.overrideWithValue(agent ?? _HeldTurn()),
           // A turn stamps its reply with the machine behind the model; without

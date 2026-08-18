@@ -14,13 +14,7 @@ enum ShareTarget {
   hermes('Hermes', [AgentTool.hermes]),
   codex('Codex', [AgentTool.codex]),
   claude('Claude Code', [AgentTool.claude]),
-  pi('Pi', [AgentTool.pi]),
-  all('all agents', [
-    AgentTool.hermes,
-    AgentTool.codex,
-    AgentTool.claude,
-    AgentTool.pi,
-  ]);
+  all('all agents', [AgentTool.hermes, AgentTool.codex, AgentTool.claude]);
 
   const ShareTarget(this.label, this.agents);
 
@@ -41,7 +35,6 @@ SkillSource skillFolderOf(AgentTool agent) => switch (agent) {
   AgentTool.hermes => SkillSource.hermes,
   AgentTool.codex => SkillSource.codex,
   AgentTool.claude => SkillSource.claude,
-  AgentTool.pi => SkillSource.pi,
 };
 
 /// Copies a skill from one folder into an agent's own.

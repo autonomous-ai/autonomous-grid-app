@@ -33,8 +33,7 @@ enum SkillSource {
   store('Library'),
   hermes('Hermes'),
   codex('Codex'),
-  claude('Claude Code'),
-  pi('Pi');
+  claude('Claude Code');
 
   const SkillSource(this.label);
 
@@ -46,8 +45,6 @@ enum SkillSource {
     SkillSource.hermes => Directory('$home/.hermes/skills'),
     SkillSource.codex => Directory('$home/.codex/skills'),
     SkillSource.claude => Directory('$home/.claude/skills'),
-    // Pi keeps its skills a level down, under its agent config dir.
-    SkillSource.pi => Directory('$home/.pi/agent/skills'),
   };
 
   /// The agent this folder belongs to, or null for the library.
@@ -56,7 +53,6 @@ enum SkillSource {
     SkillSource.hermes => AgentTool.hermes,
     SkillSource.codex => AgentTool.codex,
     SkillSource.claude => AgentTool.claude,
-    SkillSource.pi => AgentTool.pi,
   };
 }
 
@@ -71,7 +67,6 @@ const List<SkillSource> kSkillTabs = [
   SkillSource.hermes,
   SkillSource.codex,
   SkillSource.claude,
-  SkillSource.pi,
 ];
 
 /// The assistants the Skills screen manages — [kSkillTabs] as agents.
@@ -99,7 +94,6 @@ Directory agentSkillCopy(
   AgentTool.hermes => Directory('${SkillSource.hermes.root(home).path}/$slug'),
   AgentTool.codex => Directory('${SkillSource.codex.root(home).path}/$slug'),
   AgentTool.claude => Directory('${SkillSource.claude.root(home).path}/$slug'),
-  AgentTool.pi => Directory('${SkillSource.pi.root(home).path}/$slug'),
 };
 
 /// The `uv` every Grid skill drives: the grid CLI's pinned copy in `~/.grid/bin`,

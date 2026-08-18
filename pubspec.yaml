@@ -68,7 +68,6 @@ flutter:
     - assets/agents/hermes_icon.webp
     - assets/agents/codex_icon.png
     - assets/agents/claude_icon.png
-    - assets/agents/pi_icon.png
     # A panel's firmware, so the app can reflash it over the cable it is already
     # talking on and the two halves cannot drift. The DIRECTORY form is
     # deliberate and load-bearing: it ships with no image in it today, and a
