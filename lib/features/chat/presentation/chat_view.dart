@@ -389,13 +389,27 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // deliberately, so the app must not go on quoting it into every message
     // after.
     ref.read(attachedTerminalsProvider.notifier).clear();
-    if (_attachments.isNotEmpty || _files.isNotEmpty || _snippets.isNotEmpty) {
-      setState(() {
-        _attachments.clear();
-        _files.clear();
-        _snippets.clear();
-      });
-    }
+    _clearDraft();
+  }
+
+  /// Everything hanging off the composer beside the text, by name — what a
+  /// notice about it has to be able to point at.
+  List<String> get _draftNames => [
+    for (final attachment in _attachments) attachment.filename,
+    for (final file in _files) file.name,
+    for (final snippet in _snippets) snippet.name,
+  ];
+
+  /// Take the pictures, files and quoted selections off the composer. They
+  /// belonged to the line that just left it; kept, they ride onto the next
+  /// message the user never meant to put them on.
+  void _clearDraft() {
+    if (_attachments.isEmpty && _files.isEmpty && _snippets.isEmpty) return;
+    setState(() {
+      _attachments.clear();
+      _files.clear();
+      _snippets.clear();
+    });
   }
 
   /// Reads the terminals on screen, at the moment Send is pressed rather than
@@ -603,7 +617,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _composerFocus.requestFocus();
   }
 
-  /// Run [call] and empty the composer — the command *was* the message.
+  /// Run [call] and empty the composer — the command *was* the message, its
+  /// attachments included.
   ///
   /// Some commands take a moment (a summary is a model call), so what they have
   /// to say arrives as a toast rather than as a return value nobody sees.
@@ -613,6 +628,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// showing — the same model an ordinary message would have gone out on.
   Future<void> _runCommand(ChatCommandCall call) async {
     _message.clear();
+    // The attachments were part of that line too, and a command carries words
+    // only ([ChatCommand.draftDropReason]) — so they come off with it, and are
+    // named on the way out rather than left sitting under a composer the user
+    // has already emptied.
+    if (call.command.draftDropReason != null) {
+      final dropped = droppedDraftMessage(call.command, _draftNames);
+      _clearDraft();
+      if (dropped != null) {
+        ToastScope.show(
+          context,
+          ToastSpec(message: dropped, severity: ToastSeverity.warning),
+        );
+      }
+    }
     final outcome = await ref
         .read(chatSessionsProvider.notifier)
         .runCommand(call, model: _model.text.trim());
