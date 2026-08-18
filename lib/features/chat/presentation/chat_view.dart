@@ -1084,6 +1084,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               (sending || slash != null || cursor < 0)
                               ? null
                               : activeMention(_message.text, cursor);
+                          // The command the line will run on Send — badged in
+                          // the composer once its argument is being typed, where
+                          // the `/` menu (above) has already closed. Null while
+                          // that menu is up, so the two never show at once.
+                          final command = sending
+                              ? null
+                              : activeComposerCommand(_message.text);
                           return Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1127,6 +1134,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 ),
                               ComposerSection(
                                 messageController: _message,
+                                activeCommand: command,
                                 attachments: _attachments,
                                 files: _files,
                                 snippets: _snippets,
