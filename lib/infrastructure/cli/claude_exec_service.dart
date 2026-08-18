@@ -63,6 +63,9 @@ abstract interface class ClaudeExecService {
   /// an `ANTHROPIC_*` (a developer running from a terminal that exported one),
   /// and a turn that has to reach Claude Code's own sign-in — the browser
   /// extension refuses any other — needs them gone rather than overwritten.
+  ///
+  /// [withoutServerWebTools] takes away [kClaudeServerWebTools] for a turn whose
+  /// endpoint can't serve them.
   ClaudeExecRun run({
     required String workdir,
     required String prompt,
@@ -71,6 +74,7 @@ abstract interface class ClaudeExecService {
     String? resumeSessionId,
     String? mcpConfigPath,
     bool chrome = false,
+    bool withoutServerWebTools = false,
     Set<String> dropEnvironment = const {},
   });
 }
@@ -113,6 +117,24 @@ const String kClaudePermissionMode = 'default';
 // finished its handshake — and left behind it a paragraph telling every model
 // something untrue about its own tools.
 
+/// Claude Code's two **server-side** web tools — the ones the model provider
+/// runs, not the CLI, so they arrive at the endpoint as tool *types* the other
+/// end has to recognise.
+///
+/// Anthropic's own API does. A relay translating Anthropic Messages into a grid
+/// model's chat-completions has nothing to translate them into, and refuses the
+/// whole request rather than the tool: `API Error: 400 Unsupported tool type:
+/// web_search_20250305`, which fails the turn's step and tells the user nothing
+/// they can act on.
+///
+/// `WebSearch` is the one measured (2026-08-17, a grid model over the relay).
+/// `WebFetch` rides with it because it is the same kind of tool under the same
+/// versioned naming (`web_fetch_…`), so a relay that can't serve one almost
+/// certainly can't serve the other — and being wrong about it costs little,
+/// since the `grid-web` skill Grid installs covers searching *and* reading a
+/// page, and that is the route the agent takes instead.
+const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
+
 /// The argv for one turn: a fresh `claude -p`, or `--resume <id>` to continue a
 /// session.
 ///
@@ -138,11 +160,17 @@ const String kClaudePermissionMode = 'default';
 ///   default because it is only ever right for one lane: the flag costs context
 ///   on every turn that carries it, and a turn holding the relay's credentials
 ///   cannot use the extension at all (see [ClaudeBrowserLane]).
+/// - `--disallowedTools` takes away the web tools a grid model can't serve —
+///   see [withoutServerWebTools]. It is **variadic**, so it swallows every
+///   following token until the next `--flag`: safe here because the prompt goes
+///   on stdin and this argv carries no positionals, and it stays safe only as
+///   long as that holds.
 List<String> claudeExecArgs({
   required String model,
   String? resumeSessionId,
   String? mcpConfigPath,
   bool chrome = false,
+  bool withoutServerWebTools = false,
 }) => [
   '-p',
   '--input-format',
@@ -158,6 +186,7 @@ List<String> claudeExecArgs({
   '--model',
   model,
   if (chrome) '--chrome',
+  if (withoutServerWebTools) ...['--disallowedTools', ...kClaudeServerWebTools],
   if (mcpConfigPath != null) ...[
     '--mcp-config',
     mcpConfigPath,
@@ -182,6 +211,7 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
     String? resumeSessionId,
     String? mcpConfigPath,
     bool chrome = false,
+    bool withoutServerWebTools = false,
     Set<String> dropEnvironment = const {},
   }) => _ClaudeExecTurn(
     path: _path,
@@ -192,6 +222,7 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
     resumeSessionId: resumeSessionId,
     mcpConfigPath: mcpConfigPath,
     chrome: chrome,
+    withoutServerWebTools: withoutServerWebTools,
     dropEnvironment: dropEnvironment,
   ).start();
 }
@@ -206,6 +237,7 @@ class _ClaudeExecTurn {
     required this.resumeSessionId,
     required this.mcpConfigPath,
     required this.chrome,
+    required this.withoutServerWebTools,
     required this.dropEnvironment,
   });
 
@@ -217,6 +249,7 @@ class _ClaudeExecTurn {
   final String? resumeSessionId;
   final String? mcpConfigPath;
   final bool chrome;
+  final bool withoutServerWebTools;
   final Set<String> dropEnvironment;
 
   final _events = StreamController<ClaudeExecEvent>();
@@ -257,6 +290,7 @@ class _ClaudeExecTurn {
         resumeSessionId: resumeSessionId,
         mcpConfigPath: mcpConfigPath,
         chrome: chrome,
+        withoutServerWebTools: withoutServerWebTools,
       ),
       workingDirectory: workdir,
       environment: {
