@@ -131,7 +131,17 @@ enum ShellSection {
   // Named 'Docs', not 'Office Docs': the sidebar's Office group already says
   // which family it belongs to, and the ⌘K palette reads "Go to Docs", which is
   // what a person would type. See [kOfficeSections].
-  officeDocs(LucideIcons.fileText, 'Docs', thinIcon: LucideIcons.fileText300),
+  //
+  // Dev-only while the editor is still being built: shipping it would put a
+  // whole document app in the rail that an end user would judge against the
+  // ones they already use. It is the only row in the Office group, so a shipped
+  // build draws no Office row at all — see [kOfficeSections].
+  officeDocs(
+    LucideIcons.fileText,
+    'Docs',
+    thinIcon: LucideIcons.fileText300,
+    devOnly: true,
+  ),
   agents(LucideIcons.bot, 'Agents', thinIcon: LucideIcons.bot300),
   skills(LucideIcons.sparkles, 'Skills', thinIcon: LucideIcons.sparkles300),
   connectors(LucideIcons.cable, 'Connectors', thinIcon: LucideIcons.cable300),
@@ -249,6 +259,11 @@ const kSidebarSections = [ShellSection.engines, ShellSection.scheduled];
 /// true about this build — where a lone Docs row would have said nothing about
 /// what the app is growing into. Nothing unbuilt is listed as a disabled row
 /// either; §5 forbids offering what isn't there.
+///
+/// That one row is [ShellSection.devOnly] today, which means a shipped build
+/// has no Office group at all: both rails drop the rows that fail
+/// [ShellSection.isVisibleForBuild] and then drop the empty group with them, so
+/// the heading never survives its contents.
 const kOfficeSections = [ShellSection.officeDocs];
 
 /// One labelled run of rows in the settings nav.
