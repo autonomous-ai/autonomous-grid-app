@@ -1,7 +1,40 @@
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../cli/grid_cli_service.dart';
 import '../providers.dart';
+
+/// What to say when [sttClientProvider] is null — `grid` couldn't be resolved
+/// on this machine.
+///
+/// One sentence for one cause, shared by everything that can hit it: the mic
+/// button in the composer and the panel over USB ask the same question, and two
+/// wordings for it would read as two different problems.
+const String kSttUnavailableMessage =
+    "The grid tool isn't available on this computer.";
+
+/// What to say when `grid` is there but has never heard of `stt transcribe`.
+///
+/// Deliberately does not say "update it": the verb is not in a release yet, and
+/// copy that sends someone to run an update which cannot fix this is worse than
+/// copy that simply says what is wrong (conventions §5 — never promise a
+/// fallback works). Shared by the mic button and the panel for the same reason
+/// [kSttUnavailableMessage] is: one cause should not read as two problems.
+const String kSttUnsupportedMessage =
+    'Voice needs a newer grid tool than this computer has.';
+
+/// 'vi' when the OS locale is Vietnamese, 'en' otherwise.
+///
+/// The STT endpoint has no auto-detect, so something has to pick, and the
+/// system locale is the only signal available without asking. Shared for the
+/// same reason as [kSttUnavailableMessage]: a panel that transcribed in a
+/// different language from the composer on the same machine would be a bug
+/// nobody could explain.
+String preferredSttLang() =>
+    PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'vi'
+    ? 'vi'
+    : 'en';
 
 /// Outcome of a speech-to-text transcription.
 sealed class SttResult {
@@ -44,9 +77,19 @@ class GridCliSttClient implements SttClient {
 
   final GridCliService _service;
 
-  /// A little past the CLI's own httpx timeout (cli/stt.py's `--timeout`, default 30s) so
-  /// the CLI's own timeout message wins the race instead of a generic "command timed out."
-  static const _timeout = Duration(seconds: 35);
+  /// How long the CLI is given to upload the clip and get an answer, passed to it
+  /// explicitly as `--timeout`.
+  ///
+  /// **The flag is passed rather than left at its default**, which is 30s
+  /// (`cli/stt.py`) and was written for a clip of a few seconds. A panel capture
+  /// may now be ten minutes — 19.2 MB to upload before the transcriber has heard
+  /// a word of it — and a timeout that fires there loses a recording somebody has
+  /// already finished making, which is the worst moment to lose one.
+  static const _cliTimeout = Duration(seconds: 120);
+
+  /// A little past [_cliTimeout] so the CLI's own timeout message wins the race
+  /// instead of a generic "command timed out."
+  static const _timeout = Duration(seconds: 125);
 
   @override
   Future<SttResult> transcribe({
@@ -59,6 +102,8 @@ class GridCliSttClient implements SttClient {
       audioPath,
       '--lang',
       lang,
+      '--timeout',
+      '${_cliTimeout.inSeconds}',
     ], timeout: _timeout);
     if (!result.ok) return SttFailure(_messageFor(result));
     return SttSuccess(result.stdout.trim());
@@ -81,10 +126,28 @@ class GridCliSttClient implements SttClient {
     if (raw.toLowerCase().contains('timed out')) {
       return "The server didn't respond in time.";
     }
+    if (_isUnknownCommand(raw)) return kSttUnsupportedMessage;
     if (raw.length <= 400) {
       return raw;
     }
     return '${raw.substring(0, 399)}…';
+  }
+
+  /// Whether [raw] is argparse refusing the subcommand rather than the command
+  /// failing.
+  ///
+  /// The pass-through above assumes the CLI's refusals are sentences, and most
+  /// are. This one is not: an unknown subcommand prints a usage block and the
+  /// full list of verbs the build does know — around 380 characters, which slips
+  /// under the cap and lands on screen whole. On a 466px round panel that is a
+  /// wall of grey text where a sentence belongs (seen on hardware 2026-08-17).
+  ///
+  /// Matched on the shape rather than on the word `stt`, because the same thing
+  /// will happen to the next verb this app learns before the CLI ships it.
+  static bool _isUnknownCommand(String raw) {
+    final text = raw.toLowerCase();
+    return text.contains('invalid choice') ||
+        (text.contains('usage: grid') && text.contains('error: argument'));
   }
 
   static String _messageForStatus(int status) => switch (status) {

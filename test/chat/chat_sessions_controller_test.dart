@@ -1189,6 +1189,64 @@ void main() {
         expect(state.conversations.single.messages.single.role, ChatRole.user);
       },
     );
+
+    test('stopChat interrupts a chat the desktop is not looking at, and files '
+        'what it had said into that chat — the panel stops a project, and '
+        'nobody at a desk with a panel on it is watching the window', () async {
+      final answering = _PerChatSender();
+      final h = _harness(tmp, updates: const [], answering: answering);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      ChatSessionsState read() => h.container.read(chatSessionsProvider);
+
+      final sentA = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'explain grids',
+      );
+      await pumpEventQueue();
+      final aId = read().activeId!;
+      answering.emit(aId, const ChatSendStreaming('A grid is your private'));
+      await pumpEventQueue();
+
+      // The user moves on and starts talking in a second chat.
+      c.newChat();
+      final sentB = c.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'and now this',
+      );
+      await pumpEventQueue();
+      final bId = read().activeId!;
+
+      c.stopChat(aId);
+      await sentA;
+
+      expect(read().sendingFor(aId), isFalse);
+      expect(
+        read().sendingFor(bId),
+        isTrue,
+        reason: 'the chat on screen is left running',
+      );
+      expect(
+        read().activeId,
+        bId,
+        reason: 'stopping elsewhere never moves the user',
+      );
+      // The half-written answer belongs to the chat it was streaming into.
+      Conversation chat(String id) =>
+          read().conversations.firstWhere((c) => c.id == id);
+      expect(chat(aId).messages.last.text, 'A grid is your private');
+      expect(chat(bId).messages.map((m) => m.role), [ChatRole.user]);
+
+      answering.emit(
+        bId,
+        const ChatSendSuccess(
+          ChatMessage(role: ChatRole.assistant, text: 'done'),
+        ),
+      );
+      await answering.close(bId);
+      await sentB;
+    });
   });
 
   test(

@@ -754,8 +754,8 @@ mixin _ChatSend on _ChatSessions {
       : ref.read(chatSenderProvider);
 
   /// Stop the **open** chat's in-flight reply. A reply streaming in another chat
-  /// is left running — see [stopChat], which this is the composer's shorthand
-  /// for.
+  /// is left running — this is the Stop button, and it means the one the user is
+  /// looking at. The composer's shorthand for [stopChat].
   void stop() {
     final id = state.activeId;
     if (id != null) stopChat(id);
@@ -779,10 +779,13 @@ mixin _ChatSend on _ChatSessions {
   /// they usually stop *because* they've read enough of it. Nothing streamed yet
   /// (the agent still thinking) means there's nothing to keep.
   ///
-  /// Takes the chat by id rather than acting on the open one, because it is
-  /// reached from "Working now" as well as the composer: a turn several projects
-  /// away is exactly the one a user stops from there, and it must not bring that
-  /// chat to the front to do it (see [_commit], which leaves the open chat put).
+  /// Takes the chat by id rather than acting on the open one, because three
+  /// callers reach it and only one of them is the composer. "Working now" stops
+  /// a turn several projects away, and the Grid Panel stops a *project* the
+  /// desktop may not have open at all — on a desk with a panel on it, nobody is
+  /// looking at the window. Neither may bring that chat to the front to do it
+  /// (see [_commit], which leaves the open chat put), and a chat that isn't in
+  /// flight is a no-op.
   @override
   void stopChat(String id) {
     if (!state.sendingFor(id)) return;

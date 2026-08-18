@@ -284,9 +284,16 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   void _cancel(String id);
 
   /// Stop one chat's in-flight reply, keeping any partial and settling it back
-  /// to idle — [_ChatSend]. The loop calls it to abandon a turn that has hung
-  /// past [kLoopTurnCeiling] so the next iteration is not blocked behind it.
+  /// to idle — [_ChatSend].
+  ///
+  /// Two callers, and each is why it is shaped this way. The loop calls it to
+  /// abandon a turn that has hung past [kLoopTurnCeiling], so the next iteration
+  /// is not blocked behind it. And it is public and **per conversation** because
+  /// the Grid Panel interrupts a *project*, which is very often not the chat the
+  /// desktop has open — on a desk with a panel on it, nobody is looking at the
+  /// window.
   void stopChat(String id);
+
 }
 
 class ChatSessionsController extends _ChatSessions

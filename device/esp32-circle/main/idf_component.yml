@@ -1,0 +1,21 @@
+# Managed component dependencies (pulled by the IDF Component Manager on build).
+#
+# Four fewer than the reference firmware's, and each absence is the network going
+# away rather than an oversight: esp_websocket_client carried the commander link and
+# libsodium the E2EE handshake, and this panel has neither. Plugging the cable in IS
+# the authorization (docs/panel-protocol.md §4), so there is nothing to encrypt a
+# session with and nothing to open a socket to.
+dependencies:
+  idf:
+    version: ">=5.5.0"
+  # LVGL v9 graphics library.
+  lvgl/lvgl: "^9.2.0"
+  # Official CO5300 AMOLED panel driver (the controller on this board).
+  espressif/esp_lcd_co5300: "*"
+  # CST9217 capacitive touch (Waveshare) → LVGL pointer indev for swipe. Pulls esp_lcd_touch.
+  # Mounted 180° to the CO5300 on this board; both axes are mirrored in display.c's driver
+  # config, once, at init — never in gesture code.
+  waveshare/esp_lcd_touch_cst9217: "*"
+  # Audio codec abstraction + ES8311 driver: the microphone that fills a 0x02 PCM frame,
+  # and the speaker that beeps when a turn finishes.
+  espressif/esp_codec_dev: "*"

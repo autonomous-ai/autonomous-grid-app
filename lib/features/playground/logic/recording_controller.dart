@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,12 +33,6 @@ class RecordingFailed extends RecordingPhase {
   final String message;
 }
 
-/// Shown when [sttClientProvider] is null — `grid` couldn't be resolved on
-/// this machine. Shared by both call sites below so the two questions ("can I
-/// start?", "can I still finish?") give the user the identical sentence for
-/// the identical cause, rather than two different-sounding ones.
-const _cliUnavailableMessage = "The grid tool isn't available on this computer.";
-
 /// Records a short voice clip and transcribes it. The mic button drives this
 /// directly and feeds the result into the composer itself — the transcript
 /// never touches [chatControllerProvider], since it's the input field, not
@@ -62,7 +55,7 @@ class RecordingController extends Notifier<RecordingPhase> {
 
   Future<String?> _start() async {
     if (ref.read(sttClientProvider) == null) {
-      state = const RecordingFailed(_cliUnavailableMessage);
+      state = const RecordingFailed(kSttUnavailableMessage);
       return null;
     }
     final recorder = ref.read(micRecorderProvider);
@@ -86,12 +79,12 @@ class RecordingController extends Notifier<RecordingPhase> {
     try {
       final client = ref.read(sttClientProvider);
       if (client == null) {
-        state = const RecordingFailed(_cliUnavailableMessage);
+        state = const RecordingFailed(kSttUnavailableMessage);
         return null;
       }
       final result = await client.transcribe(
         audioPath: path,
-        lang: _preferredLang(),
+        lang: preferredSttLang(),
       );
       switch (result) {
         case SttSuccess(:final text):
@@ -117,14 +110,6 @@ class RecordingController extends Notifier<RecordingPhase> {
     }
   }
 }
-
-/// 'vi' when the OS locale is Vietnamese, 'en' otherwise — the STT endpoint
-/// has no auto-detect, so the app has to pick, and the system locale is the
-/// only signal it has without asking.
-String _preferredLang() =>
-    PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'vi'
-    ? 'vi'
-    : 'en';
 
 final recordingControllerProvider =
     NotifierProvider<RecordingController, RecordingPhase>(
