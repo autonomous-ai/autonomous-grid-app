@@ -46,20 +46,56 @@ int? contextWindowFromError(String raw) {
   return null;
 }
 
+/// How many tokens to hold back for the model's own reply.
+///
+/// The engine counts the reply against the same window as the prompt, so a turn
+/// is refused when `input + output` crosses the line — not when the input alone
+/// does. Claude Code otherwise asks for 32000 output tokens on every request
+/// (its default for a Claude-class model), and on a grid model that number is
+/// the whole bug: a session at 230145 input tokens on a 262144 window is *under*
+/// the window on its own, and only the `+32000` reserved for the reply pushed
+/// the total to 262145 and drew the 400 (autonomous-grid-app#47). Handed to
+/// Claude Code as `CLAUDE_CODE_MAX_OUTPUT_TOKENS` (see `claudeCodeEnv`), this
+/// caps that reservation to a figure the window can actually spare.
+///
+/// 8192 rather than more because it has to fit inside the room
+/// [agentContextCeiling] leaves above the ceiling on *every* window the app runs
+/// against, down to [kAssumedContextWindow] (65536): a reserve larger than that
+/// room would let a freshly compacted session overflow on its very next reply —
+/// the failure this is fixing, not a new one to introduce. 8192 tokens is a long
+/// reply on its own, and an agentic turn that needs more continues across
+/// requests rather than losing the work.
+const int kAgentReplyReserveTokens = 8192;
+
 /// The share of an engine's window an agent may fill before it has to summarize.
 ///
-/// Not the whole thing: the engine counts the reply against the same window, and
-/// an agent that waits until it is full has already sent the request that gets
-/// refused. Four fifths of the 96k window this was written against leaves ~19k
-/// for the answer and for the agent overshooting its own estimate — the turn
-/// that failed went 2k past.
+/// Not the whole thing: the engine counts the reply against the same window (see
+/// [kAgentReplyReserveTokens]), so an agent that waits until the window is full
+/// has already sent the request that gets refused. Four fifths is the headroom
+/// on a roomy window — ~52k on the office 262k model, absorbing both the reply
+/// and a turn overshooting its own estimate.
 const int _ceilingNumerator = 4;
 const int _ceilingDenominator = 5;
 
 /// What to hand an agent as its own ceiling, given the [engineWindow] the model
-/// really has. See [_ceilingNumerator].
-int agentContextCeiling(int engineWindow) =>
-    engineWindow * _ceilingNumerator ~/ _ceilingDenominator;
+/// really has.
+///
+/// Four fifths of a roomy window, but never so high that the room left above it
+/// can't hold a reply: a fifth of 65536 is 13107, barely over the reserve, and a
+/// fifth of a 32k model is *under* it — so on a tight window the ceiling reserves
+/// the reply plus a margin for mid-turn growth outright, taking whichever of the
+/// two is lower. Floored at half the window so a window too small for the reserve
+/// still yields a usable figure rather than a negative one; no model the app runs
+/// against is that small (see [kAssumedContextWindow]).
+int agentContextCeiling(int engineWindow) {
+  final proportional = engineWindow * _ceilingNumerator ~/ _ceilingDenominator;
+  // The reply, plus the same again for a turn that grows past the ceiling before
+  // the next between-turn check can catch it (see [needsCompaction]).
+  final reserved = engineWindow - kAgentReplyReserveTokens * 2;
+  final ceiling = proportional < reserved ? proportional : reserved;
+  final floor = engineWindow ~/ 2;
+  return ceiling > floor ? ceiling : floor;
+}
 
 /// Whether a turn resuming a session that has already filled [usedTokens] of
 /// [engineWindow] must summarize before it sends.

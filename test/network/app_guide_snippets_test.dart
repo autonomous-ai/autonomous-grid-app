@@ -217,6 +217,34 @@ void main() {
       );
     });
 
+    test('a chat turn caps the reply Claude Code reserves room for, so it '
+        'cannot ask for more output than the window spares above the ceiling '
+        '(#47)', () {
+      final env = claudeCodeEnv(_base, _key, const [
+        _model,
+      ], maxOutputTokens: 8192);
+
+      expect(env[kClaudeMaxOutputTokensEnv], '8192');
+    });
+
+    test('no output cap is written when none is given — nothing invents one '
+        'and shrinks a reply the window had room for', () {
+      expect(
+        claudeCodeEnv(_base, _key, const [_model]),
+        isNot(contains(kClaudeMaxOutputTokensEnv)),
+      );
+      expect(
+        claudeCodeEnv(_base, _key, const [_model], maxOutputTokens: 0),
+        isNot(contains(kClaudeMaxOutputTokensEnv)),
+      );
+    });
+
+    test("the user's own settings never cap output — the app does not get to "
+        "shorten the Claude Code in their terminal", () {
+      final settings = claudeCodeSettingsSnippet(_base, _key, const [_model]);
+      expect(settings, isNot(contains(kClaudeMaxOutputTokensEnv)));
+    });
+
     test('a chat turn drops the skills bundled inside Claude Code — the Skill '
         'tool loads one whole, and it is bigger than the window', () {
       // `claude-api`: ~922 KB in one tool result, ~230000 tokens, on a model

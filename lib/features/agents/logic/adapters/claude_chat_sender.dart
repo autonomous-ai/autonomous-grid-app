@@ -268,6 +268,11 @@ class ClaudeChatSender implements ChatSender {
             network.relayApiKey,
             [model],
             compactWindow: agentContextCeiling(window),
+            // Claude Code reserves 32000 output tokens by default — more than a
+            // grid model's window can spare above the ceiling, and the reply
+            // alone drew the 400 (#47). Cap it to what the ceiling leaves room
+            // for; the two are the matched halves of the same window.
+            maxOutputTokens: kAgentReplyReserveTokens,
             // A chat turn, so the ~922 KB reference for Anthropic's API — and
             // every other bundle that could grow to match it — stays out of a
             // window this turn needs for the conversation. Grid's own skills
