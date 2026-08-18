@@ -188,6 +188,10 @@ class _CommandsButton extends StatelessWidget {
 /// Tap to record, tap again to stop, transcribe and send — sits right beside
 /// [ComposerSendButton] so voice input reads as another way to fill the same
 /// box, not a separate feature bolted on elsewhere.
+///
+/// [VoiceShortcut] presses the same thing from the keyboard, and both go
+/// through [pressVoiceInput] so the two presses can't come to mean different
+/// things.
 class _MicButton extends ConsumerWidget {
   const _MicButton({
     required this.sending,
@@ -204,13 +208,8 @@ class _MicButton extends ConsumerWidget {
     AppTheme.watch(context); // reads AppPalette.textSecondary — follow flips
     final phase = ref.watch(recordingControllerProvider);
     final recording = phase is RecordingActive;
-    final busy = sending || phase is RecordingTranscribing;
     return Tooltip(
-      message: switch (phase) {
-        RecordingActive() => 'Stop recording',
-        RecordingTranscribing() => 'Transcribing…',
-        RecordingIdle() || RecordingFailed() => 'Voice input',
-      },
+      message: voiceInputTooltip(phase),
       child: SizedBox(
         width: 32,
         height: 32,
@@ -231,28 +230,18 @@ class _MicButton extends ConsumerWidget {
             RecordingIdle() ||
             RecordingFailed() => const Icon(Icons.mic_none_rounded),
           },
-          onPressed: busy ? null : () => _tap(context, ref),
+          onPressed: voiceInputBusy(phase, sending: sending)
+              ? null
+              : () => unawaited(
+                  pressVoiceInput(
+                    context,
+                    ref,
+                    controller: messageController,
+                    onSend: onSend,
+                  ),
+                ),
         ),
       ),
     );
-  }
-
-  Future<void> _tap(BuildContext context, WidgetRef ref) async {
-    final transcript = await ref
-        .read(recordingControllerProvider.notifier)
-        .toggle();
-    if (!context.mounted) return;
-    final phase = ref.read(recordingControllerProvider);
-    if (phase case RecordingFailed(:final message)) {
-      ToastScope.show(
-        context,
-        ToastSpec(message: message, severity: ToastSeverity.error),
-      );
-      return;
-    }
-    final text = transcript?.trim();
-    if (text == null || text.isEmpty) return;
-    messageController.text = text;
-    onSend();
   }
 }
