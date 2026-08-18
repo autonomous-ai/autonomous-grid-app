@@ -115,7 +115,10 @@ mixin _ChatGoals on _ChatSessions {
     // `isAppDriven` stays true while an owner's driver is still unwritten, so
     // this never leaves a goal with nobody advancing it — see
     // [GoalOwner.hasDriver].
-    if (!goal.owner.isAppDriven) return;
+    if (!goal.owner.isAppDriven) {
+      _settleDelegatedGoal(id, goal, outcome);
+      return;
+    }
     if (outcome == null) {
       _saveGoal(id, goal.copyWith(status: GoalStatus.stalled));
       return;
@@ -174,6 +177,43 @@ mixin _ChatGoals on _ChatSessions {
           ),
         );
     }
+  }
+
+  /// Close out a turn of a goal the **agent** owns.
+  ///
+  /// Nothing here judges anything — the agent did that, with tools this app has
+  /// none of. All this reads is whether the turn was *allowed to end*, which for
+  /// a delegated goal is the verdict itself.
+  ///
+  /// Claude Code drives a goal by refusing to let the turn stop: every round its
+  /// evaluator says "not met" comes back as a `Stop hook feedback:` message
+  /// (see [ClaudeGoalNotMet]) and the agent is sent straight back in. So a turn
+  /// that ends **cleanly** ended because the hook let go, and the hook only lets
+  /// go once the condition holds. That is the signal — no extra process, no
+  /// second model, no polling.
+  ///
+  /// The other two endings deliberately leave the goal alone, because the goal
+  /// really is still armed inside the agent's session (measured on 2.1.233: it
+  /// is written into the session transcript and re-arms on every `--resume`):
+  ///
+  /// - **stopped by the user** ([outcome] null) — `/goal clear` is what ends it,
+  ///   and that is the Stop button beside the goal, not the one on the turn.
+  /// - **the turn failed** — a dropped connection says nothing about the
+  ///   condition. Claiming "met" here would close a goal that is still running.
+  void _settleDelegatedGoal(String id, ChatGoal goal, _TurnOutcome? outcome) {
+    if (outcome == null || outcome.failure != null) return;
+    _saveGoal(
+      id,
+      goal.copyWith(
+        status: GoalStatus.met,
+        // Its own words where it gave them; the fallback says which agent
+        // decided, because "met" with no reason reads as the app guessing.
+        reason:
+            goal.reason ??
+            '${goal.agent?.name ?? 'The agent'} stopped '
+                'working: the condition it was checking is satisfied.',
+      ),
+    );
   }
 
   /// Ask the small fast model whether the condition holds. Null when there was
