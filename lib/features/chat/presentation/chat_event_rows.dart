@@ -37,7 +37,13 @@ class GoalEndedRow extends StatelessWidget {
       GoalStatus.active => Icons.flag_rounded,
       GoalStatus.met => Icons.check_circle_outline_rounded,
       GoalStatus.impossible => Icons.error_outline_rounded,
-      GoalStatus.stalled => Icons.pause_circle_outline_rounded,
+      GoalStatus.stalled ||
+      GoalStatus.paused => Icons.pause_circle_outline_rounded,
+      GoalStatus.blocked => Icons.block_rounded,
+      // A limit reached is not a failure — the hourglass says "later", where
+      // the error mark would say "never".
+      GoalStatus.usageLimited ||
+      GoalStatus.budgetLimited => Icons.hourglass_empty_rounded,
     },
     label: goalBarLabel(goal, DateTime.now()),
   );

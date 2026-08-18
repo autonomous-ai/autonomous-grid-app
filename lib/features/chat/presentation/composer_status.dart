@@ -17,6 +17,10 @@ import '../logic/commands/chat_loop.dart';
 /// happened ([TranscriptEventRow]) instead of sitting over the composer until
 /// somebody closes it — which is what a stack of three or four cards up there
 /// used to do.
+///
+/// "Still going" is [ChatGoal.hasEnded], not [ChatGoal.isRunning]: a goal the
+/// user *held* has not ended, and hiding it would take away the only place
+/// Resume could live. Every one of the six endings is hidden, as before.
 class ComposerStatus extends ConsumerWidget {
   const ComposerStatus({super.key});
 
@@ -32,11 +36,17 @@ class ComposerStatus extends ConsumerWidget {
 
     return ComposerStatusLine(
       notes: [
-        if (goal != null && goal.isRunning)
+        if (goal != null && !goal.hasEnded)
           StatusNote(
-            icon: Icons.flag_rounded,
-            label: goalStatusNote(goal),
+            icon: goal.status == GoalStatus.paused
+                ? Icons.pause_circle_outline_rounded
+                : Icons.flag_rounded,
+            label: goalStatusNote(goal, DateTime.now()),
             actions: [
+              // TODO(BE): a held goal wants Resume here as well —
+              // `thread/goal/set {status: "active"}` on the Codex driver. Only
+              // Codex can reach [GoalStatus.paused], so the button lands with
+              // that driver rather than shipping dead now.
               TextButton(
                 onPressed: () => run(ChatCommand.goal, 'clear'),
                 child: const Text('Stop'),

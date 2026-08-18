@@ -67,6 +67,11 @@ mixin _ChatGoals on _ChatSessions {
   Future<void> _judgeGoalTurn(String id, _TurnOutcome? outcome) async {
     final goal = _find(id)?.goal;
     if (goal == null || !goal.isRunning || _disposed) return;
+    // A delegated goal is already being judged, by the agent that owns it and
+    // with tools this evaluator does not have. Running a second judgement here
+    // would spend two models on one question, let them disagree, and send a
+    // continuation turn on top of the one the agent is already sending.
+    if (!goal.owner.isAppDriven) return;
     if (outcome == null) {
       _saveGoal(id, goal.copyWith(status: GoalStatus.stalled));
       return;

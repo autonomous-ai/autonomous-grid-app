@@ -9,10 +9,12 @@ ChatGoal _goal({
   int turnsEvaluated = 0,
   String? reason,
   int? endedAfter,
+  GoalOwner owner = GoalOwner.app,
 }) => ChatGoal(
   condition: 'the tests in test/auth pass',
   status: status,
   startedAt: _start,
+  owner: owner,
   turnsEvaluated: turnsEvaluated,
   reason: reason,
   endedAfter: endedAfter,
@@ -111,11 +113,18 @@ void main() {
           _goal(status: GoalStatus.impossible, reason: 'no such file'),
           now,
         );
-        final stalled = goalBarLabel(_goal(status: GoalStatus.stalled), now);
+        final stalled = goalBarLabel(
+          _goal(status: GoalStatus.stalled, reason: 'you pressed Stop'),
+          now,
+        );
 
         expect(met, contains('Goal met'));
         expect(impossible, contains('no such file'));
-        expect(stalled, contains('no work done'));
+        // The stalled line used to hardcode "after 3 turns with no work done",
+        // which is true of exactly one of the five ways a goal stalls — it told
+        // a user who pressed Stop that their assistant had idled for three
+        // turns. It carries the recorded reason now, like the other endings.
+        expect(stalled, contains('you pressed Stop'));
         expect({met, impossible, stalled}, hasLength(3));
       },
     );
@@ -150,20 +159,35 @@ void main() {
   group('the line under the composer while it runs', () {
     test('it names the condition, and stays short — the long form is what '
         '/goal prints when asked', () {
-      final note = goalStatusNote(_goal(turnsEvaluated: 3));
+      final note = goalStatusNote(_goal(turnsEvaluated: 3), _start);
       expect(note, contains('the tests in test/auth pass'));
       expect(note, contains('3 turns'));
-      // No elapsed time, no evaluator reason: this line shares one row with
-      // everything else running.
+      // It carries the elapsed time — a goal has no ceiling, so how long it has
+      // been going is the number the user judges "let it keep running?" on, and
+      // it is what Codex's own goal bar puts there. Still no evaluator reason:
+      // that is the long form, which `/goal` prints when asked.
+      expect(note, isNot(contains('two still fail')));
       expect(note.length, lessThan(goalBarLabel(_goal(), _start).length + 20));
     });
 
     test('a goal nothing has been judged on yet counts nothing', () {
-      expect(goalStatusNote(_goal()), isNot(contains('0 turns')));
+      expect(goalStatusNote(_goal(), _start), isNot(contains('0 turns')));
     });
 
     test('one judged turn is a turn, not turns', () {
-      expect(goalStatusNote(_goal(turnsEvaluated: 1)), endsWith('1 turn'));
+      expect(
+        goalStatusNote(_goal(turnsEvaluated: 1), _start),
+        endsWith('1 turn'),
+      );
+    });
+
+    test('a delegated goal counts no turns of its own — Grid judges none of '
+        'them, and "0 turns" beside a working goal reads as stuck', () {
+      final note = goalStatusNote(
+        _goal(turnsEvaluated: 3, owner: GoalOwner.claude),
+        _start,
+      );
+      expect(note, isNot(contains('turn')));
     });
   });
 
