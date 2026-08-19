@@ -44,7 +44,9 @@ class FakeCron implements HermesCronService {
     required String schedule,
     required String prompt,
     required String name,
+    required String deliver,
     String? workdir,
+    String? script,
   }) async {}
 
   @override

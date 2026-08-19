@@ -59,8 +59,11 @@ The command is `hermes`. If the shell cannot find it, use
 ## Create a job
 
 ```
-hermes cron create "<schedule>" "<prompt>" --name "<short name>" --deliver local --workdir "<absolute dir>"
+hermes cron create "<schedule>" "<prompt>" --name "<short name>" \\
+  --deliver "grid:chat:\$GRID_CHAT_ID" --workdir "<absolute dir>"
 ```
+
+`\$GRID_CHAT_ID` is set for you: it is the chat you are answering in.
 
 - **schedule** — `30m`, `every 2h`, or a 5-field cron expression
   (`7,37 8-22 * * *`). Cron fields are in this computer's own timezone; don't
@@ -69,10 +72,47 @@ hermes cron create "<schedule>" "<prompt>" --name "<short name>" --deliver local
   no files you just read, no paths you worked out, no "as we discussed". Write
   out the steps, the absolute paths, and what to do when there is nothing to
   report.
-- **--deliver local** — sends the result back into the app. Always pass it.
+- **--deliver** — where the answer is put. **`grid:chat:\$GRID_CHAT_ID`** when
+  you are scheduling something a user asked for in a conversation: it puts each
+  run's answer in *this* chat, under their question, which is where they will
+  look for it. `grid:project:<project id>` files it under a project. Plain
+  `local` gives the task a thread of its own — right for a standing digest
+  nobody asked for in a conversation, wrong for everything else. Never leave it
+  out.
 - **--workdir** — absolute directory the job runs from.
 - **--repeat N** — stop after N runs. Leave it out to run until removed.
 - **--skill <name>** — attach a skill the job needs. Repeat for several.
+
+## Which assistant the job runs as — say it, don't assume it
+
+A plain job like the one above is run by **the scheduler's own assistant**, not
+by you. Different tools, different skills, its own model. For "check the news
+each morning" nobody cares. For work that needs what *you* have — this repo's
+files, a browser you drove, a tool only you were given — a job that answers as
+somebody else is a quiet substitution, so **tell the user which one will run
+it** whenever you schedule anything.
+
+To keep the work with the assistant the user is talking to, schedule a script
+instead and let it call that assistant:
+
+```
+~/.hermes/scripts/<name>.sh          # the script (chmod +x)
+hermes cron create "<schedule>" --script <name>.sh --no-agent \\
+  --name "<short name>" --deliver local
+```
+
+`--no-agent` means the script *is* the job and its stdout is delivered
+verbatim — so print the answer and nothing else. Three things the script must
+do itself, each measured on 2026-08-19 rather than assumed:
+
+- **`cd` to where the work is.** In script mode the job starts in
+  `~/.hermes/scripts`, and `--workdir` does not move it.
+- **Set `PATH` with absolute directories.** The scheduler is a daemon; it has
+  none of the login shell's PATH, so `claude` / `codex` / `node` are not found
+  unless the script names their folders.
+- **Grant the tools the run needs.** `claude -p "…" --allowedTools Bash Read
+  Write` — headless, anything not allowed is refused mid-run rather than
+  asked about. Codex's equivalent is `codex exec "…"`.
 
 ## Read it back before you answer
 

@@ -110,6 +110,12 @@ mixin _ChatLoops on _ChatSessions {
       loop: loop.copyWith(status: LoopStatus.stopped),
     );
     _store.save(stopped);
+    _logLoopStopped(
+      chat.id,
+      loop,
+      'it came from history this app was not '
+      'the one writing — whichever machine holds its timer, this is not it',
+    );
     return stopped;
   }
 
@@ -126,18 +132,62 @@ mixin _ChatLoops on _ChatSessions {
     }
     _cancelLoopTimer(chat.id);
     _saveLoop(chat.id, loop.copyWith(status: LoopStatus.stopped));
+    _logLoopStopped(chat.id, loop, 'the user stopped it');
     return (message: 'Stopped repeating: ${loop.prompt}', failed: false);
   }
 
   /// Drop the loop on chat [id] entirely — for `/clear`, and for a chat being
-  /// deleted. Silent: the caller is already saying what happened.
+  /// deleted. Silent to the user: the caller is already saying what happened.
   void _endLoop(String id) {
     _cancelLoopTimer(id);
     final chat = _find(id);
     final loop = chat?.loop;
     if (chat == null || loop == null || !loop.isRunning) return;
     _saveLoop(id, loop.copyWith(status: LoopStatus.stopped));
+    _logLoopStopped(id, loop, 'the chat it belonged to was cleared or deleted');
   }
+
+  /// Put a note under a finished turn whose reply set up a repeat that nothing
+  /// is running (see [kUnbackedLoopClaimNote]).
+  ///
+  /// Runs on every turn that settles, not only a loop's: a loop beat has a
+  /// running loop by definition, so the block there is read and taken off as
+  /// usual and this does nothing. It is the *ordinary* turn — the one where an
+  /// agent decided by itself to keep going — that ends with a promise the app
+  /// never made.
+  @override
+  void _noteUnbackedLoopClaim(String id) {
+    final chat = _find(id);
+    if (chat == null) return;
+    final noted = noteUnbackedLoopClaim(chat);
+    if (identical(noted, chat)) return;
+    ref
+        .read(appLogProvider)
+        .warn(
+          'chat',
+          'chat $id: the reply set up a repeat and no loop is running — '
+              'said so in the chat',
+        );
+    // No `updatedAt`: the turn that just landed already moved it.
+    _saveAndReplace(noted);
+  }
+
+  /// Say in the log that a loop stopped, and why.
+  ///
+  /// Starting one is logged, resuming one is logged, running out its seven days
+  /// is logged, finishing the job is logged — stopping was the only ending that
+  /// left no trace at all, in the one part of the app that runs while nobody is
+  /// watching. So a loop that died in the night could only be investigated by
+  /// reading the chat file's mtime against `ps`, which is what an evening on
+  /// 2026-08-19 went on. Three paths reach here and each names itself, because
+  /// "stopped" is not the question — *which* stop is.
+  void _logLoopStopped(String id, ChatLoop loop, String why) => ref
+      .read(appLogProvider)
+      .info(
+        'chat',
+        'loop in $id stopped after ${loop.iterations} iteration(s) — $why: '
+            '${loop.prompt}',
+      );
 
   /// Send one iteration, then arrange the next.
   Future<void> _runLoopIteration(String id) async {
@@ -349,17 +399,9 @@ mixin _ChatLoops on _ChatSessions {
       final message = messages[i];
       switch (message.role) {
         case ChatRole.assistant:
-          final clean = stripLoopPaceBlock(message.text);
-          if (clean == message.text) continue;
-          messages[i] = message.copyWith(
-            text: clean,
-            parts: [
-              for (final part in message.parts)
-                part is TurnText
-                    ? TurnText(stripLoopPaceBlock(part.text))
-                    : part,
-            ],
-          );
+          final clean = withoutLoopBlock(message);
+          if (clean.text == message.text) continue;
+          messages[i] = clean;
           changed = true;
         case ChatRole.user:
           if (!message.text.startsWith(asked)) continue;
