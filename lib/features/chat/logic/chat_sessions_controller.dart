@@ -45,6 +45,7 @@ import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
 import 'interrupted_turn.dart';
+import 'loop_claim.dart';
 
 /// Re-exported so every file that already imports the controller keeps seeing
 /// [ChatSessionsState] — moving the state out is not a change any caller has to
@@ -309,6 +310,9 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 
   /// Settle a finished send — [_ChatSettle].
   void _finish(String id);
+
+  /// Note a reply that set up a repeat nothing is running — [_ChatLoops].
+  void _noteUnbackedLoopClaim(String id);
 
   /// Whether chat [id] is one the app would carry on by itself as things stand
   /// — [_ChatSettle]. Read by the send that just landed, to keep an
