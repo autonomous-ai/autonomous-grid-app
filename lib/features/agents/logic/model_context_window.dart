@@ -46,7 +46,7 @@ int? contextWindowFromError(String raw) {
   return null;
 }
 
-/// How many tokens to hold back for the model's own reply.
+/// The reply a window too tight for a proportional share is still sized around.
 ///
 /// The engine counts the reply against the same window as the prompt, so a turn
 /// is refused when `input + output` crosses the line — not when the input alone
@@ -54,18 +54,23 @@ int? contextWindowFromError(String raw) {
 /// (its default for a Claude-class model), and on a grid model that number is
 /// the whole bug: a session at 230145 input tokens on a 262144 window is *under*
 /// the window on its own, and only the `+32000` reserved for the reply pushed
-/// the total to 262145 and drew the 400 (autonomous-grid-app#47). Handed to
-/// Claude Code as `CLAUDE_CODE_MAX_OUTPUT_TOKENS` (see `claudeCodeEnv`), this
-/// caps that reservation to a figure the window can actually spare.
+/// the total to 262145 and drew the 400 (autonomous-grid-app#47).
 ///
-/// 8192 rather than more because it has to fit inside the room
-/// [agentContextCeiling] leaves above the ceiling on *every* window the app runs
-/// against, down to [kAssumedContextWindow] (65536): a reserve larger than that
-/// room would let a freshly compacted session overflow on its very next reply —
-/// the failure this is fixing, not a new one to introduce. 8192 tokens is a long
-/// reply on its own, and an agentic turn that needs more continues across
-/// requests rather than losing the work.
+/// 8192 is what the *smallest* window can spare, not what every window should
+/// give: it is what [agentReplyReserve] arrives at on [kAssumedContextWindow]
+/// (65536), and [agentContextCeiling] holds that much room twice over — once for
+/// the reply, once for a turn that grows past the ceiling — on windows where a
+/// proportional share would not cover both. What a model with a roomier window
+/// actually gets is [agentReplyReserve], not this.
 const int kAgentReplyReserveTokens = 8192;
+
+/// The most the app will ask an engine to produce in one reply.
+///
+/// Claude Code's own default, so a grid model is never asked for more than an
+/// Anthropic one would be. The relay refuses well above this anyway — measured
+/// 2026-08-19 on the office grid, `max_tokens: 65536` draws `max_tokens exceeds
+/// the relay cap of 64000` — but nothing here comes near it.
+const int kMaxAgentReplyTokens = 32000;
 
 /// The share of an engine's window an agent may fill before it has to summarize.
 ///
@@ -95,6 +100,32 @@ int agentContextCeiling(int engineWindow) {
   final ceiling = proportional < reserved ? proportional : reserved;
   final floor = engineWindow ~/ 2;
   return ceiling > floor ? ceiling : floor;
+}
+
+/// How much of [engineWindow] to leave for the model's own reply — what Claude
+/// Code is handed as `CLAUDE_CODE_MAX_OUTPUT_TOKENS` (see `claudeCodeEnv`).
+///
+/// Half the room [agentContextCeiling] leaves above the ceiling. The other half
+/// absorbs a turn that grows past the ceiling before the next between-turn check
+/// can catch it, so `ceiling + reply + overshoot` lands on the window exactly —
+/// the #47 guarantee, now holding on every window by construction instead of by
+/// a constant picked to survive the smallest one.
+///
+/// A constant is what broke it. [kAgentReplyReserveTokens] is sized for
+/// [kAssumedContextWindow] and was applied to every model, so
+/// `DeepSeek-V4-Flash-0731` — which advertises 256000 and leaves 51200 above its
+/// ceiling — was still capped at 8192. A reasoning model spends output tokens on
+/// thought before it writes a word (measured: 30-79 of them to answer `OK` to a
+/// nine-token prompt), and a turn ran 6m50s before dying on `Claude's response
+/// exceeded the 8192 output token maximum`, losing the work with 43008 tokens of
+/// its own headroom unused.
+///
+/// Raising it also moves Claude Code's own compaction earlier, but only so far:
+/// that threshold is `window − min(maxOutputTokens, 20000) − 13000`, so every
+/// value at or above 20000 shifts it by the same 20000 and no more.
+int agentReplyReserve(int engineWindow) {
+  final half = (engineWindow - agentContextCeiling(engineWindow)) ~/ 2;
+  return half < kMaxAgentReplyTokens ? half : kMaxAgentReplyTokens;
 }
 
 /// Whether a turn resuming a session that has already filled [usedTokens] of

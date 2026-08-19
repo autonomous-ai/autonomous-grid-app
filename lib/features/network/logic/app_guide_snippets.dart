@@ -317,8 +317,11 @@ int? claudeCompactWindow(int ceiling) =>
 /// Code otherwise reserves 32000 tokens for it — more than a grid model's window
 /// can spare above [kClaudeCompactWindowEnv], so a session compacted to that
 /// ceiling still drew a `400` for the reply alone (autonomous-grid-app#47).
-/// Capped to the room the ceiling leaves; the value is `kAgentReplyReserveTokens`
-/// and the two are the matched halves of one window.
+/// Capped to the room the ceiling leaves; the value is `agentReplyReserve` of
+/// that model's window and the two are the matched halves of one window. A
+/// reply cut off here costs the whole turn — Claude Code raises `response
+/// exceeded the N output token maximum` and the work is gone — so the cap has
+/// to be this model's share, not the smallest model's.
 const String kClaudeMaxOutputTokensEnv = 'CLAUDE_CODE_MAX_OUTPUT_TOKENS';
 
 /// Keeps the skills bundled inside Claude Code out of the turn.

@@ -275,9 +275,11 @@ class ClaudeChatSender implements ChatSender {
             compactWindow: claudeCompactWindow(agentContextCeiling(window)),
             // Claude Code reserves 32000 output tokens by default — more than a
             // grid model's window can spare above the ceiling, and the reply
-            // alone drew the 400 (#47). Cap it to what the ceiling leaves room
-            // for; the two are the matched halves of the same window.
-            maxOutputTokens: kAgentReplyReserveTokens,
+            // alone drew the 400 (#47). Sized to what *this* model's ceiling
+            // leaves room for: the two are the matched halves of one window, so
+            // a 256000 model is no longer held to what a 65536 one could spare —
+            // which is what cut a reply off mid-turn at 8192.
+            maxOutputTokens: agentReplyReserve(window),
             // A chat turn, so the ~922 KB reference for Anthropic's API — and
             // every other bundle that could grow to match it — stays out of a
             // window this turn needs for the conversation. Grid's own skills
