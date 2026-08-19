@@ -177,8 +177,15 @@ class _FontScope extends InheritedNotifier<FontNotifier> {
 /// hex literals, and resolves per [AppTheme.brightness].
 abstract final class AppPalette {
   // the conversation / content area — pure white in light, like Codex.
+  //
+  // Dark is a charcoal page rather than the near-black it was (#0A0A0A). That
+  // moves every surface above it closer: a card lands at 1.065:1 where it had
+  // 1.188, a dialog at 1.090 where it had 1.215, and [AppPalette.panelBg]
+  // (#141414) is now *darker* than the page it sits on. Depth in dark is
+  // therefore carried by the rim and the shadow, not by the fill — §2's stack
+  // still holds, it just has less room to say it in.
   static Color get windowBg =>
-      AppTheme.pick(const Color(0xFFFFFFFF), const Color(0xFF0A0A0A));
+      AppTheme.pick(const Color(0xFFFFFFFF), const Color(0xFF181818));
 
   // sidebar column — a barely-there cool grey (Codex keeps the rail almost white,
   // set apart by a hairline, not a tone) / charcoal panel in dark.
@@ -204,12 +211,12 @@ abstract final class AppPalette {
   /// findable at the seam the eye is already looking at; a guide is a long thin
   /// run the eye has to follow, and at the divider's weight it stops reading as
   /// one line and breaks into stray ticks wherever anything crosses it.
-  /// Measured against the composited rail (`AppGlass.sidebarFill` over
-  /// [windowBg]): divider lands at **1.14:1 light / 1.24:1 dark**, this at
-  /// **1.45:1 in both**.
+  /// Measured against the rail it is drawn on (`AppGlass.sidebarFill`, over
+  /// [windowBg] in light): divider lands at **1.14:1 light / 1.27:1 dark**,
+  /// this at **1.45:1 light / 1.47:1 dark**.
   ///
   /// The two alphas differ because the rails differ — `#F9F9F8` light against
-  /// `#191919` dark — and matching the *numbers* rather than the alphas is what
+  /// `#242424` dark — and matching the *numbers* rather than the alphas is what
   /// keeps the guide equally present in both themes instead of a step fainter
   /// in light, which is how the divider's pair behaved.
   static Color get guide =>
@@ -242,9 +249,9 @@ abstract final class AppPalette {
   /// rail — rather than a fill behind white text.
   ///
   /// It has to part from [accent] in dark. A selected rail row composites to
-  /// #2A2A2A, and #2F5BEA on that is 2.6:1 — under the 3.0 WCAG 1.4.11 asks of
+  /// #353535, and #2F5BEA on that is 2.2:1 — under the 3.0 WCAG 1.4.11 asks of
   /// a UI element, which is why the selected icon read as flat charcoal-on-
-  /// charcoal there while light (4.6:1) was fine. Lightened to 4.65:1 on that
+  /// charcoal there while light (4.6:1) was fine. Lightened to 3.97:1 on that
   /// row, still plainly the same indigo. [accent] can't simply take this value:
   /// it is the fill under white text in ~100 places, and lightening it there
   /// would drop that text to ~3.1:1 — fixing the icon by breaking the buttons.
@@ -493,8 +500,15 @@ abstract final class AppSurface {
 /// not dense content cards.
 abstract final class AppGlass {
   // Near-opaque so the rail reads as a calm flat surface, not a frosted panel.
+  //
+  // Dark is fully opaque and says the value it means. Nothing is blurred behind
+  // the rail (see [AppSidebar]), so the alpha did one thing: pull the fill 6%
+  // back towards the page under it and land the rail on #191919 rather than the
+  // number written here — a token that could only be read by compositing it.
+  // At #242424 the rail is 1.27:1 against the page, so it reads as a surface
+  // the content lies beside rather than the same charcoal with a hairline on it.
   static Color get sidebarFill =>
-      AppTheme.pick(const Color(0xF7F9F9F8), const Color(0xF01A1A1A));
+      AppTheme.pick(const Color(0xF7F9F9F8), const Color(0xFF242424));
 
   // Pills/menus are solid white in Codex (their softness comes from the rim and
   // a whisper of shadow, not from translucency).
@@ -555,7 +569,7 @@ abstract final class AppGlass {
   ///
   /// ```
   ///           rest      hover     hover vs rest
-  /// dark      1.215     1.325     1.091
+  /// dark      1.090     1.189     1.091
   /// light     1.110     1.205     1.086
   /// ```
   ///
@@ -702,7 +716,7 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
           primary: AppPalette.accent,
           onPrimary: Colors.white,
           secondary: AppPalette.accent,
-          surface: Color(0xFF0A0A0A),
+          surface: Color(0xFF181818),
           onSurface: Color(0xFFF5F5F5),
           onSurfaceVariant: Color(0xFFA8A8A2),
           surfaceContainerHighest: Color(0xFF1E1E1E),

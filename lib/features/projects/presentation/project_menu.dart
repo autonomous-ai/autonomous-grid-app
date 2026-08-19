@@ -431,11 +431,12 @@ class _RenameProjectDialogState extends State<_RenameProjectDialog> {
     // stock AlertDialog brings Material's surface tint and a tighter radius,
     // neither of which belongs to this design system.
     return AlertDialog(
-      // `AppSurface.surfaceFill`, not `AppPalette.windowBg`: on the dark theme
-      // windowBg is #0A0A0A — *darker* than the panel (#141414) and cards
-      // (#1E1E1E) it floats above, so a dialog wearing it sank into the page
-      // instead of rising off it. A dialog is the topmost layer, so it takes
-      // the lifted surface (#202020, 1.215:1 against the page) per §2's stack.
+      // `AppSurface.surfaceFill`, not `AppPalette.windowBg`: windowBg *is* the
+      // page this dialog opens over, so a dialog wearing it is the page's own
+      // colour — 1.000:1, an edgeless slab. A dialog is the topmost layer, so
+      // it takes the lifted surface (#202020, 1.090:1 against the dark page)
+      // per §2's stack. That margin is thin since the page moved to #181818,
+      // which is why the shadow does the lifting here and the fill only helps.
       backgroundColor: AppGlass.surfaceFill,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

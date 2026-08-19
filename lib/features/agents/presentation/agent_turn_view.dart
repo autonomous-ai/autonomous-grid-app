@@ -956,10 +956,10 @@ class _StepGlyph extends StatelessWidget {
 /// [AppSurface.wellFill] is an overlay, so it separates from whatever it lands
 /// on instead of being picked against one resting colour. Computed for where it
 /// actually lands — the transcript page, `AppPalette.windowBg` `#FFFFFF` /
-/// `#0A0A0A` — the composite is `#EDEDED` at **1.171:1** light and `#181818` at
-/// **1.115:1** dark. The figures in the token's own doc (1.168 / 1.183) are
+/// `#181818` — the composite is `#EDEDED` at **1.171:1** light and `#262626` at
+/// **1.173:1** dark. The figures in the token's own doc (1.168 / 1.183) are
 /// measured against a card, which is not this ground; the dark number here is
-/// the same 1.115 the markdown code block ships at in the same place.
+/// the same 1.173 the markdown code block ships at in the same place.
 ///
 /// The text on it is measured too: `textPrimary` reads 14.9:1 light / 16.3:1
 /// dark, `textSecondary` (the label) 5.3:1 / 7.4:1 — both clear of the 4.5:1

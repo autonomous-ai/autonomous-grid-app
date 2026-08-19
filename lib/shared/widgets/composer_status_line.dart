@@ -76,22 +76,25 @@ class _ComposerStatusLineState extends State<ComposerStatusLine> {
       child: FractionallySizedBox(
         widthFactor: 0.9,
         child: DecoratedBox(
-          // Fill and shadow, never a rim (§0.1) — and `inset`, which is the only
-          // surface token that reads in **both** themes here. Measured against
-          // the page (`windowBg`) and against the composer's own fill
-          // (`AppGlass.surfaceFill`):
+          // Fill and shadow, never a rim (§0.1) — and no single token reads in
+          // both themes any more, so this one is picked per brightness.
+          // Measured against the page (`windowBg`) and against the composer's
+          // own fill (`AppGlass.surfaceFill`):
           //
           //   token                 dark/page  light/page  dark/box  light/box
-          //   AppCard.inset            1.115      1.073       1.09      1.073
-          //   AppCard.base             1.188      1.000       1.023     1.000
-          //   AppGlass.surfaceFill     1.215      1.000       1.000     1.000
+          //   AppCard.inset            1.000      1.073       1.09      1.073
+          //   AppCard.base             1.065      1.000       1.023     1.000
+          //   AppGlass.surfaceFill     1.090      1.000       1.000     1.000
           //
-          // Both of the brighter ones are #FFFFFF in light, which is also the
-          // page and also the composer: the bar would be a shadow around nothing.
-          // Dark alone would never have shown it — the usual trap, running the
-          // other way for once.
+          // Light still has to recess: the two brighter ones are #FFFFFF there,
+          // which is also the page and also the composer, so the bar would be a
+          // shadow around nothing. Dark can no longer recess to `inset` — the
+          // page moved to #181818 and `inset` *is* #181818, which is the same
+          // bar around nothing, one theme over. It lifts instead, to the
+          // composer's own fill: 1.090 off the page, and where the strip comes
+          // out from behind the box it reads as part of the box.
           decoration: BoxDecoration(
-            color: AppCard.inset,
+            color: AppTheme.isDark ? AppGlass.surfaceFill : AppCard.inset,
             // Rounded on top only, and to the composer's own 18 rather than the
             // card ladder's 14: the bottom edge is a seam, not an edge, and a
             // corner that curved there would leave a notch against the box below.

@@ -488,7 +488,7 @@ class _RenameChatDialogState extends State<_RenameChatDialog> {
     return AlertDialog(
       // Not windowBg: the dialog opens *over* the window, which is windowBg too
       // — 1.00:1 against its own ground in both themes, an edgeless slab. This
-      // is the same fill the menus use, lifted clear of the page (1.38:1 in
+      // is the same fill the menus use, lifted clear of the page (1.24:1 in
       // dark), and it keeps the field inside readable: cardBg on cardBg would
       // be another 1.00:1, trading this bug for the field vanishing instead.
       backgroundColor: appMenuFill(),
