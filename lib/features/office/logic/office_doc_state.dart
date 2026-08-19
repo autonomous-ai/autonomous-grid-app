@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../../core/folder_name.dart';
 import 'docx_format.dart';
+import 'docx_paragraph_style.dart';
 
 /// What the Docs screen is showing right now.
 ///
@@ -35,6 +36,9 @@ final class OfficeDocOpen extends OfficeDocState {
     required this.savedLines,
     this.bytes,
     this.formats = const [],
+    this.styles = const [],
+    this.savedStyles = const [],
+    this.caretLine = 0,
     this.pageWidthPx = 816,
     this.staleOnDisk = false,
     this.save = const OfficeSaveIdle(),
@@ -48,6 +52,45 @@ final class OfficeDocOpen extends OfficeDocState {
   /// which is also the style the save gives it (`_insertLines` clones the
   /// paragraph above). One rule, in two places that have to agree.
   final List<DocxLineFormat> formats;
+
+  /// What the toolbar has changed and Save has not yet written — one entry per
+  /// line, null where the user has changed nothing.
+  ///
+  /// A delta rather than a replacement format, for the reason
+  /// [DocxParagraphStyle] gives: what is written back has to be the properties
+  /// the user pressed and not the whole resolved look, or a heading stops
+  /// following its style the first time somebody centres it.
+  ///
+  /// Kept in step with [lines] by every edit that changes the line count, so
+  /// index i of one is index i of the other — the same rule the save relies on.
+  final List<DocxParagraphStyle?> styles;
+
+  /// The formatting that is already in the file, the yardstick for [dirty] —
+  /// the same job [savedLines] does for the words.
+  final List<DocxParagraphStyle?> savedStyles;
+
+  /// Which paragraph the caret was last in. What the toolbar and the ruler show
+  /// the state of, and what they change.
+  ///
+  /// Held here rather than in the editor's own state because two widgets on
+  /// opposite sides of the screen need the same answer, and because a toolbar
+  /// button takes the focus off the page when it is pressed — the last
+  /// paragraph the user was *in* has to outlive that.
+  final int caretLine;
+
+  /// How paragraph [index] looks right now — what is in the file, with anything
+  /// the toolbar has changed laid over it.
+  ///
+  /// The one place the two are combined, so the page, the toolbar and the ruler
+  /// cannot disagree about what a paragraph looks like. A line past the end of
+  /// [formats] is one the user split off another and takes that one's look,
+  /// which is also the look the save gives it (`_insertLines` clones the
+  /// paragraph above).
+  DocxLineFormat formatAt(int index) {
+    if (formats.isEmpty) return DocxLineFormat.fallback;
+    final at = index < formats.length ? index : formats.length - 1;
+    return formats[at].withStyle(index < styles.length ? styles[index] : null);
+  }
 
   /// The document's own page width in logical pixels — US Letter until the file
   /// says otherwise. Both views size their sheet by it.
@@ -106,6 +149,19 @@ final class OfficeDocOpen extends OfficeDocState {
     for (var i = 0; i < lines.length; i++) {
       if (lines[i] != savedLines[i]) return true;
     }
+    // Formatting counts as an edit as much as typing does — a document that was
+    // only centred still has something in it the file has not got, and a Save
+    // button that stayed grey would lose it.
+    //
+    // Compared by identity, which is exact here rather than approximate: a
+    // change always makes a new [DocxParagraphStyle], and a save records the
+    // very list it wrote. Nothing in this feature builds an equal-but-separate
+    // one, so there is no case where identity says "changed" and the file
+    // disagrees.
+    if (styles.length != savedStyles.length) return true;
+    for (var i = 0; i < styles.length; i++) {
+      if (!identical(styles[i], savedStyles[i])) return true;
+    }
     return false;
   }
 
@@ -114,6 +170,9 @@ final class OfficeDocOpen extends OfficeDocState {
   OfficeDocOpen copyWith({
     List<String>? lines,
     List<String>? savedLines,
+    List<DocxParagraphStyle?>? styles,
+    List<DocxParagraphStyle?>? savedStyles,
+    int? caretLine,
     OfficeSaveState? save,
     bool? staleOnDisk,
   }) => OfficeDocOpen(
@@ -121,6 +180,9 @@ final class OfficeDocOpen extends OfficeDocState {
     path: path,
     lines: lines ?? this.lines,
     savedLines: savedLines ?? this.savedLines,
+    styles: styles ?? this.styles,
+    savedStyles: savedStyles ?? this.savedStyles,
+    caretLine: caretLine ?? this.caretLine,
     bytes: bytes,
     formats: formats,
     pageWidthPx: pageWidthPx,

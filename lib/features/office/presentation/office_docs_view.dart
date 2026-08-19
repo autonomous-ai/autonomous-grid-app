@@ -13,6 +13,8 @@ import '../logic/office_layout.dart';
 import 'widgets/office_chat_column.dart';
 import 'widgets/office_doc_bar.dart';
 import 'widgets/office_editor_view.dart';
+import 'widgets/office_rulers.dart';
+import 'widgets/office_toolbar.dart';
 
 /// Docs: a Word document on the right, the assistant beside it on the left.
 ///
@@ -56,6 +58,11 @@ class OfficeDocsView extends ConsumerWidget {
           ),
           PanelSplitter(
             axis: Axis.vertical,
+            // No hover mark on this one — it stays a plain hairline and the
+            // resize cursor does the talking. See [PanelSplitter.highlightOnHover]:
+            // beside the page's light chrome, a lit seam reads as a caret in
+            // accent and as a white rule in grey.
+            highlightOnHover: false,
             onDrag: chat.nudge,
             onReset: chat.reset,
           ),
@@ -100,6 +107,9 @@ class _DocumentSide extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         OfficeDocBar(doc: open),
+        // Only with a document on the desk: a toolbar over an empty screen
+        // formats nothing, and every control on it would be greyed out.
+        if (open != null) OfficeToolbar(doc: open),
         // The file moved on under the document — the assistant edited it — and
         // there are unsaved edits here, so the app didn't choose between them.
         // This is the one notice that carries an action, because the way out
@@ -137,34 +147,79 @@ class _DocumentSide extends ConsumerWidget {
               label: message,
             ),
           ),
-        // The desk belongs to this half of the screen, not to any one state on
-        // it: the page, the spinner while a file is read and both empty states
-        // all sit on the same surface, so a document arriving doesn't repaint
-        // the background under it.
+        // The desk is drawn by the page, not by this half of the screen.
+        //
+        // It used to sit under every state here, so a document arriving didn't
+        // repaint the background — which was right while the desk followed the
+        // app's theme. It doesn't any more ([AppPalette.paperDesk] is one fixed
+        // grey now), and these three states are written in the app's own ink:
+        // on a dark theme that put near-white words on a light grey desk. A
+        // desk with no page on it is furniture for nothing.
         Expanded(
-          child: ColoredBox(
-            color: AppPalette.paperDesk,
-            child: LayoutBuilder(
-              builder: (context, constraints) => switch (state) {
-                OfficeDocEmpty() => _NoDocument(
-                  withAction: constraints.maxWidth >= _buttonRoomWidth,
-                ),
-                OfficeDocOpening(:final name) => LoadingView(
-                  message: 'Opening $name…',
-                ),
-                OfficeDocOpen() => OfficeEditorView(doc: state),
-                OfficeDocFailed(:final name, :final message) => _CouldNotOpen(
-                  name: name,
-                  message: message,
-                  withAction: constraints.maxWidth >= _buttonRoomWidth,
-                ),
-              },
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) => switch (state) {
+              OfficeDocEmpty() => _NoDocument(
+                withAction: constraints.maxWidth >= _buttonRoomWidth,
+              ),
+              OfficeDocOpening(:final name) => LoadingView(
+                message: 'Opening $name…',
+              ),
+              OfficeDocOpen() => _RuledPage(doc: state),
+              OfficeDocFailed(:final name, :final message) => _CouldNotOpen(
+                name: name,
+                message: message,
+                withAction: constraints.maxWidth >= _buttonRoomWidth,
+              ),
+            },
           ),
         ),
       ],
     );
   }
+}
+
+/// The page with its two rulers around it.
+///
+/// The vertical strip takes its width out of the row **before** the page is
+/// centred, and the horizontal ruler is inset by that same width — so both
+/// rulers and the paper agree about where the middle is. Laid out the other way
+/// round, the ruler's inch marks sit 22px off the margin they are supposed to
+/// be measuring, which is worse than having no ruler.
+class _RuledPage extends StatelessWidget {
+  const _RuledPage({required this.doc});
+
+  final OfficeDocOpen doc;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          // The corner where the two rulers meet, in their own colour — a
+          // spreadsheet's blank corner box. Left transparent it was a notch of
+          // app surface cut out of the light strip.
+          const ColoredBox(
+            color: AppPalette.paperChrome,
+            child: SizedBox(
+              width: OfficeVerticalRuler.width,
+              height: OfficeHorizontalRuler.height,
+            ),
+          ),
+          Expanded(child: OfficeHorizontalRuler(doc: doc)),
+        ],
+      ),
+      Expanded(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const OfficeVerticalRuler(),
+            Expanded(child: OfficeEditorView(doc: doc)),
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
 /// Nothing open yet — so the screen's one job is to offer a document.

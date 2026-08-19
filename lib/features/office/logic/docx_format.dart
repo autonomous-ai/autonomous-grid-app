@@ -137,10 +137,29 @@ class DocxLineFormat {
 }
 
 /// Twips (1/1440 inch) to logical pixels (1/96 inch).
-double _px(num twips) => twips / 15;
+///
+/// Public because the toolbar and the ruler work the same sum backwards — a
+/// dragged indent marker is pixels that have to become twips before they are
+/// written. Two copies of a conversion are two chances to disagree about what
+/// half an inch is.
+double docxPxOfTwips(num twips) => twips / 15;
+
+/// How many twips [px] logical pixels are — the inverse of [docxPxOfTwips].
+int docxTwipsOfPx(double px) => (px * 15).round();
+
+/// One inch, in twips. Word's own unit for a page margin, a tab stop and the
+/// step the indent buttons move by.
+const docxTwipsPerInch = 1440;
 
 /// Half-points to logical pixels: a point is 4/3 of a pixel at 96dpi.
-double _sizePx(num halfPoints) => halfPoints * 2 / 3;
+double docxPxOfHalfPoints(num halfPoints) => halfPoints * 2 / 3;
+
+/// Points — what a person calls a type size, and what the toolbar shows — from
+/// the half-points `w:sz` counts in.
+double docxPointsOfHalfPoints(num halfPoints) => halfPoints / 2;
+
+/// Half-points from points, for writing a chosen size back.
+int docxHalfPointsOfPoints(double points) => (points * 2).round();
 
 /// The formatting of each paragraph in [paragraphs], in the same order.
 ///
@@ -272,7 +291,7 @@ DocxLineFormat _formatOf(
             (levelHang != null ? -levelHang : style.indentFirstLineTwips ?? 0);
   return DocxLineFormat(
     align: _align(_val(pPr, 'jc')) ?? style.align ?? DocxTextAlign.left,
-    fontSizePx: _sizePx(size),
+    fontSizePx: docxPxOfHalfPoints(size),
     bold: _onOff(rPr, 'b') ?? style.bold ?? defaults.bold ?? false,
     italic: _onOff(rPr, 'i') ?? style.italic ?? defaults.italic ?? false,
     underline: _underline(rPr) ?? style.underline ?? false,
@@ -281,21 +300,23 @@ DocxLineFormat _formatOf(
     // measuring the face — a per-font table (Arial 1.15, Calibri 1.22, …) is what
     // it would take to match Word's line rhythm exactly.
     lineHeight: lineTwips == null ? 1.2 : 1.2 * (lineTwips / 240),
-    indentLeftPx: _px(
+    indentLeftPx: docxPxOfTwips(
       _intAttr(indent, 'left') ??
           _intAttr(indent, 'start') ??
           indentOf(list, numbering) ??
           style.indentLeftTwips ??
           0,
     ),
-    indentRightPx: _px(
+    indentRightPx: docxPxOfTwips(
       _intAttr(indent, 'right') ?? _intAttr(indent, 'end') ?? 0,
     ),
-    firstLinePx: _px(firstLineTwips),
-    spaceBeforePx: _px(
+    firstLinePx: docxPxOfTwips(firstLineTwips),
+    spaceBeforePx: docxPxOfTwips(
       _intAttr(spacing, 'before') ?? style.spaceBeforeTwips ?? 0,
     ),
-    spaceAfterPx: _px(_intAttr(spacing, 'after') ?? style.spaceAfterTwips ?? 0),
+    spaceAfterPx: docxPxOfTwips(
+      _intAttr(spacing, 'after') ?? style.spaceAfterTwips ?? 0,
+    ),
     fontFamily: _fontOf(rPr) ?? style.font ?? defaults.font,
     table: table,
     picture: _pictureOf(paragraph, media),

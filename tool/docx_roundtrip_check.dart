@@ -11,6 +11,8 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:docx_creator/docx_creator.dart';
 import 'package:grid_app/features/office/logic/docx_edit.dart';
+import 'package:grid_app/features/office/logic/docx_format.dart';
+import 'package:grid_app/features/office/logic/docx_paragraph_style.dart';
 
 const _document = '''
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -198,14 +200,171 @@ Future<void> main() async {
     true,
   );
 
-  // 8. Not a docx at all.
+  // 8. The toolbar's formatting, which is the half of a save that must *not*
+  // rebuild a paragraph: the bold word inside "Hello **world**" has to survive
+  // that paragraph being centred, where retyping it flattens the run.
+  final centred = _bodyOf(
+    doc.save(
+      _asOpened,
+      styles: [
+        null,
+        const DocxParagraphStyle(align: DocxTextAlign.center),
+        null,
+        null,
+        null,
+        null,
+      ],
+    ),
+  );
+  check(
+    'alignment lands in the paragraph, before its runs',
+    centred.contains('<w:pPr><w:jc w:val="center"/></w:pPr>'),
+    true,
+  );
+  check(
+    'and the runs it did not touch keep their own formatting',
+    centred.contains('<w:r><w:rPr><w:b/></w:rPr><w:t>world</w:t></w:r>'),
+    true,
+  );
+  check(
+    'a paragraph nobody formatted is not rewritten',
+    centred.contains('<w:p><w:r><w:tab/><w:t>tabbed</w:t></w:r></w:p>'),
+    true,
+  );
+
+  // Character formatting goes on every run of the paragraph *and* on the
+  // paragraph mark, so an empty paragraph keeps what was chosen for it.
+  final bold = _bodyOf(
+    doc.save(
+      _asOpened,
+      styles: [
+        null,
+        const DocxParagraphStyle(bold: true, fontHalfPoints: 28),
+        null,
+        null,
+        null,
+        null,
+      ],
+    ),
+  );
+  check(
+    'bold and size reach both runs of the paragraph',
+    RegExp(r'<w:b w:val="1"/>').allMatches(bold).length >= 2 &&
+        RegExp(r'<w:sz w:val="28"/>').allMatches(bold).length >= 2,
+    true,
+  );
+  check(
+    'bold off is written as an explicit off, not a missing element',
+    _bodyOf(
+      doc.save(
+        _asOpened,
+        styles: [
+          const DocxParagraphStyle(bold: false),
+          null,
+          null,
+          null,
+          null,
+          null,
+        ],
+      ),
+    ).contains('<w:b w:val="0"/>'),
+    true,
+  );
+  check(
+    'the style keeps its place ahead of what this writes',
+    _bodyOf(
+      doc.save(
+        _asOpened,
+        styles: [
+          const DocxParagraphStyle(align: DocxTextAlign.right),
+          null,
+          null,
+          null,
+          null,
+          null,
+        ],
+      ),
+    ).contains('<w:pStyle w:val="Heading1"/><w:jc w:val="right"/>'),
+    true,
+  );
+  // A hanging indent and a first-line indent are the same attribute slot, and a
+  // paragraph carrying both reads as hanging — so the one being replaced has to
+  // go.
+  final hung = _bodyOf(
+    doc.save(
+      _asOpened,
+      styles: [
+        null,
+        const DocxParagraphStyle(firstLineTwips: -360, indentLeftTwips: 720),
+        null,
+        null,
+        null,
+        null,
+      ],
+    ),
+  );
+  check(
+    'a hang is written as w:hanging with no w:firstLine beside it',
+    hung.contains('w:hanging="360"') && !hung.contains('w:firstLine'),
+    true,
+  );
+  final underlined = _bodyOf(
+    doc.save(
+      _asOpened,
+      styles: [
+        const DocxParagraphStyle(underline: true),
+        const DocxParagraphStyle(underline: false),
+        null,
+        null,
+        null,
+        null,
+      ],
+    ),
+  );
+  check(
+    'underline is written as w:u single, and off as an explicit none',
+    underlined.contains('<w:u w:val="single"/>') &&
+        underlined.contains('<w:u w:val="none"/>'),
+    true,
+  );
+  // The everyday case on a brand-new document: one empty paragraph, formatted
+  // *before* anything is typed into it. The text pass rebuilds that paragraph's
+  // run and the format pass runs after it, so the choice has to survive being
+  // made first — which is the order the toolbar is used in.
+  check(
+    'a format chosen before the words survives typing them',
+    _bodyOf(
+      doc.save(
+        [..._asOpened.take(5), 'typed after pressing U'],
+        styles: [
+          null,
+          null,
+          null,
+          null,
+          null,
+          const DocxParagraphStyle(underline: true, bold: true),
+        ],
+      ),
+    ).contains(
+      '<w:rPr><w:b w:val="1"/><w:u w:val="single"/></w:rPr>'
+      '<w:t xml:space="preserve">typed after pressing U</w:t>',
+    ),
+    true,
+  );
+  check(
+    'formatting nothing writes the same bytes as before it existed',
+    _bodyOf(doc.save(_asOpened, styles: [null, null, null, null, null, null])),
+    _bodyOf(doc.save(_asOpened)),
+  );
+
+  // 9. Not a docx at all.
   check(
     'rejects a non-zip',
     DocxFile.open(Uint8List.fromList([1, 2, 3])),
     null,
   );
 
-  // 9. The blank document "New" makes is one this patcher can open and write
+  // 10. The blank document "New" makes is one this patcher can open and write
   // back. Two packages have to agree here — docx_creator generates the file and
   // docx_edit patches it — so a version bump to either can break New without
   // touching a line of our own code.

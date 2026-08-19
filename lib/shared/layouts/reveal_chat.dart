@@ -35,6 +35,25 @@ void openChat(WidgetRef ref, String id) {
   unawaited(ref.read(officeDocProvider.notifier).open(path));
 }
 
+/// Put the app on the screen the chat it reopened on belongs to.
+///
+/// [openChat] holds that rule for every click; launching is the one arrival
+/// that is not a click. The app restores the newest conversation and shows
+/// Chat, so a document's chat came back as a transcript about a file that
+/// wasn't on screen — half of what the user left.
+///
+/// Deliberately narrow. It does nothing for an ordinary chat, which is already
+/// where it belongs, and nothing once the user has navigated somewhere of their
+/// own accord — so the only thing it can ever do is finish an arrival, never
+/// take somebody off a screen they chose.
+void settleRestoredChat(WidgetRef ref) {
+  if (ref.read(shellSectionProvider) != ShellSection.chat) return;
+  final id = ref.read(chatSessionsProvider).activeId;
+  if (id == null) return;
+  if (ref.read(officeDocChatProvider.notifier).documentOf(id) == null) return;
+  openChat(ref, id);
+}
+
 /// Bring the user to a saved chat from outside the app's own UI — the tray menu,
 /// a clicked desktop notification.
 ///

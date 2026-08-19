@@ -11,6 +11,7 @@ import '../../../shared/file_changes.dart';
 import '../../../shared/folder_watch.dart';
 import '../../files/logic/files_path.dart';
 import 'docx_edit.dart';
+import 'docx_paragraph_style.dart';
 import 'office_doc_chat.dart';
 import 'office_doc_state.dart';
 
@@ -209,6 +210,10 @@ class OfficeDocController extends Notifier<OfficeDocState> {
           path: path,
           lines: List.unmodifiable(docx.lines),
           savedLines: List.unmodifiable(docx.lines),
+          // Nothing pending, and the two lists are the same one — which is what
+          // makes `dirty` false on a document just opened.
+          styles: List.filled(docx.lines.length, null),
+          savedStyles: List.filled(docx.lines.length, null),
           // Kept to tell a later change on disk from the app's own save.
           bytes: bytes,
           formats: docx.formats,
@@ -273,7 +278,7 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     final lines = [...open.lines]..[index] = value;
     // The save state clears with the edit: the message named a save of text that
     // is no longer what is here.
-    _put(open, lines);
+    _put(open, lines, _stylesOf(open));
   }
 
   /// Break paragraph [index] in two at [at] — what Enter does.
@@ -290,11 +295,61 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     final lines = [...open.lines]
       ..[index] = line.substring(0, cut)
       ..insert(index + 1, line.substring(cut));
-    _put(open, lines);
+    // The new paragraph takes the formatting of the one it came out of — the
+    // same rule `_insertLines` follows when it clones that paragraph's XML, and
+    // the two have to agree or a split heading would save as a heading and draw
+    // as body text. Kept the same length as [lines] here, because everything
+    // downstream indexes the two together.
+    final styles = [..._stylesOf(open)]
+      ..insert(index + 1, _styleAt(open, index));
+    _put(open, lines, styles);
   }
 
-  void _put(OfficeDocOpen open, List<String> lines) => state = open.copyWith(
+  /// Remember where the caret is, so the toolbar and the ruler know which
+  /// paragraph they are showing — and which one they change.
+  void focusLine(int index) {
+    final open = state;
+    if (open is! OfficeDocOpen || open.caretLine == index) return;
+    if (index < 0 || index >= open.lines.length) return;
+    state = open.copyWith(caretLine: index);
+  }
+
+  /// Apply [change] to the paragraph the caret is in.
+  ///
+  /// Merged onto whatever is already pending there rather than replacing it, so
+  /// pressing Bold and then Centre leaves a paragraph that is both. What is
+  /// merged is only what was pressed — see [DocxParagraphStyle] for why the
+  /// resolved look must never be written back.
+  void applyStyle(DocxParagraphStyle change) {
+    final open = state;
+    if (open is! OfficeDocOpen || change.isEmpty) return;
+    final at = open.caretLine;
+    if (at < 0 || at >= open.lines.length) return;
+    final styles = [..._stylesOf(open)];
+    styles[at] = (styles[at] ?? const DocxParagraphStyle()).merge(change);
+    _put(open, open.lines, styles);
+  }
+
+  /// [open]'s pending formatting, grown to match its lines.
+  ///
+  /// A document opened before a split has one entry per paragraph, and a split
+  /// keeps them in step — but a list that has fallen behind is a wrong index,
+  /// not a missing entry, so it is padded rather than trusted.
+  List<DocxParagraphStyle?> _stylesOf(OfficeDocOpen open) => [
+    ...open.styles,
+    for (var i = open.styles.length; i < open.lines.length; i++) null,
+  ];
+
+  DocxParagraphStyle? _styleAt(OfficeDocOpen open, int index) =>
+      index < open.styles.length ? open.styles[index] : null;
+
+  void _put(
+    OfficeDocOpen open,
+    List<String> lines,
+    List<DocxParagraphStyle?> styles,
+  ) => state = open.copyWith(
     lines: List.unmodifiable(lines),
+    styles: List.unmodifiable(styles),
     save: const OfficeSaveIdle(),
   );
 
@@ -306,6 +361,7 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     if (open.save is OfficeSaveRunning) return;
 
     final lines = open.lines;
+    final styles = _stylesOf(open);
     // The patch is built from the bytes this document was *opened* with, so
     // writing it over a file that has changed since would erase that change —
     // and the assistant changes these files while they are open. Checked here
@@ -325,7 +381,7 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     }
     state = open.copyWith(save: const OfficeSaveRunning());
     try {
-      await _writeAtomically(open.path, baseline.save(lines));
+      await _writeAtomically(open.path, baseline.save(lines, styles: styles));
     } on Object catch (error, stack) {
       ref
           .read(appLogProvider)
@@ -344,9 +400,13 @@ class OfficeDocController extends Notifier<OfficeDocState> {
     final latest = state;
     if (latest is! OfficeDocOpen || latest.path != open.path) return;
     // [savedLines] is what was written, not what the editor holds now: the user
-    // may have typed on while the write ran, and those keystrokes are still
-    // unsaved.
-    state = latest.copyWith(savedLines: lines, save: const OfficeSaveIdle());
+    // may have typed on while the write ran, and those keystrokes — and any
+    // button they pressed — are still unsaved.
+    state = latest.copyWith(
+      savedLines: lines,
+      savedStyles: styles,
+      save: const OfficeSaveIdle(),
+    );
   }
 
   void _fail(String message) {

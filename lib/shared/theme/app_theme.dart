@@ -301,11 +301,49 @@ abstract final class AppPalette {
   static const paper = Color(0xFFFFFFFF);
   static const paperInk = Color(0xFF000000);
 
-  /// The desk the page sits on. This one *is* chrome, so it does follow the
-  /// theme — and it has to differ from [paper] in light mode too, or the page
-  /// loses its edges against a white pane.
-  static Color get paperDesk =>
-      AppTheme.pick(const Color(0xFFF0F0EE), const Color(0xFF141414));
+  /// The furniture *around* the page — the formatting bar and the two rulers.
+  ///
+  /// Light in both themes, like [paper] above, and for a reason one step on
+  /// from it. The page stays white because it is what you send; these stay light
+  /// because they are what you set it with, and a ruler mixed for charcoal
+  /// while the paper beside it is white belongs to neither. Word and Google Docs
+  /// both keep this band light against a dark desk, which is what makes the page
+  /// read as a page rather than as a white hole.
+  ///
+  /// `const` for the same reason [paper] is: a value that cannot be
+  /// [AppTheme.pick]ed cannot quietly start following the theme again.
+  ///
+  /// Measured on [paperChrome]: [paperChromeInk] 11.3:1, [paperChromeInkSoft]
+  /// 5.1:1 — both clear §11 with room, which the app's own text tokens would not
+  /// have on this surface in dark.
+  static const paperChrome = Color(0xFFF2F1ED);
+
+  /// Hairlines, and the ruler's margin band.
+  static const paperChromeLine = Color(0xFFD6D5CF);
+
+  /// A pressed toggle, and the lift under a hovered glyph.
+  static const paperChromeFill = Color(0xFFE3E2DC);
+
+  /// Labels, glyphs and the ruler's numbers.
+  static const paperChromeInk = Color(0xFF33332F);
+
+  /// The resting ink of a control that isn't the one in force.
+  static const paperChromeInkSoft = Color(0xFF63625C);
+
+  /// The desk the page sits on.
+  ///
+  /// It used to follow the theme, and in dark that made it `#141414` — a page
+  /// of white paper laid on near-black, which is the harshest edge the app had
+  /// and the thing that made this screen tiring to look at. Now that the bar and
+  /// the rulers around the page are fixed light, a desk that flipped was also
+  /// the one surface still changing theme in the middle of the document, with
+  /// chrome above it that didn't.
+  ///
+  /// So: one warm grey, in both. Deeper than [paperChromeLine] so the desk reads
+  /// as *behind* the rulers rather than continuous with them, and far enough
+  /// from [paper] that the page keeps its edges — which was the reason the light
+  /// value could never be white either.
+  static const paperDesk = Color(0xFFC4C3BD);
 }
 
 /// The scrollbar thumb, per brightness.
