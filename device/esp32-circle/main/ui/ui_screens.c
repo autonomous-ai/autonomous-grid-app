@@ -3686,6 +3686,25 @@ int ui_notif_pull_zone_px(void)
     return on_project_page() ? 44 : 90;
 }
 
+// Focus a tile because GRID-APP asked, not because the user swiped.
+//
+// The difference is the loop. apply_active_from_col runs on the way there and would otherwise notice a
+// new centred tile and report it straight back — a round trip that only ends because the id stops
+// changing. Marking it as already-sent here ends it on the first lap; grid-app does the same on its side,
+// so neither end depends on the other being careful.
+//
+// A tile this panel does not have is ignored: the app is ahead of the list this panel was sent, and the
+// `chats` that brings the tile will arrive on its own.
+void ui_focus_tile_from_app(const char *chat_id)
+{
+    if (!chat_id || !chat_id[0]) return;
+    display_lock();
+    snprintf(s_focus_pending, sizeof(s_focus_pending), "%s", chat_id);
+    snprintf(s_focus_sent, sizeof(s_focus_sent), "%s", chat_id);
+    display_unlock();
+    ui_focus_tile(chat_id);
+}
+
 void ui_focus_tile(const char *chat_id)
 {
     if (!chat_id) return;

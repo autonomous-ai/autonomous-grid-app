@@ -152,6 +152,7 @@ whole message — a peer with an extra field is not a broken peer.
 |---|---|
 | `welcome` | `proto` int, `app` string, `machine: {id, name}`, `voiceLang` |
 | `chats` | `items[]` of the tile shape below |
+| `focus` | `chatId` — show this tile. The mirror of the device's own `focus`: the window switched chats, so the carousel follows. Each end records the id as already-agreed BEFORE moving, or the two chase each other around one lap. A tile the panel does not have yet is ignored; the `chats` that brings it is on its way. |
 | `chat.updated` | `item` — one tile |
 | `turn.started` | `chatId` |
 | `turn.parts` | `chatId`, `parts[]`, `todos[]` — the turn so far as one ordered timeline (below) |

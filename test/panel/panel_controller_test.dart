@@ -13,6 +13,7 @@ import 'package:grid_app/features/agents/logic/agent_permissions.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
+import 'package:grid_app/features/chat/logic/chat_scope.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
@@ -76,6 +77,12 @@ Future<void> _until(bool Function() ready, {required String what}) async {
   for (var attempt = 0; attempt < 400; attempt++) {
     if (ready()) return;
     await pumpEventQueue(times: 5);
+    // A real pause, not only a drained queue. Some of what this waits for is a
+    // TIMER — the tile list coalesces changes for 250 ms — and pumping the
+    // event loop does not move the clock, so a purely microtask wait spins 400
+    // times in a few milliseconds and reports a timeout the code never had a
+    // chance to beat.
+    await Future<void>.delayed(const Duration(milliseconds: 5));
   }
   fail('timed out waiting for $what');
 }
@@ -363,7 +370,7 @@ void main() {
     ).copyWith(title: title);
 
     test('is the CHAT: its title heads it, its project names the folder under '
-        'it, and the agent is the one that ANSWERED it', () {
+        'it, and the agent is the one that will answer it', () {
       final tile = panelChatFor(
         chat(
           title: 'Retry the webhook',
@@ -388,9 +395,9 @@ void main() {
       expect(tile.id, 'c-1');
       expect(tile.name, 'Retry the webhook');
       expect(tile.project, 'grid-app');
-      // Not the project's 'claude': under Auto the grid picks per turn, and the
-      // tile should say who spoke rather than who was nominated.
-      expect(tile.agent, 'codex');
+      // The project's pick, not the 'codex' stamped on the last reply: the mark
+      // is a promise about the next turn, and this chat has been switched.
+      expect(tile.agent, 'claude');
       expect(tile.busy, isFalse);
     });
 
@@ -1744,7 +1751,7 @@ void main() {
       harness(transport);
 
       transport.deliver(
-        '{"t":"hello","fw":"0.1.0","proto":3,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","fw":"0.1.0","proto":4,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       await pumpEventQueue();
 
@@ -1757,7 +1764,7 @@ void main() {
       // The Settings page's Voice row reports this rather than choosing it, so it
       // has to be the same reading the transcriber is given.
       expect(welcome['voiceLang'], isNotNull);
-      expect(welcome['proto'], 3);
+      expect(welcome['proto'], 4);
       expect(welcome['app'], '0.9.1');
       expect((welcome['machine']! as Map<String, Object?>)['id'], 'this-mac');
     });
@@ -1774,7 +1781,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      const hello = '{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}';
+      const hello = '{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}';
       transport.deliver(hello);
       transport.deliver(
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
@@ -1820,7 +1827,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
       transport.deliver(
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
@@ -1828,7 +1835,7 @@ void main() {
       final beforeSwap = transport.replies.length;
 
       // Same cable, different board.
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"BB"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"BB"}');
       await pumpEventQueue();
 
       expect(
@@ -1972,6 +1979,153 @@ void main() {
       expect(agent.model, 'qwen');
       final started = _lastOf(transport, 'turn.started');
       expect(started['chatId'], isNotEmpty);
+    });
+
+    test('the mark is who will answer NEXT, so switching a chat to another '
+        'agent shows it before that agent has said anything', () {
+      // Reported from the desk 2026-08-19: a chat with Hermes history was
+      // switched to Claude and the tile went on saying Hermes. It read the
+      // agent STAMPED on the last reply, so it could only ever describe the
+      // past — and the panel is a thing you speak into, where the mark is a
+      // promise about what happens when you do.
+      final answered = _chat(
+        id: 'c-1',
+        projectId: 'p-1',
+        at: DateTime(2026, 8, 19),
+        messages: [
+          const ChatMessage(role: ChatRole.user, text: 'go'),
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'done',
+            agent: 'hermes',
+          ),
+        ],
+      );
+      const switched = Project(
+        id: 'p-1',
+        name: 'api',
+        path: '/tmp/api',
+        agent: 'claude',
+      );
+
+      final tile = panelChatFor(answered, switched, const ChatSessionsState());
+      expect(tile.agent, 'claude');
+    });
+
+    test('under Auto the mark falls back to whoever last spoke — there is no '
+        'choice to show, and the grid picks again per turn', () {
+      final answered = _chat(
+        id: 'c-1',
+        projectId: 'p-1',
+        at: DateTime(2026, 8, 19),
+        messages: [
+          const ChatMessage(
+            role: ChatRole.assistant,
+            text: 'done',
+            agent: 'codex',
+          ),
+        ],
+      );
+      const auto = Project(
+        id: 'p-1',
+        name: 'api',
+        path: '/tmp/api',
+        agent: 'auto',
+      );
+
+      expect(
+        panelChatFor(answered, auto, const ChatSessionsState()).agent,
+        'codex',
+      );
+    });
+
+    test('picking an agent the way the composer picks one reaches the tile — '
+        'through the project, which is where that pick is written', () async {
+      // The end-to-end path, not the shortcut. `_rememberModel`/`setAgent` in
+      // chat_view write through chatScopePrefs onto the PROJECT; asserting only
+      // on `setActiveModel` would have passed while the thing the user actually
+      // does went nowhere.
+      final transport = _FakeTransport();
+      seed();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+      container.read(chatSessionsProvider.notifier).select('c-1');
+      await pumpEventQueue(times: 40);
+
+      container.read(chatScopePrefsProvider).setAgent('claude');
+
+      await _until(
+        () => transport.replies.any((r) {
+          final items = r['t'] == 'chats'
+              ? (r['items']! as List).cast<Map<String, Object?>>()
+              : r['t'] == 'chat.updated'
+              ? [r['item']! as Map<String, Object?>]
+              : const <Map<String, Object?>>[];
+          return items.any((i) => i['id'] == 'c-1' && i['agent'] == 'claude');
+        }),
+        what: 'the tile to carry the agent the user picked',
+      );
+    });
+
+    test('a model picked in the window reaches the tile — a tile IS a chat, so '
+        'chat state is what the list is made of', () async {
+      final transport = _FakeTransport();
+      seed();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+      container.read(chatSessionsProvider.notifier).select('c-1');
+
+      container.read(chatSessionsProvider.notifier).setActiveModel('llama3');
+      await _until(
+        () => transport.replies.any((r) {
+          // Either shape carries it: the whole list when the mirror has just
+          // been forgotten, one `chat.updated` when it has not.
+          final items = r['t'] == 'chats'
+              ? (r['items']! as List).cast<Map<String, Object?>>()
+              : r['t'] == 'chat.updated'
+              ? [r['item']! as Map<String, Object?>]
+              : const <Map<String, Object?>>[];
+          return items.any((i) => i['id'] == 'c-1' && i['model'] == 'llama3');
+        }),
+        what: 'the tile to carry the new model',
+      );
+    });
+
+    test('switching chats in the window moves the carousel, and the panel does '
+        'NOT answer that by moving the window again', () async {
+      final transport = _FakeTransport();
+      seed();
+      seed(chatId: 'c-2', title: 'The other one');
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+      transport.deliver(
+        '{"t":"hello","fw":"0.1.0","proto":4,"mac":"A4:CB:8F:CF:D0:78"}',
+      );
+      await pumpEventQueue(times: 40);
+      // Restoring already opened one of them, so start somewhere definite:
+      // switching to the chat the window is ALREADY on is not a switch, and the
+      // listener is right not to fire for it.
+      container.read(chatSessionsProvider.notifier).select('c-1');
+      await pumpEventQueue(times: 40);
+
+      container.read(chatSessionsProvider.notifier).select('c-2');
+      await _until(
+        () => transport.replies.any(
+          (r) => r['t'] == 'focus' && r['chatId'] == 'c-2',
+        ),
+        what: 'the panel to be told which chat the window opened',
+      );
+
+      // The panel echoing that back must not start a round trip: the app
+      // already knows the two screens agree on c-2.
+      final before = transport.replies.where((r) => r['t'] == 'focus').length;
+      transport.deliver('{"t":"focus","chatId":"c-2"}');
+      await pumpEventQueue(times: 40);
+      expect(
+        transport.replies.where((r) => r['t'] == 'focus').length,
+        before,
+        reason: 'an echo of what we just sent is not news',
+      );
     });
 
     test('swiping the carousel to a chat opens that chat in the window — the '
@@ -2200,7 +2354,7 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
       transport.deliver(
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
@@ -2273,7 +2427,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
       transport.deliver(
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
@@ -2399,7 +2553,7 @@ void main() {
         harness(transport);
 
         transport.deliver('{"t":"screen.brightness","level":40}');
-        transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}');
+        transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2749,7 +2903,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":3,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
       await pumpEventQueue();
 
       final offer = transport.replies.firstWhere((r) => r['t'] == 'fw.offer');
@@ -2769,7 +2923,7 @@ void main() {
           firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
         );
 
-        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":3,"mac":"AA"}');
+        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":4,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2797,7 +2951,7 @@ void main() {
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":3,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
       await pumpEventQueue();
 
       expect(transport.replies.any((r) => r['t'] == 'fw.offer'), isFalse);
@@ -2815,7 +2969,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":3,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();
@@ -2844,7 +2998,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":3,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();

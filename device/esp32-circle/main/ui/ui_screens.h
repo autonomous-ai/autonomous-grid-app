@@ -144,6 +144,7 @@ void ui_notif_swipe_up(void);
 void ui_set_creating(bool on);
 
 // Switch the carousel to a project's tile.
+void ui_focus_tile_from_app(const char *chat_id);
 void ui_focus_tile(const char *chat_id);
 // Drop every project tile (the app went away and its list is now a claim about a machine that is gone).
 void ui_tile_clear_all(void);

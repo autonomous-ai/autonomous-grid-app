@@ -36,7 +36,7 @@ void main() {
   group('parsing what the panel says', () {
     test('hello carries the firmware, protocol and MAC', () {
       final msg = PanelInbound.parse(
-        '{"t":"hello","fw":"0.1.0","proto":3,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","fw":"0.1.0","proto":4,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       expect(msg, isA<PanelHello>());
       final hello = msg as PanelHello;
@@ -134,7 +134,7 @@ void main() {
       link.messages.listen(received.add);
 
       transport.deliver(utf8.encode('ESP-ROM:esp32s3\r\nrst:0x1\r\n'));
-      transport.deliver(encodePanelJson('{"t":"hello","proto":3}'));
+      transport.deliver(encodePanelJson('{"t":"hello","proto":4}'));
       await pumpEventQueue();
 
       expect(received.single, isA<PanelHello>());

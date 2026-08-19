@@ -49,11 +49,12 @@ const char *panel_fw_version(void);
 // `chatId` and the list arrives as `chats`. Both halves ship from one repository and grid-app replaces
 // firmware whose version string differs from the image it carries, so the two cannot actually drift —
 // but a shape change that leaves the number alone is a lie told to whoever reads it next.
-// 3 since 2026-08-19: the panel gained `focus`, the tile the carousel settled on, so the window can
-// follow a swipe. Adding a MESSAGE is a message-layer change and the number has to move with it —
+// 4 since 2026-08-19: `focus` now travels BOTH ways — the window switching chats moves the carousel,
+// the same message in the other direction. 3 was earlier the same day, when the panel gained `focus`,
+// the tile the carousel settled on, so the window could follow a swipe. Adding a MESSAGE is a message-layer change and the number has to move with it —
 // bumping only grid-app's copy is exactly what happened first, and the panel then reported 2 to an app
 // claiming 3 within seconds of taking the very image that added the feature.
-#define PANEL_PROTO_VERSION 3
+#define PANEL_PROTO_VERSION 4
 
 // How many projects the panel tracks at once — the size of the UI's tile array (`s_tiles` in
 // ui_screens.c) and of anything that walks it.
