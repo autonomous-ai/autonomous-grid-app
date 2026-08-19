@@ -74,9 +74,7 @@ sealed class PanelInbound {
         chatId: _str(decoded['chatId']) ?? '',
         text: _str(decoded['text']) ?? '',
       ),
-      'turn.stop' => PanelStopRequested(
-        chatId: _str(decoded['chatId']) ?? '',
-      ),
+      'turn.stop' => PanelStopRequested(chatId: _str(decoded['chatId']) ?? ''),
       'answer' => PanelAnswered(
         chatId: _str(decoded['chatId']) ?? '',
         id: _str(decoded['id']) ?? '',
@@ -628,10 +626,8 @@ abstract final class PanelOutbound {
   /// have caused: the desktop shows the same card, whichever surface answers
   /// first cancels the other, and a panel that is never told holds a dead card
   /// forever.
-  static String questionCancel({
-    required String chatId,
-    required String id,
-  }) => jsonEncode({'t': 'question.cancel', 'chatId': chatId, 'id': id});
+  static String questionCancel({required String chatId, required String id}) =>
+      jsonEncode({'t': 'question.cancel', 'chatId': chatId, 'id': id});
 
   /// The heartbeat. Deliberately empty — it says the app is alive and nothing
   /// else, so a quiet link stays quiet.
@@ -675,12 +671,6 @@ abstract final class PanelOutbound {
     'sha256': sha256,
   });
 
-  static String turnError({
-    required String chatId,
-    required String message,
-  }) => jsonEncode({
-    't': 'turn.error',
-    'chatId': chatId,
-    'message': message,
-  });
+  static String turnError({required String chatId, required String message}) =>
+      jsonEncode({'t': 'turn.error', 'chatId': chatId, 'message': message});
 }

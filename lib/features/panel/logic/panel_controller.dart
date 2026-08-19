@@ -18,6 +18,7 @@ import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_providers.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
+import '../../chat/logic/commands/spoken_command.dart';
 import '../../chat/logic/conversation.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
@@ -542,15 +543,11 @@ class PanelController {
       return;
     }
     _rememberTurn(chatId, recap: written.recap, summary: written.summary);
-    link.send(
-      PanelOutbound.turnDone(chatId: chatId, recap: written.recap),
-    );
+    link.send(PanelOutbound.turnDone(chatId: chatId, recap: written.recap));
     // Second, and only when there is one. The headline ends the turn; the body
     // is what the reader screen shows behind it.
     if (written.summary.isNotEmpty) {
-      link.send(
-        PanelOutbound.summary(chatId: chatId, text: written.summary),
-      );
+      link.send(PanelOutbound.summary(chatId: chatId, text: written.summary));
     }
   }
 
@@ -666,14 +663,24 @@ class PanelController {
       // the window where it is — that is right for a queued follow-up — so
       // without this the reply streams into a chat nobody is looking at.
       _showInWindow(chat.projectId, chat.id);
-      await _ref
-          .read(chatSessionsProvider.notifier)
-          .send(
-            network: network,
-            model: model,
-            message: text,
-            into: chat.id,
-          );
+      final sessions = _ref.read(chatSessionsProvider.notifier);
+      // The panel is the surface people actually *speak* to, so a spoken
+      // "lặp lại mỗi 30 phút…" has to reach the command here as much as in the
+      // composer. Only a certain reading: nobody at a panel can be shown a
+      // half-read line to fix, so anything less goes to the assistant as the
+      // sentence it was, which is what the panel did for every turn before.
+      final spoken = readSpokenCommand(text);
+      if (spoken != null && spoken.certain) {
+        _log.info('panel', 'Panel said ${spoken.call.command.slash}');
+        await sessions.runCommand(spoken.call, model: model);
+        return;
+      }
+      await sessions.send(
+        network: network,
+        model: model,
+        message: text,
+        into: chat.id,
+      );
     } on Object catch (e) {
       _log.warn('panel', 'Panel turn in ${chat.id} could not start: $e');
       _refuseTurn(chat.id, "That couldn't be started here. Open Grid to see.");
@@ -751,11 +758,7 @@ class PanelController {
   /// sentence being spoken now is the one somebody is waiting on.
   void _beginVoice(String? chatId, PanelVoiceCommand command, String? lang) {
     _voiceOpen?.cancel();
-    _voice = PanelVoiceCapture(
-      chatId: chatId,
-      command: command,
-      lang: lang,
-    );
+    _voice = PanelVoiceCapture(chatId: chatId, command: command, lang: lang);
     _voiceOpen = Timer(kPanelVoiceOpenLimit, () => unawaited(_finishVoice()));
   }
 
@@ -1257,4 +1260,3 @@ String? _agentOf(Conversation conversation) {
   }
   return null;
 }
-

@@ -104,10 +104,13 @@ void main() {
       expect(capture.toWav().sublist(kWavHeaderBytes), [1, 2, 3, 4, 5, 6]);
     });
 
-    test('the ceiling is ten minutes of speech — the same allowance the panel '
-        'draws, so neither half cuts a recording the other would have taken', () {
-      expect(kPanelVoiceMaxBytes, 600 * kPanelVoiceSampleRate * 2);
-    });
+    test(
+      'the ceiling is ten minutes of speech — the same allowance the panel '
+      'draws, so neither half cuts a recording the other would have taken',
+      () {
+        expect(kPanelVoiceMaxBytes, 600 * kPanelVoiceSampleRate * 2);
+      },
+    );
 
     test('a full capture still fits the 25 MiB the control plane accepts, or '
         'the server refuses a recording somebody has just finished making', () {
@@ -210,7 +213,11 @@ void main() {
         projects: _projects,
         chats: ChatSessionsState(
           conversations: [
-            _chat(id: 'c-orphan', projectId: 'p-gone', at: DateTime(2026, 8, 1)),
+            _chat(
+              id: 'c-orphan',
+              projectId: 'p-gone',
+              at: DateTime(2026, 8, 1),
+            ),
           ],
         ),
       );

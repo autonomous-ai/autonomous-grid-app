@@ -130,7 +130,8 @@ class HttpRelayApiClient implements RelayApiClient {
   }) async {
     final query = {
       'since': '${since.toUtc().millisecondsSinceEpoch ~/ 1000}',
-      if (until != null) 'until': '${until.toUtc().millisecondsSinceEpoch ~/ 1000}',
+      if (until != null)
+        'until': '${until.toUtc().millisecondsSinceEpoch ~/ 1000}',
     };
     final body = await _get(
       Uri.parse('$baseUrl/usage').replace(queryParameters: query),

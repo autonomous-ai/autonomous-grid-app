@@ -81,4 +81,35 @@ void main() {
       expect(request?.prompt, 'thỉnh thoảng dọn log giúp tôi');
     });
   });
+
+  group('the readings a review caught before they shipped', () {
+    test('a digit inside the task is not the hour it runs at — "the 3h build" '
+        'used to fire the task at three in the morning', () {
+      final request = parseScheduleArgument(
+        'every day at 8 restart the 3h build',
+      );
+
+      expect(request?.schedule.hour, 8);
+      expect(request?.prompt, 'restart the 3h build');
+    });
+
+    test('a bare hour after "at" is read, rather than falling back to the '
+        'default while the sentence plainly named one', () {
+      final request = parseScheduleArgument('every day at 9 check the queue');
+
+      expect(request?.schedule.hour, 9);
+      expect(request?.prompt, 'check the queue');
+    });
+
+    test('an interval leaves no half a unit on the front of the task', () {
+      expect(
+        parseScheduleArgument('mỗi 30 phút kiểm tra deploy')?.prompt,
+        'kiểm tra deploy',
+      );
+      expect(
+        parseScheduleArgument('every 30 minutes summarise the inbox')?.prompt,
+        'summarise the inbox',
+      );
+    });
+  });
 }
