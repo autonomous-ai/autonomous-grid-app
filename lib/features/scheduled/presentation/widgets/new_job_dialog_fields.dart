@@ -22,6 +22,91 @@ class _GroupLabel extends StatelessWidget {
   }
 }
 
+/// Picks the assistant that answers the task when it fires.
+///
+/// Shown because the scheduler's own agent used to answer everything: a task
+/// set up while talking to Claude Code was run by Hermes, with none of Claude's
+/// tools or skills, and nothing said so.
+class _RunnerRow extends StatelessWidget {
+  const _RunnerRow({
+    required this.runner,
+    required this.installed,
+    required this.onChanged,
+  });
+
+  final TaskRunner runner;
+
+  /// The runners this computer can actually run. An agent that isn't installed
+  /// is left off rather than offered and then failing at 8am.
+  final List<TaskRunner> installed;
+
+  final ValueChanged<TaskRunner> onChanged;
+
+  @override
+  Widget build(BuildContext context) => AppSelectField<TaskRunner>(
+    label: 'Which assistant runs it',
+    showLabel: false,
+    value: runner,
+    options: [
+      for (final option in installed)
+        AppSelectOption(
+          value: option,
+          label: option.agent.name,
+          detail: option == TaskRunner.hermes
+              ? 'Answers with the model below'
+              : 'Answers on its own sign-in and model',
+        ),
+    ],
+    onChanged: onChanged,
+  );
+}
+
+/// Picks where a finished run's answer is put.
+class _DestinationRow extends StatelessWidget {
+  const _DestinationRow({
+    required this.destination,
+    required this.chats,
+    required this.projects,
+    required this.onChanged,
+  });
+
+  final TaskDestination destination;
+
+  /// The conversations worth offering: the user's own, newest first. A task's
+  /// own chat is not among them — it is the default above.
+  final List<Conversation> chats;
+
+  final List<Project> projects;
+  final ValueChanged<TaskDestination> onChanged;
+
+  @override
+  Widget build(BuildContext context) => AppSelectField<String>(
+    label: 'Where the answer goes',
+    showLabel: false,
+    value: taskDeliverValue(destination),
+    options: [
+      AppSelectOption(
+        value: taskDeliverValue(const TaskOwnChat()),
+        label: 'A chat of its own',
+        detail: 'Every run of this task in one thread',
+      ),
+      for (final project in projects)
+        AppSelectOption(
+          value: taskDeliverValue(TaskProjectDestination(project.id)),
+          label: project.name,
+          detail: 'Filed under this project',
+        ),
+      for (final chat in chats)
+        AppSelectOption(
+          value: taskDeliverValue(TaskChatDestination(chat.id)),
+          label: chat.title,
+          detail: 'Into this conversation',
+        ),
+    ],
+    onChanged: (value) => onChanged(parseTaskDeliver(value)),
+  );
+}
+
 /// One-tap example prompts under the "what should it do?" box — the cure for the
 /// blank field. Tapping one fills the prompt (and the schedule) so the user
 /// edits an example rather than inventing a task from nothing.

@@ -17,6 +17,8 @@ import 'package:grid_app/features/scheduled/logic/scheduled_jobs_controller.dart
 import 'package:grid_app/features/scheduled/logic/task_power_controller.dart';
 import 'package:grid_app/infrastructure/cli/hermes_config_file.dart';
 import 'package:grid_app/infrastructure/cli/hermes_cron_rearm.dart';
+import 'package:grid_app/features/scheduled/logic/task_destination.dart';
+import 'package:grid_app/features/scheduled/logic/task_runner.dart';
 import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_task_policy.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
@@ -78,7 +80,15 @@ class _FakeCron implements HermesCronService {
 
   /// Every pin asked for, in order — what a task will actually run on.
   final pinned = <({String jobId, String model, bool clearError})>[];
-  ({String schedule, String prompt, String name, String? workdir})? created;
+  ({
+    String schedule,
+    String prompt,
+    String name,
+    String? workdir,
+    String deliver,
+    String? script,
+  })?
+  created;
 
   /// The last edit asked for — what a saved task was rewritten to.
   ({String id, String schedule, String prompt, String name})? edited;
@@ -99,7 +109,9 @@ class _FakeCron implements HermesCronService {
     required String schedule,
     required String prompt,
     required String name,
+    required String deliver,
     String? workdir,
+    String? script,
   }) async {
     calls.add('create');
     _maybeFail();
@@ -108,6 +120,8 @@ class _FakeCron implements HermesCronService {
       prompt: prompt,
       name: name,
       workdir: workdir,
+      deliver: deliver,
+      script: script,
     );
     // The store grows, as Hermes's does: the controller finds the new task by
     // diffing the ids it knew, and everything it does *after* saving — pinning
@@ -308,6 +322,16 @@ void main() {
           agentInstalled ? HermesTaskPolicy(home: workspace.path) : null,
         ),
         hermesPathProvider.overrideWithValue(null),
+        // The real writer puts a file in the user's own `~/.hermes/scripts`;
+        // a test must not, so it only reports the name it would have written.
+        taskScriptWriterProvider.overrideWithValue(
+          ({
+            required String name,
+            required TaskRunner runner,
+            required String prompt,
+            required String workdir,
+          }) => taskScriptName(name),
+        ),
         selectedNetworkProvider.overrideWith(() => _FixedSelectedNetwork(grid)),
         if (grid != null)
           networkModelsForProvider(
@@ -397,6 +421,45 @@ void main() {
     expect(h.cron.created?.schedule, '0 16 * * 5');
     expect(h.cron.created?.name, 'Weekly review');
     expect(h.cron.created?.workdir, workspace.path);
+  });
+
+  test('a task set up in a chat is told to deliver into that chat, so the '
+      'answer arrives under the question that asked for it', () async {
+    final h = harness();
+    await h.container.read(scheduledJobsProvider.future);
+
+    await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          model: 'maker/m1',
+          name: 'Nightly check',
+          prompt: 'check the deploy',
+          schedule: const JobSchedule(cadence: JobCadence.everyDay, hour: 8),
+          destination: const TaskChatDestination('chat-42'),
+        );
+
+    expect(h.cron.created?.deliver, 'grid:chat:chat-42');
+  });
+
+  test('a task answered by Claude Code is a script the scheduler runs, and no '
+      'prompt for its own agent to answer a second time', () async {
+    final h = harness();
+    await h.container.read(scheduledJobsProvider.future);
+
+    final result = await h.container
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          model: 'maker/m1',
+          name: 'Nightly review',
+          prompt: 'review the diff',
+          schedule: const JobSchedule(cadence: JobCadence.everyDay, hour: 8),
+          runner: TaskRunner.claude,
+        );
+
+    expect(result.error, isNull);
+    expect(h.cron.created?.script, 'grid-task-nightly-review.sh');
+    // Pinning is Hermes's model, and a scripted task never asks it anything.
+    expect(h.cron.pinned, isEmpty);
   });
 
   test('an interval task is sent as an `every Nm` Hermes understands, not a '

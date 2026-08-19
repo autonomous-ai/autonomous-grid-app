@@ -6,6 +6,9 @@ import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_select_field.dart';
 import '../../../../shared/widgets/toast.dart';
+import '../../../agents/logic/agent_status.dart';
+import '../../../chat/logic/chat_sessions_controller.dart';
+import '../../../chat/logic/conversation.dart';
 import '../../../network/logic/node_display.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/playground_models.dart';
@@ -14,8 +17,11 @@ import '../../logic/job_schedule.dart';
 import '../../logic/job_suggestions.dart';
 import '../../logic/scheduled_job.dart';
 import '../../logic/scheduled_jobs_controller.dart';
+import '../../logic/task_conversation_id.dart';
+import '../../logic/task_destination.dart';
 import '../../logic/task_models.dart';
 import '../../logic/task_power_controller.dart';
+import '../../logic/task_runner.dart';
 import 'scheduled_pill_choice.dart';
 import 'task_power_bar.dart';
 
@@ -86,6 +92,13 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
   /// what the task runs on. Null in every other case.
   String? _foreignSchedule;
 
+  /// Who answers it, and where the answer lands. Both are settled on create:
+  /// changing them on a saved task would rewrite the script and move results
+  /// away from the thread they have been arriving in, so the form only offers
+  /// them on a new one.
+  TaskRunner _runner = TaskRunner.hermes;
+  TaskDestination _destination = const TaskOwnChat();
+
   @override
   void initState() {
     super.initState();
@@ -105,6 +118,13 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     _time = TimeOfDay(hour: schedule.hour, minute: schedule.minute);
     _days = schedule.days;
     if (job != null && stored == null) _foreignSchedule = job.cron;
+    // A task made inside a project answers into that project unless the user
+    // moves it — the rail it will show up in is the one they opened this from.
+    final project = widget.project;
+    if (job == null && project != null) {
+      _destination = TaskProjectDestination(project.id);
+    }
+    if (job != null) _destination = parseTaskDeliver(job.deliver);
   }
 
   @override
@@ -157,12 +177,13 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
   }
 
   /// Empty means the grid serves nothing the assistant can use — [_ModelRow]
-  /// says so, and there's nothing to pin a task to.
+  /// says so, and there's nothing to pin a task to. A scripted runner answers on
+  /// its own sign-in, so it is savable on a grid serving nothing at all.
   bool _canSave(String model) =>
       !_saving &&
       _name.text.trim().isNotEmpty &&
       _prompt.text.trim().isNotEmpty &&
-      model.isNotEmpty;
+      (model.isNotEmpty || _runner.isScripted);
 
   Future<void> _pickTime() async {
     final picked = await showTimePicker(context: context, initialTime: _time);
@@ -197,6 +218,8 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
           prompt: _prompt.text.trim(),
           schedule: _schedule,
           model: model,
+          runner: _runner,
+          destination: _destination,
           workdir: widget.project?.path,
           projectId: widget.project?.id,
           runNow: runNow,
@@ -265,6 +288,18 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
     final options = taskModelOptions(ref.watch(playgroundModelsProvider));
     final model = _modelIn(options);
     final job = widget.job;
+    final runners = [
+      for (final runner in TaskRunner.values)
+        if (ref.watch(agentInstalledProvider(runner.agent))) runner,
+    ];
+    // A task's own chats are not somewhere to deliver *into* — they are what
+    // the default already makes. Newest first, and capped: this is a picker for
+    // "the conversation I was just in", not a second chat list.
+    final chats = [
+      for (final chat in ref.watch(chatSessionsProvider).conversations)
+        if (jobIdOfTaskConversation(chat.id) == null && !chat.isArchived) chat,
+    ].take(kTaskDestinationChats).toList();
+    final projects = ref.watch(projectsProvider);
     return Dialog(
       elevation: 18,
       backgroundColor: AppCard.base,
@@ -341,13 +376,40 @@ class _NewJobDialogState extends ConsumerState<_NewJobDialog> {
                   _TimeRow(time: _time, onPick: _pickTime),
                 ],
                 const SizedBox(height: 22),
-                const _GroupLabel('Which model runs it'),
-                const SizedBox(height: 10),
-                _ModelRow(
-                  options: options,
-                  model: model,
-                  onChanged: (value) => setState(() => _picked = value),
-                ),
+                // Only on a new task: see [_runner].
+                if (job == null && runners.length > 1) ...[
+                  const _GroupLabel('Which assistant runs it'),
+                  const SizedBox(height: 10),
+                  _RunnerRow(
+                    runner: _runner,
+                    installed: runners,
+                    onChanged: (value) => setState(() => _runner = value),
+                  ),
+                  const SizedBox(height: 22),
+                ],
+                // A scripted task answers on its own agent's sign-in, so this
+                // grid's models have no say in it — the row would be a choice
+                // that changes nothing.
+                if (!_runner.isScripted) ...[
+                  const _GroupLabel('Which model runs it'),
+                  const SizedBox(height: 10),
+                  _ModelRow(
+                    options: options,
+                    model: model,
+                    onChanged: (value) => setState(() => _picked = value),
+                  ),
+                  const SizedBox(height: 22),
+                ],
+                if (job == null) ...[
+                  const _GroupLabel('Where the answer goes'),
+                  const SizedBox(height: 10),
+                  _DestinationRow(
+                    destination: _destination,
+                    chats: chats,
+                    projects: projects,
+                    onChanged: (value) => setState(() => _destination = value),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 _WhatItMayDo(schedule: _schedule, location: _location),
                 const SizedBox(height: 22),

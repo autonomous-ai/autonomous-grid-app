@@ -16,7 +16,7 @@ import 'cron_output.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'scheduled_jobs_controller.dart';
-import 'task_conversation_id.dart';
+import 'task_destination.dart';
 import 'task_inbox_store.dart';
 import 'task_model_fallback.dart';
 import 'task_unread_store.dart';
@@ -143,15 +143,28 @@ class TaskDeliveryController extends Notifier<List<String>> {
       final chat = ref.read(chatSessionsProvider.notifier);
       final arrived = <String>[];
 
+      final conversations = ref.read(chatSessionsProvider).conversations;
       for (final job in jobs) {
-        final projectId = links[job.id];
+        final destination = parseTaskDeliver(job.deliver);
+        final projectId =
+            links[job.id] ?? taskDestinationProjectId(destination);
+        // Where this task's answers go: the chat it was set up in when it named
+        // one, its own otherwise. Read per sweep rather than once, because the
+        // chat it names can be deleted between two runs.
+        final into = taskDeliveryChatId(destination, job.id, conversations);
         // Keep the task's chat under its project even when there's no new run to
         // deliver — a chat created before the app tracked the link would sit
         // loose forever otherwise.
         if (projectId != null) {
-          chat.linkToProject(taskConversationId(job.id), projectId);
+          chat.linkToProject(into, projectId);
         }
-        final last = await _deliver(job, cron, delivered[job.id], projectId);
+        final last = await _deliver(
+          job,
+          cron,
+          delivered[job.id],
+          projectId,
+          into,
+        );
         if (last == null) continue;
         delivered[job.id] = last.at;
         arrived.add(job.id);
@@ -163,7 +176,7 @@ class TaskDeliveryController extends Notifier<List<String>> {
               job.id,
               TaskResultDigest(summary: last.summary, at: last.at),
             );
-        _announce(job, last.summary);
+        _announce(job, last.summary, into);
       }
 
       // A task whose model has stopped working goes to the grid's router rather
@@ -198,14 +211,16 @@ class TaskDeliveryController extends Notifier<List<String>> {
   /// see nothing served and retarget a job that was fine.
   Set<String> _served() => ref.read(servedModelIdsProvider).toSet();
 
-  /// Deliver [job]'s results newer than [since] into its chat, homing it under
-  /// [projectId] when the task belongs to a project. Returns when the newest one
-  /// ran and the line it opens with, or null when there was nothing new.
+  /// Deliver [job]'s results newer than [since] into chat [into], homing it
+  /// under [projectId] when the task belongs to a project. Returns when the
+  /// newest one ran and the line it opens with, or null when there was nothing
+  /// new.
   Future<({DateTime at, String summary})?> _deliver(
     ScheduledJob job,
     HermesCronService cron,
     DateTime? since,
     String? projectId,
+    String into,
   ) async {
     final runs = await cron.readOutputs(job.id);
     final fresh = [
@@ -217,7 +232,7 @@ class TaskDeliveryController extends Notifier<List<String>> {
     final chat = ref.read(chatSessionsProvider.notifier);
     for (final run in fresh) {
       chat.deliverFromAgent(
-        id: taskConversationId(job.id),
+        id: into,
         title: job.name,
         text: taskResultMessage(run),
         at: run.at,
@@ -234,8 +249,7 @@ class TaskDeliveryController extends Notifier<List<String>> {
   /// behind another window, so the badge in a sidebar nobody is looking at is
   /// not delivery. Suppressed only when the user is already reading that task's
   /// chat with the window in front — see [notificationIsWorthIt].
-  void _announce(ScheduledJob job, String summary) {
-    final chatId = taskConversationId(job.id);
+  void _announce(ScheduledJob job, String summary, String chatId) {
     final worthIt = notificationIsWorthIt(
       appFocused: ref.read(windowFocusedProvider),
       userIsLookingAtIt: ref.read(chatSessionsProvider).activeId == chatId,

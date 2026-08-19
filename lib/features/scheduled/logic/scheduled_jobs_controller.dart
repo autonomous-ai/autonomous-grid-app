@@ -10,9 +10,11 @@ import '../../projects/logic/project_tasks_store.dart';
 import '../../../shared/copy/setup_hints.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
+import 'task_destination.dart';
 import 'task_inbox_store.dart';
 import 'task_model_fallback.dart';
 import 'task_power_controller.dart';
+import 'task_runner.dart';
 
 /// Whether the thing that actually fires jobs is alive. Jobs are saved either
 /// way, so this is what lets the screen tell the truth: "saved, but nothing will
@@ -105,13 +107,16 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     required String prompt,
     required JobSchedule schedule,
     required String model,
+    TaskRunner runner = TaskRunner.hermes,
+    TaskDestination destination = const TaskOwnChat(),
     String? workdir,
     String? projectId,
     bool runNow = false,
   }) async {
     // The model has to be one Hermes can actually answer with — the picker only
-    // offers those, but this is the door every caller comes through.
-    final refusal = hermesModelRefusal(model);
+    // offers those, but this is the door every caller comes through. A scripted
+    // runner answers on its own agent's model, so Hermes's has no say in it.
+    final refusal = runner.isScripted ? null : hermesModelRefusal(model);
     if (refusal != null) return (error: refusal, id: null);
     // A task fires with nobody there to pick a model. Unless Hermes already has
     // one, every run would fail with a raw "no model configured", so point it
@@ -132,12 +137,23 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     final before = {
       for (final job in state.value ?? const <ScheduledJob>[]) job.id,
     };
+    final runDir = workdir ?? ref.read(agentWorkspaceDirProvider).path;
+    final script = runner.isScripted
+        ? ref.read(taskScriptWriterProvider)(
+            name: name,
+            runner: runner,
+            prompt: prompt,
+            workdir: runDir,
+          )
+        : null;
     final error = await _act(
       (service) => service.create(
         schedule: schedule.toSchedule(),
         prompt: prompt,
         name: name,
-        workdir: workdir ?? ref.read(agentWorkspaceDirProvider).path,
+        deliver: taskDeliverValue(destination),
+        workdir: runDir,
+        script: script,
       ),
     );
     if (error != null) return (error: error, id: null);
@@ -149,13 +165,16 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     // (`cron create` has no --model), so it's a second write — and one worth
     // reporting: a task that silently kept following the chat's model is the
     // drift skip all over again.
-    if (created != null) {
+    // Nothing to pin on a scripted task: the agent in the script answers on its
+    // own model, and pinning Hermes's would name a model that never runs.
+    if (created != null && !runner.isScripted) {
       final pinned = await _pin(created.id, model);
       if (pinned != null) return (error: pinned, id: created.id);
     }
     // Tie the new task to its project so the project's rail shows only its own.
-    if (created != null && projectId != null) {
-      ref.read(projectTasksProvider.notifier).assign(created.id, projectId);
+    final project = projectId ?? taskDestinationProjectId(destination);
+    if (created != null && project != null) {
+      ref.read(projectTasksProvider.notifier).assign(created.id, project);
     }
     if (created != null && runNow) {
       // Best-effort: the task is saved either way, so a run that can't be
