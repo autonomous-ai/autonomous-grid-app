@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/composer_status_line.dart';
-import '../../agents/presentation/running_service_notes.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/commands/chat_command.dart';
 import '../logic/commands/chat_goal.dart';
 import '../logic/commands/chat_loop.dart';
 
-/// Everything working in the background right now, on one dim line above the
-/// composer: a goal being worked toward, a prompt repeating on a timer, a
-/// server the assistant left running.
+/// Everything working in the background *in this chat* right now, on one dim
+/// line above the composer: a goal being worked toward, a prompt repeating on
+/// a timer.
 ///
 /// Only things that are *still going*. A goal that has been met and a loop that
 /// has stopped are news, and news is written into the transcript where it
@@ -67,7 +66,13 @@ class ComposerStatus extends ConsumerWidget {
               ),
             ],
           ),
-        ...runningServiceNotes(ref),
+        // `runningServiceNotes(ref)` used to be spread here. Hidden on
+        // 2026-08-19: a server the assistant left running is about this
+        // computer, not about the chat being typed, and the row sat over the
+        // composer of every conversation until somebody clicked Clear. The
+        // record and its Stop path stay ([ServedServicesStore],
+        // [stopServedService]) — putting the strip back is putting this one
+        // line back.
       ],
     );
   }
