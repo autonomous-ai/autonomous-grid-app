@@ -56,7 +56,6 @@ class ComposerSection extends StatelessWidget {
     required this.onRemoveFile,
     required this.onRemoveSnippets,
     required this.onRemoveTerminal,
-    required this.onOpenCommands,
     required this.onSend,
     required this.focusNode,
     required this.onStop,
@@ -128,9 +127,6 @@ class ComposerSection extends StatelessWidget {
   /// an index: the chips are derived from what the panels are showing, and a
   /// position in that list is only true until a panel changes tab.
   final ValueChanged<String> onRemoveTerminal;
-
-  /// Opens the `/` command menu.
-  final VoidCallback onOpenCommands;
 
   /// The message field's focus, owned by the view so it can put the cursor
   /// back in the box — after picking a command out of the `/` menu, which
@@ -252,7 +248,6 @@ class ComposerSection extends StatelessWidget {
                   agentPicker: agentPicker,
                   modelPicker: modelPicker,
                   onAttachFile: onAttachFile,
-                  onOpenCommands: onOpenCommands,
                   messageController: messageController,
                   onSend: onSend,
                   onStop: onStop,

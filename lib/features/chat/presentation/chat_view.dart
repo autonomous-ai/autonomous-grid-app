@@ -589,14 +589,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _message.selection = TextSelection.collapsed(offset: prompt.length);
   }
 
-  /// The composer's commands button: type the slash for the user and let the
-  /// menu below do the rest.
-  void _commandsButton() {
-    _message.text = '/';
-    _message.selection = const TextSelection.collapsed(offset: 1);
-    _composerFocus.requestFocus();
-  }
-
   /// What picking [command] out of the `/` menu does: a command that needs
   /// words is written into the composer for the user to finish, and one that
   /// doesn't simply runs.
@@ -1221,7 +1213,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                     .read(attachedTerminalsProvider.notifier)
                                     .remove(tabId),
                                 focusNode: _composerFocus,
-                                onOpenCommands: _commandsButton,
                                 onSend: () => _send(modality),
                                 onStop: () => ref
                                     .read(chatSessionsProvider.notifier)
