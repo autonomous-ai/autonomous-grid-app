@@ -75,6 +75,6 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # had ever run the update path.
 #
 # Bump this on a release. It is the string a person reads off the panel and the string the app compares.
-set(PROJECT_VER "0.1.13")
+set(PROJECT_VER "0.1.15")
 
 project(grid_panel)

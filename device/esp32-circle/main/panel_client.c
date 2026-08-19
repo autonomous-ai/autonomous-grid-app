@@ -233,6 +233,22 @@ static void send_pong(void)
     send_json(m);
 }
 
+// The tile the user swiped to. Sent so the window can follow the panel — the two screens are one desk,
+// and a person who spins the carousel to a chat means to look at that chat.
+//
+// DEBOUNCED by the caller, not here: a fast swipe crosses several tiles, and sending each one would drag
+// the app's view through every conversation on the way past.
+void panel_client_send_focus(const char *chat_id)
+{
+    if (!chat_id || !chat_id[0]) return;
+    cJSON *m = cJSON_CreateObject();
+    if (!m) return;
+    cJSON_AddStringToObject(m, "t", "focus");
+    cJSON_AddStringToObject(m, "chatId", chat_id);
+    ESP_LOGI(TAG, "focus → %s", chat_id);
+    send_json(m);
+}
+
 static void send_projects_list(void)
 {
     cJSON *m = cJSON_CreateObject();

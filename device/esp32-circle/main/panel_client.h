@@ -49,7 +49,11 @@ const char *panel_fw_version(void);
 // `chatId` and the list arrives as `chats`. Both halves ship from one repository and grid-app replaces
 // firmware whose version string differs from the image it carries, so the two cannot actually drift —
 // but a shape change that leaves the number alone is a lie told to whoever reads it next.
-#define PANEL_PROTO_VERSION 2
+// 3 since 2026-08-19: the panel gained `focus`, the tile the carousel settled on, so the window can
+// follow a swipe. Adding a MESSAGE is a message-layer change and the number has to move with it —
+// bumping only grid-app's copy is exactly what happened first, and the panel then reported 2 to an app
+// claiming 3 within seconds of taking the very image that added the feature.
+#define PANEL_PROTO_VERSION 3
 
 // How many projects the panel tracks at once — the size of the UI's tile array (`s_tiles` in
 // ui_screens.c) and of anything that walks it.
@@ -75,6 +79,8 @@ bool panel_client_start(void);
 // grid-app decides which conversation inside that project the words go into, and it is the only thing
 // that could — the panel never sees a conversation. Fire-and-forget: everything after this arrives back
 // as `turn.started` / `turn.parts` / `turn.done`, or as `turn.error` in words a person can act on.
+// The tile the carousel settled on, so the desktop window can follow the panel.
+void panel_client_send_focus(const char *chat_id);
 void panel_client_send_turn(const char *chat_id, const char *text);
 
 // Ask grid-app to interrupt this project's turn.

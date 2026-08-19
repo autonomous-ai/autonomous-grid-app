@@ -1744,7 +1744,7 @@ void main() {
       harness(transport);
 
       transport.deliver(
-        '{"t":"hello","fw":"0.1.0","proto":2,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","fw":"0.1.0","proto":3,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       await pumpEventQueue();
 
@@ -1757,7 +1757,7 @@ void main() {
       // The Settings page's Voice row reports this rather than choosing it, so it
       // has to be the same reading the transcriber is given.
       expect(welcome['voiceLang'], isNotNull);
-      expect(welcome['proto'], 2);
+      expect(welcome['proto'], 3);
       expect(welcome['app'], '0.9.1');
       expect((welcome['machine']! as Map<String, Object?>)['id'], 'this-mac');
     });
@@ -1774,7 +1774,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      const hello = '{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}';
+      const hello = '{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}';
       transport.deliver(hello);
       transport.deliver(
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
@@ -1820,7 +1820,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}');
       transport.deliver(
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
@@ -1828,7 +1828,7 @@ void main() {
       final beforeSwap = transport.replies.length;
 
       // Same cable, different board.
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"BB"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"BB"}');
       await pumpEventQueue();
 
       expect(
@@ -1972,6 +1972,42 @@ void main() {
       expect(agent.model, 'qwen');
       final started = _lastOf(transport, 'turn.started');
       expect(started['chatId'], isNotEmpty);
+    });
+
+    test('swiping the carousel to a chat opens that chat in the window — the '
+        'panel and the window are one desk', () async {
+      final transport = _FakeTransport();
+      seed();
+      seed(chatId: 'c-2', title: 'The other one');
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+      container.read(chatSessionsProvider.notifier).select('c-1');
+      container.read(shellSectionProvider.notifier).select(ShellSection.skills);
+
+      transport.deliver('{"t":"focus","chatId":"c-2"}');
+      await pumpEventQueue(times: 40);
+
+      expect(container.read(chatSessionsProvider).activeId, 'c-2');
+      expect(container.read(selectedProjectIdProvider), 'p-1');
+      expect(container.read(shellSectionProvider), ShellSection.chat);
+    });
+
+    test('a swipe onto a chat this computer no longer has is ignored in '
+        'silence — nobody is waiting on an answer to a look', () async {
+      final transport = _FakeTransport();
+      seed();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+      container.read(chatSessionsProvider.notifier).select('c-1');
+
+      transport.deliver('{"t":"focus","chatId":"c-gone"}');
+      await pumpEventQueue(times: 40);
+
+      expect(container.read(chatSessionsProvider).activeId, 'c-1');
+      expect(
+        _beyondTheHeartbeat(transport).where((r) => r['t'] == 'turn.error'),
+        isEmpty,
+      );
     });
 
     test('the window follows the panel: the chat it starts a turn in is the '
@@ -2164,7 +2200,7 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}');
       transport.deliver(
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
@@ -2237,7 +2273,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}');
       transport.deliver(
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
@@ -2363,7 +2399,7 @@ void main() {
         harness(transport);
 
         transport.deliver('{"t":"screen.brightness","level":40}');
-        transport.deliver('{"t":"hello","fw":"0.1.0","proto":2,"mac":"AA"}');
+        transport.deliver('{"t":"hello","fw":"0.1.0","proto":3,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2713,7 +2749,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":2,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":3,"mac":"AA"}');
       await pumpEventQueue();
 
       final offer = transport.replies.firstWhere((r) => r['t'] == 'fw.offer');
@@ -2733,7 +2769,7 @@ void main() {
           firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
         );
 
-        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":2,"mac":"AA"}');
+        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":3,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2761,7 +2797,7 @@ void main() {
         '{"t":"turn.send","chatId":"c-1","text":"run them"}',
       );
       await pumpEventQueue();
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":2,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":3,"mac":"AA"}');
       await pumpEventQueue();
 
       expect(transport.replies.any((r) => r['t'] == 'fw.offer'), isFalse);
@@ -2779,7 +2815,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":2,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":3,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();
@@ -2808,7 +2844,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":2,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":3,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();

@@ -227,6 +227,8 @@ class PanelController {
         await _welcome(message);
       case PanelChatsRequested():
         _sendChats();
+      case PanelFocused(:final chatId):
+        _followFocus(chatId);
       case PanelStopRequested(:final chatId):
         _stopChat(chatId);
       case PanelTurnRequested(:final chatId, :final text):
@@ -676,6 +678,19 @@ class PanelController {
       _log.warn('panel', 'Panel turn in ${chat.id} could not start: $e');
       _refuseTurn(chat.id, "That couldn't be started here. Open Grid to see.");
     }
+  }
+
+  /// Follow a swipe: show the chat the carousel settled on.
+  ///
+  /// The same three moves a turn started from the panel makes, and for the same
+  /// reason — the panel and the window are one desk. The difference is that
+  /// nothing is dispatched here: this is somebody LOOKING at a tile, so a chat
+  /// the app no longer has is ignored in silence rather than answered. The
+  /// panel is not waiting on a reply and has nothing to correct.
+  void _followFocus(String chatId) {
+    final chat = panelChatById(_ref.read(chatSessionsProvider), chatId);
+    if (chat == null || chat.isArchived) return;
+    _showInWindow(chat.projectId, chat.id);
   }
 
   /// Point the window at the turn the panel just started.

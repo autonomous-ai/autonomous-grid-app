@@ -141,6 +141,7 @@ whole message — a peer with an extra field is not a broken peer.
 | `hello` | `fw` string, `proto` int, `mac` string | First thing after the port opens. `mac` is also the device's USB serial number, so the app can tell one panel from another before a byte is exchanged. |
 | `pong` | — | The answer to a `ping`. Empty: the arrival is the content, and it is the only thing that tells the app its port handle still reaches a running panel (below). |
 | `chats.list` | — | Send me the tiles. |
+| `focus` | `chatId` | The carousel settled on this tile. A statement about where the user is LOOKING, not a request to run anything — the window opens that chat so the two screens are one desk. Debounced on the device (~400 ms): a fast swipe crosses several tiles, and sending each would drag the window through every conversation on the way past. A `chatId` the app no longer has is ignored in silence; nobody is waiting on an answer to a look. |
 | `turn.send` | `chatId`, `text` | The user asked for something. The chat must already exist — a tile is one, so there is nothing to create. |
 | `turn.stop` | `chatId` | Interrupt that chat's turn, and only that one. The id travels because the panel can stop a chat the desktop does not have open. |
 | `answer` | `chatId`, `id`, `optionId` | The user answered a `question`. `id` is echoed back verbatim — it is the app's, opaque here. |
