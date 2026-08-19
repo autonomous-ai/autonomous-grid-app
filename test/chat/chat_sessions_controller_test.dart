@@ -3484,6 +3484,51 @@ void main() {
       },
     );
 
+    test('closing the app on a running beat leaves the loop running, so the '
+        'next launch picks it up instead of ending an overnight job', () async {
+      final sender = _StreamingLoopSender();
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        answering: sender,
+        updates: const [],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
+      await settle();
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: '5m check the deploy',
+      ));
+      await settle();
+      final id = h.container.read(chatSessionsProvider).conversations.single.id;
+      sender.loopTurn!.add(const ChatSendStreaming('half an answer'));
+      await settle();
+
+      // What quitting does to a beat in flight: the window's teardown stops
+      // every chat that is answering. On 2026-08-19 the loop was `stopped` on
+      // disk the same second a beat was torn down this way and never resumed
+      // again — while the launches that killed the app outright, leaving the
+      // file saying `running`, all came back.
+      chats.stopChat(id);
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(
+        chat.loop?.isRunning,
+        isTrue,
+        reason: 'a torn-down beat is not the user ending the loop',
+      );
+      expect(
+        (await h.store.loadAll()).single.loop?.isRunning,
+        isTrue,
+        reason: 'and the file is what the next launch resumes from',
+      );
+
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
     test('a turn that keeps streaming is left alone past the stall window — a '
         'long turn that is working is not a hang', () async {
       final sender = _StreamingLoopSender();
