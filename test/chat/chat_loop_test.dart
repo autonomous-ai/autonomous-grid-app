@@ -9,6 +9,7 @@ ChatLoop _loop({
   int iterations = 0,
   DateTime? nextAt,
   String? pacing,
+  int quietStreak = 0,
   bool continuous = false,
 }) => ChatLoop(
   prompt: 'check the deploy',
@@ -18,6 +19,7 @@ ChatLoop _loop({
   status: status,
   iterations: iterations,
   pacing: pacing,
+  quietStreak: quietStreak,
   continuous: continuous,
 );
 
@@ -139,6 +141,21 @@ void main() {
       expect(read?.status, LoopStatus.stopped);
     });
 
+    test('a run of quiet iterations survives the restart, so the count on the '
+        'bar does not start over as if the night had been eventful', () {
+      final read = ChatLoop.fromJson(_loop(quietStreak: 4).toJson());
+      expect(read?.quietStreak, 4);
+    });
+
+    test('a loop the assistant finished stays finished — a restart must not '
+        'start a job that is already done back up', () {
+      final read = ChatLoop.fromJson(
+        _loop(status: LoopStatus.finished).toJson(),
+      );
+      expect(read?.status, LoopStatus.finished);
+      expect(read?.isRunning, isFalse);
+    });
+
     test('a self-paced loop keeps having no interval', () {
       final read = ChatLoop.fromJson(_loop(interval: null).toJson());
       expect(read?.isSelfPaced, isTrue);
@@ -184,6 +201,29 @@ void main() {
       expect(stopped, contains('Stopped repeating'));
       expect(expired, contains('7 days'));
       expect(stopped, isNot(expired));
+    });
+
+    test('a loop the assistant ended says it finished, and why — telling a '
+        'user they stopped something that finished on its own is a lie', () {
+      final finished = loopBarLabel(
+        _loop(status: LoopStatus.finished, pacing: 'the deploy went out'),
+        _start,
+      );
+      expect(finished, startsWith('Finished:'));
+      expect(finished, contains('the deploy went out'));
+      expect(finished, isNot(contains('Stopped repeating')));
+    });
+
+    test('a quiet run only shows once it means something — two of them is a '
+        'coincidence, three is the news that nothing is happening', () {
+      expect(
+        loopBarLabel(_loop(quietStreak: 2), _start),
+        isNot(contains('no change')),
+      );
+      expect(
+        loopBarLabel(_loop(quietStreak: 3), _start),
+        contains('3 with no change'),
+      );
     });
   });
   group('the line under the composer while it runs', () {

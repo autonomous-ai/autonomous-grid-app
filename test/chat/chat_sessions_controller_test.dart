@@ -3083,6 +3083,144 @@ void main() {
       await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
     });
 
+    test('an iteration that says the job is done ends the loop, which is the '
+        'only way a finished job ever stopped itself', () async {
+      final grid = _FakeClassifier('30\nNothing is pending.');
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(
+              role: ChatRole.assistant,
+              text:
+                  'The deploy finished and the smoke tests passed.\n\n'
+                  '```grid-loop\n'
+                  '{"stop": true, "why": "the deploy finished"}\n'
+                  '```',
+            ),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: 'check the deploy',
+      ), model: 'qwen');
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.loop?.status, LoopStatus.finished);
+      expect(chat.loop?.pacing, 'the deploy finished');
+      expect(chat.loop?.iterations, 1);
+      // Ended, not paused by the user: the two read differently on the bar.
+      expect(loopBarLabel(chat.loop!, DateTime.now()), startsWith('Finished:'));
+    });
+
+    test('the gap the iteration named is the one waited, and the second model '
+        'is never asked — the one that did the work sets the pace', () async {
+      final grid = _FakeClassifier('30\nNothing is pending.');
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        grid: grid,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(
+              role: ChatRole.assistant,
+              text:
+                  'Still building.\n\n'
+                  '```grid-loop\n'
+                  '{"next": "45m", "why": "the build has 40 minutes left"}\n'
+                  '```',
+            ),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: 'check the deploy',
+      ), model: 'qwen');
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.loop?.pacing, 'the build has 40 minutes left');
+      expect(
+        chat.loop!.nextAt.difference(DateTime.now()).inMinutes,
+        greaterThan(40),
+      );
+      expect(
+        grid.calls,
+        0,
+        reason: 'the pacer is the fallback now, not the path',
+      );
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    test('a quiet iteration is counted rather than repeated, so a night of '
+        '"nothing yet" reads as a number and not forty answers', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(
+              role: ChatRole.assistant,
+              text:
+                  'Nothing has moved.\n\n'
+                  '```grid-loop\n{"quiet": true, "next": "1h"}\n```',
+            ),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: 'check the deploy',
+      ), model: 'qwen');
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.loop?.quietStreak, 1);
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
+    test("the app's own instruction and the block it asked for are both taken "
+        'back out of the transcript — the user reads the answer, and the next '
+        'beat carries the question once, not twice', () async {
+      final h = _harness(
+        tmp,
+        agentInstalled: true,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(
+              role: ChatRole.assistant,
+              text:
+                  'Still building.\n\n'
+                  '```grid-loop\n{"next": "45m"}\n```',
+            ),
+          ),
+        ],
+      );
+      final chats = h.container.read(chatSessionsProvider.notifier);
+
+      await chats.runCommand((
+        command: ChatCommand.loop,
+        argument: 'check the deploy',
+      ), model: 'qwen');
+      await settle();
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(_userTurns(h.container, chat.id), ['check the deploy']);
+      expect(chat.messages.last.text, 'Still building.');
+      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
+    });
+
     test('a loop that stops records where in the transcript it stopped, so '
         'the line saying so lands on that turn and not at the bottom of '
         'whatever is said next', () async {
