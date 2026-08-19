@@ -6,6 +6,14 @@ enum LoopStatus {
   /// The user stopped it.
   stopped,
 
+  /// The assistant said there was nothing left to check.
+  ///
+  /// Kept apart from [stopped] because the two are different news: one is the
+  /// user changing their mind, the other is the job finishing. Telling a person
+  /// "you stopped this" about a loop that ended on its own is the kind of
+  /// dishonest line §5 exists to catch.
+  finished,
+
   /// Seven days passed. A forgotten loop is bounded rather than eternal.
   expired,
 }
@@ -27,6 +35,7 @@ class ChatLoop {
     this.status = LoopStatus.running,
     this.iterations = 0,
     this.pacing,
+    this.quietStreak = 0,
     this.continuous = false,
     this.endedAfter,
   });
@@ -50,6 +59,15 @@ class ChatLoop {
   /// Why the assistant chose the gap it did, on a self-paced loop. Null on a
   /// fixed one, where the gap is the user's own number and needs no reason.
   final String? pacing;
+
+  /// How many iterations in a row came back with nothing to report.
+  ///
+  /// A loop watching something that hasn't moved still has to run to find that
+  /// out, and each run is a turn in the transcript. The count is what the bar
+  /// shows instead of the user scrolling twelve identical answers to learn the
+  /// deploy still hasn't finished — and it resets the moment one of them has
+  /// news.
+  final int quietStreak;
 
   /// Run the next turn the moment the last one ends, not on a clock — for
   /// "keep building this project, never stop". The one mode with no wait; it
@@ -75,6 +93,7 @@ class ChatLoop {
     DateTime? nextAt,
     int? iterations,
     String? pacing,
+    int? quietStreak,
     int? endedAfter,
   }) => ChatLoop(
     prompt: prompt,
@@ -84,6 +103,7 @@ class ChatLoop {
     status: status ?? this.status,
     iterations: iterations ?? this.iterations,
     pacing: pacing ?? this.pacing,
+    quietStreak: quietStreak ?? this.quietStreak,
     continuous: continuous,
     endedAfter: endedAfter ?? this.endedAfter,
   );
@@ -97,6 +117,7 @@ class ChatLoop {
     'status': status.name,
     'iterations': iterations,
     if (pacing != null) 'pacing': pacing,
+    if (quietStreak > 0) 'quietStreak': quietStreak,
     if (endedAfter != null) 'endedAfter': endedAfter,
   };
 
@@ -126,6 +147,7 @@ class ChatLoop {
       orElse: () => LoopStatus.stopped,
     );
     final iterations = raw['iterations'];
+    final quiet = raw['quietStreak'];
     final endedAfter = raw['endedAfter'];
     return ChatLoop(
       prompt: prompt,
@@ -137,6 +159,7 @@ class ChatLoop {
       status: stored,
       iterations: iterations is int && iterations > 0 ? iterations : 0,
       pacing: raw['pacing'] is String ? raw['pacing'] as String : null,
+      quietStreak: quiet is int && quiet > 0 ? quiet : 0,
       continuous: raw['continuous'] == true,
       endedAfter: endedAfter is int && endedAfter > 0 ? endedAfter : null,
     );
@@ -192,6 +215,15 @@ const Duration kLoopPaceTimeout = Duration(seconds: 90);
 /// The bounds a self-paced loop may choose between.
 const Duration kMinPacedDelay = Duration(minutes: 1);
 const Duration kMaxPacedDelay = Duration(hours: 1);
+
+/// What a self-paced loop waits when nothing said otherwise — an unreadable
+/// reply, a pacer that never came back, a block with no gap in it.
+///
+/// Long enough not to hammer whatever is being watched, short enough that a
+/// loop the user is watching still moves. Named because it is the answer in
+/// three different places, and three copies of a number is three chances for
+/// one of them to drift.
+const Duration kLoopFallbackDelay = Duration(minutes: 10);
 
 /// What `/loop <argument>` asked for.
 ///
@@ -287,8 +319,11 @@ List<Map<String, String>> buildLoopPaceMessages({
   final reason = lines.skip(1).join(' ').trim();
   if (number == null) {
     return (
-      delay: const Duration(minutes: 10),
-      reason: reason.isEmpty ? 'no pace was given, so waiting 10m' : reason,
+      delay: kLoopFallbackDelay,
+      reason: reason.isEmpty
+          ? 'no pace was given, so waiting '
+                '${loopIntervalLabel(kLoopFallbackDelay)}'
+          : reason,
     );
   }
   var delay = Duration(minutes: int.parse(number.group(0)!));
@@ -304,9 +339,13 @@ String loopBarLabel(ChatLoop loop, DateTime now) => switch (loop.status) {
         'until you stop it',
   LoopStatus.running =>
     'Repeating: ${loop.prompt} · ${_cadence(loop)} · '
-        '${loop.iterations} so far · next in ${_untilNext(loop, now)}'
+        '${loop.iterations} so far${_quiet(loop)} · '
+        'next in ${_untilNext(loop, now)}'
         '${loop.pacing == null ? '' : ' · ${loop.pacing}'}',
   LoopStatus.stopped => 'Stopped repeating: ${loop.prompt}',
+  LoopStatus.finished =>
+    'Finished: ${loop.prompt}${loop.pacing == null ? '' : ' · ${loop.pacing}'}'
+        '. Start it again if you want another look.',
   LoopStatus.expired =>
     'Stopped after 7 days: ${loop.prompt}. Start it again if you still need it.',
 };
@@ -319,8 +358,13 @@ String loopBarLabel(ChatLoop loop, DateTime now) => switch (loop.status) {
 /// [loopBarLabel], which `/loop` prints when asked.
 String loopStatusNote(ChatLoop loop, DateTime now) => loop.isContinuous
     ? 'Repeating: ${loop.prompt} · ${loop.iterations} so far'
-    : 'Repeating: ${loop.prompt} · ${loop.iterations} so far · '
-          'next in ${_untilNext(loop, now)}';
+    : 'Repeating: ${loop.prompt} · ${loop.iterations} so far'
+          '${_quiet(loop)} · next in ${_untilNext(loop, now)}';
+
+/// The quiet run, once it is long enough to mean something: two identical
+/// answers is a coincidence, three is the news that nothing is happening.
+String _quiet(ChatLoop loop) =>
+    loop.quietStreak < 3 ? '' : ' · ${loop.quietStreak} with no change';
 
 String _cadence(ChatLoop loop) => loop.isSelfPaced
     ? 'at a pace it picks'

@@ -65,8 +65,8 @@ class GoalSentBadge extends StatelessWidget {
   );
 }
 
-/// Where the repeating prompt stopped — because the user stopped it, or because
-/// its seven days ran out.
+/// Where the repeating prompt stopped — because the assistant reached the end
+/// of the job, because the user stopped it, or because its seven days ran out.
 class LoopEndedRow extends StatelessWidget {
   const LoopEndedRow({super.key, required this.loop});
 
@@ -77,6 +77,7 @@ class LoopEndedRow extends StatelessWidget {
     icon: switch (loop.status) {
       LoopStatus.running => Icons.repeat_rounded,
       LoopStatus.stopped => Icons.pause_circle_outline_rounded,
+      LoopStatus.finished => Icons.task_alt_rounded,
       LoopStatus.expired => Icons.hourglass_empty_rounded,
     },
     label: loopBarLabel(loop, DateTime.now()),

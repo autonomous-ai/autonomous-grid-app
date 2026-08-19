@@ -7,6 +7,7 @@ import '../../../shared/skills/agent_skill_home.dart';
 import 'agent_catalog.dart';
 import 'grid_chart_skill.dart';
 import 'grid_host_skill.dart';
+import 'grid_loop_skill.dart';
 import 'grid_research_skill.dart';
 import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
@@ -60,12 +61,6 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridHostSkillFiles,
   ),
-  // Starting a dev server is the same job for every agent, and each runs its
-  // commands in a session the runner tears down at the end of a tool call — so
-  // each needs the supervisor route or it reports a dead server as running.
-  // The chat can draw a chart from a fenced block, and no agent would ever emit
-  // one unless something told it the block exists — a capability nobody knows
-  // about is a capability that never fires.
   // The method behind a researched answer. `grid-web` gave every agent the
   // tools; on its own an agent still does one search, one page, one confident
   // paragraph — which is how a wrong answer gets written in a trustworthy
@@ -75,15 +70,30 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridResearchSkillFiles,
   ),
+  // The chat can draw a chart from a fenced block, and no agent would ever emit
+  // one unless something told it the block exists — a capability nobody knows
+  // about is a capability that never fires.
   BuiltinGridSkill(
     name: kGridChartSkillName,
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridChartSkillFiles,
   ),
+  // Starting a dev server is the same job for every agent, and each runs its
+  // commands in a session the runner tears down at the end of a tool call — so
+  // each needs the supervisor route or it reports a dead server as running.
   BuiltinGridSkill(
     name: kGridServeSkillName,
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridServeSkillFiles,
+  ),
+  // A self-paced `/loop` asks the assistant that just ran the check when to run
+  // it again — and, for the first time, lets it say the job is finished. Same
+  // fenced-block trick as the chart, and the same reason for a card: nothing
+  // else tells an agent the block is read.
+  BuiltinGridSkill(
+    name: kGridLoopSkillName,
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    build: gridLoopSkillFiles,
   ),
 ];
 
