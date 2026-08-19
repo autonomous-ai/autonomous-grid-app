@@ -74,6 +74,37 @@ hermes cron create "<schedule>" "<prompt>" --name "<short name>" --deliver local
 - **--repeat N** — stop after N runs. Leave it out to run until removed.
 - **--skill <name>** — attach a skill the job needs. Repeat for several.
 
+## Which assistant the job runs as — say it, don't assume it
+
+A plain job like the one above is run by **the scheduler's own assistant**, not
+by you. Different tools, different skills, its own model. For "check the news
+each morning" nobody cares. For work that needs what *you* have — this repo's
+files, a browser you drove, a tool only you were given — a job that answers as
+somebody else is a quiet substitution, so **tell the user which one will run
+it** whenever you schedule anything.
+
+To keep the work with the assistant the user is talking to, schedule a script
+instead and let it call that assistant:
+
+```
+~/.hermes/scripts/<name>.sh          # the script (chmod +x)
+hermes cron create "<schedule>" --script <name>.sh --no-agent \\
+  --name "<short name>" --deliver local
+```
+
+`--no-agent` means the script *is* the job and its stdout is delivered
+verbatim — so print the answer and nothing else. Three things the script must
+do itself, each measured on 2026-08-19 rather than assumed:
+
+- **`cd` to where the work is.** In script mode the job starts in
+  `~/.hermes/scripts`, and `--workdir` does not move it.
+- **Set `PATH` with absolute directories.** The scheduler is a daemon; it has
+  none of the login shell's PATH, so `claude` / `codex` / `node` are not found
+  unless the script names their folders.
+- **Grant the tools the run needs.** `claude -p "…" --allowedTools Bash Read
+  Write` — headless, anything not allowed is refused mid-run rather than
+  asked about. Codex's equivalent is `codex exec "…"`.
+
 ## Read it back before you answer
 
 A job you did not read back is not a job. Every time:
