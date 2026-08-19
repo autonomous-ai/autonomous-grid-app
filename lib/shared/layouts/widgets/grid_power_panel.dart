@@ -465,7 +465,7 @@ class _NodeBreakdown extends StatelessWidget {
         row = _NodeRow(
           label: labels[i],
           trailing: usedPct == null
-              ? _PlanBadge(label: plan)
+              ? PillPanelBadge(label: plan)
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -479,7 +479,7 @@ class _NodeBreakdown extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    _PlanBadge(label: plan),
+                    PillPanelBadge(label: plan),
                   ],
                 ),
         );
@@ -550,34 +550,6 @@ class _NodeRow extends StatelessWidget {
         const SizedBox(width: 8),
         trailing,
       ],
-    );
-  }
-}
-
-/// The accent tier chip a subscription row carries — same shape and accent tint
-/// as the grid page's per-node plan badge, so a plan reads the same everywhere.
-class _PlanBadge extends StatelessWidget {
-  const _PlanBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppPalette.accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w700,
-          color: AppPalette.accent,
-        ),
-      ),
     );
   }
 }

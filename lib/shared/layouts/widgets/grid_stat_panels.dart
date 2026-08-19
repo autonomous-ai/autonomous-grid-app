@@ -3,18 +3,22 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
+import '../../../features/network/logic/member_providers.dart';
+import '../../../features/network/logic/member_usage_provider.dart';
 import '../../../features/network/logic/node_display.dart';
 import '../../../features/network/logic/node_metrics.dart'
     show answeredSummary, answeredWindowLabel, formatCount;
 import '../../../infrastructure/api/models/grid_overview.dart';
+import '../../../infrastructure/api/models/member_usage.dart';
 import '../../theme/app_theme.dart';
 import 'pill_panel_shell.dart';
 
-/// The panel behind one figure in the top bar's grid pill: hovering "8 nodes"
-/// names the eight machines, "7 models" the seven models, the token figure the
-/// four counts it sums.
+/// The panel behind one figure in the top bar's grid pill: hovering "21 members"
+/// names the twenty-one, "8 nodes" the eight machines, "7 models" the seven
+/// models, the token figure the four counts it sums.
 ///
 /// The pill's numbers used to be unreadable in the only way that matters — you
 /// could see *how many* and never *which*, and the one panel the pill opened
@@ -23,7 +27,8 @@ import 'pill_panel_shell.dart';
 ///
 /// The frame only: anchored under its own figure (not the whole pill, so it
 /// points at the number it belongs to) and carrying the shared surface. What
-/// goes inside is [GridNodesList] / [GridModelsList] / [GridTokensList].
+/// goes inside is [GridMembersList] / [GridNodesList] / [GridModelsList] /
+/// [GridTokensList].
 class GridStatPanel extends StatelessWidget {
   const GridStatPanel({
     super.key,
@@ -111,6 +116,226 @@ class GridStatPanel extends StatelessWidget {
     final left = box.localToGlobal(Offset.zero).dx - _inset;
     final limit = windowWidth - panelWidth - _edgeMargin;
     return left.clamp(_edgeMargin, math.max(_edgeMargin, limit)) - left;
+  }
+}
+
+/// Who is on this grid, by email, busiest reader first — the panel behind the
+/// pill's member count.
+///
+/// Two sources, joined here: the roster comes from the control plane (everyone
+/// who *may* use the grid) and the usage from the relay (what each of them
+/// actually ran in the last 24h). Neither knows the other, so a member who has
+/// never sent a request appears with no figure and a consumer the roster has
+/// since dropped simply doesn't appear — the roster decides who is listed.
+class GridMembersList extends ConsumerStatefulWidget {
+  const GridMembersList({super.key});
+
+  @override
+  ConsumerState<GridMembersList> createState() => _GridMembersListState();
+}
+
+class _GridMembersListState extends ConsumerState<GridMembersList> {
+  /// The address of the row under the pointer, or null when it is on none of
+  /// them. Kept here rather than in the row so the detail line — which is not
+  /// inside the row — can read it.
+  String? _hovered;
+
+  /// Guarded on the *current* hover, not the one leaving: crossing from one row
+  /// to the next fires `onExit` for the old after `onEnter` for the new, and
+  /// clearing unconditionally would blank the line for a frame on every move
+  /// down the list.
+  void _onHover(String email, bool over) {
+    if (over) {
+      if (_hovered != email) setState(() => _hovered = email);
+    } else if (_hovered == email) {
+      setState(() => _hovered = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final grid = ref.watch(selectedNetworkProvider);
+    if (grid == null) return const SizedBox.shrink();
+    // Read for its *value*, never its loading state: the roster is what the
+    // panel is for, and blocking the whole list on a second request would make
+    // an already-known roster arrive late. Absent usage degrades to an
+    // unranked, unlabelled list rather than to a spinner.
+    final usage = ref.watch(gridMemberUsageProvider).value;
+    return ref
+        .watch(networkMembersProvider(grid.networkId))
+        .when(
+          loading: () => const _PanelMessage(text: 'Loading members…'),
+          // The provider's own message, which is already written for a person
+          // ("Sign in to manage members.") rather than a socket error.
+          error: (err, _) => _PanelMessage(text: '$err'),
+          data: (members) {
+            final byEmail = usage?.byEmail;
+            final rows = sortMembersByUsage(
+              members,
+              byEmail,
+              emailOf: (m) => m.email,
+            );
+            final hovered = memberUsageFor(byEmail, _hovered ?? '');
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _PanelBody(
+                  // The count moves into the heading and the figure takes its place:
+                  // "how many" is a property of the word it sits beside, while the
+                  // right-hand slot is where every other panel puts the total of the
+                  // column under it. That total is the sum of the rows SHOWN, so the
+                  // column adds up to its own header — it can read lower than the
+                  // pill's grid-wide input figure, which also counts people the
+                  // roster no longer lists and consumers the relay could not name.
+                  label: '${rows.length} members',
+                  trailing: usage == null
+                      ? null
+                      : memberInputTotalLabel(
+                          rows.map((m) => memberUsageFor(byEmail, m.email)),
+                          usage.windowSeconds,
+                        ),
+                  emptyText: 'No one is on this grid yet.',
+                  itemCount: rows.length,
+                  // No note about the *kind* of member. "Work email" sat on most
+                  // rows of a work grid and so told the eye nothing — a mark
+                  // every row carries stops being a mark. The owner is the one
+                  // row worth finding and keeps a chip; the trailing slot now
+                  // spends its width on the figure the list is ordered by.
+                  itemBuilder: (context, i) => _MemberRow(
+                    email: rows[i].email,
+                    isOwner: rows[i].isOwner,
+                    usage: memberUsageFor(byEmail, rows[i].email),
+                    hovered: _hovered == rows[i].email,
+                    onHover: (over) => _onHover(rows[i].email, over),
+                  ),
+                ),
+                // Only where there is something to point at. A grid with no
+                // usage would otherwise carry a permanent line inviting a hover
+                // that can never say anything.
+                if (byEmail != null && rows.isNotEmpty)
+                  _MemberDetailLine(usage: hovered),
+              ],
+            );
+          },
+        );
+  }
+}
+
+/// One member: the address, their 24h input figure, and the full split on hover.
+///
+/// Input leads because reading is what a grid is asked to do — output follows
+/// from it, and requests count turns rather than work. The other three are a
+/// hover away rather than on the row: four numbers per line in a 300px panel
+/// would leave no room for the address, which is the thing being looked up.
+class _MemberRow extends StatelessWidget {
+  const _MemberRow({
+    required this.email,
+    required this.isOwner,
+    required this.usage,
+    required this.hovered,
+    required this.onHover,
+  });
+
+  final String email;
+  final bool isOwner;
+
+  /// Whether the pointer is on this row. Owned by the list rather than by the
+  /// row, because the line that reports the hovered member is not inside it.
+  final bool hovered;
+  final ValueChanged<bool> onHover;
+
+  /// Null when the grid reported no rollup, or when this person has run nothing
+  /// — the row then prints no figure at all. Deliberately not a `0`: on a grid
+  /// whose master is too old to answer, a column of zeros would report everyone
+  /// as idle when the truth is that nobody asked.
+  final MemberUsage? usage;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final row = _PanelRow(
+      label: email,
+      badge: isOwner ? 'owner' : null,
+      // The **fresh** input leg, matching the hover's "input tokens" line and the
+      // pill's own figure. Printing `tokensIn` raw here made the row larger than
+      // the number the tooltip called input, which reads as a bug rather than as
+      // the cache being a share of it.
+      trailing: usage == null ? null : formatCount(usage!.freshInputTokens),
+    );
+    if (usage == null) return row;
+    // A `MouseRegion`, never a `Tooltip`. This panel is drawn inside a
+    // `CompositedTransformFollower` (it hangs off the pill), and Flutter's
+    // Tooltip positions itself with `localToGlobal` — which through a follower
+    // layer throws "the paint transform cannot be reliably computed" during
+    // layout. The hint never appeared and every hover logged that instead. The
+    // detail goes in a line inside the panel, where no overlay is needed.
+    return MouseRegion(
+      onEnter: (_) => onHover(true),
+      onExit: (_) => onHover(false),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: hovered ? AppSurface.hoverFill : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppControl.radius),
+        ),
+        child: row,
+      ),
+    );
+  }
+}
+
+/// The hovered member's whole 24h split, under the list — requests, fresh
+/// input, cache and output.
+///
+/// **A line in the panel rather than a tooltip**, because a tooltip cannot work
+/// here: this panel is drawn inside a `CompositedTransformFollower` and
+/// Flutter's Tooltip needs `localToGlobal`, which throws through a follower
+/// layer. Drawn in place, it needs no overlay and no transform.
+///
+/// Always present once there is usage to point at, and **always exactly two
+/// lines**, hovered or not: this is a list you run the pointer down, and one
+/// that grew a line under it would push the rows you are reading. Four figures
+/// on one line also ran past the panel and were ellipsized from the right,
+/// which cost cache and output — the two a reader cannot infer from the row.
+class _MemberDetailLine extends StatelessWidget {
+  const _MemberDetailLine({required this.usage});
+
+  final MemberUsage? usage;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final measured = usage != null;
+    // Always two lines, hovered or not. The idle state spends the first saying
+    // what to do and leaves the second empty — an empty `Text` still lays out
+    // its line box, so the height holds without a hardcoded number that OS text
+    // scaling would clip.
+    final lines = measured
+        ? memberUsageLines(usage!)
+        : const ['Point at a member for their 24h split.', ''];
+    final style = TextStyle(
+      fontSize: 10.5,
+      color: measured ? AppPalette.textSecondary : AppPalette.textFaint,
+      fontFeatures: AppFont.tabularFigures,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Divider(height: 1, color: AppPalette.divider),
+          const SizedBox(height: 7),
+          for (final line in lines)
+            Text(
+              line,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -409,7 +634,12 @@ class _PanelBody extends StatelessWidget {
   });
 
   final String label;
-  final String trailing;
+
+  /// The section's own figure, on the right of its heading. Null omits it —
+  /// which is a list whose total is not known yet, never one whose total is
+  /// zero.
+  final String? trailing;
+
   final String emptyText;
   final int itemCount;
   final IndexedWidgetBuilder itemBuilder;
@@ -470,12 +700,22 @@ class _PanelRow extends StatelessWidget {
   const _PanelRow({
     required this.label,
     this.trailing,
+    this.badge,
     this.mono = false,
     this.dense = false,
   });
 
   final String label;
   final String? trailing;
+
+  /// A chip between the label and the figure — what this row *is*, where the
+  /// two sides say what it is called and what it holds.
+  ///
+  /// Between them rather than at the end because the end is a numeric column: a
+  /// word landing there would break the alignment the figures are read down, and
+  /// on the one row that carried it. The label keeps its `Expanded`, so a long
+  /// address ellipsizes into the chip rather than pushing it off the row.
+  final String? badge;
 
   /// Whether [label] is a string people copy (a model id) rather than read.
   final bool mono;
@@ -487,7 +727,7 @@ class _PanelRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return Padding(
+    final row = Padding(
       padding: EdgeInsets.symmetric(vertical: dense ? 0 : 3.5),
       child: Row(
         children: [
@@ -506,6 +746,10 @@ class _PanelRow extends StatelessWidget {
               ),
             ),
           ),
+          if (badge case final text?) ...[
+            const SizedBox(width: 8),
+            PillPanelBadge(label: text),
+          ],
           if (trailing != null) ...[
             const SizedBox(width: 8),
             Text(
@@ -521,6 +765,7 @@ class _PanelRow extends StatelessWidget {
         ],
       ),
     );
+    return row;
   }
 }
 

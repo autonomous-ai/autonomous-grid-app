@@ -7,6 +7,7 @@ import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/features/network/logic/network_models_provider.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
+
 import 'package:grid_app/infrastructure/api/relay_api_client.dart';
 import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
@@ -65,6 +66,18 @@ class _FakeRelayApiClient implements RelayApiClient {
   }) async {
     if (error != null) throw error!;
     return const [];
+  }
+
+  /// Same posture as `usage` above: these tests exercise the model and overview
+  /// polls, so the member-usage read answers "no rollup here" — which is also
+  /// what a master predating the endpoint does.
+  @override
+  Future<MemberUsageReport?> memberUsage({
+    required String baseUrl,
+    required String apiKey,
+  }) async {
+    if (error != null) throw error!;
+    return null;
   }
 
   final List<String> _models;

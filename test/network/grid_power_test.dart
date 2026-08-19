@@ -382,4 +382,88 @@ void main() {
       expect(shortenNodeNames(const []), isEmpty);
     });
   });
+
+  _gridAnsweredTests();
+}
+
+// --- the grid's own rollup beats summing the machines still standing ---------
+
+/// A node carrying an answered rollup, the way the relay reports one per node.
+OverviewNode _answering({
+  String name = 'n',
+  bool online = true,
+  int tokensIn = 0,
+  int tokensCached = 0,
+  int tokensOut = 0,
+  int requests = 0,
+}) => OverviewNode.fromJson({
+  'name': name,
+  'online': online,
+  'answered': {
+    'window_seconds': 86400,
+    'tokens_in': tokensIn,
+    'tokens_cached': tokensCached,
+    'tokens_out': tokensOut,
+    'requests': requests,
+  },
+});
+
+void _gridAnsweredTests() {
+  group('the grid figure comes from the grid, not from adding up machines', () {
+    test('the relay total wins over the node sum', () {
+      // The bug this fixes: a node is listed only while its heartbeat is live,
+      // so work done by a machine that has since gone offline vanished from a
+      // summed total — and the same grid then reported two different token
+      // counts on two surfaces.
+      final power = gridPowerFrom(
+        [_answering(tokensIn: 100, tokensOut: 10, requests: 1)],
+        1,
+        gridAnswered: const NodeAnswered(
+          windowSeconds: 86400,
+          tokensIn: 900,
+          tokensCached: 300,
+          tokensOut: 90,
+          requests: 9,
+        ),
+      );
+
+      expect(power.answered?.tokensIn, 900);
+      expect(power.answered?.requests, 9);
+    });
+
+    test('an older relay still gets the node sum rather than nothing', () {
+      // Quietly low, but the only figure such a grid can offer — and better
+      // than a blank where a number belongs.
+      final power = gridPowerFrom([
+        _answering(name: 'a', tokensIn: 100, tokensOut: 10, requests: 1),
+        _answering(name: 'b', tokensIn: 50, tokensOut: 5, requests: 2),
+      ], 1);
+
+      expect(power.answered?.tokensIn, 150);
+      expect(power.answered?.requests, 3);
+    });
+
+    test('the relay total is used even when no node reports one at all', () {
+      // The case the fallback cannot cover: every machine that served today has
+      // gone offline. Summing gives null; the grid's own rollup still knows.
+      final power = gridPowerFrom(
+        [_node()],
+        1,
+        gridAnswered: const NodeAnswered(
+          windowSeconds: 86400,
+          tokensIn: 700,
+          tokensOut: 70,
+          requests: 7,
+        ),
+      );
+
+      expect(power.answered?.tokensIn, 700);
+    });
+
+    test('no rollup anywhere stays null, never a zeroed grid', () {
+      // Zeros here are indistinguishable from a real measurement of an idle
+      // grid, which is the one thing this must not report.
+      expect(gridPowerFrom([_node()], 1).answered, isNull);
+    });
+  });
 }

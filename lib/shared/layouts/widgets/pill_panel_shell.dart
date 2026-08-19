@@ -90,6 +90,44 @@ class PillPanelStatRow extends StatelessWidget {
   }
 }
 
+/// A small accent chip on a row — what this one *is*, where the rest of the row
+/// says what it holds: a subscription seat's tier, the grid's owner.
+///
+/// Shared for the same reason as everything else in this file: it started as a
+/// private badge in the hardware panel, and the members list wanted the same
+/// shape. Two copies of a ten-line chip drift in exactly the way a reader
+/// notices — one radius, one tint — while both claim to mean "this row is
+/// special".
+///
+/// Deliberately quiet. A chip is a label, not a warning, so it borrows the
+/// accent at low alpha rather than a status colour: a roster where the owner's
+/// row looked like an error would be worse than one with no mark at all.
+class PillPanelBadge extends StatelessWidget {
+  const PillPanelBadge({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppPalette.accent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: AppPalette.accent,
+        ),
+      ),
+    );
+  }
+}
+
 /// A section heading inside a pill panel: a quiet uppercase label, with an
 /// optional figure on the right (that section's total).
 class PillPanelLabel extends StatelessWidget {
