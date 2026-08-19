@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/chat/logic/turn_model_share.dart';
 import 'models/grid_overview.dart';
+import 'models/member_usage.dart';
 
 /// The relay's read APIs the app polls for a grid: the OpenAI-style model list,
 /// the richer grid overview, and which models actually served a window of
@@ -44,7 +45,31 @@ abstract interface class RelayApiClient {
     required DateTime since,
     DateTime? until,
   });
+
+  /// `GET {baseUrl}/grid/members/usage` → what each person on this grid ran in
+  /// the relay's answered window, biggest reader first.
+  ///
+  /// **Authenticated, unlike the overview beside it**, because it names people
+  /// rather than machines — see the relay endpoint's own note. That also means
+  /// a 401/403 here is a real answer about this caller, not a transport blip.
+  ///
+  /// Returns null for "no rollup has ever landed" — a master that just came up,
+  /// or one whose first query failed — which the panel must render differently
+  /// from an empty list, the grid nobody used today. Throws [RelayUnavailable]
+  /// like the others, **404 included**, which is every grid whose master
+  /// predates this endpoint and must read as "not available here".
+  Future<MemberUsageReport?> memberUsage({
+    required String baseUrl,
+    required String apiKey,
+  });
 }
+
+/// One read of `/grid/members/usage`: the rows and the span they cover.
+///
+/// The window is carried rather than assumed — it is an operator knob on the
+/// relay, and a heading that said "24h" while the master counted six would be
+/// wrong in the one way a figure must never be.
+typedef MemberUsageReport = ({int windowSeconds, List<MemberUsage> members});
 
 /// A relay read failed. [statusCode] is the HTTP status when the request
 /// completed with a non-2xx, or null for a transport error (timeout, socket) or
@@ -145,6 +170,32 @@ class HttpRelayApiClient implements RelayApiClient {
     return [
       for (final row in decoded['models'] as List) ?ModelShare.fromJson(row),
     ];
+  }
+
+  @override
+  Future<MemberUsageReport?> memberUsage({
+    required String baseUrl,
+    required String apiKey,
+  }) async {
+    final body = await _get(
+      Uri.parse('$baseUrl/grid/members/usage'),
+      apiKey,
+      deadline: _kUsageDeadline,
+    );
+    final decoded = jsonDecode(body);
+    if (decoded is! Map) throw const RelayUnavailable();
+    final rows = decoded['members'];
+    // `null` is the relay saying "no rollup yet" and is passed through as null;
+    // anything that is not a list at all is a payload we don't understand, and
+    // reading that as "no rollup" would put a master's bug on screen as a fact
+    // about this grid.
+    if (rows == null) return null;
+    if (rows is! List) throw const RelayUnavailable();
+    final window = decoded['window_seconds'];
+    return (
+      windowSeconds: window is num ? window.toInt() : 0,
+      members: [for (final row in rows) ?MemberUsage.fromJson(row)],
+    );
   }
 
   /// Shared GET: bearer auth, one deadline for the whole call, 200-or-throw,

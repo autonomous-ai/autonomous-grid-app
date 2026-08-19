@@ -16,6 +16,7 @@ import '../../../shared/app_info.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_providers.dart';
+import '../../agents/logic/auto_agent.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../chat/logic/commands/spoken_command.dart';
@@ -50,8 +51,30 @@ final panelControllerProvider = Provider<PanelController>((ref) {
   //
   // Two providers because a turn moves in two places: the chat's send state
   // says a turn is happening, and the run feed says what it has done so far.
-  ref.listen(chatSessionsProvider, (_, _) => controller.mirrorTurns());
+  ref.listen(chatSessionsProvider, (_, _) {
+    controller.mirrorTurns();
+    // And the TILES, because a tile is a chat: its title, its model and its
+    // very existence live in this provider. Without this a model picked in the
+    // window reached the panel only if something else happened to rebuild the
+    // list — a project edited, or a headline written — which is minutes later
+    // or never.
+    //
+    // Coalesced rather than immediate: this provider moves on every streamed
+    // token, and rebuilding a hundred tiles into JSON per token to discover
+    // that none of them changed is work nobody asked for. The mirror already
+    // drops what has not changed; this keeps it from being asked fifty times a
+    // second.
+    controller.scheduleChatsMirror();
+  });
   ref.listen(agentRunsProvider, (_, _) => controller.mirrorTurns());
+  // The window moved to another chat — the carousel follows it there. Watched
+  // as its own narrow selector rather than off the whole chat state, so a
+  // streaming reply cannot make this fire: `activeId` changes when somebody
+  // switches chats and at no other time.
+  ref.listen(
+    chatSessionsProvider.select((chats) => chats.activeId),
+    (_, chatId) => controller.followWindow(chatId),
+  );
   // A question is the one thing on this link the panel can answer *instead of*
   // the window, so it has to arrive there as fast as it arrives here — and,
   // more importantly, leave as fast. Whichever surface answers first cancels
@@ -213,6 +236,8 @@ class PanelController {
     _audioSub = null;
     _voiceOpen?.cancel();
     _voiceOpen = null;
+    _chatsPending?.cancel();
+    _chatsPending = null;
     _heartbeat?.cancel();
     _heartbeat = null;
     _voice = null;
@@ -395,18 +420,44 @@ class PanelController {
     );
   }
 
+  /// Rebuild the tiles soon, and once, however many changes arrive first.
+  ///
+  /// [kPanelChatsCoalesce] after the first change in a burst — long enough that
+  /// a streaming reply does not rebuild the list per token, short enough that
+  /// picking a model in the window reads as instant on the glass.
+  void scheduleChatsMirror() {
+    if (_chatsPending != null) return;
+    _chatsPending = Timer(kPanelChatsCoalesce, () {
+      _chatsPending = null;
+      mirrorChats();
+    });
+  }
+
+  Timer? _chatsPending;
+
   /// Tell the panel whatever has changed about the tiles themselves.
   void mirrorChats() {
-    _push(
-      _tiles.onChange(
-        panelChatsFor(
-          projects: _ref.read(sortedProjectsProvider),
-          chats: _ref.read(chatSessionsProvider),
-          history: _ref.read(panelRecapsProvider),
-        ),
-      ),
+    final tiles = panelChatsFor(
+      projects: _ref.read(sortedProjectsProvider),
+      chats: _ref.read(chatSessionsProvider),
+      history: _ref.read(panelRecapsProvider),
+      defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
     );
+    final messages = _tiles.onChange(tiles);
+    if (messages.isNotEmpty) {
+      // Evidence, deliberately. A tile that does not change on the glass leaves
+      // nothing in this log either, so "did the app even send it?" has no
+      // answer and the hunt starts with a guess. Only fires when something
+      // actually goes out, which is rare — the mirror drops everything else.
+      _log.info(
+        'panel',
+        'Tiles changed: ${messages.length} message(s); '
+            '${[for (final t in tiles) '${t.name}=${t.model ?? '-'}'].join(', ')}',
+      );
+    }
+    _push(messages);
   }
+
 
   /// The user answered a question on the panel.
   ///
@@ -566,6 +617,7 @@ class PanelController {
       projects: _ref.read(sortedProjectsProvider),
       chats: _ref.read(chatSessionsProvider),
       history: _ref.read(panelRecapsProvider),
+      defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
     );
     _ref.read(panelLinkProvider).send(_tiles.all(tiles));
   }
@@ -687,6 +739,29 @@ class PanelController {
     }
   }
 
+  /// The window switched chats — move the carousel to it.
+  ///
+  /// The mirror of [_followFocus], and the same rule decides both: whichever
+  /// screen the person touched is the one that says what both are looking at.
+  ///
+  /// **Dedup is what keeps the two ends from chasing each other.** A swipe
+  /// makes the device send `focus`, which moves the window, which would send
+  /// `focus` straight back. Remembering the last id sent breaks the loop on the
+  /// first lap — and the device does the same on its side, so neither depends
+  /// on the other being careful.
+  ///
+  /// A blank composer (`activeId == null`) says nothing: the user is starting a
+  /// chat that does not exist yet, and there is no tile to move to.
+  void followWindow(String? chatId) {
+    if (chatId == null || chatId == _focus) return;
+    if (!_greeted) return;
+    _focus = chatId;
+    _ref.read(panelLinkProvider).send(PanelOutbound.focus(chatId));
+  }
+
+  /// The chat the two screens last agreed on, from either direction.
+  String _focus = '';
+
   /// Follow a swipe: show the chat the carousel settled on.
   ///
   /// The same three moves a turn started from the panel makes, and for the same
@@ -697,6 +772,9 @@ class PanelController {
   void _followFocus(String chatId) {
     final chat = panelChatById(_ref.read(chatSessionsProvider), chatId);
     if (chat == null || chat.isArchived) return;
+    // Recorded BEFORE the window moves, so the `activeId` listener that fires
+    // next sees its own echo and says nothing back.
+    _focus = chatId;
     _showInWindow(chat.projectId, chat.id);
   }
 
@@ -1176,6 +1254,8 @@ List<PanelChat> panelChatsFor({
   required List<Project> projects,
   required ChatSessionsState chats,
   Map<String, List<PanelTurnRecord>> history = const {},
+  /// The app's standing agent choice, for a project that has made none.
+  String? defaultAgent,
   int limit = kPanelMaxTiles,
 }) {
   final tiles = <PanelChat>[];
@@ -1189,6 +1269,7 @@ List<PanelChat> panelChatsFor({
           project,
           chats,
           history[conversation.id]?.firstOrNull,
+          defaultAgent,
         ),
       );
     }
@@ -1207,15 +1288,25 @@ PanelChat panelChatFor(
   Project project,
   ChatSessionsState chats, [
   PanelTurnRecord? last,
+  String? defaultAgent,
 ]) => PanelChat(
   id: conversation.id,
   name: conversation.title,
   project: project.name,
-  // The agent that actually ANSWERED this chat, read off the transcript stamp,
-  // falling back to the project's pick for a chat nothing has answered yet.
-  // Under Auto the two genuinely differ — the grid picks per turn — and the
-  // tile should say who spoke, not who was nominated.
-  agent: _agentOf(conversation) ?? project.agent,
+  // WHO WILL ANSWER THE NEXT TURN, which is not always who answered the last
+  // one. The pick the user made — on the project, or the app's standing choice
+  // — wins, because a tile is a thing you speak into from the panel and the
+  // mark on it is a promise about what happens when you do.
+  //
+  // I had this the other way round until 2026-08-19: the tile read the agent
+  // STAMPED on the last reply, so a chat with Hermes history went on showing
+  // Hermes after the user switched it to Claude, and would have until Claude
+  // answered once. Reported from the desk in exactly those words.
+  //
+  // The stamp is still the fallback, and it earns its place under **Auto**:
+  // there the grid picks per turn, so there is no choice to show and the last
+  // agent to speak is the most informative thing left.
+  agent: _agentChoiceOf(project, defaultAgent) ?? _agentOf(conversation),
   model: conversation.model.isNotEmpty ? conversation.model : project.model,
   // One chat, one turn: no rule is needed for which of a project's chats the
   // tile speaks for, because there is no longer a tile that speaks for more
@@ -1244,6 +1335,17 @@ PanelChat panelChatFor(
     conversation: conversation,
   ),
 );
+
+/// The agent the user picked for this chat, or null when they picked Auto or
+/// picked nothing.
+///
+/// Auto is a real choice and still returns null here: it means "the grid
+/// decides per turn", which is not an agent and has no mark to draw.
+String? _agentChoiceOf(Project project, String? defaultAgent) {
+  final chosen = project.agent ?? defaultAgent;
+  if (chosen == null || chosen.isEmpty || isAutoAgentId(chosen)) return null;
+  return chosen;
+}
 
 /// The agent id stamped on this chat's most recent reply, or null when nothing
 /// has answered in it yet.

@@ -788,6 +788,17 @@ static void handle_json(const uint8_t *payload, size_t len)
         // mid-turn, for instance. It means "that project is idle now", not that something went wrong.
         ui_notify_task_done(pid);   // wake / badge / open the drawer, depending on what is on screen
         audio_notify_done();
+    } else if (strcmp(t, "focus") == 0) {
+        // The window switched chats — bring the carousel to the same one, so the desk shows one thing.
+        //
+        // Recorded as ALREADY SENT before moving. apply_active_from_col runs on the way and would
+        // otherwise notice a new centred tile and report it straight back to grid-app, which is a loop
+        // that only ends because the id stops changing. Writing it here ends it on the first lap; the
+        // app's own side does the same, so neither depends on the other being careful.
+        //
+        // A tile this panel does not have is ignored: the app is ahead of the list this panel was sent,
+        // and the `chats` that brings the tile will arrive on its own.
+        ui_focus_tile_from_app(jstr(root, "chatId"));
     } else if (strcmp(t, "turn.summarizing") == 0) {
         // The agent has stopped working and its headline is being written. Arrives INSTEAD of `turn.done`,
         // so the tile must stay exactly as it is — working — until there is something true to put there.

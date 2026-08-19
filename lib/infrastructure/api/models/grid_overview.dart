@@ -19,6 +19,7 @@ class GridOverview {
     required this.stats,
     required this.models,
     required this.nodes,
+    this.answered,
     this.advertisesChatCompletions,
     this.advertisesResponses,
     this.advertisesMessages,
@@ -28,6 +29,22 @@ class GridOverview {
   final GridStats stats;
   final List<OverviewModel> models;
   final List<OverviewNode> nodes;
+
+  /// What the **whole grid** answered in the relay's window — every completed
+  /// request, whoever asked and whatever machine served it.
+  ///
+  /// Read this rather than summing [nodes]. A node is listed only while its
+  /// heartbeat is live, so a machine that served all morning and then went
+  /// offline takes its tokens out of a summed total — and the relay's node
+  /// rollup also drops rows it cannot attribute to a machine. Adding the nodes
+  /// up therefore reports a figure that is quietly low, and low by an amount
+  /// that changes as machines come and go.
+  ///
+  /// **Null means the relay didn't say**: a master that predates the field, or
+  /// one whose first rollup hasn't landed. Callers fall back to the node sum
+  /// there — worse, but the only thing such a grid can offer — and must never
+  /// read it as zero.
+  final NodeAnswered? answered;
 
   /// Whether the grid serves at least one model that answers on
   /// `/v1/chat/completions`, one that answers on `/v1/responses`, and one that
@@ -53,6 +70,11 @@ class GridOverview {
       ),
       models: _list(j['models'], OverviewModel.fromJson),
       nodes: _list(j['nodes'], OverviewNode.fromJson),
+      answered: j['answered'] is Map
+          ? NodeAnswered.fromJson(
+              (j['answered'] as Map).cast<String, dynamic>(),
+            )
+          : null,
       advertisesChatCompletions: _flag(j['advertises_chat_completions']),
       advertisesResponses: _flag(j['advertises_responses']),
       advertisesMessages: _flag(j['advertises_messages']),
@@ -81,6 +103,7 @@ class GridOverview {
       other.stats == stats &&
       listEquals(other.models, models) &&
       listEquals(other.nodes, nodes) &&
+      other.answered == answered &&
       other.advertisesChatCompletions == advertisesChatCompletions &&
       other.advertisesResponses == advertisesResponses &&
       other.advertisesMessages == advertisesMessages;
@@ -91,6 +114,7 @@ class GridOverview {
     stats,
     Object.hashAll(models),
     Object.hashAll(nodes),
+    answered,
     advertisesChatCompletions,
     advertisesResponses,
     advertisesMessages,

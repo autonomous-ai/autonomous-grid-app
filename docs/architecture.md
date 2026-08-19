@@ -2592,7 +2592,7 @@ longer exists**; conventions §4 names the style guide instead.)
 
 | Family | Used for | Example (light / dark) |
 |---|---|---|
-| `AppPalette` | Base colours | `windowBg` #FFFFFF / #0A0A0A · `panelBg` #F9F9F8 / #141414 · `cardBg` #F3F3F2 / #1E1E1E |
+| `AppPalette` | Base colours | `windowBg` #FFFFFF / #181818 · `panelBg` #F9F9F8 / #141414 · `cardBg` #F3F3F2 / #1E1E1E |
 | `AppSurface` | Chrome overlay (mostly **translucent**) | `hoverFill`, `selectedFill`, `accentWash`, `recess`, `scrollThumb` |
 | `AppGlass` | **Raised** surfaces | `surfaceFill` #FFFFFF / #202020 · `bubbleFill` · `rowFill` · `cardShadow` |
 | `AppCard` | The card recipe | `base`, `inset`, `radius`=12, `insetRadius`=8, `heroShadow` |
@@ -2614,9 +2614,9 @@ theme-flip bug.
 
 ### Traps pinned by comment
 
-- **`windowBg` is the *page* background, not a raised surface.** Dark `#0A0A0A` is **darker** than panel
-  `#141414` and card `#1E1E1E` → a dialog taking `windowBg` *sinks below* the page. In light this bug is
-  **invisible**
+- **`windowBg` is the *page* background, not a raised surface.** A dialog taking `windowBg` is **the page's
+  own colour** — 1.000:1, no edge at all — and dark `#181818` also sits *above* panel `#141414`, so a panel
+  fill there reads as a hole rather than a block. In light this bug is **invisible**
 - **Raise the parent block's background and you must lower the child field's.** `LabeledField` defaults to
   `cardBg` fill; on an already-raised dialog (`#202020` dark) that's only **1.023:1** → pass
   `fill: AppCard.inset` (1.09:1). In light it's the reverse → choose by brightness

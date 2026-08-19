@@ -52,7 +52,7 @@ The mechanics to carry over verbatim when rebuilding:
   dark.
   ```dart
   static Color get windowBg =>
-      AppTheme.pick(const Color(0xFFFFFFFF), const Color(0xFF0A0A0A));
+      AppTheme.pick(const Color(0xFFFFFFFF), const Color(0xFF181818));
   //  AppTheme.pick(light_value, dark_value)
   ```
 - **`AppTheme.watch(context)`** must be called at the top of `build()` for every
@@ -80,7 +80,7 @@ ink**. It all lives on `AppPalette` — no hex is retyped anywhere.
 
 | Token | Light | Dark | Used for |
 |---|---|---|---|
-| `windowBg` | `#FFFFFF` | `#0A0A0A` | Content / conversation area |
+| `windowBg` | `#FFFFFF` | `#181818` | Content / conversation area |
 | `panelBg` | `#F9F9F8` | `#141414` | Sidebar column |
 | `cardBg` | `#F3F3F2` | `#1E1E1E` | Input fills, quiet cards |
 | `cardBgHover` | `#ECECEA` | `#252525` | Hover state of the above |
@@ -132,7 +132,7 @@ read on either:
 ### 3.2 `AppGlass` — translucent chrome behind a backdrop blur (sidebar, top bar, pills, menus)
 | Token | Light | Dark | Role |
 |---|---|---|---|
-| `sidebarFill` | `#F7F9F9F8` (near-opaque) | `#F01A1A1A` | The rail's surface |
+| `sidebarFill` | `#F7F9F9F8` (near-opaque) | `#242424` (opaque) | The rail's surface |
 | `surfaceFill` | `#FFFFFF` | `#202020` | Pill/menu (solid white; softness comes from rim + shadow) |
 | `surfaceHoverFill` | `#F7F7F6` | `#272727` | Hover of the above |
 | `hair` | `#14000000` | `#1FFFFFFF` | Rim hairline |

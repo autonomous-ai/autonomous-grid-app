@@ -122,10 +122,23 @@ double? nodeVramGb(OverviewNode node) {
 /// on how much work it will actually dispatch, and it may cap or oversubscribe
 /// what the nodes individually advertise. Summing is the fallback for a relay
 /// that doesn't report it.
+/// [gridAnswered] is the relay's own grid-wide rollup. When present it wins over
+/// summing the nodes, and the difference is not cosmetic: a node is listed only
+/// while its heartbeat is live, so a machine that served all morning and then
+/// went offline takes its tokens out of a summed total — and the relay's node
+/// rollup separately drops rows it cannot attribute to a machine. Summing
+/// therefore reports a figure that is quietly low, and low by an amount that
+/// moves as machines come and go. Two surfaces reading the same grid then showed
+/// two different token counts with no way to tell which was wrong.
+///
+/// Null on a relay that predates the field, or one whose first rollup hasn't
+/// landed — the node sum is the fallback there. Worse, but the only thing such a
+/// grid can offer, and still better than showing nothing.
 GridPower gridPowerFrom(
   Iterable<OverviewNode> nodes,
   int models, {
   int? capacity,
+  NodeAnswered? gridAnswered,
 }) {
   final online = [
     for (final n in nodes)
@@ -173,15 +186,19 @@ GridPower gridPowerFrom(
     vramGb: vram,
     parallel: (capacity != null && capacity > 0) ? capacity : summedConcurrency,
     throughputTokS: throughput,
-    answered: answeredOut == null
-        ? null
-        : NodeAnswered(
-            windowSeconds: answeredWindow,
-            tokensIn: answeredIn,
-            tokensCached: answeredCached,
-            tokensOut: answeredOut,
-            requests: answeredRequests,
-          ),
+    // The grid's own rollup first — see the note on [gridAnswered]. The node sum
+    // is only what a relay too old to send one leaves us.
+    answered:
+        gridAnswered ??
+        (answeredOut == null
+            ? null
+            : NodeAnswered(
+                windowSeconds: answeredWindow,
+                tokensIn: answeredIn,
+                tokensCached: answeredCached,
+                tokensOut: answeredOut,
+                requests: answeredRequests,
+              )),
   );
 }
 
@@ -205,6 +222,7 @@ final gridPowerProvider = Provider.autoDispose<GridPower>((ref) {
     overview?.nodes ?? const <OverviewNode>[],
     ref.watch(gridModelsProvider).length,
     capacity: overview?.stats.concurrentCapacity,
+    gridAnswered: overview?.answered,
   );
 });
 

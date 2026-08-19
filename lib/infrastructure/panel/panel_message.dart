@@ -18,15 +18,25 @@ import 'dart:convert';
 /// here, while changing the envelope is a change there, and conflating them
 /// forces a firmware reflash for what is only a new field.
 ///
-/// **3 since 2026-08-19**, when the panel gained `focus` — the tile the
-/// carousel settled on, so the window can follow a swipe. 2 was the day before,
+/// **4 since 2026-08-19**, when `focus` learned to travel the other way too:
+/// the window switching chats moves the carousel. 3 was earlier the same day,
+/// when the panel gained `focus` — the tile the carousel settled on, so the
+/// window could follow a swipe. 2 was the day before,
 /// when a tile stopped being a project and became a chat: every message keys on
 /// `chatId` and the list arrives as `chats`. It has
 /// to match `PANEL_PROTO_VERSION` in `device/esp32-circle/main/panel_client.h`
 /// — two numbers, hand-kept, in two languages. Bumping only the firmware's is
 /// exactly what happened first, and the panel then reported protocol 2 to an app
 /// still claiming 1, which is the mismatch this constant exists to catch.
-const int kPanelProtocolVersion = 3;
+const int kPanelProtocolVersion = 4;
+
+/// How long tile changes are gathered before the list is rebuilt.
+///
+/// The chat state this is derived from moves on every streamed token, and the
+/// tiles almost never move with it. Rebuilding them per token to find that out
+/// is the cost this avoids; a quarter of a second is under what anybody reads
+/// as a delay when they pick a model and look up at the panel.
+const Duration kPanelChatsCoalesce = Duration(milliseconds: 250);
 
 /// How often the app says it is still here.
 ///
@@ -542,6 +552,13 @@ abstract final class PanelOutbound {
 
   static String chatUpdated(PanelChat chat) =>
       jsonEncode({'t': 'chat.updated', 'item': chat.toJson()});
+
+  /// Show this chat — the window moved, so the carousel follows.
+  ///
+  /// The mirror of the panel's own `focus`: one desk, and whichever screen the
+  /// person touched is the one that decides what both are looking at.
+  static String focus(String chatId) =>
+      jsonEncode({'t': 'focus', 'chatId': chatId});
 
   static String turnStarted(String chatId) =>
       jsonEncode({'t': 'turn.started', 'chatId': chatId});
