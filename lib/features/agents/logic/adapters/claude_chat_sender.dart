@@ -38,6 +38,7 @@ import 'claude_browser.dart';
 import 'claude_tool.dart';
 import 'claude_turn_mcp_config.dart';
 import '../model_context_window.dart';
+import 'agent_turn_env.dart';
 
 /// Claude Code's own "summarize the conversation and keep the summary" command,
 /// sent as a turn's whole prompt. Its definition inside the installed binary
@@ -261,31 +262,36 @@ class ClaudeChatSender implements ChatSender {
     // On the extension lane Claude Code runs against its own sign-in, where the
     // relay's name for the seat (`claude:opus`) is not a model it knows.
     final turnModel = onExtension ? claudeLocalModel(model) : model;
-    final environment = onExtension
-        ? const <String, String>{}
-        : claudeCodeEnv(
-            network.relayBaseUrl,
-            network.relayApiKey,
-            [model],
-            // Null below Claude Code's own floor of 100000, where the value
-            // would be discarded and 100000 used instead — see
-            // [claudeCompactWindow]. The ceiling is still held on this side by
-            // [needsCompaction] below, which is the half that was doing the work
-            // all along.
-            compactWindow: claudeCompactWindow(agentContextCeiling(window)),
-            // Claude Code reserves 32000 output tokens by default — more than a
-            // grid model's window can spare above the ceiling, and the reply
-            // alone drew the 400 (#47). Sized to what *this* model's ceiling
-            // leaves room for: the two are the matched halves of one window, so
-            // a 256000 model is no longer held to what a 65536 one could spare —
-            // which is what cut a reply off mid-turn at 8192.
-            maxOutputTokens: agentReplyReserve(window),
-            // A chat turn, so the ~922 KB reference for Anthropic's API — and
-            // every other bundle that could grow to match it — stays out of a
-            // window this turn needs for the conversation. Grid's own skills
-            // live elsewhere and are untouched.
-            withoutBundledSkills: true,
-          );
+    final environment = {
+      // On both lanes: it says which chat this turn is in, which has nothing to
+      // do with who serves the model.
+      ...gridTurnEnv(conversationId),
+      ...onExtension
+          ? const <String, String>{}
+          : claudeCodeEnv(
+              network.relayBaseUrl,
+              network.relayApiKey,
+              [model],
+              // Null below Claude Code's own floor of 100000, where the value
+              // would be discarded and 100000 used instead — see
+              // [claudeCompactWindow]. The ceiling is still held on this side by
+              // [needsCompaction] below, which is the half that was doing the work
+              // all along.
+              compactWindow: claudeCompactWindow(agentContextCeiling(window)),
+              // Claude Code reserves 32000 output tokens by default — more than a
+              // grid model's window can spare above the ceiling, and the reply
+              // alone drew the 400 (#47). Sized to what *this* model's ceiling
+              // leaves room for: the two are the matched halves of one window, so
+              // a 256000 model is no longer held to what a 65536 one could spare —
+              // which is what cut a reply off mid-turn at 8192.
+              maxOutputTokens: agentReplyReserve(window),
+              // A chat turn, so the ~922 KB reference for Anthropic's API — and
+              // every other bundle that could grow to match it — stays out of a
+              // window this turn needs for the conversation. Grid's own skills
+              // live elsewhere and are untouched.
+              withoutBundledSkills: true,
+            ),
+    };
     final dropEnvironment = onExtension
         ? kClaudeRelayEnvKeys
         : const <String>{};

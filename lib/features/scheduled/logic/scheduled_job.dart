@@ -17,6 +17,8 @@ class ScheduledJob {
     this.lastRunAt,
     this.lastStatus,
     this.lastError,
+    this.deliver,
+    this.script,
   });
 
   final String id;
@@ -48,6 +50,17 @@ class ScheduledJob {
   /// How the last run ended, as Hermes reported it ('ok', 'error', …).
   final String? lastStatus;
   final String? lastError;
+
+  /// Where the answer goes, as it sits in Hermes's store — read back rather
+  /// than remembered app-side, so a task's destination survives a reinstall and
+  /// is the same one whether the app or an agent in a terminal created it.
+  /// Null on every job made before destinations existed, which reads as the
+  /// task's own chat (see `parseTaskDeliver`).
+  final String? deliver;
+
+  /// The script the scheduler runs instead of asking its own agent — set when
+  /// the task is answered by Claude Code or Codex (see `TaskRunner`).
+  final String? script;
 
   bool get failed => lastError != null && lastError!.isNotEmpty;
 }
@@ -99,6 +112,8 @@ ScheduledJob? _job(Map<String, dynamic> raw) {
     lastRunAt: _time(raw['last_run_at']),
     lastStatus: _stringOrNull(raw['last_status']),
     lastError: _stringOrNull(raw['last_error']),
+    deliver: _stringOrNull(raw['deliver']),
+    script: _stringOrNull(raw['script']),
   );
 }
 

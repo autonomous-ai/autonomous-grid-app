@@ -28,6 +28,7 @@ import '../agent_permissions.dart';
 import '../agent_providers.dart';
 import '../model_context_window.dart';
 import 'codex_tool.dart';
+import 'agent_turn_env.dart';
 
 /// The Codex seam, or null when Codex is absent.
 final codexServiceProvider = Provider<CodexService?>((ref) {
@@ -173,7 +174,10 @@ class CodexChatSender implements ChatSender {
             : agentContextCeiling(contextWindow),
       ),
       approval: mode,
-      environment: {kCodexAppApiKeyEnv: network.relayApiKey},
+      environment: {
+        kCodexAppApiKeyEnv: network.relayApiKey,
+        ...gridTurnEnv(conversationId),
+      },
       planFirst: planFirst,
       slot: turn.slot,
       chat: chat,

@@ -65,13 +65,22 @@ abstract interface class HermesCronService {
   Future<List<CronOutput>> readOutputs(String jobId);
 
   /// Create a job. [schedule] is a cron expression; [workdir] is the folder the
-  /// job runs in (Projects), so a task can read the user's files. The answer
-  /// always lands in the app ([kDeliverLocal]).
+  /// job runs in (Projects), so a task can read the user's files.
+  ///
+  /// [deliver] says where the answer goes — always a target that leaves the
+  /// result in a file for the app to collect (see `taskDeliverValue`).
+  ///
+  /// [script], with `--no-agent`, hands the run to a script instead of Hermes's
+  /// own agent: that is how a task set up in a chat with Claude Code or Codex
+  /// is answered by the assistant it was asked of. [prompt] rides inside the
+  /// script then, so nothing is sent to Hermes's agent at all.
   Future<void> create({
     required String schedule,
     required String prompt,
     required String name,
+    required String deliver,
     String? workdir,
+    String? script,
   });
 
   /// Change a saved job: what it does, what it's called, and when it runs.
@@ -156,18 +165,23 @@ class HermesCronServiceImpl implements HermesCronService {
     required String schedule,
     required String prompt,
     required String name,
+    required String deliver,
     String? workdir,
+    String? script,
   }) => _run([
     'cron',
     'create',
     schedule,
-    prompt,
+    // A scripted job's prompt is inside the script, and passing it here as well
+    // would have Hermes's own agent answer the same task a second time.
+    if (script == null) prompt,
     '--name',
     name,
     // The answer comes back into the app, always: it's where the user asked for
     // the task, and it's the only destination that needs nothing set up first.
     '--deliver',
-    kDeliverLocal,
+    deliver,
+    if (script != null) ...['--script', script, '--no-agent'],
     if (workdir != null) ...['--workdir', workdir],
   ]);
 
