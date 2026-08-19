@@ -1,6 +1,6 @@
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/api/models/media_event.dart';
-import 'node_metrics.dart' show answeredSummary;
+import 'node_metrics.dart' show answeredSummary, formatCount;
 
 /// Presentation helpers for a grid node — pure so the node tile stays dumb and
 /// these stay unit-tested. They turn the relay's raw fields (engine id, the
@@ -384,6 +384,86 @@ NodeAnswered? modelAnswered(
     requests: 0,
   );
 }
+
+/// The grid's model list folded into one capability per model, keyed by
+/// [modelKey].
+///
+/// **Keyed, not matched raw.** The overview's model entries keep their catalog
+/// casing (`DeepSeek-V4-Flash-0731`) while a node advertises the relay's
+/// normalised id (`deepseek-v4-flash-0731`), so a direct `==` misses every model
+/// on the grid — and misses it *silently*, as "this model reports nothing"
+/// rather than as an error anybody would notice.
+///
+/// **Folded the way the relay folds it**, because the overview emits one entry
+/// per *(provider, model)* and two providers serving the same model can disagree:
+/// the largest context window wins, and vision is true if any of them offers it.
+/// Deliberately not [distinctOverviewModels], which picks one whole entry by how
+/// rich it looks — that answers "which row labels the tile best", and would drop
+/// a context window reported by a provider whose row happens to carry less else.
+Map<String, ModelCapability> modelCapabilities(Iterable<OverviewModel> models) {
+  final folded = <String, ModelCapability>{};
+  for (final model in models) {
+    final key = modelKey(model.id);
+    if (key.isEmpty) continue;
+    final prev = folded[key];
+    final context = switch ((prev?.contextLength, model.contextLength)) {
+      (null, final b) => b,
+      (final a, null) => a,
+      (final a?, final b?) => a > b ? a : b,
+    };
+    // OR, with "nobody said" losing to any real answer: `true` if one provider
+    // offers it, `false` if one says it doesn't and none says it does, and null
+    // only while every entry stayed silent.
+    final vision = prev?.vision == true || model.vision == true
+        ? true
+        : (prev?.vision ?? model.vision);
+    folded[key] = (contextLength: context, vision: vision);
+  }
+  return folded;
+}
+
+/// What the grid says about the model [modelId] serves, or null when it says
+/// nothing — the id is absent from the overview's model list, or the node named
+/// no model at all.
+ModelCapability? modelCapabilityFor(
+  Map<String, ModelCapability> byKey,
+  String? modelId,
+) {
+  final id = (modelId ?? '').trim();
+  return id.isEmpty ? null : byKey[modelKey(id)];
+}
+
+/// What the model **this machine** serves can do — its own claim first, the
+/// grid-wide fold only as a fallback.
+///
+/// The node's own figure wins outright, and is not merged field-by-field with
+/// the grid's. Both facts are properties of the engine that was started, not of
+/// the model in the abstract: one box runs `llama-server -c 8192` and its
+/// neighbour `-c 32768`, and one loads a vision projector where the other did
+/// not. Filling this node's blank from the grid fold would print a co-provider's
+/// machine on this machine's card.
+///
+/// [gridWide] is what a relay too old to send `model_capabilities` leaves us:
+/// the fold across the fleet, which is the best that grid can say. Better a
+/// figure that is right for the model than none at all — but only when the node
+/// itself said nothing, never over something it did say.
+ModelCapability? nodeModelCapability(
+  OverviewNode node, {
+  required Map<String, ModelCapability> gridWide,
+}) =>
+    modelCapabilityFor(node.modelCapabilities, node.model) ??
+    modelCapabilityFor(gridWide, node.model);
+
+/// A context window as a figure a card can hold — "128K", "205K", "1M" — or
+/// empty when the model advertises none.
+///
+/// Through [formatCount], the same shortener every other figure on the card uses,
+/// rather than a rule of its own. That does mean 204800 reads "205K" where its
+/// maker's website says "200K": the marketed round number is 200 × 1024, and
+/// rounding it back to 200K here would be the app deciding the provider meant
+/// something other than the number it sent.
+String contextLengthLabel(int? tokens) =>
+    tokens == null || tokens <= 0 ? '' : formatCount(tokens);
 
 /// Whether [id] is a real chat/text model the grid can actually answer with:
 /// not a media (`comfyui:*`) capability that leaked into the model list, and not

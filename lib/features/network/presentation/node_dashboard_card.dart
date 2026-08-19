@@ -9,7 +9,8 @@ import '../../../shared/theme/app_theme.dart';
 import '../../playground/logic/playground_models.dart' show nodeServingModel;
 import '../../provider_node/logic/local_throughput.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
-import '../logic/grid_overview_provider.dart' show gridOverviewSnapshot;
+import '../logic/grid_overview_provider.dart'
+    show gridModelCapabilitiesProvider, gridOverviewSnapshot;
 import '../logic/node_display.dart';
 import '../logic/node_metrics.dart';
 
@@ -395,13 +396,13 @@ class _HairlinePainter extends CustomPainter {
 /// storage, what the node is serving, and how much it has answered lately. A
 /// fixed two-column grid — every card shows all six, so they line up across
 /// cards.
-class _CardDetails extends StatelessWidget {
+class _CardDetails extends ConsumerWidget {
   const _CardDetails({required this.node});
 
   final OverviewNode node;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final power = powerMetric(node);
     final storage = storageMetric(node);
     final input = answeredInputMetric(node);
@@ -411,66 +412,54 @@ class _CardDetails extends StatelessWidget {
     // Both answered figures share one hint, because they are one fact split in
     // two: whichever the pointer lands on, the split behind it is the same.
     final byModel = answeredByModelHint(node);
+    final free = freeMemoryLabel(node);
     final entries = <_Detail>[
-      (
-        label: power.label,
-        value: power.value,
-        measured: power.measured,
-        hint: '',
-      ),
+      _fromMetric(power),
       (
         label: 'Available',
-        value: freeMemoryLabel(node),
-        measured: freeMemoryLabel(node) != kUnmeasured,
+        value: free,
+        measured: free != kUnmeasured,
         hint: '',
+        capability: null,
       ),
-      (
-        label: storage.label,
-        value: storage.value,
-        measured: storage.measured,
-        hint: '',
-      ),
+      _fromMetric(storage),
       // Labelled by what the machine serves ("1 chat model", "Image generation")
       // rather than by its engine. The engine label was blank on every `external`
       // node — the app's own generic engine resolves to empty, see
       // [nodeEngineLabel] — which left a model id sitting under nothing at all.
       // The count also has to say what it counts, and up in the header, beside a
       // machine's name, it did not.
+      //
+      // The one field with a capability line under it: what the model will read
+      // in one go on THIS machine, and whether it reads images here. Both are
+      // properties of the engine that was started, so they come off the node —
+      // the grid's model entry is a fold across the fleet and would quote the
+      // biggest window on the smallest box. See [nodeModelCapability].
       (
         label: nodeRoleSummary(node),
         value: (node.model ?? '').isEmpty ? kUnmeasured : node.model!,
         measured: (node.model ?? '').isNotEmpty,
         hint: '',
+        // Never null for this field, even when the grid lists nothing about the
+        // model: the line is what makes every card the same height, and one card
+        // dropping it would push its 24h figures out of line with the card
+        // beside it — the alignment this whole grid exists for.
+        capability:
+            nodeModelCapability(
+              node,
+              gridWide: ref.watch(gridModelCapabilitiesProvider),
+            ) ??
+            const (contextLength: null, vision: null),
       ),
       // The full token split, in the order work happens: what came in, how much
       // of it was already cached, what went out, and how many turns that was.
       // Input is the *fresh* half — cached prefill is a share of input, not a
       // fourth kind, so showing both raw would give the card three figures that
       // sum to more than the machine handled (see [AnsweredTokens]).
-      (
-        label: input.label,
-        value: input.value,
-        measured: input.measured,
-        hint: byModel,
-      ),
-      (
-        label: cached.label,
-        value: cached.value,
-        measured: cached.measured,
-        hint: byModel,
-      ),
-      (
-        label: tokens.label,
-        value: tokens.value,
-        measured: tokens.measured,
-        hint: byModel,
-      ),
-      (
-        label: requests.label,
-        value: requests.value,
-        measured: requests.measured,
-        hint: byModel,
-      ),
+      _fromMetric(input, hint: byModel),
+      _fromMetric(cached, hint: byModel),
+      _fromMetric(tokens, hint: byModel),
+      _fromMetric(requests, hint: byModel),
     ];
     // A fixed 2-column grid. Not a `Wrap` sized by a `LayoutBuilder`: the
     // dashboard levels each row with `IntrinsicHeight`, which asks every child
@@ -489,8 +478,25 @@ class _CardDetails extends StatelessWidget {
 }
 
 /// One field of the detail grid: what it is, what it reads, whether the node
-/// actually reported it, and anything worth adding on hover.
-typedef _Detail = ({String label, String value, bool measured, String hint});
+/// actually reported it, anything worth adding on hover, and — for the model
+/// field alone — what that model can do.
+typedef _Detail = ({
+  String label,
+  String value,
+  bool measured,
+  String hint,
+  ModelCapability? capability,
+});
+
+/// A field that is just a [NodeMetric] — most of them. Spelling the record out
+/// eight times was three lines each of the same three field names.
+_Detail _fromMetric(NodeMetric metric, {String hint = ''}) => (
+  label: metric.label,
+  value: metric.value,
+  measured: metric.measured,
+  hint: hint,
+  capability: null,
+);
 
 /// How many fields sit across the card — the builder slices the entries by it.
 const int _detailColumns = 2;
@@ -513,6 +519,7 @@ class _DetailRow extends StatelessWidget {
               value: entries[i].value,
               measured: entries[i].measured,
               hint: entries[i].hint,
+              capability: entries[i].capability,
             ),
           ),
         ],
@@ -527,7 +534,11 @@ class _DetailField extends StatelessWidget {
     required this.value,
     required this.measured,
     this.hint = '',
+    this.capability,
   });
+
+  /// What the model in this field can do, when the field holds a model. Null on
+  /// every other field, and on a model the grid's overview says nothing about.
 
   final String label;
   final String value;
@@ -537,6 +548,8 @@ class _DetailField extends StatelessWidget {
   /// split behind a node's totals. Empty for a field that is already the whole
   /// story, which is most of them.
   final String hint;
+
+  final ModelCapability? capability;
 
   @override
   Widget build(BuildContext context) {
@@ -561,6 +574,10 @@ class _DetailField extends StatelessWidget {
             color: measured ? AppPalette.textPrimary : AppPalette.textFaint,
           ),
         ),
+        if (capability case final capability?) ...[
+          const SizedBox(height: 3),
+          _ModelCapabilityLine(capability: capability),
+        ],
       ],
     );
     // The unmeasured note wins when both could apply: "this machine reports
@@ -569,6 +586,61 @@ class _DetailField extends StatelessWidget {
     if (!measured) return Tooltip(message: _unmeasuredHint, child: field);
     if (hint.isEmpty) return field;
     return Tooltip(message: hint, child: field);
+  }
+}
+
+/// What the model in the field above can do: how much it reads in one go, and
+/// whether any of it may be an image.
+///
+/// The context figure is simply absent when the model advertises none — no dash.
+/// A window is a claim, and most providers on a grid make none; a dash on every
+/// card would be a column of "not reported" saying nothing anyone can act on.
+///
+/// The glyph appears only where the model reads images. It carries one meaning
+/// and only its presence carries it, which means "says it reads text only" and
+/// "nobody said" now look alike. That is a deliberate trade: the distinction was
+/// worth a tooltip when the mark was on every card anyway, and is not worth a
+/// mark on every card to preserve. `ModelCapability.vision` still keeps the two
+/// apart for anything that needs them.
+///
+/// **The window's `Text` is drawn even when empty**, and that is not an
+/// oversight to tidy away. It is what holds the line's height once the glyph can
+/// vanish: at 10.5px it is taller than the 11px icon, so a card with neither
+/// figure keeps the same height as one with both, and the 24h fields below stay
+/// level with the card beside them — the alignment the whole detail grid exists
+/// for. Dropping the line when it has nothing to say would shift four rows on
+/// one card and not on its neighbour.
+class _ModelCapabilityLine extends StatelessWidget {
+  const _ModelCapabilityLine({required this.capability});
+
+  final ModelCapability capability;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Row(
+      children: [
+        Flexible(
+          child: Text(
+            contextLengthLabel(capability.contextLength),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 10.5, color: AppPalette.textFaint),
+          ),
+        ),
+        if (capability.vision == true) ...[
+          const SizedBox(width: 5),
+          Tooltip(
+            message: 'This model can read images.',
+            child: Icon(
+              LucideIcons.image,
+              size: 11,
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }
 
