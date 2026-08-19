@@ -41,6 +41,19 @@ enum ChatCommand {
         'gap out and it picks its own. Stops after 7 days.',
   ),
 
+  /// Save a task that runs later, on a clock, answering back into this chat.
+  ///
+  /// The argument is when and what, in the words people use ("every morning at
+  /// 8, summarise the inbox") — read by `parseScheduleArgument`, not by cron.
+  schedule(
+    name: 'schedule',
+    argumentHint: 'when, and what to do',
+    summary: 'Run something later, on a clock',
+    detail:
+        'Say when and what — "/schedule every morning at 8 summarise the '
+        'inbox". It keeps running with Grid closed, and answers in this chat.',
+  ),
+
   /// Summarize the conversation so the next turn carries the summary instead of
   /// the whole history. Takes optional focus instructions.
   compact(
@@ -97,7 +110,9 @@ enum ChatCommand {
   /// room mid-draft must not cost them the picture they just attached.
   String? get draftDropReason => switch (this) {
     ChatCommand.clear => 'a new chat starts empty',
-    ChatCommand.goal || ChatCommand.loop => '$slash carries words only',
+    ChatCommand.goal ||
+    ChatCommand.loop ||
+    ChatCommand.schedule => '$slash carries words only',
     ChatCommand.compact => null,
   };
 }

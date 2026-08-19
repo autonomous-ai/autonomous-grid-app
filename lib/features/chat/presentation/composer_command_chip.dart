@@ -73,5 +73,6 @@ IconData _commandIcon(ChatCommand command) => switch (command) {
   ChatCommand.clear => Icons.add_comment_outlined,
   ChatCommand.goal => Icons.ads_click,
   ChatCommand.loop => Icons.repeat_rounded,
+  ChatCommand.schedule => Icons.schedule_rounded,
   ChatCommand.compact => Icons.compress_rounded,
 };

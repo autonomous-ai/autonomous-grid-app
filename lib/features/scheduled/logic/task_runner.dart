@@ -35,6 +35,14 @@ enum TaskRunner {
   bool get isScripted => this != TaskRunner.hermes;
 }
 
+/// The runner that answers as [agent] — how a task set up in a chat keeps the
+/// assistant that chat was talking to.
+TaskRunner taskRunnerFor(AgentTool agent) => switch (agent) {
+  AgentTool.hermes => TaskRunner.hermes,
+  AgentTool.claude => TaskRunner.claude,
+  AgentTool.codex => TaskRunner.codex,
+};
+
 /// Where Hermes keeps the scripts a task may run. Its own folder, and the only
 /// place `--script` will look.
 Directory get taskScriptsDir =>

@@ -41,6 +41,10 @@ import 'commands/chat_compaction.dart';
 import 'commands/chat_goal.dart';
 import 'commands/chat_loop.dart';
 import 'commands/loop_pace_block.dart';
+import 'commands/schedule_argument.dart';
+import '../../scheduled/logic/scheduled_jobs_controller.dart';
+import '../../scheduled/logic/task_destination.dart';
+import '../../scheduled/logic/task_runner.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
@@ -545,9 +549,54 @@ class ChatSessionsController extends _ChatSessions
           return _stopLoop();
         }
         return _startLoop(argument, model);
+      case ChatCommand.schedule:
+        return _scheduleTask(call.argument, model);
       case ChatCommand.compact:
         return _compact(call.argument);
     }
+  }
+
+  /// Save what [argument] describes as a task on the machine's own scheduler,
+  /// answering back into this chat.
+  ///
+  /// Delivery is not a question worth asking: the user set it up *here*, in a
+  /// sentence, so here is where they will look for the answer — and the runner
+  /// is the assistant they were talking to when they asked, for the same
+  /// reason. The Scheduled screen is where either can be changed afterwards.
+  Future<CommandOutcome?> _scheduleTask(String argument, String model) async {
+    final chat = state.active;
+    if (chat == null) {
+      return (
+        message:
+            'Open a chat first — a task answers into the one it was set '
+            'up in.',
+        failed: true,
+      );
+    }
+    final request = parseScheduleArgument(argument);
+    if (request == null) {
+      return (message: kScheduleUsage, failed: true);
+    }
+    final runner = taskRunnerFor(ref.read(activeChatAgentProvider));
+    final result = await ref
+        .read(scheduledJobsProvider.notifier)
+        .create(
+          name: clipChatTitle(request.prompt),
+          prompt: request.prompt,
+          schedule: request.schedule,
+          model: model.isEmpty ? chat.model : model,
+          runner: runner,
+          destination: TaskChatDestination(chat.id),
+          workdir: ref.read(projectByIdProvider(chat.projectId))?.path,
+          projectId: chat.projectId,
+        );
+    if (result.error != null) return (message: result.error!, failed: true);
+    return (
+      message:
+          '${request.schedule.describe()}: ${request.prompt}. '
+          'Answers here, and keeps running with Grid closed.',
+      failed: false,
+    );
   }
 
   /// How long the summarizer gets. Long, because it is reading a whole
