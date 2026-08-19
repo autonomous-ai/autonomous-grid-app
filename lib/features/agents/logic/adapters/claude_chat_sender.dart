@@ -275,9 +275,11 @@ class ClaudeChatSender implements ChatSender {
             compactWindow: claudeCompactWindow(agentContextCeiling(window)),
             // Claude Code reserves 32000 output tokens by default — more than a
             // grid model's window can spare above the ceiling, and the reply
-            // alone drew the 400 (#47). Cap it to what the ceiling leaves room
-            // for; the two are the matched halves of the same window.
-            maxOutputTokens: kAgentReplyReserveTokens,
+            // alone drew the 400 (#47). Sized to what *this* model's ceiling
+            // leaves room for: the two are the matched halves of one window, so
+            // a 256000 model is no longer held to what a 65536 one could spare —
+            // which is what cut a reply off mid-turn at 8192.
+            maxOutputTokens: agentReplyReserve(window),
             // A chat turn, so the ~922 KB reference for Anthropic's API — and
             // every other bundle that could grow to match it — stays out of a
             // window this turn needs for the conversation. Grid's own skills
@@ -839,6 +841,23 @@ const String kClaudeContextFull =
     'This chat got longer than the model can hold. Send again and the assistant '
     'picks it up from the recent messages — everything said stays here.';
 
+/// Shown when the reply itself ran past the room reserved for it.
+///
+/// Its own line because Claude Code's wording ends with *set the
+/// `CLAUDE_CODE_MAX_OUTPUT_TOKENS` environment variable* — sound advice in a
+/// terminal and false here: this app passes that variable itself, sized from the
+/// model's own window (`agentReplyReserve`), so a user who follows it changes
+/// nothing. Telling someone to go and do something that cannot work is worse
+/// than saying nothing.
+///
+/// Unlike [kClaudeContextFull] the session is **not** dropped — one reply was too
+/// long, the conversation did not outgrow the model — so sending again resumes
+/// the same thread instead of restarting from the recent messages.
+const String kClaudeReplyTooLong =
+    'That reply ran longer than one message can hold. Send again to have the '
+    'assistant carry on from where it stopped, or ask for the work in smaller '
+    'steps.';
+
 /// Humanize Claude's failure so the chat shows a next step, not a stack trace.
 ///
 /// Claude reports HTTP trouble as `API Error: <status> <body>`; a raw
@@ -853,6 +872,9 @@ String friendlyClaudeError(String raw) {
   // Ahead of the status-code branches below: this one arrives as a 400, and
   // "bad request" is the least useful thing that could be said about it.
   if (isContextOverflow(raw)) return kClaudeContextFull;
+  // Also ahead of them, and deliberately not folded into the branch above: this
+  // one is a reply that ran long, not a conversation that did.
+  if (isReplyTruncated(raw)) return kClaudeReplyTooLong;
 
   final detail = raw
       .split('\n')

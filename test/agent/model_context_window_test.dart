@@ -89,9 +89,16 @@ void main() {
         262144,
       ]) {
         expect(
-          agentContextCeiling(window) + kAgentReplyReserveTokens,
+          agentContextCeiling(window) + agentReplyReserve(window) * 2,
           lessThanOrEqualTo(window),
           reason: 'window $window leaves no room for the reply it reserves',
+        );
+        // And the reply is this model's share, not the smallest model's: 8192
+        // on a 256000 window is what cut a turn off mid-reply.
+        expect(
+          agentReplyReserve(window),
+          greaterThanOrEqualTo(kAgentReplyReserveTokens),
+          reason: 'window $window reserves less than the tightest window does',
         );
       }
     });
