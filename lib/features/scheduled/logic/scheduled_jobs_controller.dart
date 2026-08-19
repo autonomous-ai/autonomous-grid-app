@@ -122,10 +122,18 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
     // one, every run would fail with a raw "no model configured", so point it
     // at the selected grid now — and refuse to save a task that could only
     // ever fail, handing back a line that says what to fix instead.
-    final unpointed = await ref
-        .read(hermesGridLinkProvider)
-        .ensureModelForSelectedGrid();
-    if (unpointed != null) return (error: unpointed, id: null);
+    //
+    // A scripted runner is exempt for the same reason it skips the refusal
+    // above: Hermes answers nothing, so a grid it cannot answer with is not a
+    // reason to refuse. On a grid serving only CLI seats — the case the runner
+    // picker exists for — this was a Save button that worked right up until it
+    // said "Switch the assistant".
+    if (!runner.isScripted) {
+      final unpointed = await ref
+          .read(hermesGridLinkProvider)
+          .ensureModelForSelectedGrid();
+      if (unpointed != null) return (error: unpointed, id: null);
+    }
 
     // Nobody is there to answer for a task that fires at 8am, so what it's
     // allowed to do is settled here, before it can run at all — and it's what
@@ -326,8 +334,16 @@ class ScheduledJobsController extends AsyncNotifier<List<ScheduledJob>> {
   Future<String?> runNow(String id) => _act((s) => s.runNow(id));
 
   Future<String?> remove(String id) async {
+    // Read before the delete, while the job still says which file is its own:
+    // a script left behind is an executable in the user's `~/.hermes/scripts`
+    // that nothing runs and nothing mentions.
+    final script = (state.value ?? const <ScheduledJob>[])
+        .where((job) => job.id == id)
+        .firstOrNull
+        ?.script;
     final error = await _act((s) => s.remove(id));
     if (error != null) return error;
+    if (script != null) ref.read(taskScriptRemoverProvider)(script);
     // Drop the project link too, so a project's rail doesn't keep pointing at a
     // task that's gone — and the headline of its last result, which would
     // otherwise outlive the task in the store forever.

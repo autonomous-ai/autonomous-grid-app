@@ -23,13 +23,20 @@ const String kUnbackedLoopClaimNote =
     'work that has to keep going after Grid is closed, ask for it to be '
     'scheduled instead.';
 
-/// Whether [reply] carries a `grid-loop` block while [loop] is not running.
+/// Whether [reply] carries a `grid-loop` block in a chat that has no loop.
+///
+/// **No loop at all**, not "no loop running": a chat whose loop the user
+/// stopped mid-turn gets the block from the beat that was already in flight,
+/// and blaming the assistant for it would be the app telling the user off for
+/// its own timing. The reading that matters is the one this note was written
+/// for — an assistant deciding by itself to repeat something, in a chat where
+/// repeating was never set up.
 ///
 /// Uses the loop's own parser rather than looking for the fence: a block the
 /// app could not read is one it would not have acted on either, so noting it
 /// would report a promise the assistant never actually made.
 bool claimsLoopWithoutOne(String reply, ChatLoop? loop) =>
-    !(loop?.isRunning ?? false) && parseLoopPaceBlock(reply) != null;
+    loop == null && parseLoopPaceBlock(reply) != null;
 
 /// [message] with its `grid-loop` blocks gone from the text *and* the parts.
 ///

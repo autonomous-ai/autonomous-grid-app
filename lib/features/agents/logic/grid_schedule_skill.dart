@@ -63,7 +63,15 @@ hermes cron create "<schedule>" "<prompt>" --name "<short name>" \\
   --deliver "grid:chat:\$GRID_CHAT_ID" --workdir "<absolute dir>"
 ```
 
-`\$GRID_CHAT_ID` is set for you: it is the chat you are answering in.
+`\$GRID_CHAT_ID` is the chat you are answering in, when you have it.
+
+**Check it before you use it.** It is set for an assistant Grid starts per
+turn, and empty for one that serves every chat from a single long-running
+process — which cannot be told apart from the inside. Empty means
+`--deliver local`, and say plainly that the answers will arrive in a thread of
+the task's own rather than in this conversation: `grid:chat:` with nothing
+after it routes right back to that thread anyway, so guessing buys nothing and
+costs the user the truth.
 
 - **schedule** — `30m`, `every 2h`, or a 5-field cron expression
   (`7,37 8-22 * * *`). Cron fields are in this computer's own timezone; don't

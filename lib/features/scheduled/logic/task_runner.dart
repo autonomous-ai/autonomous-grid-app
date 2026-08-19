@@ -48,18 +48,33 @@ TaskRunner taskRunnerFor(AgentTool agent) => switch (agent) {
 Directory get taskScriptsDir =>
     Directory('${GridPaths.userHome}/.hermes/scripts');
 
-/// The script file name for a task called [name].
+/// The script file name for a task called [name] that runs [prompt].
 ///
 /// Named after the task rather than its id because the id doesn't exist until
 /// Hermes has created the job, and the job needs the script's name to be
-/// created. Two tasks with the same name share one script, which is the same
-/// thing their prompts would say.
-String taskScriptName(String name) {
+/// created. **The prompt's digest is what keeps two tasks apart**: named alone,
+/// a second "Nightly review" overwrote the first's script, and the first task
+/// went on running — silently answering the second one's prompt.
+String taskScriptName(String name, String prompt) {
   final slug = name
       .toLowerCase()
       .replaceAll(RegExp('[^a-z0-9]+'), '-')
       .replaceAll(RegExp('^-+|-+\$'), '');
-  return 'grid-task-${slug.isEmpty ? 'unnamed' : slug}.sh';
+  return 'grid-task-${slug.isEmpty ? 'unnamed' : slug}'
+      '-${_digest(prompt)}.sh';
+}
+
+/// A short, stable digest of [text] — FNV-1a in base 36.
+///
+/// Written out rather than taken from `hashCode`, which Dart does not promise
+/// to keep stable between runs: a task whose script name moved on the next
+/// launch would leave the old file behind and the job pointing at nothing.
+String _digest(String text) {
+  var hash = 0x811c9dc5;
+  for (final unit in text.codeUnits) {
+    hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
+  }
+  return hash.toRadixString(36).padLeft(4, '0');
 }
 
 /// The delimiter closing the prompt heredoc. Long and unlovely so a prompt that
@@ -107,8 +122,8 @@ String taskRunnerScript({
 # Written by Grid — a scheduled task answered by ${runner.agent.name}.
 # Edit the task in Grid rather than here: saving it writes this file again.
 set -uo pipefail
-export PATH="$path"
-cd "$workdir" || exit 1
+export PATH=${_quoted(path)}
+cd ${_quoted(workdir)} || exit 1
 
 PROMPT="\$(cat <<'$_kPromptEnd'
 $prompt
@@ -118,6 +133,13 @@ $_kPromptEnd
 $invocation
 ''';
 }
+
+/// [value] as one bash word, whatever is in it.
+///
+/// Single quotes, because a folder with a `$` or a `"` in its name is a folder
+/// the shell would otherwise read as a variable or end the string on. Only the
+/// prompt was protected before this; the paths around it were not.
+String _quoted(String value) => "'${value.replaceAll("'", r"'\''")}'";
 
 /// Writes the script for one task and hands back the file name `--script`
 /// takes.
@@ -143,6 +165,7 @@ final taskScriptWriterProvider = Provider<TaskScriptWriter>(
         required String workdir,
       }) => writeTaskScript(
         name: name,
+        prompt: prompt,
         script: taskRunnerScript(
           runner: runner,
           prompt: prompt,
@@ -157,6 +180,25 @@ final taskScriptWriterProvider = Provider<TaskScriptWriter>(
           ],
         ),
       ),
+);
+
+/// Takes a task's script off the machine when the task goes.
+///
+/// A seam like [taskScriptWriterProvider], and for the same reason: the real
+/// one deletes out of the user's own `~/.hermes`.
+typedef TaskScriptRemover = void Function(String fileName);
+
+/// The remover the app uses. Best-effort — a script that is already gone, or a
+/// folder that isn't writable, must not fail the delete the user asked for.
+final taskScriptRemoverProvider = Provider<TaskScriptRemover>(
+  (ref) => (fileName) {
+    try {
+      final file = File('${taskScriptsDir.path}/$fileName');
+      if (file.existsSync()) file.deleteSync();
+    } on FileSystemException {
+      return;
+    }
+  },
 );
 
 /// The folder [executable] is in, as this app resolves it, or null when the
@@ -174,12 +216,13 @@ String? _binDirOf(String executable) {
 /// the first thing anyone does to a task that isn't working.
 String writeTaskScript({
   required String name,
+  required String prompt,
   required String script,
   Directory? into,
 }) {
   final dir = into ?? taskScriptsDir;
   dir.createSync(recursive: true);
-  final fileName = taskScriptName(name);
+  final fileName = taskScriptName(name, prompt);
   final file = File('${dir.path}/$fileName')..writeAsStringSync(script);
   if (!Platform.isWindows) {
     Process.runSync('chmod', ['+x', file.path]);
