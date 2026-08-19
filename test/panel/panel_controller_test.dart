@@ -902,10 +902,10 @@ void main() {
         chats: both,
         runs: const {},
       );
-      expect(
-        started.map((m) => (jsonDecode(m) as Map)['chatId']).toList(),
-        ['c-1', 'c-2'],
-      );
+      expect(started.map((m) => (jsonDecode(m) as Map)['chatId']).toList(), [
+        'c-1',
+        'c-2',
+      ]);
 
       // And each one's timeline is its own, keyed by the chat that produced it.
       final timelines = mirror.onChange(
@@ -942,10 +942,7 @@ void main() {
         runs: const {},
       );
       expect(first, hasLength(1));
-      expect(jsonDecode(first.single), {
-        't': 'turn.started',
-        'chatId': 'c-1',
-      });
+      expect(jsonDecode(first.single), {'t': 'turn.started', 'chatId': 'c-1'});
 
       final next = mirror.onChange(
         projects: projects,
@@ -1221,7 +1218,10 @@ void main() {
       expect(tile.toJson()['recapKind'], 'stopped');
       // Its neighbour ended cleanly, and now says so on its own tile — under
       // one-tile-per-project these two turns shared a colour.
-      expect(panelChatFor(quiet, _project, chats).toJson()['recapKind'], 'done');
+      expect(
+        panelChatFor(quiet, _project, chats).toJson()['recapKind'],
+        'done',
+      );
     });
   });
 
@@ -1416,11 +1416,8 @@ void main() {
   });
 
   group('keeping the tiles up to date without being asked', () {
-    PanelChat tile(
-      String id, {
-      String name = 'A chat',
-      String recap = '',
-    }) => PanelChat(id: id, name: name, project: 'grid-app', recap: recap);
+    PanelChat tile(String id, {String name = 'A chat', String recap = ''}) =>
+        PanelChat(id: id, name: name, project: 'grid-app', recap: recap);
 
     test(
       'a chat started on the desktop reaches a plugged-in panel as the '
@@ -1783,9 +1780,7 @@ void main() {
       await container.read(chatSessionsProvider.notifier).restored;
       const hello = '{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}';
       transport.deliver(hello);
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       expect(
         [for (final r in transport.replies) r['t']],
@@ -1828,9 +1823,7 @@ void main() {
       );
       await container.read(chatSessionsProvider.notifier).restored;
       transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       final beforeSwap = transport.replies.length;
 
@@ -1862,47 +1855,47 @@ void main() {
       expect(_beyondTheHeartbeat(transport).single['t'], 'welcome');
     });
 
-    test('asking for the chats gets the real ones, each naming its folder', () async {
-      final transport = _FakeTransport();
-      seed();
-      final container = harness(transport);
-      await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"chats.list"}');
-      await pumpEventQueue();
-
-      final reply = _lastOf(transport, 'chats');
-      final items = (reply['items']! as List).cast<Map<String, Object?>>();
-      // The chat, with the folder it lives in under it.
-      expect(items.map((i) => i['name']).toList(), ['A chat']);
-      expect(items.first['project'], 'api');
-      expect(items.first['busy'], false);
-    });
-
     test(
-      'a turn for a chat this computer no longer has is refused in words, '
-      'not by silence',
+      'asking for the chats gets the real ones, each naming its folder',
       () async {
-        // Silence would leave the tile spinning on work that is never coming,
-        // and the panel has no other way to find out — it reads no disk and
-        // cannot see the window.
         final transport = _FakeTransport();
         seed();
-        final container = harness(transport, grid: _credential());
+        final container = harness(transport);
         await container.read(chatSessionsProvider.notifier).restored;
-
-        transport.deliver('{"t":"turn.send","chatId":"c-gone","text":"hi"}');
+        transport.deliver('{"t":"chats.list"}');
         await pumpEventQueue();
 
-        await _until(
-          () => _beyondTheHeartbeat(transport).isNotEmpty,
-          what: 'the panel to be told anything at all',
-        );
-        final reply = _beyondTheHeartbeat(transport).single;
-        expect(reply['t'], 'turn.error');
-        expect(reply['chatId'], 'c-gone');
-        expect(reply['message'], contains('chat'));
+        final reply = _lastOf(transport, 'chats');
+        final items = (reply['items']! as List).cast<Map<String, Object?>>();
+        // The chat, with the folder it lives in under it.
+        expect(items.map((i) => i['name']).toList(), ['A chat']);
+        expect(items.first['project'], 'api');
+        expect(items.first['busy'], false);
       },
     );
+
+    test('a turn for a chat this computer no longer has is refused in words, '
+        'not by silence', () async {
+      // Silence would leave the tile spinning on work that is never coming,
+      // and the panel has no other way to find out — it reads no disk and
+      // cannot see the window.
+      final transport = _FakeTransport();
+      seed();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+
+      transport.deliver('{"t":"turn.send","chatId":"c-gone","text":"hi"}');
+      await pumpEventQueue();
+
+      await _until(
+        () => _beyondTheHeartbeat(transport).isNotEmpty,
+        what: 'the panel to be told anything at all',
+      );
+      final reply = _beyondTheHeartbeat(transport).single;
+      expect(reply['t'], 'turn.error');
+      expect(reply['chatId'], 'c-gone');
+      expect(reply['message'], contains('chat'));
+    });
 
     test('a turn asked for with no grid set up says which step is missing, so '
         'the answer is something the user can go and do', () async {
@@ -1910,9 +1903,7 @@ void main() {
       seed();
       final container = harness(transport, agent: _HeldTurn());
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"hi"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"hi"}');
       await pumpEventQueue();
 
       await _until(
@@ -1936,9 +1927,7 @@ void main() {
         agent: _HeldTurn(),
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"hi"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"hi"}');
       await pumpEventQueue();
 
       await _until(
@@ -2268,9 +2257,7 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
 
       final chatId = container
@@ -2355,9 +2342,7 @@ void main() {
       );
       await container.read(chatSessionsProvider.notifier).restored;
       transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
       await pumpEventQueue();
@@ -2402,9 +2387,7 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
       await pumpEventQueue();
@@ -2428,9 +2411,7 @@ void main() {
       );
       await container.read(chatSessionsProvider.notifier).restored;
       transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
       await pumpEventQueue();
@@ -2452,9 +2433,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"clean up"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"clean up"}');
       await pumpEventQueue();
       final chatId = container
           .read(chatSessionsProvider)
@@ -2533,9 +2512,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.fail('Hermes stopped answering');
       await pumpEventQueue();
@@ -2641,9 +2618,7 @@ void main() {
         stt: _FakeStt(const SttSuccess('ship the release')),
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"voice.begin","chatId":"c-1","cmd":"goal"}',
-      );
+      transport.deliver('{"t":"voice.begin","chatId":"c-1","cmd":"goal"}');
       transport.deliverAudio(pcm);
       transport.deliver('{"t":"voice.end"}');
       // Drained rather than counted. The transcript reaches the panel on the
@@ -2679,17 +2654,15 @@ void main() {
         );
         await container.read(chatSessionsProvider.notifier).restored;
 
-        transport.deliver(
-          '{"t":"voice.begin","chatId":"c-1","cmd":"lasso"}',
-        );
+        transport.deliver('{"t":"voice.begin","chatId":"c-1","cmd":"lasso"}');
         transport.deliverAudio(pcm);
         transport.deliver('{"t":"voice.end"}');
         await pumpEventQueue(times: 40);
 
-      await _until(
-        () => agent.history != null,
-        what: 'the transcript to reach the agent',
-      );
+        await _until(
+          () => agent.history != null,
+          what: 'the transcript to reach the agent',
+        );
         expect(agent.history!.last.text, 'ship it');
       },
     );
@@ -2708,9 +2681,7 @@ void main() {
         stt: stt,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"voice.begin","chatId":"c-1","lang":"vi"}',
-      );
+      transport.deliver('{"t":"voice.begin","chatId":"c-1","lang":"vi"}');
       transport.deliverAudio(pcm);
       transport.deliver('{"t":"voice.end"}');
       await pumpEventQueue(times: 40);
@@ -2754,53 +2725,50 @@ void main() {
       expect(agent.history!.last.text, 'deploy it');
     });
 
-    test(
-      'with more than one chat and no router to ask, the app falls back to '
-      'its own guess and ASKS — a guess must not dispatch itself',
-      () async {
-        // The router being unreachable must not lose a sentence someone already
-        // said out loud, and must not spend it on a guess either.
-        final agent = _HeldTurn();
-        final transport = _FakeTransport();
-        seed();
-        seed(chatId: 'c-2', title: 'The other one');
-        final container = harness(
-          transport,
-          grid: _credential(),
-          agent: agent,
-          models: const ['qwen'],
-          stt: _FakeStt(const SttSuccess('deploy it')),
-        );
-        await container.read(chatSessionsProvider.notifier).restored;
+    test('with more than one chat and no router to ask, the app falls back to '
+        'its own guess and ASKS — a guess must not dispatch itself', () async {
+      // The router being unreachable must not lose a sentence someone already
+      // said out loud, and must not spend it on a guess either.
+      final agent = _HeldTurn();
+      final transport = _FakeTransport();
+      seed();
+      seed(chatId: 'c-2', title: 'The other one');
+      final container = harness(
+        transport,
+        grid: _credential(),
+        agent: agent,
+        models: const ['qwen'],
+        stt: _FakeStt(const SttSuccess('deploy it')),
+      );
+      await container.read(chatSessionsProvider.notifier).restored;
 
-        transport.deliver('{"t":"voice.begin"}');
-        transport.deliverAudio(pcm);
-        transport.deliver('{"t":"voice.end"}');
-        await pumpEventQueue();
-        await pumpEventQueue();
+      transport.deliver('{"t":"voice.begin"}');
+      transport.deliverAudio(pcm);
+      transport.deliver('{"t":"voice.end"}');
+      await pumpEventQueue();
+      await pumpEventQueue();
 
-        await _until(
-          () => transport.replies.any((r) => r['t'] == 'voice.transcript'),
-          what: 'the transcript to reach the panel',
-        );
-        final transcript = _lastOf(transport, 'voice.transcript');
-        expect(transcript['needsConfirm'], true);
-        expect(transcript['chatId'], isNotEmpty);
-        expect(agent.history, isNull);
+      await _until(
+        () => transport.replies.any((r) => r['t'] == 'voice.transcript'),
+        what: 'the transcript to reach the panel',
+      );
+      final transcript = _lastOf(transport, 'voice.transcript');
+      expect(transcript['needsConfirm'], true);
+      expect(transcript['chatId'], isNotEmpty);
+      expect(agent.history, isNull);
 
-        // Confirming is what dispatches it, and the chat the user picked wins
-        // over the one the app guessed.
-        transport.deliver(
-          '{"t":"voice.confirm","routeId":"${transcript['routeId']}",'
-          '"chatId":"c-2"}',
-        );
-        await pumpEventQueue(times: 40);
+      // Confirming is what dispatches it, and the chat the user picked wins
+      // over the one the app guessed.
+      transport.deliver(
+        '{"t":"voice.confirm","routeId":"${transcript['routeId']}",'
+        '"chatId":"c-2"}',
+      );
+      await pumpEventQueue(times: 40);
 
-        expect(agent.history!.last.text, 'deploy it');
-        // Into the chat the user picked, not the one the app had guessed.
-        expect(container.read(chatSessionsProvider).activeId, 'c-2');
-      },
-    );
+      expect(agent.history!.last.text, 'deploy it');
+      // Into the chat the user picked, not the one the app had guessed.
+      expect(container.read(chatSessionsProvider).activeId, 'c-2');
+    });
 
     test('a confirmation for a transcript nobody is holding is answered, not '
         'ignored — the panel is waiting on something', () async {
@@ -2874,7 +2842,10 @@ void main() {
         () => _beyondTheHeartbeat(transport).isNotEmpty,
         what: 'the panel to be told anything at all',
       );
-      expect(_beyondTheHeartbeat(transport).single['message'], contains('microphone'));
+      expect(
+        _beyondTheHeartbeat(transport).single['message'],
+        contains('microphone'),
+      );
       expect(stt.clip, isNull);
     });
 
@@ -2894,7 +2865,10 @@ void main() {
         () => _beyondTheHeartbeat(transport).isNotEmpty,
         what: 'the panel to be told anything at all',
       );
-      expect(_beyondTheHeartbeat(transport).single['message'], contains('grid tool'));
+      expect(
+        _beyondTheHeartbeat(transport).single['message'],
+        contains('grid tool'),
+      );
     });
 
     test('a panel running another firmware is offered the one this build '
@@ -2947,9 +2921,7 @@ void main() {
         firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver(
-        '{"t":"turn.send","chatId":"c-1","text":"run them"}',
-      );
+      transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
       await pumpEventQueue();

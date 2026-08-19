@@ -172,9 +172,11 @@ class HermesCronServiceImpl implements HermesCronService {
     'cron',
     'create',
     schedule,
-    // A scripted job's prompt is inside the script, and passing it here as well
-    // would have Hermes's own agent answer the same task a second time.
-    if (script == null) prompt,
+    // Sent for a scripted job too, though the script is what runs: `--no-agent`
+    // means Hermes never reads it, and without it the job's own record has no
+    // prompt at all — the Scheduled screen shows a task with a blank "what it
+    // does", and its edit form opens empty and refuses to save.
+    prompt,
     '--name',
     name,
     // The answer comes back into the app, always: it's where the user asked for

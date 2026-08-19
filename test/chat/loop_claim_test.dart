@@ -48,13 +48,16 @@ void main() {
       expect(noted.messages[1].text, startsWith('I will keep researching'));
     });
 
-    test('counts a stopped loop as no loop: the block is read at the end of a '
-        'beat, and a stopped loop has no next beat', () {
-      final noted = noteUnbackedLoopClaim(
-        _chat(reply: _claim, loop: _loop(LoopStatus.stopped)),
-      );
+    test('is a chat that never had a loop — a chat whose loop was stopped '
+        'mid-beat gets that beat\'s block, and blaming the assistant for it '
+        'would be the app telling the user off for its own timing', () {
+      final stopped = _chat(reply: _claim, loop: _loop(LoopStatus.stopped));
 
-      expect(noted.messages.last.text, kUnbackedLoopClaimNote);
+      expect(identical(noteUnbackedLoopClaim(stopped), stopped), isTrue);
+      expect(
+        noteUnbackedLoopClaim(_chat(reply: _claim)).messages.last.text,
+        kUnbackedLoopClaimNote,
+      );
     });
   });
 

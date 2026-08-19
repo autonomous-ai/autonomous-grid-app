@@ -330,7 +330,7 @@ void main() {
             required TaskRunner runner,
             required String prompt,
             required String workdir,
-          }) => taskScriptName(name),
+          }) => taskScriptName(name, prompt),
         ),
         selectedNetworkProvider.overrideWith(() => _FixedSelectedNetwork(grid)),
         if (grid != null)
@@ -457,7 +457,10 @@ void main() {
         );
 
     expect(result.error, isNull);
-    expect(h.cron.created?.script, 'grid-task-nightly-review.sh');
+    expect(h.cron.created?.script, startsWith('grid-task-nightly-review-'));
+    // The prompt still rides in the job record, or the Scheduled screen shows
+    // a task with a blank "what it does" and its edit form opens empty.
+    expect(h.cron.created?.prompt, 'review the diff');
     // Pinning is Hermes's model, and a scripted task never asks it anything.
     expect(h.cron.pinned, isEmpty);
   });

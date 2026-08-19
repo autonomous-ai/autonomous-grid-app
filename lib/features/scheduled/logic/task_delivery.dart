@@ -16,6 +16,7 @@ import 'cron_output.dart';
 import 'job_schedule.dart';
 import 'scheduled_job.dart';
 import 'scheduled_jobs_controller.dart';
+import 'task_conversation_id.dart';
 import 'task_destination.dart';
 import 'task_inbox_store.dart';
 import 'task_model_fallback.dart';
@@ -141,7 +142,12 @@ class TaskDeliveryController extends Notifier<List<String>> {
       final delivered = {...ref.read(taskDeliveryStoreProvider).load()};
       final links = ref.read(projectTasksProvider);
       final chat = ref.read(chatSessionsProvider.notifier);
+      // Two lists, because they answer different questions: [arrived] is what
+      // to badge, [landed] is what was delivered at all. Sharing one meant a
+      // task answering into the user's own chat — which must not be badged —
+      // never had its watermark saved, so every sweep delivered it again.
       final arrived = <String>[];
+      final landed = <String>[];
 
       final conversations = ref.read(chatSessionsProvider).conversations;
       for (final job in jobs) {
@@ -152,22 +158,34 @@ class TaskDeliveryController extends Notifier<List<String>> {
         // one, its own otherwise. Read per sweep rather than once, because the
         // chat it names can be deleted between two runs.
         final into = taskDeliveryChatId(destination, job.id, conversations);
+        // Whether the app owns the thread it is delivering into. A task's own
+        // chat is the app's to file and to badge; the user's conversation is
+        // not, and treating it as one moved their chat into the task's project
+        // and left a badge on it that nothing could clear.
+        final ownThread = into == taskConversationId(job.id);
         // Keep the task's chat under its project even when there's no new run to
         // deliver — a chat created before the app tracked the link would sit
         // loose forever otherwise.
-        if (projectId != null) {
+        if (projectId != null && ownThread) {
           chat.linkToProject(into, projectId);
         }
         final last = await _deliver(
           job,
           cron,
           delivered[job.id],
-          projectId,
+          // A chat the user owns is not filed under the task's project either —
+          // the same rule as the link above, and `deliverFromAgent` would have
+          // moved it on the first result.
+          ownThread ? projectId : null,
           into,
         );
         if (last == null) continue;
         delivered[job.id] = last.at;
-        arrived.add(job.id);
+        // Only a task's own chat is badged: the badge is cleared by opening
+        // that chat, which is reachable only through the `task-<id>` scheme, so
+        // one left on a user's conversation would stay lit for good.
+        landed.add(job.id);
+        if (ownThread) arrived.add(job.id);
         // Two ways to find out what arrived without opening it: the row in the
         // Scheduled list, and a banner if the user is elsewhere.
         ref
@@ -184,7 +202,7 @@ class TaskDeliveryController extends Notifier<List<String>> {
       // this is the one loop that runs whether or not the Tasks screen is open.
       await ref.read(scheduledJobsProvider.notifier).fallbackToAuto(_served());
 
-      if (arrived.isEmpty) return;
+      if (landed.isEmpty) return;
       ref.read(taskDeliveryStoreProvider).save(delivered);
       // Badge each task that just delivered, so the sidebar and the Scheduled
       // list say a result is waiting until the user opens it.

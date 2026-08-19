@@ -458,7 +458,6 @@ class PanelController {
     _push(messages);
   }
 
-
   /// The user answered a question on the panel.
   ///
   /// Routed through [AgentPermissionController.answer] rather than straight
@@ -1254,6 +1253,7 @@ List<PanelChat> panelChatsFor({
   required List<Project> projects,
   required ChatSessionsState chats,
   Map<String, List<PanelTurnRecord>> history = const {},
+
   /// The app's standing agent choice, for a project that has made none.
   String? defaultAgent,
   int limit = kPanelMaxTiles,

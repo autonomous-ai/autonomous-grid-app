@@ -23,7 +23,7 @@ void main() {
         'scripts folder and --workdir does not move it', () {
       expect(
         _script(TaskRunner.claude),
-        contains('cd "/Users/x/WorkPlace/app"'),
+        contains("cd '/Users/x/WorkPlace/app'"),
       );
     });
 
@@ -42,6 +42,18 @@ void main() {
       expect(_script(TaskRunner.claude), contains('--allowedTools'));
     });
 
+    test('quotes the folder it runs in, so a path with a \$ or a quote in it '
+        'is one word rather than a broken script', () {
+      final script = taskRunnerScript(
+        runner: TaskRunner.claude,
+        prompt: 'x',
+        workdir: r"/Users/x/it's \$HOME/app",
+        pathDirs: const ['/bin'],
+      );
+
+      expect(script, contains(r"cd '/Users/x/it'\''s \$HOME/app'"));
+    });
+
     test('carries the prompt in a quoted heredoc, so a backtick in the user\'s '
         'own wording cannot become a command', () {
       final script = _script(
@@ -55,18 +67,40 @@ void main() {
   });
 
   group('naming the script file', () {
-    test('one file per task name, in a shape a shell never has to quote', () {
+    test(
+      'reads as the task it runs, in a shape a shell never has to quote',
+      () {
+        expect(
+          taskScriptName('Nightly UI review', 'review the diff'),
+          startsWith('grid-task-nightly-ui-review-'),
+        );
+        expect(
+          taskScriptName('Tin mới — 8h!', 'đọc tin'),
+          startsWith('grid-task-tin-m-i-8h-'),
+        );
+      },
+    );
+
+    test('two tasks sharing a name get different files — sharing one meant the '
+        'first silently started answering the second one\'s prompt', () {
       expect(
-        taskScriptName('Nightly UI review'),
-        'grid-task-nightly-ui-review.sh',
+        taskScriptName('Nightly review', 'review the diff'),
+        isNot(taskScriptName('Nightly review', 'review the logs')),
       );
-      expect(taskScriptName('Tin mới — 8h!'), 'grid-task-tin-m-i-8h.sh');
+    });
+
+    test('the same task names the same file on every launch, or the job would '
+        'point at a script that moved', () {
+      expect(
+        taskScriptName('Nightly review', 'review the diff'),
+        taskScriptName('Nightly review', 'review the diff'),
+      );
     });
 
     test('a task named in a script nobody could address still gets a file, '
         'rather than one called `grid-task-.sh`', () {
-      expect(taskScriptName('***'), 'grid-task-unnamed.sh');
-      expect(taskScriptName(''), 'grid-task-unnamed.sh');
+      expect(taskScriptName('***', 'x'), startsWith('grid-task-unnamed-'));
+      expect(taskScriptName('', 'x'), startsWith('grid-task-unnamed-'));
     });
   });
 }

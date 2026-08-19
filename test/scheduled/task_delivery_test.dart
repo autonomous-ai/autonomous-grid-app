@@ -84,10 +84,12 @@ class FakeCron implements HermesCronService {
   Future<void> startScheduler() async {}
 }
 
-String _jobsJson() => '''
+String _jobsJson({String deliver = 'local'}) =>
+    '''
 {"jobs": [
   {"id": "job-1", "name": "Daily digest", "prompt": "summarise",
-   "schedule": {"expr": "0 8 * * *"}, "enabled": true}
+   "schedule": {"expr": "0 8 * * *"}, "enabled": true,
+   "deliver": "$deliver"}
 ]}
 ''';
 
@@ -516,6 +518,64 @@ void main() {
       final broken = File('${tmp.path}/broken-unread.json')
         ..writeAsStringSync('{ not a list');
       expect(TaskUnreadStore(file: broken).load(), isEmpty);
+    });
+  });
+
+  group('a task that answers into a chat the user owns', () {
+    FakeCron cron() => FakeCron(
+      jobsJson: _jobsJson(deliver: 'grid:chat:c-1'),
+      outputs: {
+        'job-1': [
+          (at: DateTime(2026, 7, 14, 8), text: 'Three PRs need review.'),
+        ],
+      },
+    );
+
+    void seedChat(ChatStore chats) => chats.save(
+      Conversation(
+        id: 'c-1',
+        title: 'Deploy talk',
+        model: 'm',
+        createdAt: DateTime(2026, 7, 13),
+        updatedAt: DateTime(2026, 7, 13),
+      ),
+    );
+
+    test('lands in that chat rather than starting one of its own — this is '
+        'the whole point of asking for it there', () async {
+      final h = harness(cron());
+      seedChat(h.chats);
+
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+      final saved = await h.chats.loadAll();
+      expect(saved, hasLength(1), reason: 'no second chat was started');
+      expect(saved.single.id, 'c-1');
+      expect(saved.single.messages.single.text, contains('Three PRs'));
+    });
+
+    test(
+      'is still delivered only once — the watermark used to be saved only '
+      'for a task that was also badged, so this one arrived every sweep',
+      () async {
+        final h = harness(cron());
+        seedChat(h.chats);
+
+        await h.container.read(taskDeliveryProvider.notifier).sweep();
+        await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+        expect((await h.chats.loadAll()).single.messages, hasLength(1));
+      },
+    );
+
+    test('leaves no badge on it: the badge clears by opening a task chat, and '
+        "the user's own conversation is not one", () async {
+      final h = harness(cron());
+      seedChat(h.chats);
+
+      await h.container.read(taskDeliveryProvider.notifier).sweep();
+
+      expect(h.container.read(taskUnreadProvider), isEmpty);
     });
   });
 }
