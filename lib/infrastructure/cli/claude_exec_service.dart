@@ -148,6 +148,25 @@ const String kClaudePermissionMode = 'default';
 /// page, and that is the route the agent takes instead.
 const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
 
+/// Claude Code's own scheduler, taken away on every turn: it cannot work here,
+/// and it fails by *succeeding*.
+///
+/// `CronCreate` keeps the job in the memory of the process that created it and
+/// says so — "session-only, dies when Claude exits". In a REPL that is a fair
+/// deal. Here a turn is a `claude -p` that exits the moment the answer is
+/// finished, so on 2026-08-19 a user was told two jobs would scan every 30
+/// minutes for seven days and both were gone twelve seconds later, with the
+/// transcript ending at the message that promised them.
+///
+/// Removing the tools is what makes the `grid-schedule` card land: left
+/// available, the nearest-to-hand answer is still the one that quietly does
+/// nothing.
+const List<String> kClaudeSessionCronTools = [
+  'CronCreate',
+  'CronDelete',
+  'CronList',
+];
+
 /// The argv for one turn: a fresh `claude -p`, or `--resume <id>` to continue a
 /// session.
 ///
@@ -173,11 +192,13 @@ const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
 ///   default because it is only ever right for one lane: the flag costs context
 ///   on every turn that carries it, and a turn holding the relay's credentials
 ///   cannot use the extension at all (see [ClaudeBrowserLane]).
-/// - `--disallowedTools` takes away the web tools a grid model can't serve —
-///   see [withoutServerWebTools]. It is **variadic**, so it swallows every
-///   following token until the next `--flag`: safe here because the prompt goes
-///   on stdin and this argv carries no positionals, and it stays safe only as
-///   long as that holds.
+/// - `--disallowedTools` takes away [kClaudeSessionCronTools] on every turn,
+///   plus the web tools a grid model can't serve — see [withoutServerWebTools].
+///   One flag, not two: it is **variadic**, so a second occurrence would be the
+///   CLI's to reconcile rather than ours. Being variadic it also swallows every
+///   following token until the next `--flag`, which is safe here because the
+///   prompt goes on stdin and this argv carries no positionals — and stays safe
+///   only as long as that holds.
 List<String> claudeExecArgs({
   required String model,
   String? resumeSessionId,
@@ -199,7 +220,9 @@ List<String> claudeExecArgs({
   '--model',
   model,
   if (chrome) '--chrome',
-  if (withoutServerWebTools) ...['--disallowedTools', ...kClaudeServerWebTools],
+  '--disallowedTools',
+  ...kClaudeSessionCronTools,
+  if (withoutServerWebTools) ...kClaudeServerWebTools,
   if (mcpConfigPath != null) ...[
     '--mcp-config',
     mcpConfigPath,
