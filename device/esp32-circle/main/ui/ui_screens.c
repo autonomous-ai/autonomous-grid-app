@@ -471,6 +471,18 @@ static bool on_project_page(void)
 }
 
 // Set active/settings state from whichever ring position is centered right now (single source of truth).
+// The tile the carousel is centred on, and the last one grid-app was told about.
+//
+// PENDING vs SENT is the debounce. A swipe across four tiles calls this function four times; sending each
+// one would walk the desktop window through every conversation on the way past, which is not what the
+// person spinning the carousel meant. The pending id is flushed by busy_dots_tick once it has stopped
+// changing (FOCUS_SETTLE_MS), and only if it differs from what was already sent — which is also what stops
+// an echo, since grid-app focusing a tile makes this function run again with the id it just chose.
+#define FOCUS_SETTLE_MS 400
+static char     s_focus_pending[ID_MAX];
+static char     s_focus_sent[ID_MAX];
+static uint32_t s_focus_at;
+
 static void apply_active_from_col(void)
 {
     int r = ring_of_col(carousel_col());
@@ -478,6 +490,16 @@ static void apply_active_from_col(void)
     s_settings_active = (r == ring_settings());
     if (r >= RING_LEAD && r < ring_agents_end()) s_active_idx = agent_of_ring(r);   // project ring → project index
     agent_actions_apply();   // the cluster belongs to agent tiles only — follow the swipe, not the next tick
+
+    // Overview and Settings name no chat, so they say nothing rather than sending "". The window keeps
+    // whatever it was showing: swiping onto Settings is not a request to change what the desktop displays.
+    const char *id = (s_tile_count > 0 && !s_overview_active && !s_settings_active
+                      && s_active_idx >= 0 && s_active_idx < s_tile_count)
+                     ? s_tiles[s_active_idx].id : "";
+    if (strcmp(id, s_focus_pending) != 0) {
+        snprintf(s_focus_pending, sizeof(s_focus_pending), "%s", id);
+        s_focus_at = lv_tick_get();
+    }
 }
 
 // ---- helpers ----
@@ -874,6 +896,12 @@ static void busy_dots_tick(lv_timer_t *t)
         // Sending: march the green highlight across the 3 sparkles (~3 Hz ≈ Figma's 0.8s/3 sweep).
         if (s_vic_state == VIC_SEND) { s_send_idx = (s_send_idx + 1) % 3; voice_send_apply_idx(); }
         notif_badge_apply();            // keep the unread pill in sync (screen/settings/asleep)
+        // Tell grid-app which tile the carousel settled on, once it has stopped moving.
+        if (s_focus_pending[0] && lv_tick_elaps(s_focus_at) > FOCUS_SETTLE_MS
+            && strcmp(s_focus_pending, s_focus_sent) != 0) {
+            snprintf(s_focus_sent, sizeof(s_focus_sent), "%s", s_focus_pending);
+            panel_client_send_focus(s_focus_sent);
+        }
     }
     // Keep the screen awake through a voice turn: voice uses the PWR key (not the touchscreen), so
     // recording + upload + the agent working produces NO touch and the idle timer would auto-off the

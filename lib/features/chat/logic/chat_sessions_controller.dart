@@ -40,6 +40,7 @@ import 'commands/chat_command.dart';
 import 'commands/chat_compaction.dart';
 import 'commands/chat_goal.dart';
 import 'commands/chat_loop.dart';
+import 'commands/loop_pace_block.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';

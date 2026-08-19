@@ -95,9 +95,9 @@ class OfficeDocBar extends ConsumerWidget {
                     if (open != null && open.dirty && !saving)
                       _NotSavedMark(tight: tight),
                     // A new document without going back to an empty screen
-                    // first. Glyph-only even when there is room: it is the third
-                    // action in a bar whose first two are the ones people came
-                    // for.
+                    // first. Dropped at the narrowest widths, where the bar has
+                    // room for one way in and Open is the one people came for —
+                    // the empty screen still offers both.
                     if (!tight) ...[
                       AppIconButton(
                         icon: LucideIcons.filePlus300,
@@ -108,7 +108,6 @@ class OfficeDocBar extends ConsumerWidget {
                       const SizedBox(width: 2),
                     ],
                     _OpenButton(
-                      tight: tight,
                       hasDocument: open != null,
                       onPressed: () => _open(context, ref, open),
                     ),
@@ -161,31 +160,26 @@ class _NotSavedMark extends StatelessWidget {
   );
 }
 
-/// The way the next document arrives — a labelled button, or its glyph alone
-/// when the bar has no width for the label.
+/// The way the next document arrives.
+///
+/// A glyph at every width, beside the one that starts a blank document — the
+/// pair is one idea ("get a document onto this desk") and a word next to a mark
+/// made them read as two unrelated controls, with the labelled one looking like
+/// the bar's main action next to Save. The sentence lives in the tooltip.
 class _OpenButton extends StatelessWidget {
-  const _OpenButton({
-    required this.tight,
-    required this.hasDocument,
-    required this.onPressed,
-  });
+  const _OpenButton({required this.hasDocument, required this.onPressed});
 
-  final bool tight;
   final bool hasDocument;
   final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) {
-    final label = hasDocument ? 'Open another' : 'Open document';
-    if (!tight) return TextButton(onPressed: onPressed, child: Text(label));
-    return AppIconButton(
-      icon: LucideIcons.folderOpen300,
-      size: 16,
-      // The full sentence, since the glyph is carrying the whole meaning here.
-      tooltip: hasDocument ? 'Open another document' : 'Open document',
-      onPressed: onPressed,
-    );
-  }
+  Widget build(BuildContext context) => AppIconButton(
+    icon: LucideIcons.folderOpen300,
+    size: 16,
+    // The full sentence, since the glyph carries the whole meaning.
+    tooltip: hasDocument ? 'Open another document' : 'Open document',
+    onPressed: onPressed,
+  );
 }
 
 class _SaveButton extends StatelessWidget {

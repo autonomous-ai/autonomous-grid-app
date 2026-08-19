@@ -113,11 +113,15 @@ mixin _ChatLoops on _ChatSessions {
     return stopped;
   }
 
-  /// Stop the open chat's loop, if it has one.
+  /// Stop the open chat's loop, if it has one running.
+  ///
+  /// A loop that has already ended is left exactly as it ended: overwriting a
+  /// finished or expired one with "you stopped it" would rewrite the record of
+  /// what happened, and the transcript already says which it was.
   CommandOutcome _stopLoop() {
     final chat = state.active;
     final loop = chat?.loop;
-    if (chat == null || loop == null) {
+    if (chat == null || loop == null || !loop.isRunning) {
       return (message: 'Nothing is repeating in this chat.', failed: false);
     }
     _cancelLoopTimer(chat.id);
@@ -189,7 +193,15 @@ mixin _ChatLoops on _ChatSessions {
       send(
         network: network,
         model: chat.model,
-        message: loop.prompt,
+        // The prompt plus the one line asking how this iteration went, which
+        // `_tidyLoopBeat` takes back off the stored message once the answer has
+        // been read. The assistant that just did the work is the only one that
+        // knows when to look again and whether there is anything left to look
+        // at — asking it here is what makes the loop self-paced rather than
+        // paced by a model that never saw the turn.
+        message:
+            '${loop.prompt}\n\n'
+            '${loopBeatFooter(selfPaced: loop.isSelfPaced)}',
         into: id,
         planFirst: false,
         continuing: true,
@@ -244,11 +256,41 @@ mixin _ChatLoops on _ChatSessions {
     final loop = chat?.loop;
     if (chat == null || loop == null || !loop.isRunning) return;
 
+    // What the iteration itself asked for, read off the answer it just wrote
+    // (see [parseLoopPaceBlock]). Read before the transcript is tidied, because
+    // tidying is what takes the block back out of it.
+    final asked = parseLoopPaceBlock(_lastReplyOf(chat));
+    _tidyLoopBeat(id, loop);
+
+    // The job is done and the assistant said so — the ordinary way a loop ends,
+    // and the one ending it could never reach before. Everything else here
+    // arranges another beat; this is the branch that doesn't.
+    if (asked?.stop ?? false) {
+      ref
+          .read(appLogProvider)
+          .info(
+            'chat',
+            'loop in $id finished after ${loop.iterations + 1} iteration(s): '
+                '${asked?.why ?? 'nothing left to check'}',
+          );
+      _cancelLoopTimer(id);
+      _saveLoop(
+        id,
+        loop.copyWith(
+          status: LoopStatus.finished,
+          iterations: loop.iterations + 1,
+          pacing: asked?.why,
+        ),
+      );
+      return;
+    }
+
     // Continuous: the next turn goes out the moment this one ended — a short
-    // settle, not a wait, and no pacer to ask. Fixed uses the user's number; a
-    // self-paced loop asks the assistant how long to wait.
+    // settle, not a wait, and nobody to ask. Fixed uses the user's number. A
+    // self-paced loop takes the gap the iteration named, and only falls back to
+    // asking a second model when it named none — the fallback, not the path.
     final fixed = loop.interval;
-    final paced = (fixed == null && !loop.isContinuous)
+    final paced = (fixed == null && !loop.isContinuous && asked?.next == null)
         ? await _askThePace(id, loop)
         : null;
     if (_disposed) return;
@@ -258,14 +300,15 @@ mixin _ChatLoops on _ChatSessions {
 
     final delay = loop.isContinuous
         ? ref.read(loopContinuousGapProvider)
-        : (fixed ?? paced?.delay ?? const Duration(minutes: 10));
+        : (fixed ?? asked?.next ?? paced?.delay ?? kLoopFallbackDelay);
     final now = DateTime.now();
     _saveLoop(
       id,
       current.copyWith(
         iterations: current.iterations + 1,
         nextAt: now.add(delay),
-        pacing: paced?.reason,
+        pacing: asked?.why ?? paced?.reason,
+        quietStreak: (asked?.quiet ?? false) ? current.quietStreak + 1 : 0,
       ),
     );
     if (current.hasExpired(now.add(delay))) {
@@ -274,6 +317,60 @@ mixin _ChatLoops on _ChatSessions {
       return;
     }
     _armLoopTimer(id, delay);
+  }
+
+  /// The text of the newest assistant message in [chat], or empty when the beat
+  /// left none — a turn that failed, or one the stall watchdog stopped.
+  String _lastReplyOf(Conversation chat) {
+    for (final message in chat.messages.reversed) {
+      if (message.role == ChatRole.assistant) return message.text;
+    }
+    return '';
+  }
+
+  /// Take the machinery back out of the beat's two messages: the footer off the
+  /// question, the `grid-loop` block off the answer.
+  ///
+  /// Both are the app talking to the assistant, and neither is worth reading
+  /// twice. Left in, an overnight loop ends every answer with a line of JSON
+  /// and re-sends its own instruction to itself on every later beat — fifty
+  /// copies of it in the history by morning, all of them stale but the last.
+  ///
+  /// Defensive throughout: anything that doesn't have the shape this wrote is
+  /// left exactly as it is. A tidy-up is never worth corrupting a transcript
+  /// for.
+  void _tidyLoopBeat(String id, ChatLoop loop) {
+    final chat = _find(id);
+    if (chat == null || chat.messages.isEmpty) return;
+    final asked = '${loop.prompt}\n\n';
+    final messages = [...chat.messages];
+    var changed = false;
+    for (var i = messages.length - 1; i >= 0 && i >= messages.length - 2; i--) {
+      final message = messages[i];
+      switch (message.role) {
+        case ChatRole.assistant:
+          final clean = stripLoopPaceBlock(message.text);
+          if (clean == message.text) continue;
+          messages[i] = message.copyWith(
+            text: clean,
+            parts: [
+              for (final part in message.parts)
+                part is TurnText
+                    ? TurnText(stripLoopPaceBlock(part.text))
+                    : part,
+            ],
+          );
+          changed = true;
+        case ChatRole.user:
+          if (!message.text.startsWith(asked)) continue;
+          messages[i] = message.copyWith(text: loop.prompt);
+          changed = true;
+      }
+    }
+    if (!changed) return;
+    // No `updatedAt`: this edits what the beat already said, and moving the
+    // chat to the top of the sidebar for it would report housekeeping as news.
+    _saveAndReplace(chat.copyWith(messages: messages));
   }
 
   /// Ask the assistant how long to wait, on a self-paced loop. Null when there

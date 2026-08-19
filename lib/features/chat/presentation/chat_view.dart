@@ -589,14 +589,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _message.selection = TextSelection.collapsed(offset: prompt.length);
   }
 
-  /// The composer's commands button: type the slash for the user and let the
-  /// menu below do the rest.
-  void _commandsButton() {
-    _message.text = '/';
-    _message.selection = const TextSelection.collapsed(offset: 1);
-    _composerFocus.requestFocus();
-  }
-
   /// What picking [command] out of the `/` menu does: a command that needs
   /// words is written into the composer for the user to finish, and one that
   /// doesn't simply runs.
@@ -1084,6 +1076,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               (sending || slash != null || cursor < 0)
                               ? null
                               : activeMention(_message.text, cursor);
+                          // The command the line will run on Send — badged in
+                          // the composer once its argument is being typed, where
+                          // the `/` menu (above) has already closed. Null while
+                          // that menu is up, so the two never show at once.
+                          final command = sending
+                              ? null
+                              : activeComposerCommand(_message.text);
                           return Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1127,6 +1126,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 ),
                               ComposerSection(
                                 messageController: _message,
+                                activeCommand: command,
                                 attachments: _attachments,
                                 files: _files,
                                 snippets: _snippets,
@@ -1213,7 +1213,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                     .read(attachedTerminalsProvider.notifier)
                                     .remove(tabId),
                                 focusNode: _composerFocus,
-                                onOpenCommands: _commandsButton,
                                 onSend: () => _send(modality),
                                 onStop: () => ref
                                     .read(chatSessionsProvider.notifier)

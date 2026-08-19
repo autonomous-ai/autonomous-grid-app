@@ -10,7 +10,6 @@ class _Actions extends StatelessWidget {
     this.agentPicker,
     required this.modelPicker,
     required this.onAttachFile,
-    required this.onOpenCommands,
     required this.messageController,
     required this.onSend,
     required this.onStop,
@@ -34,7 +33,6 @@ class _Actions extends StatelessWidget {
   final Widget? agentPicker;
   final Widget modelPicker;
   final VoidCallback onAttachFile;
-  final VoidCallback onOpenCommands;
 
   /// Where a transcribed voice clip lands — see [_MicButton].
   final TextEditingController messageController;
@@ -47,7 +45,7 @@ class _Actions extends StatelessWidget {
   /// The narrowest each group can be drawn, in logical pixels — and the flex
   /// weights that share the row in that proportion.
   ///
-  /// Left: attach 32 + commands 32 + gap 4 + the access pill's own floor 58.
+  /// Left: attach 32 + gap 4 + the access pill's own floor 58.
   /// Right: agent pill 58 + 8 + model pill 58 + 4 + mic 32 + 4 + stop 32 + 6 +
   /// send 32 — counting Stop, which only appears mid-turn and must not be the
   /// thing that breaks the row when it does.
@@ -55,7 +53,7 @@ class _Actions extends StatelessWidget {
   /// Re-measure these if a control is added to either side: they are the
   /// composer's real floor, and a stale one shows up as stripes rather than as a
   /// layout that merely looks tight.
-  static const _leftFloor = 126;
+  static const _leftFloor = 94;
   static const _rightFloor = 234;
 
   @override
@@ -81,13 +79,13 @@ class _Actions extends StatelessWidget {
             // An even share is what the composer had, and it striped a 440px
             // column by 1.9px with every control showing: two loose Flexibles
             // split the row down the middle, so this group was handed 206px to
-            // spend 126 of while the group opposite needed 234 and had the same
-            // 206. Eighty pixels of slack sat unused *between* them.
+            // spend a fraction of while the group opposite needed 234 and had
+            // the same 206. The slack sat unused *between* them.
             //
-            // The weights are the two floors: 32 + 32 + 4 + 58 here, and
+            // The weights are the two floors: 32 + 4 + 58 here, and
             // 58 + 8 + 58 + 4 + 32 + 4 + 32 + 6 + 32 there (a pill's own floor is
             // 58 — leading + gap + ellipsis + caret + padding). Weighting by them
-            // means both sides reach their floor at the same width — 388px plus
+            // means both sides reach their floor at the same width — 336px plus
             // this padding — instead of the wider side breaking first at nearly
             // 480. Nothing changes on a roomy composer: a loose fit still lets
             // each group take its natural size, and `spaceBetween` still puts
@@ -97,7 +95,6 @@ class _Actions extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _AttachButton(canAttach: canAttach, onAttach: onAttachFile),
-                _CommandsButton(enabled: !sending, onPressed: onOpenCommands),
                 if (approvalPicker != null) ...[
                   const SizedBox(width: 4),
                   Flexible(
@@ -187,27 +184,6 @@ class _AttachButton extends StatelessWidget {
         ? 'Attach a picture or a document'
         : 'Up to $maxChatImages pictures and $maxChatFiles files',
     onPressed: canAttach ? onAttach : null,
-  );
-}
-
-/// Opens the saved-prompt menu, or saves the current draft as a prompt.
-///
-/// One button with two honest jobs: with the box empty it browses prompts (drops
-/// a `/` in to open the menu); with a draft typed it offers to keep that draft
-/// for reuse. The icon and tooltip switch so the user knows which before tapping.
-/// Opens the `/` command menu, by typing the slash the menu watches for — the
-/// same keystroke the user could have made, so there is one way in and not two.
-class _CommandsButton extends StatelessWidget {
-  const _CommandsButton({required this.enabled, required this.onPressed});
-
-  final bool enabled;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) => ComposerIconButton(
-    icon: Icons.bolt_outlined,
-    tooltip: 'Commands',
-    onPressed: enabled ? onPressed : null,
   );
 }
 

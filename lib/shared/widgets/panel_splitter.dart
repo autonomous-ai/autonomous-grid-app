@@ -19,7 +19,21 @@ class PanelSplitter extends StatefulWidget {
     required this.axis,
     required this.onDrag,
     this.onReset,
+    this.highlightOnHover = true,
   });
+
+  /// Whether the seam marks itself while the pointer is on it.
+  ///
+  /// True everywhere the seam divides two of the app's own panes, where a
+  /// hairline picking up the accent reads as "this moves".
+  ///
+  /// False beside the document page. That seam runs down the edge of the
+  /// toolbar and rulers, which stay light in both themes, and *any* lift there
+  /// is the one bright thing on a screen of paper and grey — the accent read as
+  /// a caret, and a neutral grey read as white against the pane beside it. So
+  /// it stays a plain hairline and the resize cursor carries the whole
+  /// affordance, which is what a seam on a desktop is expected to do anyway.
+  final bool highlightOnHover;
 
   /// Which way the seam runs. [Axis.vertical] is an upright rule between two
   /// side-by-side panels, dragged left and right.
@@ -60,7 +74,9 @@ class _PanelSplitterState extends State<PanelSplitter> {
     AppTheme.watch(context);
     // Accent as *ink* is the `accentOnSurface` variant: `accent` is a fill
     // colour and measures 2.6:1 drawn as a line on a dark pane.
-    final line = _lit ? AppPalette.accentOnSurface : AppPalette.divider;
+    final line = _lit && widget.highlightOnHover
+        ? AppPalette.accentOnSurface
+        : AppPalette.divider;
 
     final rule = AnimatedContainer(
       duration: AppMotion.hover,

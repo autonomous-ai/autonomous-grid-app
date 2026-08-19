@@ -15,9 +15,11 @@ import '../../playground/logic/recording_controller.dart';
 import '../../playground/presentation/attachment_bar.dart';
 import '../../playground/presentation/file_chip.dart';
 import '../../playground/presentation/voice_input.dart';
+import '../logic/commands/chat_command.dart';
 import '../logic/composer_snippet.dart';
 import '../logic/composer_context.dart';
 import '../logic/file_attachments.dart';
+import 'composer_command_chip.dart';
 import 'snippet_chip.dart';
 
 part 'chat_composer_actions.dart';
@@ -54,14 +56,19 @@ class ComposerSection extends StatelessWidget {
     required this.onRemoveFile,
     required this.onRemoveSnippets,
     required this.onRemoveTerminal,
-    required this.onOpenCommands,
     required this.onSend,
     required this.focusNode,
     required this.onStop,
+    this.activeCommand,
   });
 
   final TextEditingController messageController;
   final List<MediaAttachment> attachments;
+
+  /// The app command the line will run on Send, badged at the top of the card so
+  /// a goal being set can't be mistaken for a message being sent. Null for an
+  /// ordinary message. See [activeComposerCommand].
+  final ChatCommand? activeCommand;
 
   /// The documents on this message — a report, a spreadsheet — shown as chips
   /// above the field so what will be sent is visible before Send.
@@ -120,9 +127,6 @@ class ComposerSection extends StatelessWidget {
   /// an index: the chips are derived from what the panels are showing, and a
   /// position in that list is only true until a panel changes tab.
   final ValueChanged<String> onRemoveTerminal;
-
-  /// Opens the `/` command menu.
-  final VoidCallback onOpenCommands;
 
   /// The message field's focus, owned by the view so it can put the cursor
   /// back in the box — after picking a command out of the `/` menu, which
@@ -185,6 +189,8 @@ class ComposerSection extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (activeCommand != null)
+                  ComposerCommandChip(command: activeCommand!),
                 _Attachments(
                   isText: _isText,
                   attachments: attachments,
@@ -242,7 +248,6 @@ class ComposerSection extends StatelessWidget {
                   agentPicker: agentPicker,
                   modelPicker: modelPicker,
                   onAttachFile: onAttachFile,
-                  onOpenCommands: onOpenCommands,
                   messageController: messageController,
                   onSend: onSend,
                   onStop: onStop,

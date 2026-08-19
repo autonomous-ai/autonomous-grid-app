@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, mapEquals;
 
 /// Parsed `GET {relayBaseUrl}/grid/overview` — the live snapshot a grid's relay
 /// serves: headline stats, the models it advertises, and the nodes backing them.
@@ -128,6 +128,19 @@ class GridStats {
   @override
   int get hashCode => Object.hash(models, nodes, concurrentCapacity, uptimePct);
 }
+
+/// What a model can do where it is being served: how much it will read in one
+/// go, and whether any of that may be an image.
+///
+/// [vision] is tri-state on purpose. `false` is an engine that says it reads no
+/// images; **`null` is one that never said**, which an older provider is, and
+/// the two must not be collapsed — one is a fact, the other a gap in what we
+/// were told.
+///
+/// Lives here rather than beside its display helpers because both the grid's
+/// model entries and each node carry one, and infrastructure may not depend on a
+/// feature (conventions §1).
+typedef ModelCapability = ({int? contextLength, bool? vision});
 
 class OverviewModel {
   const OverviewModel({
@@ -469,6 +482,7 @@ class OverviewNode {
     this.deviceClass,
     this.model,
     this.models = const [],
+    this.modelCapabilities = const {},
     this.engine,
     this.platform,
     this.throughputTokS,
@@ -519,6 +533,21 @@ class OverviewNode {
   /// these are media capabilities like `comfyui:image_generation`. The media
   /// picker reads these since media capabilities never appear in the model list.
   final List<String> models;
+
+  /// What **this machine** advertises about each model in [models] — the context
+  /// window its engine was actually started with, and whether that route reads
+  /// images. Keyed by the same ids as [models].
+  ///
+  /// Distinct from the capabilities on the grid's [OverviewModel] entries, which
+  /// are a MAX/OR fold across every node of a provider: two machines serving one
+  /// model genuinely differ (`llama-server -c 8192` beside `-c 32768`), and the
+  /// grid entry can only quote one window. A figure shown beside a machine's
+  /// name has to come from here.
+  ///
+  /// Empty on a relay too old to send `model_capabilities`, and a model absent
+  /// from it is one this node published no capability envelope for — not one
+  /// with no window. Absent and null both mean "this node did not say".
+  final Map<String, ModelCapability> modelCapabilities;
 
   final String? engine;
 
@@ -573,6 +602,7 @@ class OverviewNode {
     models: j['models'] is List
         ? [for (final m in j['models'] as List) '$m']
         : const [],
+    modelCapabilities: _capabilityMap(j['model_capabilities']),
     engine: j['engine'] as String?,
     platform: j['platform'] as String?,
     throughputTokS: (j['throughput_tok_s'] as num?)?.toDouble(),
@@ -595,6 +625,33 @@ class OverviewNode {
         : null,
     online: j['online'] == true,
   );
+
+  /// The relay's `model_capabilities` object, or empty when it sent none.
+  ///
+  /// Every level degrades rather than throws — the whole object, one entry, one
+  /// field. This is provider-self-reported data that reaches the app through an
+  /// unauthenticated endpoint, so a node sending junk must cost that node its
+  /// figures and nothing else; a `FormatException` here would blank the whole
+  /// dashboard over one bad row.
+  static Map<String, ModelCapability> _capabilityMap(Object? raw) {
+    if (raw is! Map) return const {};
+    final out = <String, ModelCapability>{};
+    for (final entry in raw.entries) {
+      final value = entry.value;
+      if (value is! Map) continue;
+      // Type-checked, not cast. `as num?` is the idiom everywhere else in this
+      // file and it is null-tolerant, not junk-tolerant: a string where a number
+      // belongs throws a `TypeError` mid-parse, which here would cost the whole
+      // dashboard rather than one node's figures.
+      final window = value['context_length'];
+      final vision = value['vision'];
+      out['${entry.key}'] = (
+        contextLength: window is num ? window.toInt() : null,
+        vision: vision is bool ? vision : null,
+      );
+    }
+    return out;
+  }
 
   /// GPU memory still free, in GB — the headroom a new model has to fit into.
   /// Null unless the node reported BOTH total and used: subtracting an absent
@@ -619,6 +676,11 @@ class OverviewNode {
       other.deviceClass == deviceClass &&
       other.model == model &&
       listEquals(other.models, models) &&
+      // By value, like every other field here. Identity would make each poll's
+      // freshly-parsed map a "change", and an overview that always differs
+      // recomputes the whole derived graph every cadence — see the note on
+      // `gridOverviewSnapshot` for what that broke last time.
+      mapEquals(other.modelCapabilities, modelCapabilities) &&
       other.engine == engine &&
       other.platform == platform &&
       other.throughputTokS == throughputTokS &&
@@ -649,6 +711,11 @@ class OverviewNode {
     deviceClass,
     model,
     Object.hashAll(models),
+    // Unordered: a Map's iteration order is not part of its equality, so a hash
+    // that depended on it could disagree with `==`.
+    Object.hashAllUnordered([
+      for (final e in modelCapabilities.entries) Object.hash(e.key, e.value),
+    ]),
     engine,
     platform,
     throughputTokS,

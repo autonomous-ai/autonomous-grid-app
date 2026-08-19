@@ -6,6 +6,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../logic/docx_format.dart';
 import '../../logic/office_doc_controller.dart';
 import '../../logic/office_doc_state.dart';
+import '../../logic/office_page_metrics.dart';
 import 'office_editor_rows.dart';
 
 /// The document, editable, on paper — a caret you can put in a paragraph and
@@ -32,11 +33,6 @@ class OfficeEditorView extends ConsumerStatefulWidget {
   const OfficeEditorView({super.key, required this.doc});
 
   final OfficeDocOpen doc;
-
-  /// The page's own margins at full width. Word's inch, and the most the page
-  /// gives up — a narrow pane gets a proportional share instead, or the margins
-  /// alone would be wider than the paper.
-  static const _pageInset = 72.0;
 
   @override
   ConsumerState<OfficeEditorView> createState() => _OfficeEditorViewState();
@@ -83,19 +79,24 @@ class _OfficeEditorViewState extends ConsumerState<OfficeEditorView> {
 
   List<String> get _lines => widget.doc.lines;
 
-  /// The format of paragraph [index] — or of the paragraph it was split from,
-  /// which has no entry of its own yet.
-  DocxLineFormat _formatFor(int index) {
-    final formats = widget.doc.formats;
-    if (formats.isEmpty) return DocxLineFormat.fallback;
-    return formats[index < formats.length ? index : formats.length - 1];
-  }
-
   TextEditingController _controllerFor(int index, String text) =>
       _fields.putIfAbsent(index, () => TextEditingController(text: text));
 
-  FocusNode _focusFor(int index) =>
-      _focus.putIfAbsent(index, () => FocusNode());
+  /// The paragraph's focus node, wired to report where the caret went.
+  ///
+  /// The toolbar and the ruler show — and change — the paragraph the caret is
+  /// in, and only the field knows when that changed. Gaining focus is reported
+  /// and losing it is not, on purpose: pressing a toolbar button takes the focus
+  /// off the page, and the paragraph being formatted must not stop being the
+  /// one the user was standing in at that moment.
+  FocusNode _focusFor(int index) => _focus.putIfAbsent(index, () {
+    final node = FocusNode();
+    node.addListener(() {
+      if (!node.hasFocus) return;
+      ref.read(officeDocProvider.notifier).focusLine(index);
+    });
+    return node;
+  });
 
   void _split(int index, TextEditingController controller) {
     final at = controller.selection.baseOffset;
@@ -118,7 +119,7 @@ class _OfficeEditorViewState extends ConsumerState<OfficeEditorView> {
   Widget _paragraph(int index, List<String> lines, double width) {
     final text = index < lines.length ? lines[index] : '';
     final controller = _controllerFor(index, text);
-    final format = _formatFor(index);
+    final format = widget.doc.formatAt(index);
     return _Paragraph(
       format: format,
       controller: controller,
@@ -150,25 +151,19 @@ class _OfficeEditorViewState extends ConsumerState<OfficeEditorView> {
       color: AppPalette.paperDesk,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // The document's own paper — A4 is 794px where US Letter is 816, and a
-          // document laid out for one reads wrong at the other's measure. Never
-          // wider than the pane, though: a fixed page is what overflowed every
-          // table the moment the window came off full screen.
-          final paper = widget.doc.pageWidthPx;
-          final page = constraints.maxWidth < paper
-              ? constraints.maxWidth
-              : paper;
-          // Margins shrink with the page rather than holding their inch: at the
-          // app's narrowest window two 72px margins are wider than the paper
-          // between them, and the text would be laid out in nothing.
-          final inset = (page * 0.09).clamp(16.0, OfficeEditorView._pageInset);
-          // What is left for text — and what a table must fit inside. Derived,
-          // never assumed: a table sized to a constant overflowed by exactly the
-          // width the window had lost.
-          final column = page - inset * 2;
+          // The page's own geometry — the document's paper width, what a margin
+          // gets at this window size, and what is left for the words. Shared
+          // with the ruler above rather than worked out twice, so the ruler's
+          // zero is this page's own margin to the pixel.
+          final metrics = OfficePageMetrics.of(
+            constraints.maxWidth,
+            widget.doc.pageWidthPx,
+          );
+          final inset = metrics.inset;
+          final column = metrics.column;
           return Center(
             child: SizedBox(
-              width: page,
+              width: metrics.page,
               child: ColoredBox(
                 color: AppPalette.paper,
                 // The page's own ink, so nothing on it can inherit the app's — see the
@@ -195,7 +190,12 @@ class _OfficeEditorViewState extends ConsumerState<OfficeEditorView> {
                       // was told it had `144 - 2 * inset` more room than the
                       // list would give it — 45px at a 550px page, which is
                       // exactly what overflowed.
-                      padding: EdgeInsets.fromLTRB(inset, 56, inset, 72),
+                      padding: EdgeInsets.fromLTRB(
+                        inset,
+                        officePageTopInset,
+                        inset,
+                        officePageBottomInset,
+                      ),
                       itemCount: rows.length,
                       itemBuilder: (context, index) => switch (rows[index]) {
                         OfficeEditorParagraph(:final index) => _paragraph(

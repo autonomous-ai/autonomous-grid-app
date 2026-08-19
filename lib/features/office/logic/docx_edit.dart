@@ -33,6 +33,8 @@ import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 
 import 'docx_format.dart';
+import 'docx_paragraph_style.dart';
+import 'docx_style_write.dart';
 
 /// The part of the zip that holds the prose. Everything else is copied through.
 const _bodyPart = 'word/document.xml';
@@ -119,16 +121,26 @@ class DocxFile {
     );
   }
 
-  /// The whole file with [edited] as its paragraphs — the same zip, with only
-  /// the ones that differ from [lines] touched.
+  /// The whole file with [edited] as its paragraphs and [styles] laid over
+  /// them — the same zip, with only what differs from [lines] touched.
   ///
   /// A list rather than one string split on newlines: a paragraph may contain a
   /// newline of its own (a soft break), so only the caller knows where one
   /// paragraph ends and the next begins.
-  Uint8List save(List<String> edited) {
+  ///
+  /// [styles] is one entry per paragraph of [edited], null where the toolbar
+  /// changed nothing. It is applied **after** the text, and by index into the
+  /// document as it then stands — which is what makes a formatted paragraph
+  /// that was also split or deleted land on the right `w:p` without this having
+  /// to track indices through the diff.
+  Uint8List save(
+    List<String> edited, {
+    List<DocxParagraphStyle?> styles = const [],
+  }) {
     // Can't fail: this is the string [open] already parsed.
     final body = XmlDocument.parse(_bodyXml);
     _applyLines(body, lines, edited);
+    _applyStyles(body, styles);
     final out = Archive();
     for (final file in _zip.files) {
       out.add(
@@ -138,6 +150,26 @@ class DocxFile {
       );
     }
     return ZipEncoder().encodeBytes(out);
+  }
+}
+
+/// Lays the toolbar's changes over the paragraphs the text pass left behind.
+///
+/// Read fresh rather than reusing the list the text pass held: that pass may
+/// have inserted or removed a `w:p`, and index 7 of the document afterwards is
+/// what index 7 of the editor is showing. A paragraph with no change is not
+/// touched at all — [applyParagraphStyle] returns on an empty style, so a save
+/// with nothing formatted writes byte-identical XML to one from before this
+/// existed.
+void _applyStyles(XmlDocument body, List<DocxParagraphStyle?> styles) {
+  if (styles.isEmpty) return;
+  final paragraphs = _paragraphsOf(body);
+  final count = styles.length < paragraphs.length
+      ? styles.length
+      : paragraphs.length;
+  for (var i = 0; i < count; i++) {
+    final style = styles[i];
+    if (style != null) applyParagraphStyle(paragraphs[i], style);
   }
 }
 

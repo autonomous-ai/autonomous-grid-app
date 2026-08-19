@@ -32,6 +32,7 @@ class AppIconButton extends StatefulWidget {
     this.size = 15,
     this.color,
     this.hoverColor,
+    this.hoverFill,
     this.destructive = false,
   });
 
@@ -49,6 +50,16 @@ class AppIconButton extends StatefulWidget {
   /// Hovered ink. Defaults to [AppPalette.textPrimary] — the climb *is* the
   /// affordance. Ignored when [destructive] is set.
   final Color? hoverColor;
+
+  /// The lift behind the glyph on hover. Defaults to [AppSurface.hoverFill],
+  /// which follows the app's theme.
+  ///
+  /// Overridden only by chrome that deliberately does **not** follow it — the
+  /// bar and rulers around a document page, which stay light in dark mode the
+  /// way the page itself does (see [AppPalette.paper]). Without this the glyph
+  /// and the fill answer to two different themes, and a light toolbar lifts its
+  /// buttons with a wash mixed for charcoal.
+  final Color? hoverFill;
 
   /// Hover turns the *glyph* red, over the same neutral fill every other button
   /// gets.
@@ -124,7 +135,7 @@ class _AppIconButtonState extends State<AppIconButton> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: _hovered && enabled
-                ? AppSurface.hoverFill
+                ? (widget.hoverFill ?? AppSurface.hoverFill)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(AppIconButton._radius),
           ),

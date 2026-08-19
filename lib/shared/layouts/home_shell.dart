@@ -20,6 +20,7 @@ import '../../infrastructure/platform/desktop_notifier.dart';
 import '../panels/panel_tabs.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
+import 'reveal_chat.dart';
 import 'shell_state.dart';
 import 'widgets/app_top_bar.dart';
 import 'widgets/section_view.dart';
@@ -81,6 +82,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // clear its "new results" badge (the listen below only fires on a change,
       // not on this first value).
       _markTaskChatRead(ref.read(chatSessionsProvider).activeId);
+      // And if the history was already read before this shell was built, the
+      // listener in `build` has no change left to fire on — so settle the
+      // restored chat here too. Same reason as the line above.
+      if (!ref.read(chatSessionsProvider).loading) settleRestoredChat(ref);
       // The launch update check lives here, not at startup: the shell is only
       // reached once first-run setup is done or skipped, so Sparkle's "restart
       // to update" prompt can't land on top of a model download.
@@ -117,6 +122,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       chatSessionsProvider.select((s) => s.activeId),
       (_, id) => _markTaskChatRead(id),
     );
+
+    // The history has landed and the app has picked the chat to reopen on. If
+    // that chat belongs to a document, this is where it gets its document —
+    // see [settleRestoredChat]. Watched on `loading` rather than on the id, so
+    // it fires once on the way in and never again.
+    ref.listen(chatSessionsProvider.select((s) => s.loading), (was, now) {
+      if (was != true || now) return;
+      settleRestoredChat(ref);
+    });
 
     final section = ref.watch(shellSectionProvider);
 

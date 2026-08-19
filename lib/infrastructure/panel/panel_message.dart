@@ -18,13 +18,15 @@ import 'dart:convert';
 /// here, while changing the envelope is a change there, and conflating them
 /// forces a firmware reflash for what is only a new field.
 ///
-/// **2 since 2026-08-18**, when a tile stopped being a project and became a
-/// chat: every message keys on `chatId` and the list arrives as `chats`. It has
+/// **3 since 2026-08-19**, when the panel gained `focus` — the tile the
+/// carousel settled on, so the window can follow a swipe. 2 was the day before,
+/// when a tile stopped being a project and became a chat: every message keys on
+/// `chatId` and the list arrives as `chats`. It has
 /// to match `PANEL_PROTO_VERSION` in `device/esp32-circle/main/panel_client.h`
 /// — two numbers, hand-kept, in two languages. Bumping only the firmware's is
 /// exactly what happened first, and the panel then reported protocol 2 to an app
 /// still claiming 1, which is the mismatch this constant exists to catch.
-const int kPanelProtocolVersion = 2;
+const int kPanelProtocolVersion = 3;
 
 /// How often the app says it is still here.
 ///
@@ -67,6 +69,7 @@ sealed class PanelInbound {
         mac: _str(decoded['mac']) ?? '',
       ),
       'chats.list' => const PanelChatsRequested(),
+      'focus' => PanelFocused(chatId: _str(decoded['chatId']) ?? ''),
       'turn.send' => PanelTurnRequested(
         chatId: _str(decoded['chatId']) ?? '',
         text: _str(decoded['text']) ?? '',
@@ -129,6 +132,19 @@ class PanelHello extends PanelInbound {
 /// "Send me the project list."
 class PanelChatsRequested extends PanelInbound {
   const PanelChatsRequested();
+}
+
+/// The carousel settled on a tile — the user swiped to this chat.
+///
+/// A statement about where the person is looking, not a request to run
+/// anything. The window follows it so the two screens are one desk: somebody
+/// who spins the carousel to a conversation means to be looking at that
+/// conversation, and having to find it again with a mouse is the panel and the
+/// window disagreeing about what is in front of them.
+class PanelFocused extends PanelInbound {
+  const PanelFocused({required this.chatId});
+
+  final String chatId;
 }
 
 /// The user spoke or typed a turn on the panel.
