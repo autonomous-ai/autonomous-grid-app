@@ -595,13 +595,21 @@ class _DetailField extends StatelessWidget {
 /// The context figure is simply absent when the model advertises none — no dash.
 /// A window is a claim, and most providers on a grid make none; a dash on every
 /// card would be a column of "not reported" saying nothing anyone can act on.
-/// The glyph carries the line's height on its own, so cards stay level anyway.
 ///
-/// The glyph is always drawn and lights when the model reads images, because two
-/// states of one mark compare across cards at a glance where a mark that comes
-/// and goes does not. **Three facts behind two states**, so the tooltip carries
-/// what the dimming cannot: a model that says it reads no images and a relay too
-/// old to have an opinion both render dim, and those are not the same thing.
+/// The glyph appears only where the model reads images. It carries one meaning
+/// and only its presence carries it, which means "says it reads text only" and
+/// "nobody said" now look alike. That is a deliberate trade: the distinction was
+/// worth a tooltip when the mark was on every card anyway, and is not worth a
+/// mark on every card to preserve. `ModelCapability.vision` still keeps the two
+/// apart for anything that needs them.
+///
+/// **The window's `Text` is drawn even when empty**, and that is not an
+/// oversight to tidy away. It is what holds the line's height once the glyph can
+/// vanish: at 10.5px it is taller than the 11px icon, so a card with neither
+/// figure keeps the same height as one with both, and the 24h fields below stay
+/// level with the card beside them — the alignment the whole detail grid exists
+/// for. Dropping the line when it has nothing to say would shift four rows on
+/// one card and not on its neighbour.
 class _ModelCapabilityLine extends StatelessWidget {
   const _ModelCapabilityLine({required this.capability});
 
@@ -610,35 +618,27 @@ class _ModelCapabilityLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final window = contextLengthLabel(capability.contextLength);
-    final readsImages = capability.vision == true;
     return Row(
       children: [
-        if (window.isNotEmpty) ...[
-          Flexible(
-            child: Text(
-              window,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10.5, color: AppPalette.textFaint),
-            ),
-          ),
-          const SizedBox(width: 5),
-        ],
-        Tooltip(
-          message: switch (capability.vision) {
-            true => 'This model can read images.',
-            false => 'This model reads text only.',
-            null => "This grid doesn't say whether this model reads images.",
-          },
-          child: Icon(
-            LucideIcons.image,
-            size: 11,
-            color: readsImages
-                ? AppPalette.textSecondary
-                : AppPalette.textFaint,
+        Flexible(
+          child: Text(
+            contextLengthLabel(capability.contextLength),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 10.5, color: AppPalette.textFaint),
           ),
         ),
+        if (capability.vision == true) ...[
+          const SizedBox(width: 5),
+          Tooltip(
+            message: 'This model can read images.',
+            child: Icon(
+              LucideIcons.image,
+              size: 11,
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ],
       ],
     );
   }
