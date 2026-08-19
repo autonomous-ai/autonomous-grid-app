@@ -35,6 +35,7 @@ import '../../playground/presentation/message_content.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../../playground/presentation/transcript_view.dart';
 import '../logic/commands/chat_command.dart';
+import '../logic/commands/spoken_command.dart';
 import 'command_slash_menu.dart';
 import 'composer_status.dart';
 import '../../skills/presentation/save_skill_bar.dart';
@@ -358,6 +359,36 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return null;
   }
 
+  /// Acts on a sentence that asked for a command, and says whether it did.
+  ///
+  /// Two endings, and the difference is who is sure. A sentence that opens with
+  /// the ask and carries what the command needs is run — that is the whole
+  /// point of saying it out loud. Anything less is **written into the composer
+  /// as the command it would be** and left there: the user reads the exact line
+  /// before it happens, edits it or sends it, and a misheard sentence costs a
+  /// keystroke instead of starting an unattended loop.
+  bool _offerSpokenCommand(String message) {
+    final spoken = readSpokenCommand(message);
+    if (spoken == null) return false;
+    if (spoken.certain) {
+      _clearDraft();
+      _message.clear();
+      unawaited(_runCommand(spoken.call));
+      return true;
+    }
+    final line = spokenCommandLine(spoken.call);
+    _message.text = line;
+    _message.selection = TextSelection.collapsed(offset: line.length);
+    ToastScope.show(
+      context,
+      const ToastSpec(
+        message: 'Read that as a command — send it, or edit it first.',
+        severity: ToastSeverity.success,
+      ),
+    );
+    return true;
+  }
+
   void _send(PlaygroundModality modality) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
@@ -369,6 +400,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _runCommand(command);
       return;
     }
+    // The same instruction said in words. Nobody dictates a leading slash, so
+    // without this "lặp lại mỗi 30 phút kiểm tra deploy" went to the assistant
+    // as a sentence and set nothing — see [readSpokenCommand].
+    if (_offerSpokenCommand(message)) return;
     ref
         .read(chatSessionsProvider.notifier)
         .send(
