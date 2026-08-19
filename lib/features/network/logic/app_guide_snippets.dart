@@ -193,12 +193,36 @@ const String kCodexAppApiKeyEnv = 'GRID_APP_API_KEY';
 ///
 /// Pure, and unit-tested: a wrong key here fails exactly like a model that
 /// wouldn't answer (§7).
+/// [contextWindow] is what the model really holds, when anything has said so.
+/// Codex needs telling for the same reason Claude Code does, and for a sharper
+/// one: its bundled model catalog only carries the `gpt-5.*` slugs, so a grid
+/// model id is simply absent from it and Codex has no figure to fall back on at
+/// all. Left unset it summarizes on its own defaults against a window it cannot
+/// see. Null when no source has named one — an invented number here is the
+/// over-estimate failure (the engine refuses the turn), which is the worse half
+/// of being wrong. [compactAt] is where Codex should summarize — the caller's
+/// `agentContextCeiling(contextWindow)`.
 List<String> codexGridOverrides({
   required String base,
   required String model,
+  int? contextWindow,
+  int? compactAt,
 }) => [
   'model="$model"',
   'model_provider="$kCodexAppProviderId"',
+  // Top-level keys on Codex's `ConfigToml`, verified against the installed
+  // binary's field list on 2026-08-19 — `model_context_window` is what it holds,
+  // `model_auto_compact_token_limit` is where it summarizes. Codex's own
+  // equivalent of [kClaudeCompactWindowEnv] plus this app's `needsCompaction`.
+  //
+  // Sent together or not at all: a limit without a window is a number Codex has
+  // nothing to measure against. [compactAt] arrives already computed because
+  // `agentContextCeiling` belongs to the agents feature and this one may not
+  // reach into it (§1) — the caller there owns the arithmetic.
+  if (contextWindow != null && contextWindow > 0 && compactAt != null) ...[
+    'model_context_window=$contextWindow',
+    'model_auto_compact_token_limit=$compactAt',
+  ],
   // Codex refuses a provider table whose name is empty — and it refuses by
   // failing to load the *whole* config, before the model is ever reached.
   'model_providers.$kCodexAppProviderId.name="Grid"',
@@ -244,7 +268,48 @@ const String kClaudeSubagentModelEnv = 'CLAUDE_CODE_SUBAGENT_MODEL';
 /// conversation then stuck there. Set from what the model really has, see
 /// `agentContextCeiling`. Claude Code takes the smaller of this and the model's
 /// own maximum, so a value that's too generous is capped rather than obeyed.
+///
+/// **It is also floored, and that half was missed.** Measured against the
+/// installed 2.1.234 binary on 2026-08-19: the variable is read in exactly one
+/// place, and the value goes through `Math.max(100000, …)` before anything uses
+/// it. Anything under [kClaudeCompactWindowFloor] is discarded **silently** —
+/// no warning, no log line — and 100000 stands in for it.
+///
+/// What Claude Code then compacts at is lower again:
+/// `window − min(maxOutputTokens, 20000) − 13000`. Measured end to end: this app
+/// sending 49152 produced compaction at 67534 ± 595 across twelve compactions
+/// (predicted 67000, and 78808 with [kClaudeMaxOutputTokensEnv] at 8192,
+/// measured 79634) — both within 1%, the residue being that the check runs once
+/// per request so the count overshoots.
+///
+/// So on any window the app has to *assume*, this variable was never in force:
+/// `agentContextCeiling(65536)` is 49152, floored back up to 100000. The
+/// ceiling was still enforced, but only by [needsCompaction] on this side —
+/// which is what the note there about Claude Code "not acting on it" was really
+/// seeing. Pass [claudeCompactWindow] rather than a bare ceiling so the number
+/// in the environment is the number that takes effect.
 const String kClaudeCompactWindowEnv = 'CLAUDE_CODE_AUTO_COMPACT_WINDOW';
+
+/// The floor Claude Code silently raises [kClaudeCompactWindowEnv] to.
+///
+/// `Math.max(100000, …)` in the 2.1.234 resolver. A ceiling below this cannot be
+/// asked for, so the app reaching for one is asking for something that will not
+/// happen.
+const int kClaudeCompactWindowFloor = 100000;
+
+/// [ceiling] as a value Claude Code will actually honour, or null when it cannot
+/// be expressed.
+///
+/// Returns null below [kClaudeCompactWindowFloor] rather than quietly sending
+/// 100000: a ceiling of 49152 and a floor of 100000 are different instructions,
+/// and passing the floor would tell the reader the app asked for something it
+/// did not. Omitting the variable leaves Claude Code on the same 100000 it would
+/// have used anyway — the behaviour is identical, and only the claim changes.
+///
+/// The app's own [needsCompaction] still holds the real ceiling on this side, so
+/// nothing is left unguarded by the omission.
+int? claudeCompactWindow(int ceiling) =>
+    ceiling >= kClaudeCompactWindowFloor ? ceiling : null;
 
 /// The most output Claude Code may ask for in a single request.
 ///

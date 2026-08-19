@@ -267,7 +267,12 @@ class ClaudeChatSender implements ChatSender {
             network.relayBaseUrl,
             network.relayApiKey,
             [model],
-            compactWindow: agentContextCeiling(window),
+            // Null below Claude Code's own floor of 100000, where the value
+            // would be discarded and 100000 used instead — see
+            // [claudeCompactWindow]. The ceiling is still held on this side by
+            // [needsCompaction] below, which is the half that was doing the work
+            // all along.
+            compactWindow: claudeCompactWindow(agentContextCeiling(window)),
             // Claude Code reserves 32000 output tokens by default — more than a
             // grid model's window can spare above the ceiling, and the reply
             // alone drew the 400 (#47). Cap it to what the ceiling leaves room

@@ -104,11 +104,18 @@ int agentContextCeiling(int engineWindow) {
 /// number and not two, so the app's own check can't drift from what it told the
 /// agent to do.
 ///
-/// Asking at all is the point. Claude Code is given that ceiling as
+/// Asking at all is the point, and the reason is now measured rather than
+/// suspected. Claude Code is given that ceiling as
 /// `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and did not act on it: measured on a grid
 /// model advertising 200000 (ceiling 160000), a session was refused by the
-/// engine at 230145 input tokens. Whatever the reason on its side, a ceiling
-/// that only one party enforces is not enforced.
+/// engine at 230145 input tokens.
+///
+/// The mechanism, read out of the 2.1.234 binary on 2026-08-19: the variable is
+/// floored at 100000 and then compaction fires at
+/// `window − min(maxOutputTokens, 20000) − 13000`, so a ceiling below that floor
+/// never reaches the runtime at all (see [kClaudeCompactWindowFloor]). On every
+/// window the app has to assume, **this check has been the only thing enforcing
+/// the ceiling.** Removing it would leave nothing.
 ///
 /// Zero means no turn has reported a figure yet — the session is as empty as it
 /// will ever be, so there is nothing to make room for.
@@ -144,17 +151,40 @@ const int kAssumedContextWindow = 65536;
 /// model id can be served by several machines (the office qwen is served by two)
 /// and only the smallest window is safe for all of them. The assumption is not
 /// in that comparison: it is what's left when there is nothing to compare.
-final modelContextWindowProvider = Provider.autoDispose.family<int, String>((
-  ref,
-  model,
-) {
-  final key = normalizeModelKey(model);
-  final advertised = [
-    for (final served in ref.watch(gridModelsProvider))
-      if (normalizeModelKey(served.id) == key)
-        if (served.contextLength case final int tokens when tokens > 0) tokens,
-  ];
-  final known = [...advertised, ?ref.watch(learnedModelContextProvider)[key]];
-  if (known.isEmpty) return kAssumedContextWindow;
-  return known.reduce((a, b) => a < b ? a : b);
-});
+final modelContextWindowProvider = Provider.autoDispose.family<int, String>(
+  (ref, model) =>
+      ref.watch(knownModelContextWindowProvider(model)) ??
+      kAssumedContextWindow,
+);
+
+/// The window for [model] **only when something real has named it** — null where
+/// [modelContextWindowProvider] would substitute [kAssumedContextWindow].
+///
+/// The same two sources, smaller wins, minus the assumption. Separate because
+/// the assumption is safe for one caller and wrong for the others, and an `int`
+/// cannot tell them apart: once the guess is folded in, every reader downstream
+/// believes a number was reported.
+///
+/// Claude Code is the caller the guess suits — its own fallback is Anthropic's
+/// 200k-and-up, so guessing low there is strictly safer than staying quiet (see
+/// [kAssumedContextWindow]). Any caller *configuring another agent* wants this
+/// one instead: telling Codex a grid model holds 65536 when it holds 262144
+/// makes it summarize four times too often, which is the thrash direction — and
+/// on a model that really is small, saying nothing leaves the agent on its own
+/// default rather than on a figure this app invented.
+final knownModelContextWindowProvider = Provider.autoDispose
+    .family<int?, String>((ref, model) {
+      final key = normalizeModelKey(model);
+      final advertised = [
+        for (final served in ref.watch(gridModelsProvider))
+          if (normalizeModelKey(served.id) == key)
+            if (served.contextLength case final int tokens when tokens > 0)
+              tokens,
+      ];
+      final known = [
+        ...advertised,
+        ?ref.watch(learnedModelContextProvider)[key],
+      ];
+      if (known.isEmpty) return null;
+      return known.reduce((a, b) => a < b ? a : b);
+    });

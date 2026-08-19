@@ -16,6 +16,7 @@ import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../../infrastructure/cli/agent_resume_point.dart';
+import '../../../../infrastructure/state/model_context_store.dart';
 import '../agent_changes.dart';
 import '../agent_server_error.dart';
 import '../agent_permissions.dart';
@@ -401,6 +402,18 @@ class HermesChatSender implements ChatSender {
             // With what has been said so far, so the step lands *after* that
             // passage in the turn's timeline rather than under the whole answer.
             runs.upsertStep(chat, activity, answer: said());
+          case HermesAcpContextUsed(:final size):
+            // Hermes probes the provider for this and caches it; the relay
+            // advertises `null` for some of the same models. Feeding it to the
+            // shared store means one lane's measurement corrects every lane's
+            // guess — `learnedModelContextProvider` is what
+            // `modelContextWindowProvider` reads, so the Claude and Codex lanes
+            // pick this up for the same model without asking Hermes anything.
+            //
+            // Hermes reports the window of whichever node it is on, so `learn`
+            // keeps the smallest ever seen — a roomier node must not raise the
+            // figure a tighter one has to live with.
+            _ref.read(learnedModelContextProvider.notifier).learn(model, size);
           case HermesAcpPermission(:final request):
             // The agent has stopped and is waiting on the user; pause the idle
             // watch (their time isn't a hang) and re-arm it once they answer.
