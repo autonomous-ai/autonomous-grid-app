@@ -473,7 +473,7 @@ class _ChatRow extends ConsumerWidget {
           label: chat.title,
           // Two chats can be six words of the same sentence apart, and the rail
           // shows the first three — so the row itself hands the rest over under
-          // the pointer instead of leaving the ellipsis to be argued with.
+          // the pointer instead of leaving the fade to be argued with.
           revealLabelOnHover: true,
           selected: selected,
           // One slot, three things a row might have to say — in the order they
