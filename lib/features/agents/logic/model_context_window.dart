@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/state/model_context_store.dart';
 import '../../network/logic/grid_overview_provider.dart';
 
@@ -26,6 +27,19 @@ bool isContextOverflow(String raw) {
   return lower.contains('available context size') ||
       lower.contains('maximum context length');
 }
+
+/// Whether [raw] is Claude Code cutting a reply off at the cap the app set.
+///
+/// A different failure from [isContextOverflow], and reading it as one would be
+/// wrong twice over: nothing overflowed at the engine, so there is no window to
+/// learn, and the session is intact rather than needing to be dropped. What ran
+/// out is the room [agentReplyReserve] left for the reply.
+///
+/// Measured wording, 2026-08-19: `API Error: Claude's response exceeded the 8192
+/// output token maximum.` Matched on the tail alone, because the number in the
+/// middle is whatever this app asked for.
+bool isReplyTruncated(String raw) =>
+    raw.toLowerCase().contains('output token maximum');
 
 /// The context window an engine reported when it refused a turn, or null when
 /// the refusal named no number.
@@ -214,19 +228,37 @@ final modelContextWindowProvider = Provider.autoDispose.family<int, String>(
 /// makes it summarize four times too often, which is the thrash direction — and
 /// on a model that really is small, saying nothing leaves the agent on its own
 /// default rather than on a figure this app invented.
-final knownModelContextWindowProvider = Provider.autoDispose
-    .family<int?, String>((ref, model) {
-      final key = normalizeModelKey(model);
-      final advertised = [
-        for (final served in ref.watch(gridModelsProvider))
-          if (normalizeModelKey(served.id) == key)
-            if (served.contextLength case final int tokens when tokens > 0)
-              tokens,
-      ];
-      final known = [
-        ...advertised,
-        ?ref.watch(learnedModelContextProvider)[key],
-      ];
-      if (known.isEmpty) return null;
-      return known.reduce((a, b) => a < b ? a : b);
-    });
+final knownModelContextWindowProvider = Provider.autoDispose.family<int?, String>((
+  ref,
+  model,
+) {
+  final key = normalizeModelKey(model);
+  // The overview's **raw** rows, not `gridModelsProvider`. That list is
+  // deduplicated for tiles by `distinctOverviewModels`, which keeps one row
+  // per id by how much metadata it carries — pricing, then a context length,
+  // then a vision flag. Read through it, "the smaller window wins" has
+  // nothing to win over: the several machines serving one id have already
+  // been collapsed into whichever row looked richest, and the reduce below
+  // folds a single element.
+  //
+  // Worse than useless — actively unsafe in the direction that costs a
+  // session. Of two nodes serving one id, the one holding **less** context
+  // is the one this has to believe, and a row is dropped for carrying less
+  // metadata, not less window. A node advertising 262144 with no pricing
+  // beats one advertising 128000 with pricing, and the turn that follows is
+  // sized for a window the answering machine does not have. `modelCapabilities`
+  // avoids the same trap by folding the raw rows, and says so at its head.
+  //
+  // Live on the office grid 2026-08-19: `gemma-4-31B-it` arrives as two rows,
+  // one naming 204800 and one naming nothing.
+  final rows =
+      ref.watch(gridOverviewSnapshot)?.models ?? const <OverviewModel>[];
+  final advertised = [
+    for (final served in rows)
+      if (normalizeModelKey(served.id) == key)
+        if (served.contextLength case final int tokens when tokens > 0) tokens,
+  ];
+  final known = [...advertised, ?ref.watch(learnedModelContextProvider)[key]];
+  if (known.isEmpty) return null;
+  return known.reduce((a, b) => a < b ? a : b);
+});
