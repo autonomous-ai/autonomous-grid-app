@@ -423,6 +423,12 @@ class ChatSessionsController extends _ChatSessions
     // found in it, and this is the one path that reads *this* computer's own
     // chat folder (see [_stopForeignLoop] for the other one).
     _resumeLoops();
+    // A loop resumes across a restart; a goal does not. The difference is who
+    // the next turn belongs to: a loop sends its own prompt, so nothing of the
+    // user's is captured, while a goal takes over whatever they type next — and
+    // after a restart that is a sentence they wrote without knowing a goal was
+    // still armed (see [GoalStatus.dormant]).
+    _standDownGoals();
   }
 
   /// Close off any turn that the app going away cut short.
