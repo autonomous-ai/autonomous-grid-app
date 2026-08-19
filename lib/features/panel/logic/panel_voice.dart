@@ -212,9 +212,7 @@ PanelVoiceRoute panelVoiceRouteFor({
   final named = spokenIn?.trim() ?? '';
   if (named.isNotEmpty) {
     if (tiles.contains(named)) return PanelVoiceRouted(named);
-    return const PanelVoiceUnroutable(
-      'This computer no longer has that chat.',
-    );
+    return const PanelVoiceUnroutable('This computer no longer has that chat.');
   }
   return PanelVoiceGuessed(_mostRecentlyUsed(tiles, chats) ?? tiles.first);
 }

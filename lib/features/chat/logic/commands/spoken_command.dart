@@ -3,10 +3,9 @@ import 'chat_command.dart';
 /// A command the app owns, read out of an ordinary sentence.
 ///
 /// [certain] separates "this sentence *is* the instruction" from "this sentence
-/// mentions it": certain when the sentence opens with the ask and carries
-/// everything the command needs, so it can simply be run. Anything less is
-/// written into the composer for the user to send, because the cost of guessing
-/// wrong is a loop nobody asked for, running unattended.
+/// is shaped like one but is missing what it needs": certain when the ask opens
+/// the sentence and carries its gap or its hour, so it can simply be run.
+/// Anything less is offered, never run.
 typedef SpokenCommand = ({ChatCommandCall call, bool certain});
 
 /// The command [text] is asking for, or null when it is an ordinary message.
@@ -18,6 +17,12 @@ typedef SpokenCommand = ({ChatCommandCall call, bool certain});
 /// gets the same reading, because someone who types "lặp lại mỗi 30 phút" means
 /// the same thing as someone who says it.
 ///
+/// **Only a sentence that opens with the ask counts.** A trigger found
+/// mid-sentence is somebody talking — "I'll keep working until the tests pass,
+/// then push" is a plan, not `/goal`, and reading it as one costs the user the
+/// message they wrote. That single rule is also what keeps refusals out: "do
+/// not keep checking the deploy" does not open with the ask.
+///
 /// Deterministic on purpose. Asking a model would cost a round-trip on every
 /// send and answer differently on two identical sentences; the set of commands
 /// here is small and closed, which is exactly the case a phrase reading covers
@@ -26,9 +31,7 @@ SpokenCommand? readSpokenCommand(String text) {
   final line = text.trim();
   if (line.isEmpty || line.startsWith('/')) return null;
   final lower = line.toLowerCase();
-  // Negation and questions first, for the whole sentence: "thôi đừng lặp nữa"
-  // and "mục tiêu của dự án này là gì" both open with words a command uses,
-  // and neither is asking for one.
+  // Questions and refusals first: both open with the words a command uses.
   if (_negated.hasMatch(lower) || _asking.hasMatch(lower)) return null;
   return _readStop(lower) ??
       _readLoop(line, lower) ??
@@ -36,8 +39,8 @@ SpokenCommand? readSpokenCommand(String text) {
       _readSchedule(line, lower);
 }
 
-/// The `/command argument` line [spoken] stands for — what the composer is
-/// filled with when the reading isn't certain enough to run.
+/// The `/command argument` line a reading stands for — what the composer is
+/// filled with when it isn't certain enough to run.
 String spokenCommandLine(ChatCommandCall call) {
   final argument = call.argument.trim();
   return argument.isEmpty
@@ -55,22 +58,21 @@ final RegExp _asking = RegExp(
   r'|^(what|how|why|when|which|does|is|are|can|could)\b',
 );
 
-/// Sentences that mention a command in order to refuse it.
+/// Sentences that open by refusing the thing they name.
+///
+/// Belt and braces: the opening-word rule already drops these, because a
+/// refusal puts its "no" first and the trigger second. Kept because this is the
+/// failure nobody would forgive — a "don't" that starts an unattended loop.
 final RegExp _negated = RegExp(
-  r'\b(đừng|dừng lại|không cần|khỏi cần|no need to|do not|don.t)\b\s*'
-  r'(\w+\s+){0,3}(lặp|loop|mục tiêu|goal|lịch|schedule|nhắc|remind)',
+  r'^\s*(thôi|đừng|dừng lại|không|khỏi|no|do not|don.t|never)\b',
 );
 
 /// Ending one of the two things that keep running by themselves.
 SpokenCommand? _readStop(String lower) {
-  if (RegExp(
-    r'(dừng|tắt|thôi|stop|end|cancel)\s+(cái\s+|the\s+)?(lặp|loop)',
-  ).hasMatch(lower)) {
+  if (_stopLoop.hasMatch(lower)) {
     return (call: (command: ChatCommand.loop, argument: 'stop'), certain: true);
   }
-  if (RegExp(
-    r'(xoá|xóa|bỏ|huỷ|hủy|clear|drop|cancel)\s+(cái\s+|the\s+)?(mục tiêu|goal)',
-  ).hasMatch(lower)) {
+  if (_clearGoal.hasMatch(lower)) {
     return (
       call: (command: ChatCommand.goal, argument: 'clear'),
       certain: true,
@@ -79,36 +81,44 @@ SpokenCommand? _readStop(String lower) {
   return null;
 }
 
+final RegExp _stopLoop = RegExp(
+  r'^(dừng|tắt|thôi|stop|end|cancel)\s+(cái\s+|the\s+)?(lặp|loop)',
+);
+
+final RegExp _clearGoal = RegExp(
+  r'^(xoá|xóa|bỏ|huỷ|hủy|clear|drop|cancel)\s+(cái\s+|the\s+)?(mục tiêu|goal)',
+);
+
 /// "lặp lại mỗi 30 phút kiểm tra deploy" / "run a loop every hour checking CI".
 ///
-/// The interval is what makes it certain: `/loop` without one is a self-paced
-/// loop, which is a much bigger thing to start on a guess than a 30-minute one
-/// the user said out loud.
+/// The gap is what makes it certain, and **where** the gap sits is what decides
+/// whether the rest can be trusted as the task. At the front or at the back it
+/// lifts out cleanly; buried mid-sentence, cutting it out leaves a garbled
+/// prompt ("the build every and tell me"), so that reading is offered for the
+/// user to fix rather than started behind their back.
 SpokenCommand? _readLoop(String line, String lower) {
-  final trigger = _firstMatch(lower, _loopTriggers);
+  final trigger = _opening(lower, _loopTriggers);
   if (trigger == null) return null;
-  final rest = _after(line, trigger.end);
-  final interval = _readInterval(rest);
-  final argument = interval == null
-      ? rest
-      : '${interval.text} ${_strip(rest, interval.match)}'.trim();
-  if (argument.trim().isEmpty) return null;
+  final rest = line.substring(trigger).trim();
+  if (rest.isEmpty) return null;
+  final gap = _liftInterval(rest);
+  if (gap == null) {
+    return (call: (command: ChatCommand.loop, argument: rest), certain: false);
+  }
+  final argument = gap.task.isEmpty ? gap.every : '${gap.every} ${gap.task}';
   return (
     call: (command: ChatCommand.loop, argument: argument),
-    certain: trigger.start == 0 && interval != null,
+    certain: gap.clean && gap.task.isNotEmpty,
   );
 }
 
 /// "đặt mục tiêu tests pass" / "keep going until the tests pass".
 SpokenCommand? _readGoal(String line, String lower) {
-  final trigger = _firstMatch(lower, _goalTriggers);
+  final trigger = _opening(lower, _goalTriggers);
   if (trigger == null) return null;
-  final argument = _after(line, trigger.end);
+  final argument = line.substring(trigger).trim();
   if (argument.isEmpty) return null;
-  return (
-    call: (command: ChatCommand.goal, argument: argument),
-    certain: trigger.start == 0,
-  );
+  return (call: (command: ChatCommand.goal, argument: argument), certain: true);
 }
 
 /// "nhắc tôi 8h sáng mai gọi khách" / "every morning at 8 summarise the inbox".
@@ -116,15 +126,12 @@ SpokenCommand? _readGoal(String line, String lower) {
 /// Certain only when a time was actually named: a schedule the app had to
 /// invent an hour for is a task firing at an hour nobody chose.
 SpokenCommand? _readSchedule(String line, String lower) {
-  final trigger = _firstMatch(lower, _scheduleTriggers);
-  if (trigger == null) return null;
-  // From the trigger, not after it: "every morning at 8" *is* the schedule, and
-  // the words that name it have to reach the schedule parser.
-  final argument = _after(line, trigger.start);
-  if (argument.isEmpty) return null;
+  if (_opening(lower, _scheduleTriggers) == null) return null;
+  // The whole line, trigger included: "every morning at 8" *is* the schedule,
+  // and the words that name it have to reach the schedule reader.
   return (
-    call: (command: ChatCommand.schedule, argument: argument),
-    certain: trigger.start == 0 && _hasClock.hasMatch(lower),
+    call: (command: ChatCommand.schedule, argument: line),
+    certain: _hasClock.hasMatch(lower),
   );
 }
 
@@ -132,16 +139,14 @@ SpokenCommand? _readSchedule(String line, String lower) {
 final List<RegExp> _loopTriggers = [
   RegExp(r'^(lặp lại|lặp|chạy lặp|làm lại)\s+'),
   RegExp(r'^(run|start) (a |the )?loop\s+'),
-  RegExp(r'\b(lặp lại|chạy lặp)\s+(mỗi|sau)\s+'),
-  RegExp(r'\b(loop (this|it)|keep checking|check again)\s+'),
+  RegExp(r'^(loop (this|it)|keep checking|check again)\s+'),
 ];
 
 /// Openings that mean "work until this is true".
 final List<RegExp> _goalTriggers = [
-  RegExp(r'^(đặt |)mục tiêu (là |:)?'),
+  RegExp(r'^(đặt )?mục tiêu (là |:)?'),
   RegExp(r'^set (a |the )?goal (to |of |:)?'),
-  RegExp(r'\bmục tiêu là\s+'),
-  RegExp(r'\b(keep going|keep working) until\s+'),
+  RegExp(r'^(keep going|keep working) until\s+'),
   RegExp(r'^(làm|chạy) (tới|đến) khi\s+'),
 ];
 
@@ -149,7 +154,7 @@ final List<RegExp> _goalTriggers = [
 final List<RegExp> _scheduleTriggers = [
   RegExp(r'^(nhắc tôi|nhắc anh|nhắc em|lên lịch|đặt lịch)\s+'),
   RegExp(r'^(schedule|remind me)\s+'),
-  RegExp(r'^(mỗi|hàng) (ngày|sáng|tối|chiều|tuần|thứ)\b'),
+  RegExp(r'^(mỗi|hàng) (ngày|sáng|tối|chiều|trưa|tuần|thứ)\b'),
   RegExp(
     r'^every (day|morning|evening|afternoon|week|monday|tuesday'
     r'|wednesday|thursday|friday|saturday|sunday|weekday)\b',
@@ -161,50 +166,56 @@ final RegExp _hasClock = RegExp(
   r'(\d{1,2}\s*(h|:|giờ|am|pm)|sáng|trưa|chiều|tối|morning|evening|noon)',
 );
 
-/// An interval as `/loop` itself spells one, plus the words people say for it.
-({String text, Match match})? _readInterval(String rest) {
-  final lower = rest.toLowerCase();
-  final spelled = RegExp(
-    r'\b(\d+)\s*(s|m|h|giây|phút|giờ|min|mins|minutes'
-    r'|hour|hours|seconds)\b',
-  ).firstMatch(lower);
-  if (spelled != null) {
-    final unit = switch (spelled.group(2)!) {
-      's' || 'giây' || 'seconds' => 's',
-      'h' || 'giờ' || 'hour' || 'hours' => 'h',
-      _ => 'm',
-    };
-    return (text: '${spelled.group(1)}$unit', match: spelled);
-  }
-  final bare = RegExp(r'\b(mỗi giờ|every hour|hàng giờ)\b').firstMatch(lower);
-  return bare == null ? null : (text: '1h', match: bare);
-}
-
-/// The first trigger that matches, or null when none does.
-Match? _firstMatch(String lower, List<RegExp> triggers) {
+/// Where the opening ask ends, or null when [lower] doesn't open with one.
+int? _opening(String lower, List<RegExp> triggers) {
   for (final trigger in triggers) {
-    final match = trigger.firstMatch(lower);
-    if (match != null) return match;
+    final match = trigger.matchAsPrefix(lower);
+    if (match != null) return match.end;
   }
   return null;
 }
 
-/// What [line] says from [start] on, tidied of the joining words a sentence
-/// leaves behind ("mỗi", "every") when the interval has been lifted out.
-String _after(String line, int start) =>
-    line.substring(start.clamp(0, line.length)).trim();
-
-/// [rest] without the interval words, so "mỗi 30 phút kiểm tra deploy" becomes
-/// the task alone — the argument `/loop` wants is `30m <task>`, not the
-/// sentence with its interval said twice.
-String _strip(String rest, Match interval) {
-  final before = rest.substring(0, interval.start);
-  final after = rest.substring(interval.end);
-  return '$before $after'
-      .replaceAll(
-        RegExp(r'^\s*(mỗi|sau|every|each)\s*', caseSensitive: false),
-        '',
-      )
+/// The gap [rest] names and the task left when it is taken out.
+///
+/// [clean] is false when the gap was buried in the middle of the sentence,
+/// where lifting it out cannot leave readable words behind.
+({String every, String task, bool clean})? _liftInterval(String rest) {
+  for (final anchor in [_intervalAtFront, _intervalAtBack]) {
+    final match = anchor.firstMatch(rest.toLowerCase());
+    if (match == null) continue;
+    final task = (rest.substring(0, match.start) + rest.substring(match.end))
+        .trim();
+    return (every: _spell(match), task: task, clean: true);
+  }
+  final buried = _interval.firstMatch(rest.toLowerCase());
+  if (buried == null) return null;
+  final task = (rest.substring(0, buried.start) + rest.substring(buried.end))
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
+  return (every: _spell(buried), task: task, clean: false);
 }
+
+/// `30m` / `2h` / `45s` — the spelling `/loop` itself takes, from the words
+/// people say for it.
+String _spell(Match match) {
+  final count = match.group(1) ?? '1';
+  final unit = switch (match.group(2) ?? match.group(3) ?? 'giờ') {
+    's' || 'giây' || 'second' || 'seconds' => 's',
+    'h' || 'giờ' || 'hour' || 'hours' => 'h',
+    _ => 'm',
+  };
+  return '$count$unit';
+}
+
+/// `mỗi 30 phút …` — the gap where it lifts out without breaking the sentence.
+final RegExp _intervalAtFront = RegExp('^${_intervalBody}s*');
+final RegExp _intervalAtBack = RegExp('\\s*$_intervalBody\\s*\$');
+final RegExp _interval = RegExp(_intervalBody);
+
+/// `mỗi 30 phút`, `every 2 hours`, `mỗi giờ` — a gap with or without a number.
+const String _intervalBody =
+    r'\b(?:mỗi|sau|every|each)?\s*'
+    // A bare `s`/`m`/`h` only counts behind a number: without that, the "s" of
+    // "sáng" is a unit and "mỗi sáng 8h" reads as an interval.
+    r'(?:(\d+)\s*(giây|phút|giờ|seconds?|minutes?|mins?|hours?|[smh])'
+    r'|(giây|phút|giờ|second|minute|hour))\b';

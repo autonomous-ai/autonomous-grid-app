@@ -564,19 +564,17 @@ class ChatSessionsController extends _ChatSessions
   /// is the assistant they were talking to when they asked, for the same
   /// reason. The Scheduled screen is where either can be changed afterwards.
   Future<CommandOutcome?> _scheduleTask(String argument, String model) async {
-    final chat = state.active;
-    if (chat == null) {
-      return (
-        message:
-            'Open a chat first — a task answers into the one it was set '
-            'up in.',
-        failed: true,
-      );
-    }
+    // What it says has to be readable *before* a chat is started for it, or a
+    // typo leaves an empty conversation in the sidebar — the same order `/loop`
+    // checks in, and for the same reason.
     final request = parseScheduleArgument(argument);
     if (request == null) {
       return (message: kScheduleUsage, failed: true);
     }
+    // On a blank composer this starts the chat it will answer into, rather than
+    // refusing: "/schedule" on launch is an ordinary thing to do, and the chat
+    // is the destination, not a precondition.
+    final chat = _startedChat(model);
     final runner = taskRunnerFor(ref.read(activeChatAgentProvider));
     final result = await ref
         .read(scheduledJobsProvider.notifier)

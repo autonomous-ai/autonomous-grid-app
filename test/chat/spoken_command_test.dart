@@ -135,4 +135,38 @@ void main() {
       },
     );
   });
+
+  group('the readings a review caught before they shipped', () {
+    test('a gap buried mid-sentence is offered, never run — cutting it out '
+        'leaves words nobody wrote', () {
+      final spoken = readSpokenCommand(
+        'keep checking the build every 10 minutes and tell me',
+      );
+
+      expect(spoken?.call.command, ChatCommand.loop);
+      expect(
+        spoken?.certain,
+        isFalse,
+        reason: 'the task around it cannot be trusted',
+      );
+    });
+
+    test('a duration inside the task is not the gap it repeats on', () {
+      final spoken = readSpokenCommand(
+        'loop this check the last 24 hours of logs',
+      );
+
+      expect(spoken?.certain, isFalse);
+    });
+
+    test('a plan that mentions a goal is a message, not a goal — this is the '
+        'one that would cost the user the sentence they wrote', () {
+      expect(
+        readSpokenCommand("I'll keep working until the tests pass, then push"),
+        isNull,
+      );
+      expect(readSpokenCommand('do not keep checking the deploy'), isNull);
+      expect(readSpokenCommand('đừng để lặp lại mỗi 30 phút nữa'), isNull);
+    });
+  });
 }

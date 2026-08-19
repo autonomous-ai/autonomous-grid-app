@@ -371,11 +371,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final spoken = readSpokenCommand(message);
     if (spoken == null) return false;
     if (spoken.certain) {
-      _clearDraft();
-      _message.clear();
+      // Straight to [_runCommand], which is what the typed path does: it empties
+      // the composer, and it *names* the attachments a command leaves behind
+      // instead of dropping them without a word.
       unawaited(_runCommand(spoken.call));
       return true;
     }
+    // Their own words survive it: the reading only fires on a sentence that
+    // *opens* with the ask, so what is replaced is "lặp lại" — the words `/loop`
+    // stands for — and everything they actually said rides on as the argument.
     final line = spokenCommandLine(spoken.call);
     _message.text = line;
     _message.selection = TextSelection.collapsed(offset: line.length);

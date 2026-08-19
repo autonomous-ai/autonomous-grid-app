@@ -166,10 +166,7 @@ void main() {
 
       final decoded = PanelFrameDecoder().feed(transport.sent.single).single;
       expect(decoded.type, PanelFrameType.json);
-      expect(jsonDecode(decoded.text), {
-        't': 'turn.started',
-        'chatId': 'c-1',
-      });
+      expect(jsonDecode(decoded.text), {'t': 'turn.started', 'chatId': 'c-1'});
     });
 
     test('a project tile carries only what a tile draws', () {

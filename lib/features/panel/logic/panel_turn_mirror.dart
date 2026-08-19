@@ -286,7 +286,8 @@ class PanelTurnMirror {
   /// source for both the stamp and the comparison — reading `DateTime.now()`
   /// in one and taking the other from the caller is two clocks, and they
   /// disagree the moment anybody passes a fabricated time.
-  PanelTurnMirror({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  PanelTurnMirror({DateTime Function()? clock})
+    : _clock = clock ?? DateTime.now;
 
   final DateTime Function() _clock;
 
@@ -451,8 +452,7 @@ class PanelTurnMirror {
 
   String _stampAlive(String chatId, DateTime now) {
     final payload =
-        _sent[chatId] ??
-        panelTurnPartsMessage(chatId: chatId, parts: const []);
+        _sent[chatId] ?? panelTurnPartsMessage(chatId: chatId, parts: const []);
     _sentAt[chatId] = now;
     return payload;
   }

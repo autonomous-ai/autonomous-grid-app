@@ -51,7 +51,6 @@ class SyncWorkspace {
 
   Directory get syncedMediaDir => Directory('${outputsDir.path}/synced');
 
-
   File get projectsFile => File('${_app.path}/projects.json');
 
   File get markerFile => File('${_app.path}/sync_state.json');
@@ -75,7 +74,6 @@ class SyncWorkspace {
     }
     return out;
   }
-
 
   /// The project list, or an empty list when the file isn't there yet.
   Future<List<Map<String, Object?>>> readProjects() =>
@@ -160,7 +158,6 @@ class SyncWorkspace {
       await file.writeAsString(_pretty(entry.value), flush: true);
     }
   }
-
 
   /// Writes the merged project list.
   Future<void> writeProjects(List<Map<String, Object?>> projects) =>
