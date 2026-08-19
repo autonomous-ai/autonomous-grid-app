@@ -9,6 +9,7 @@ import 'grid_chart_skill.dart';
 import 'grid_host_skill.dart';
 import 'grid_loop_skill.dart';
 import 'grid_research_skill.dart';
+import 'grid_schedule_skill.dart';
 import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
 import 'adapters/hermes_shared_skills.dart';
@@ -94,6 +95,15 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     name: kGridLoopSkillName,
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridLoopSkillFiles,
+  ),
+  // Every agent reaches for its own timer when asked to repeat something, and
+  // every one of those dies with the turn that created it — a job reported as
+  // scheduled for a week that is gone in seconds. This is where the machine's
+  // real scheduler is, so the answer stops depending on which agent replied.
+  BuiltinGridSkill(
+    name: kGridScheduleSkillName,
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    build: gridScheduleSkillFiles,
   ),
 ];
 

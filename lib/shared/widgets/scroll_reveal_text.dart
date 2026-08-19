@@ -7,16 +7,21 @@ import 'package:flutter/material.dart';
 /// a wait.
 const double _speed = 46;
 
-/// The soft edge on either side while the line is mid-travel — the tail must
-/// not end in a hard vertical cut, and the head needs the same treatment once
-/// it starts sliding out of view.
-const double _fadeWidth = 14;
+/// The soft edge a line ends on rather than a hard vertical cut: the tail of a
+/// still line that ran out of room, and — once it starts moving — the head
+/// sliding out of view behind it.
+///
+/// One width for both, because a sidebar row swaps its resting label for a
+/// travelling one the moment the pointer lands. Two values would make the tail
+/// visibly change length under the pointer, which reads as the row twitching.
+const double kEdgeFadeWidth = 20;
 
 /// One line of text that reveals its own tail: given less room than it needs,
 /// it slides left until the end of the string is in view, then stops there.
 ///
 /// Built for the surfaces whose whole job is showing what a truncated row hid —
-/// a chat's hover preview exists because the rail's own label ends in "…".
+/// a chat's hover preview exists because the rail's own label dissolves before
+/// the title is over.
 /// Text that already fits is drawn plainly and never moves: motion here means
 /// "there is more to read", so a line that animated without hiding anything
 /// would be saying something untrue.
@@ -167,14 +172,14 @@ class _ScrollRevealTextState extends State<ScrollRevealText>
 /// slice of the travel, so at rest the line is a plain hard-edged string again.
 Shader _edgeFade(Rect bounds, double t) {
   final w = bounds.width;
-  if (w <= _fadeWidth * 2) {
+  if (w <= kEdgeFadeWidth * 2) {
     return const LinearGradient(
       colors: [Colors.white, Colors.white],
     ).createShader(bounds);
   }
   final head = (t * 8).clamp(0.0, 1.0);
   final tail = ((1 - t) * 8).clamp(0.0, 1.0);
-  final edge = _fadeWidth / w;
+  final edge = kEdgeFadeWidth / w;
   return LinearGradient(
     stops: [0, edge, 1 - edge, 1],
     colors: [
@@ -183,5 +188,32 @@ Shader _edgeFade(Rect bounds, double t) {
       Colors.white,
       Colors.white.withValues(alpha: 1 - tail),
     ],
+  ).createShader(bounds);
+}
+
+/// The mask over a line that is standing still: opaque until the last
+/// [kEdgeFadeWidth] of its box, then out to nothing at the edge.
+///
+/// What a rail row wears instead of an ellipsis. "…" is a glyph that says
+/// *there is more* — worth saying once, but in a list where nearly every title
+/// is too long for the rail it becomes three dots at the end of every line and
+/// stops being read at all. A line that dissolves says the same thing without
+/// spending a character on it, and hands the tail back the ~12px the ellipsis
+/// was standing in.
+///
+/// Only glyphs reaching into that last slice are touched, so a label that fits
+/// is drawn plainly: the fade is never a claim that something was cut off.
+Shader tailFade(Rect bounds) {
+  final w = bounds.width;
+  // A box narrower than the fade itself has nothing to ramp across, and
+  // dissolving the whole label would be worse than a hard edge.
+  if (w <= kEdgeFadeWidth) {
+    return const LinearGradient(
+      colors: [Colors.white, Colors.white],
+    ).createShader(bounds);
+  }
+  return LinearGradient(
+    stops: [0, 1 - kEdgeFadeWidth / w, 1],
+    colors: [Colors.white, Colors.white, Colors.white.withValues(alpha: 0)],
   ).createShader(bounds);
 }

@@ -89,4 +89,19 @@ A `grid-loop` fence holding one JSON object. Three things it can say:
 - **Never stop because the task was hard.** A failed check is a reason to look
   again, not a reason to end. Stop only when the thing being watched has
   actually finished.
+
+## The block cannot start a loop
+
+It is read in one place only: at the end of a beat of a loop that is **already
+running**. In any other reply it is text nobody reads — the app does not scan
+ordinary answers for it. So when you are asked to set a repeating task up:
+
+- **Never write the block to create one, and never say you have.** "I've set a
+  `grid-loop` to re-run every hour" is a promise nothing behind it keeps, and
+  the user finds out in the morning, from a task that ran once.
+- **A loop for this chat** is the user typing `/loop <what to repeat>` in the
+  composer — say that, in those words. It runs while Grid is open.
+- **Work that has to survive the app closing** — overnight, tomorrow morning,
+  every 30 minutes all week — is not a loop at all. Schedule it with the
+  `grid-schedule` skill, which writes to a daemon that keeps running.
 ''';

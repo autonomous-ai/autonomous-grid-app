@@ -72,9 +72,27 @@ class LearnedModelContext extends Notifier<Map<String, int>> {
   /// The window [model] is now known to have. Ignored when [tokens] isn't a
   /// positive count, and when it repeats what's already known — the same wall
   /// gets hit more than once, and rewriting the file each time buys nothing.
+  /// Records [tokens] for [model], **keeping the smallest figure ever seen**.
+  ///
+  /// One model id can be served by several machines with different windows —
+  /// `modelContextWindowProvider` already takes the smaller of the advertised
+  /// and the learned figure for exactly that reason, and this closes the same
+  /// gap between two *learned* ones. Overwriting was safe while a refusal was
+  /// the only teacher (the node that refused is the node the turn was on), and
+  /// stopped being safe once Hermes began reporting the window of whichever node
+  /// it happens to be running (see `HermesAcpContextUsed`): a roomier node would
+  /// otherwise raise the figure a tighter one has to live with, which is the
+  /// over-estimate failure — the turn dies at the engine and takes the session
+  /// id with it.
+  ///
+  /// The cost is that a node genuinely upgraded to a larger window stays
+  /// pessimistic here. That direction only summarizes earlier than it had to,
+  /// and `~/.grid/app/model_context.json` can be deleted to start over.
   void learn(String model, int tokens) {
     final key = normalizeModelKey(model);
-    if (key.isEmpty || tokens <= 0 || state[key] == tokens) return;
+    if (key.isEmpty || tokens <= 0) return;
+    final seen = state[key];
+    if (seen != null && seen <= tokens) return;
     final next = {...state, key: tokens};
     state = next;
     ref.read(modelContextStoreProvider).save(next);

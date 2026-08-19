@@ -8,7 +8,7 @@ import '../logic/commands/chat_command.dart';
 import '../logic/commands/chat_goal.dart';
 import '../logic/commands/chat_loop.dart';
 
-/// Everything working in the background right now, on one dim line under the
+/// Everything working in the background right now, on one dim line above the
 /// composer: a goal being worked toward, a prompt repeating on a timer, a
 /// server the assistant left running.
 ///

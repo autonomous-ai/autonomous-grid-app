@@ -26,6 +26,7 @@ import '../agent_server_error.dart';
 import '../agent_permission_decision.dart';
 import '../agent_permissions.dart';
 import '../agent_providers.dart';
+import '../model_context_window.dart';
 import 'codex_tool.dart';
 
 /// The Codex seam, or null when Codex is absent.
@@ -133,6 +134,10 @@ class CodexChatSender implements ChatSender {
         ? AgentApprovalMode.readOnly
         : (chosen == AgentApprovalMode.plan ? AgentApprovalMode.ask : chosen);
 
+    // Only a figure something actually reported — never the assumption. See
+    // [knownModelContextWindowProvider] for why this lane wants the nullable one.
+    final contextWindow = _ref.read(knownModelContextWindowProvider(model));
+
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
     final turn = _slots.planTurn(
       key: '${network.networkId}|$model|$conversationId|$root',
@@ -153,7 +158,20 @@ class CodexChatSender implements ChatSender {
       // The grid rides on this run's own command line, and its key in this
       // process's environment — nothing on disk is touched, so the user's
       // terminal `codex` keeps answering with whatever *they* pointed it at.
-      config: codexGridOverrides(base: network.relayBaseUrl, model: model),
+      // Codex flies blind on a grid model otherwise: its bundled catalog only
+      // carries the `gpt-5.*` slugs, so a grid id has no window in it at all and
+      // it summarizes on a default it picked for a model it isn't talking to —
+      // the same failure the Claude lane was already handling. Only sent when a
+      // source has actually named a figure; see
+      // [knownModelContextWindowProvider].
+      config: codexGridOverrides(
+        base: network.relayBaseUrl,
+        model: model,
+        contextWindow: contextWindow,
+        compactAt: contextWindow == null
+            ? null
+            : agentContextCeiling(contextWindow),
+      ),
       approval: mode,
       environment: {kCodexAppApiKeyEnv: network.relayApiKey},
       planFirst: planFirst,

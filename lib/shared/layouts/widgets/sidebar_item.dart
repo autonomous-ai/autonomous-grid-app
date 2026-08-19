@@ -75,7 +75,7 @@ class SidebarItem extends StatefulWidget {
   final String? tooltip;
 
   /// Let a label too long for the rail slide left under the pointer until its
-  /// end is in view, instead of resting behind an ellipsis.
+  /// end is in view, instead of resting at the fade its box cuts it off in.
   ///
   /// Opt-in, because it only pays where the cut-off part is what you're hunting
   /// for: two chats can be six words of the same sentence apart. A nav entry
@@ -212,6 +212,16 @@ class _SidebarRow extends StatelessWidget {
       select,
     )!;
 
+    // What the trailing action costs the label. A hover action is only *there*
+    // while the pointer is on the row, so the room it needs is taken then and
+    // given back on the way out: at rest the title runs the full width of the
+    // row — Codex's does — instead of stopping short of a button that isn't
+    // drawn. A trailing that never hides (a chevron, a live cue) keeps its room
+    // permanently; it has nothing to give back.
+    final reserved = item.trailing == null
+        ? 0.0
+        : (item.trailingAlwaysVisible ? 1.0 : hover) * item.trailingWidth;
+
     return Stack(
       children: [
         // The 1px breathing room is outside the fill, so neighbouring rows'
@@ -243,42 +253,68 @@ class _SidebarRow extends StatelessWidget {
                       5,
                       0,
                     ),
-                    child: Row(
+                    // The action sits *over* the row's right end rather than
+                    // in the line beside it. A slot held open in the Row would
+                    // be dead space on all but the one row under the pointer,
+                    // and it is the widest thing in the rail: 50px of nothing
+                    // at the end of every chat title, which is exactly the
+                    // room those titles were short of.
+                    child: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        if (item.icon != null) ...[
-                          _RowIcon(item: item, select: select, hover: hover),
-                          const SizedBox(width: 10),
-                        ],
-                        Expanded(
-                          child: _RowLabel(
-                            item: item,
-                            ink: ink,
-                            strong: strong,
-                            hovered: hovered,
-                          ),
+                        Row(
+                          children: [
+                            if (item.icon != null) ...[
+                              _RowIcon(
+                                item: item,
+                                select: select,
+                                hover: hover,
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                            Expanded(
+                              child: _RowLabel(
+                                item: item,
+                                ink: ink,
+                                strong: strong,
+                                hovered: hovered,
+                              ),
+                            ),
+                            // An unread mark sits just left of the action,
+                            // always shown — a hover that reveals the trailing
+                            // action must not hide the fact there's a result
+                            // waiting.
+                            if (item.badge != null) ...[
+                              item.badge!,
+                              const SizedBox(width: 8),
+                            ],
+                            // The room the action will need, opened as it
+                            // arrives. It is the label that gives it up, on the
+                            // same curve the action fades in on, so the title
+                            // shortens under the button rather than running
+                            // beneath it.
+                            SizedBox(width: reserved),
+                          ],
                         ),
-                        // An unread mark sits just left of the action, always
-                        // shown — a hover that reveals the trailing action must
-                        // not hide the fact there's a result waiting.
-                        if (item.badge != null) ...[
-                          item.badge!,
-                          const SizedBox(width: 8),
-                        ],
-                        // Keep the action mounted so hovering never changes text
-                        // metrics or row height. A persistent trailing (a live
-                        // status) shows without hover; a hover action stays
-                        // hidden until the pointer lands.
-                        SizedBox(
-                          width: item.trailingWidth,
-                          height: 24,
-                          child: IgnorePointer(
-                            ignoring: !hovered && !item.trailingAlwaysVisible,
-                            child: Opacity(
-                              opacity: item.trailingAlwaysVisible ? 1 : hover,
-                              child: item.trailing,
+                        // Kept mounted whether or not it's showing, so hovering
+                        // never changes the row's height. A persistent trailing
+                        // (a live status) shows without hover; a hover action
+                        // stays hidden until the pointer lands.
+                        if (item.trailing != null)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: IgnorePointer(
+                              ignoring: !hovered && !item.trailingAlwaysVisible,
+                              child: Opacity(
+                                opacity: item.trailingAlwaysVisible ? 1 : hover,
+                                child: SizedBox(
+                                  width: item.trailingWidth,
+                                  height: 24,
+                                  child: item.trailing,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -335,12 +371,24 @@ class _RowLabel extends StatelessWidget {
     );
 
     if (!item.revealLabelOnHover || !hovered) {
-      return Text(
-        item.label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        strutStyle: _strut,
-        style: style,
+      // The line runs to the end of its box and dissolves there rather than
+      // stopping at an ellipsis — see [tailFade] for why the rail spends no
+      // character on saying "there is more".
+      //
+      // `clip` rather than Flutter's own `TextOverflow.fade`: that one ramps
+      // over the width of the "…" it stands in for (~12px at this size), and
+      // the mask is what lets the rail pick that length itself.
+      return ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: tailFade,
+        child: Text(
+          item.label,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.clip,
+          strutStyle: _strut,
+          style: style,
+        ),
       );
     }
     return ScrollRevealText(

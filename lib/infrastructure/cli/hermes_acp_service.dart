@@ -60,6 +60,29 @@ class HermesAcpPlan extends HermesAcpEvent {
   final List<AgentPlanEntry> entries;
 }
 
+/// What the model Hermes is running actually holds, and how full it is.
+///
+/// ACP's own `usage_update`: `size` is the context window, `used` the current
+/// request pressure. Hermes takes `size` from its context compressor, which
+/// probes the provider and caches the answer
+/// (`~/.hermes/context_length_cache.yaml`) — so this is a **measured** figure
+/// from the machine actually serving the model, not an advertisement.
+///
+/// It matters because the app otherwise has only what the relay advertises, and
+/// that is `null` on some models — measured 2026-08-19, three of nine on one
+/// grid, every one of which really holds 128000 rather than the 65536 the app
+/// assumes. Hermes was already sending the right number and nobody was reading
+/// it.
+class HermesAcpContextUsed extends HermesAcpEvent {
+  const HermesAcpContextUsed({required this.size, required this.used});
+
+  /// The model's context window in tokens.
+  final int size;
+
+  /// How much of it this request is expected to fill.
+  final int used;
+}
+
 /// The turn is over, with ACP's own reason for stopping. The chat needs the
 /// difference between an agent that finished and one that was cut off: a to-do
 /// step left unticked on a turn the agent ended itself is its own sloppy
@@ -637,6 +660,16 @@ class _HermesAcpSession implements HermesAcpSession {
             _toolContentText(raw['content']),
           );
           if (sources.isNotEmpty) events.add(HermesAcpSources(sources));
+        }
+      case 'usage_update':
+        // Zed drives its context dial from this; the app uses it to learn what
+        // the model really holds. Both numbers must be present and positive —
+        // Hermes returns no update at all when its compressor has no figure, so
+        // a zero here would be a shape change rather than an empty reading.
+        final size = raw['size'];
+        final used = raw['used'];
+        if (size is int && size > 0 && used is int && used >= 0) {
+          events.add(HermesAcpContextUsed(size: size, used: used));
         }
       case 'plan':
         // The agent's own to-do list (its `todo` tool) — the whole list each

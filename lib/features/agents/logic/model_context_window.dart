@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/state/model_context_store.dart';
 import '../../network/logic/grid_overview_provider.dart';
 
@@ -27,16 +28,40 @@ bool isContextOverflow(String raw) {
       lower.contains('maximum context length');
 }
 
+/// Whether [raw] is Claude Code cutting a reply off at the cap the app set.
+///
+/// A different failure from [isContextOverflow], and reading it as one would be
+/// wrong twice over: nothing overflowed at the engine, so there is no window to
+/// learn, and the session is intact rather than needing to be dropped. What ran
+/// out is the room [agentReplyReserve] left for the reply.
+///
+/// Measured wording, 2026-08-19: `API Error: Claude's response exceeded the 8192
+/// output token maximum.` Matched on the tail alone, because the number in the
+/// middle is whatever this app asked for.
+bool isReplyTruncated(String raw) =>
+    raw.toLowerCase().contains('output token maximum');
+
 /// The context window an engine reported when it refused a turn, or null when
 /// the refusal named no number.
 ///
 /// The most reliable of the three sources, because it is the machine that is
-/// actually serving saying what it actually has. The relay now carries the
-/// figure too, but sparsely: measured 2026-08-06 on the office grid,
-/// `/grid/overview` gives `context_length: 128000` for one model of three and
-/// `null` for the rest, and `/v1/models` has grown a `context_window` field that
-/// is null on every model so far (`TODO(BE)`). What neither source covers falls
-/// back on [kAssumedContextWindow].
+/// actually serving saying what it actually has.
+///
+/// The relay carries the figure too, and by now carries it widely: remeasured
+/// 2026-08-19 on the office grid, `/v1/models` names a `context_window` for five
+/// of its six models and `/grid/overview` a `context_length` for five of its
+/// seven rows — where 2026-08-06 had one of three and a `context_window` that
+/// was null on everything. The `TODO(BE)` that stood here is done.
+///
+/// Two things that catalog is not, both measured the same day. It is not
+/// **stable**: two reads minutes apart returned a different set of models and a
+/// different window for the same id. And it is not **singular**: `/grid/overview`
+/// lists `gemma-4-31B-it` twice, one row naming 204800 and the other naming
+/// nothing, because the rows are per serving node and the router decides which
+/// one answers. Both are why [knownModelContextWindowProvider] takes the
+/// smallest figure rather than the newest, and why a figure read once is not a
+/// figure that stays true. What no source covers falls back on
+/// [kAssumedContextWindow].
 int? contextWindowFromError(String raw) {
   for (final pattern in _windowPatterns) {
     final match = pattern.firstMatch(raw);
@@ -46,7 +71,7 @@ int? contextWindowFromError(String raw) {
   return null;
 }
 
-/// How many tokens to hold back for the model's own reply.
+/// The reply a window too tight for a proportional share is still sized around.
 ///
 /// The engine counts the reply against the same window as the prompt, so a turn
 /// is refused when `input + output` crosses the line — not when the input alone
@@ -54,18 +79,23 @@ int? contextWindowFromError(String raw) {
 /// (its default for a Claude-class model), and on a grid model that number is
 /// the whole bug: a session at 230145 input tokens on a 262144 window is *under*
 /// the window on its own, and only the `+32000` reserved for the reply pushed
-/// the total to 262145 and drew the 400 (autonomous-grid-app#47). Handed to
-/// Claude Code as `CLAUDE_CODE_MAX_OUTPUT_TOKENS` (see `claudeCodeEnv`), this
-/// caps that reservation to a figure the window can actually spare.
+/// the total to 262145 and drew the 400 (autonomous-grid-app#47).
 ///
-/// 8192 rather than more because it has to fit inside the room
-/// [agentContextCeiling] leaves above the ceiling on *every* window the app runs
-/// against, down to [kAssumedContextWindow] (65536): a reserve larger than that
-/// room would let a freshly compacted session overflow on its very next reply —
-/// the failure this is fixing, not a new one to introduce. 8192 tokens is a long
-/// reply on its own, and an agentic turn that needs more continues across
-/// requests rather than losing the work.
+/// 8192 is what the *smallest* window can spare, not what every window should
+/// give: it is what [agentReplyReserve] arrives at on [kAssumedContextWindow]
+/// (65536), and [agentContextCeiling] holds that much room twice over — once for
+/// the reply, once for a turn that grows past the ceiling — on windows where a
+/// proportional share would not cover both. What a model with a roomier window
+/// actually gets is [agentReplyReserve], not this.
 const int kAgentReplyReserveTokens = 8192;
+
+/// The most the app will ask an engine to produce in one reply.
+///
+/// Claude Code's own default, so a grid model is never asked for more than an
+/// Anthropic one would be. The relay refuses well above this anyway — measured
+/// 2026-08-19 on the office grid, `max_tokens: 65536` draws `max_tokens exceeds
+/// the relay cap of 64000` — but nothing here comes near it.
+const int kMaxAgentReplyTokens = 32000;
 
 /// The share of an engine's window an agent may fill before it has to summarize.
 ///
@@ -97,6 +127,32 @@ int agentContextCeiling(int engineWindow) {
   return ceiling > floor ? ceiling : floor;
 }
 
+/// How much of [engineWindow] to leave for the model's own reply — what Claude
+/// Code is handed as `CLAUDE_CODE_MAX_OUTPUT_TOKENS` (see `claudeCodeEnv`).
+///
+/// Half the room [agentContextCeiling] leaves above the ceiling. The other half
+/// absorbs a turn that grows past the ceiling before the next between-turn check
+/// can catch it, so `ceiling + reply + overshoot` lands on the window exactly —
+/// the #47 guarantee, now holding on every window by construction instead of by
+/// a constant picked to survive the smallest one.
+///
+/// A constant is what broke it. [kAgentReplyReserveTokens] is sized for
+/// [kAssumedContextWindow] and was applied to every model, so
+/// `DeepSeek-V4-Flash-0731` — which advertises 256000 and leaves 51200 above its
+/// ceiling — was still capped at 8192. A reasoning model spends output tokens on
+/// thought before it writes a word (measured: 30-79 of them to answer `OK` to a
+/// nine-token prompt), and a turn ran 6m50s before dying on `Claude's response
+/// exceeded the 8192 output token maximum`, losing the work with 43008 tokens of
+/// its own headroom unused.
+///
+/// Raising it also moves Claude Code's own compaction earlier, but only so far:
+/// that threshold is `window − min(maxOutputTokens, 20000) − 13000`, so every
+/// value at or above 20000 shifts it by the same 20000 and no more.
+int agentReplyReserve(int engineWindow) {
+  final half = (engineWindow - agentContextCeiling(engineWindow)) ~/ 2;
+  return half < kMaxAgentReplyTokens ? half : kMaxAgentReplyTokens;
+}
+
 /// Whether a turn resuming a session that has already filled [usedTokens] of
 /// [engineWindow] must summarize before it sends.
 ///
@@ -104,11 +160,18 @@ int agentContextCeiling(int engineWindow) {
 /// number and not two, so the app's own check can't drift from what it told the
 /// agent to do.
 ///
-/// Asking at all is the point. Claude Code is given that ceiling as
+/// Asking at all is the point, and the reason is now measured rather than
+/// suspected. Claude Code is given that ceiling as
 /// `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and did not act on it: measured on a grid
 /// model advertising 200000 (ceiling 160000), a session was refused by the
-/// engine at 230145 input tokens. Whatever the reason on its side, a ceiling
-/// that only one party enforces is not enforced.
+/// engine at 230145 input tokens.
+///
+/// The mechanism, read out of the 2.1.234 binary on 2026-08-19: the variable is
+/// floored at 100000 and then compaction fires at
+/// `window − min(maxOutputTokens, 20000) − 13000`, so a ceiling below that floor
+/// never reaches the runtime at all (see [kClaudeCompactWindowFloor]). On every
+/// window the app has to assume, **this check has been the only thing enforcing
+/// the ceiling.** Removing it would leave nothing.
 ///
 /// Zero means no turn has reported a figure yet — the session is as empty as it
 /// will ever be, so there is nothing to make room for.
@@ -144,17 +207,58 @@ const int kAssumedContextWindow = 65536;
 /// model id can be served by several machines (the office qwen is served by two)
 /// and only the smallest window is safe for all of them. The assumption is not
 /// in that comparison: it is what's left when there is nothing to compare.
-final modelContextWindowProvider = Provider.autoDispose.family<int, String>((
+final modelContextWindowProvider = Provider.autoDispose.family<int, String>(
+  (ref, model) =>
+      ref.watch(knownModelContextWindowProvider(model)) ??
+      kAssumedContextWindow,
+);
+
+/// The window for [model] **only when something real has named it** — null where
+/// [modelContextWindowProvider] would substitute [kAssumedContextWindow].
+///
+/// The same two sources, smaller wins, minus the assumption. Separate because
+/// the assumption is safe for one caller and wrong for the others, and an `int`
+/// cannot tell them apart: once the guess is folded in, every reader downstream
+/// believes a number was reported.
+///
+/// Claude Code is the caller the guess suits — its own fallback is Anthropic's
+/// 200k-and-up, so guessing low there is strictly safer than staying quiet (see
+/// [kAssumedContextWindow]). Any caller *configuring another agent* wants this
+/// one instead: telling Codex a grid model holds 65536 when it holds 262144
+/// makes it summarize four times too often, which is the thrash direction — and
+/// on a model that really is small, saying nothing leaves the agent on its own
+/// default rather than on a figure this app invented.
+final knownModelContextWindowProvider = Provider.autoDispose.family<int?, String>((
   ref,
   model,
 ) {
   final key = normalizeModelKey(model);
+  // The overview's **raw** rows, not `gridModelsProvider`. That list is
+  // deduplicated for tiles by `distinctOverviewModels`, which keeps one row
+  // per id by how much metadata it carries — pricing, then a context length,
+  // then a vision flag. Read through it, "the smaller window wins" has
+  // nothing to win over: the several machines serving one id have already
+  // been collapsed into whichever row looked richest, and the reduce below
+  // folds a single element.
+  //
+  // Worse than useless — actively unsafe in the direction that costs a
+  // session. Of two nodes serving one id, the one holding **less** context
+  // is the one this has to believe, and a row is dropped for carrying less
+  // metadata, not less window. A node advertising 262144 with no pricing
+  // beats one advertising 128000 with pricing, and the turn that follows is
+  // sized for a window the answering machine does not have. `modelCapabilities`
+  // avoids the same trap by folding the raw rows, and says so at its head.
+  //
+  // Live on the office grid 2026-08-19: `gemma-4-31B-it` arrives as two rows,
+  // one naming 204800 and one naming nothing.
+  final rows =
+      ref.watch(gridOverviewSnapshot)?.models ?? const <OverviewModel>[];
   final advertised = [
-    for (final served in ref.watch(gridModelsProvider))
+    for (final served in rows)
       if (normalizeModelKey(served.id) == key)
         if (served.contextLength case final int tokens when tokens > 0) tokens,
   ];
   final known = [...advertised, ?ref.watch(learnedModelContextProvider)[key]];
-  if (known.isEmpty) return kAssumedContextWindow;
+  if (known.isEmpty) return null;
   return known.reduce((a, b) => a < b ? a : b);
 });

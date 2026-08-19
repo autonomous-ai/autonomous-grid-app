@@ -88,14 +88,21 @@ device/*/sdkconfig.defaults.stamp
 # opened the firmware. It reads as source because it sits beside it.
 device/*/.cache/
 
-# The firmware image the app carries is a build output of the directory above,
-# copied in by scripts/sync_panel_firmware.sh. Tracking it would add 2 MB to
-# history for every firmware iteration, and it is exactly reproducible from
-# device/esp32-circle — so the repo keeps the recipe, not the loaf.
+# THE FIRMWARE IMAGE IS TRACKED, and it was not until 2026-08-19. The rule here
+# used to ignore it — "the repo keeps the recipe, not the loaf" — which is a good
+# instinct and was the wrong call, because nothing in the release pipeline bakes
+# the loaf: CI runs no ESP-IDF and copies no .bin, so every shipped DMG carried
+# NO panel firmware at all.
+#
+# What that cost a user: plug a panel into a store-installed Grid, and if the two
+# disagree about the protocol the panel shows "Panel needs an update — Grid can
+# reflash it over this cable" and greets forever. The app cannot: it has nothing
+# to offer, returns null from panelFirmwareProvider and never says so on screen.
+# A panel bought with the app was a brick the app promised to fix.
+#
+# The cost of tracking it is real and smaller: ~2.4 MB per firmware bump in
+# history. Building it in CI is the better answer and the one that ends this rule
+# (it needs ESP-IDF in the runner); until then the loaf ships with the recipe.
 #
 # assets/panel/ itself must keep existing: pubspec.yaml declares it and Flutter
-# fails the build outright on a declared asset directory that is absent. Its
-# README.md is tracked for that reason, and panelFirmwareProvider already treats
-# a missing image as "carry none" — which is the right behaviour for a checkout
-# with no device attached to it.
-assets/panel/*.bin
+# fails the build outright on a declared asset directory that is absent.
