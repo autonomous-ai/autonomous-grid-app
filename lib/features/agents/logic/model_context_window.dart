@@ -31,12 +31,23 @@ bool isContextOverflow(String raw) {
 /// the refusal named no number.
 ///
 /// The most reliable of the three sources, because it is the machine that is
-/// actually serving saying what it actually has. The relay now carries the
-/// figure too, but sparsely: measured 2026-08-06 on the office grid,
-/// `/grid/overview` gives `context_length: 128000` for one model of three and
-/// `null` for the rest, and `/v1/models` has grown a `context_window` field that
-/// is null on every model so far (`TODO(BE)`). What neither source covers falls
-/// back on [kAssumedContextWindow].
+/// actually serving saying what it actually has.
+///
+/// The relay carries the figure too, and by now carries it widely: remeasured
+/// 2026-08-19 on the office grid, `/v1/models` names a `context_window` for five
+/// of its six models and `/grid/overview` a `context_length` for five of its
+/// seven rows — where 2026-08-06 had one of three and a `context_window` that
+/// was null on everything. The `TODO(BE)` that stood here is done.
+///
+/// Two things that catalog is not, both measured the same day. It is not
+/// **stable**: two reads minutes apart returned a different set of models and a
+/// different window for the same id. And it is not **singular**: `/grid/overview`
+/// lists `gemma-4-31B-it` twice, one row naming 204800 and the other naming
+/// nothing, because the rows are per serving node and the router decides which
+/// one answers. Both are why [knownModelContextWindowProvider] takes the
+/// smallest figure rather than the newest, and why a figure read once is not a
+/// figure that stays true. What no source covers falls back on
+/// [kAssumedContextWindow].
 int? contextWindowFromError(String raw) {
   for (final pattern in _windowPatterns) {
     final match = pattern.firstMatch(raw);
