@@ -39,6 +39,8 @@ class GoalEndedRow extends StatelessWidget {
       GoalStatus.impossible => Icons.error_outline_rounded,
       GoalStatus.stalled ||
       GoalStatus.paused => Icons.pause_circle_outline_rounded,
+      // An open hand, not a pause: nothing is waiting to be resumed.
+      GoalStatus.dormant => Icons.back_hand_outlined,
       GoalStatus.blocked => Icons.block_rounded,
       // A limit reached is not a failure — the hourglass says "later", where
       // the error mark would say "never".

@@ -39,7 +39,34 @@ enum GoalStatus {
   /// The goal's own token budget ran out — see `ChatGoal.tokenBudget`. Same
   /// reasoning as [usageLimited]: a spending cap is not a verdict.
   budgetLimited,
+
+  /// Set long enough ago that the app will not let it take the next turn —
+  /// because Grid was closed and reopened, or because it has been running past
+  /// [kGoalMaxAge].
+  ///
+  /// The one ending nobody decided. A goal has no turn ceiling and lives on the
+  /// chat, so one set on a Monday evening was still armed on Tuesday morning:
+  /// `git pull` typed into that chat was judged against "spend the next 8 hours
+  /// improving the orchestration patterns" and answered as a continuation of it
+  /// (reported 2026-08-19). Handing control back is the only honest reading of
+  /// a gap that long — the user was not watching, and cannot have meant the
+  /// next thing they typed as part of a run they had forgotten.
+  ///
+  /// Ended, not paused: the goal is over, and the condition is still on screen
+  /// to set again. Resuming is deliberately not offered — for a delegated goal
+  /// it cannot be done honestly (see the note on Hold/Resume in
+  /// `chat_sessions_goals.dart`).
+  dormant,
 }
+
+/// How long a goal may run before the app hands control back.
+///
+/// Long enough for the overnight runs people actually set — "spend the next 8
+/// hours on this" is a real instruction — and short enough that the goal cannot
+/// outlive the sitting it was set in. There is no other ceiling: a goal that is
+/// never met and never impossible would otherwise capture every turn in its
+/// chat for as long as the chat exists.
+const Duration kGoalMaxAge = Duration(hours: 12);
 
 /// Who advances a goal — the app, or the agent it was handed to.
 ///
@@ -104,13 +131,19 @@ enum GoalOwner {
 /// A completion condition the assistant works toward across turns.
 ///
 /// Modelled on Claude Code's `/goal`, deliberately including the part Grid got
-/// wrong the first time: **there is no turn or minute ceiling**. A goal ends
-/// when a model reading the conversation says the condition holds, or says it
-/// never can. Grid's own agent turns routinely run 40 minutes, so any number
-/// the app picked would be a number that stopped real work — which is exactly
-/// what a 30-minute default did in issue #33. A user who wants a bound writes
-/// one into the condition ("…or stop after 20 turns"), where the evaluator can
-/// read it.
+/// wrong the first time: **there is no turn or minute ceiling on the work**. A
+/// goal ends when a model reading the conversation says the condition holds, or
+/// says it never can. Grid's own agent turns routinely run 40 minutes, so any
+/// number the app picked would be a number that stopped real work — which is
+/// exactly what a 30-minute default did in issue #33. A user who wants a bound
+/// writes one into the condition ("…or stop after 20 turns"), where the
+/// evaluator can read it.
+///
+/// [kGoalMaxAge] is not that number and does not replace it. It is a ceiling on
+/// how long a goal may keep hold of the *chat* — twelve hours, which no turn
+/// approaches — and it exists because the failure it prevents is the opposite
+/// one: not work cut short, but a goal nobody remembered still capturing what
+/// the user typed the next morning (see [GoalStatus.dormant]).
 class ChatGoal {
   const ChatGoal({
     required this.condition,
@@ -215,8 +248,28 @@ class ChatGoal {
     GoalStatus.stalled ||
     GoalStatus.blocked ||
     GoalStatus.usageLimited ||
-    GoalStatus.budgetLimited => true,
+    GoalStatus.budgetLimited ||
+    GoalStatus.dormant => true,
   };
+
+  /// Whether this goal would take hold of the next thing the user says.
+  ///
+  /// Two statuses do, for different reasons: [GoalStatus.active] because the
+  /// loop is driving, and [GoalStatus.stalled] because it is explicitly written
+  /// to pick back up on the next message. Both are right *within* a sitting —
+  /// the user is there, watching — and both are the bug across one: they are
+  /// what turned `git pull` into the next round of an eight-hour goal set the
+  /// evening before.
+  bool get takesTheNextTurn =>
+      status == GoalStatus.active || status == GoalStatus.stalled;
+
+  /// Whether this goal has been running longer than [kGoalMaxAge] as of [now].
+  ///
+  /// Read off [startedAt] rather than counted in turns: the run that went wrong
+  /// spent a night idle, not a night working, and a turn counter cannot see
+  /// time pass while nothing happens.
+  bool hasOutlivedItsRun(DateTime now) =>
+      now.difference(startedAt) > kGoalMaxAge;
 
   ChatGoal copyWith({
     GoalStatus? status,
@@ -289,6 +342,22 @@ class ChatGoal {
     // Unknown or absent reads back null, which resolves to GoalOwner.app —
     // what a goal written before this field existed actually was.
     final agent = agentToolById('${raw['agent']}');
+    // Two readings that are not what the file literally says, both because the
+    // thing the file described is no longer there:
+    //
+    // - `paused` comes from a build that had Hold, taken out on 2026-08-18.
+    //   Nothing sets it now and nothing resumes it, so read as written it
+    //   offers the user a Resume button that does not exist.
+    // - an app-driven goal saved `active` is not running: the evaluator loop
+    //   advancing it died with the process. It used to read as `stalled`, which
+    //   picks back up on the user's next message — the ambush this whole status
+    //   exists to end.
+    final status = switch (stored) {
+      GoalStatus.paused => GoalStatus.dormant,
+      GoalStatus.active when agent == null || agent == AgentTool.hermes =>
+        GoalStatus.dormant,
+      _ => stored,
+    };
     final turns = raw['turnsEvaluated'];
     final startedAfter = raw['startedAfter'];
     final endedAfter = raw['endedAfter'];
@@ -297,11 +366,7 @@ class ChatGoal {
     final tokenBudget = raw['tokenBudget'];
     return ChatGoal(
       condition: condition,
-      status:
-          stored == GoalStatus.active &&
-              (agent == null || agent == AgentTool.hermes)
-          ? GoalStatus.stalled
-          : stored,
+      status: status,
       startedAt: startedAt,
       agent: agent,
       turnsEvaluated: turns is int && turns > 0 ? turns : 0,
@@ -475,6 +540,12 @@ String goalBarLabel(ChatGoal goal, DateTime now) {
     GoalStatus.impossible => 'Stopped — this cannot be met: ${goal.condition}',
     GoalStatus.stalled => 'Goal paused: ${goal.condition}',
     GoalStatus.paused => 'Goal held: ${goal.condition}',
+    // Says what happened *and* what to do, because this ending is the only one
+    // the user did not ask for: they come back to a goal that has stood down
+    // and need to know their next message is their own again.
+    GoalStatus.dormant =>
+      'Goal handed back — it will not take your next message. '
+          'Set it again if you still want it: ${goal.condition}',
     GoalStatus.blocked => 'Goal blocked: ${goal.condition}',
     // Named for what it is. Reporting a plan limit as "cannot be met" tells the
     // user to give up on work that only needs them to wait.
@@ -571,6 +642,7 @@ String goalEndedNote(ChatGoal goal) {
     GoalStatus.impossible => 'Goal stopped — it cannot be met',
     GoalStatus.stalled => 'Goal paused',
     GoalStatus.paused => 'Goal held',
+    GoalStatus.dormant => 'Goal handed back — your next message is your own',
     GoalStatus.blocked => 'Goal blocked',
     GoalStatus.usageLimited => 'Goal paused — out of usage',
     GoalStatus.budgetLimited => 'Goal paused — token budget spent',

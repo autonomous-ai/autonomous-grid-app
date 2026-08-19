@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
+import 'package:grid_app/features/chat/logic/commands/chat_goal.dart';
 
 /// The history is held in memory, and one thing outside this controller writes
 /// to the chat folder: restoring a cloud backup. These cover what has to happen
@@ -104,5 +105,43 @@ void main() {
     await settled();
 
     expect(container.read(chatSessionsProvider).conversations, hasLength(1));
+  });
+
+  test('a goal that was running when Grid closed is handed back on the next '
+      'launch — this is the report: `git pull` typed the next morning was '
+      'answered as the next round of an eight-hour goal', () async {
+    File('${dir.path}/1786441404424598.json').writeAsStringSync('''
+{"id":"1786441404424598","title":"Orchestration","model":"auto",
+ "createdAt":"2026-08-18T21:00:00.000Z","updatedAt":"2026-08-18T21:30:00.000Z",
+ "messages":[{"role":"user","text":"hi"},{"role":"assistant","text":"ok"}],
+ "goal":{"condition":"spend the next 8 hours improving the patterns",
+  "status":"active","startedAt":"2026-08-18T21:00:00.000Z","agent":"claude"}}
+''');
+
+    await settled();
+
+    final chat = container.read(chatSessionsProvider).conversations.single;
+    expect(chat.goal?.status, GoalStatus.dormant);
+    expect(chat.goal?.takesTheNextTurn, isFalse);
+    // The condition survives, so the user can set it again if they meant to.
+    expect(chat.goal?.condition, contains('improving the patterns'));
+  });
+
+  test('a goal that had already ended is left exactly as it ended — standing '
+      'down must not rewrite the record of what happened', () async {
+    File('${dir.path}/1786441404424599.json').writeAsStringSync('''
+{"id":"1786441404424599","title":"Done","model":"auto",
+ "createdAt":"2026-08-18T21:00:00.000Z","updatedAt":"2026-08-18T21:30:00.000Z",
+ "messages":[{"role":"user","text":"hi"}],
+ "goal":{"condition":"ship it","status":"met",
+  "startedAt":"2026-08-18T21:00:00.000Z","agent":"claude"}}
+''');
+
+    await settled();
+
+    expect(
+      container.read(chatSessionsProvider).conversations.single.goal?.status,
+      GoalStatus.met,
+    );
   });
 }

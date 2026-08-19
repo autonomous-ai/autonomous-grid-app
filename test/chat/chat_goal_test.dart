@@ -107,12 +107,17 @@ void main() {
   });
 
   group('surviving a restart', () {
-    test('a goal still running when the app closed comes back stalled, never '
-        'active — reopening a chat must not start firing turns at it', () {
+    test('a goal still running when the app closed comes back handed over — '
+        'reopening a chat must neither fire a turn at it nor let it take the '
+        'next thing the user types', () {
       final written = _goal(turnsEvaluated: 4, reason: 'two still fail');
       final read = ChatGoal.fromJson(written.toJson());
 
-      expect(read?.status, GoalStatus.stalled);
+      // It read as `stalled` until 2026-08-19, which stopped the firing but not
+      // the capture: a stalled goal picks back up on the next message, and that
+      // is how `git pull` became the next round of an overnight instruction.
+      expect(read?.status, GoalStatus.dormant);
+      expect(read?.takesTheNextTurn, isFalse);
       expect(read?.condition, 'the tests in test/auth pass');
       expect(read?.turnsEvaluated, 4);
       expect(read?.reason, 'two still fail');

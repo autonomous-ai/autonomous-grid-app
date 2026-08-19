@@ -149,6 +149,13 @@ mixin _ChatGoals on _ChatSessions {
   Future<void> _judgeGoalTurn(String id, _TurnOutcome? outcome) async {
     final goal = _find(id)?.goal;
     if (goal == null || !goal.isRunning || _disposed) return;
+    // Before anything is judged: a goal that has outrun [kGoalMaxAge] hands
+    // control back rather than taking one more turn. Checked here because this
+    // is the one place every finished turn passes through, agent-owned or not.
+    if (goal.hasOutlivedItsRun(DateTime.now())) {
+      _endDormantGoal(id, goal, 'it had been running for over 12 hours');
+      return;
+    }
     // A delegated goal is already being judged, by the agent that owns it and
     // with tools this evaluator does not have. Running a second judgement here
     // would spend two models on one question, let them disagree, and send a
@@ -377,6 +384,48 @@ mixin _ChatGoals on _ChatSessions {
     final chat = _find(id);
     if (chat == null) return;
     _saveAndReplace(chat.copyWith(goal: _stampGoalEnd(goal, chat)));
+  }
+
+  /// Hand back every goal that was still running when the app last closed.
+  ///
+  /// The bug this exists for, in the order it happened: a goal was set one
+  /// evening, Grid was closed, and the next morning `git pull` typed into that
+  /// chat was judged against it and answered as a continuation of an eight-hour
+  /// instruction — with the only way out being a button the user could not
+  /// find. Nothing had gone wrong technically. The goal was simply still armed,
+  /// and nothing said so.
+  ///
+  /// Ends them rather than resuming them, which is the opposite of what happens
+  /// to a loop one line above, because the two capture different things: a loop
+  /// sends a prompt of its own, and a goal takes the user's next one.
+  void _standDownGoals() {
+    for (final chat in state.conversations) {
+      final goal = chat.goal;
+      // Not just the running ones: a stalled goal is written to pick back up on
+      // the next message, which across a restart is the same capture by another
+      // name (see [ChatGoal.takesTheNextTurn]).
+      if (goal == null || !goal.takesTheNextTurn) continue;
+      _endDormantGoal(chat.id, goal, 'Grid was closed while it was running');
+    }
+  }
+
+  /// End [goal] as [GoalStatus.dormant], saying [why], and take it off the
+  /// agent that was holding it.
+  ///
+  /// The second half is what makes this real rather than cosmetic: a delegated
+  /// goal lives in the agent's own session and **survives `--resume`**, so an
+  /// app-side status is a label on something still running. Clearing it agent-
+  /// side is the same move Stop makes, and the only one measured to work.
+  void _endDormantGoal(String id, ChatGoal goal, String why) {
+    final chat = _find(id);
+    if (chat == null) return;
+    if (goal.owner == GoalOwner.claude) {
+      unawaited(_tellClaude(chat, kClaudeGoalClear));
+    }
+    ref
+        .read(appLogProvider)
+        .info('chat', 'goal in $id handed back — $why: ${goal.condition}');
+    _saveGoal(id, goal.copyWith(status: GoalStatus.dormant, reason: why));
   }
 
   /// [goal] carrying the point in the transcript where it ended.
