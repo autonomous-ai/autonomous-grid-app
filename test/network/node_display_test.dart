@@ -355,6 +355,208 @@ void main() {
     });
   });
 
+  group('modelCapabilities', () {
+    test('a node id finds its model through the key, not the raw spelling', () {
+      // The live payload really does disagree: the overview's model entries keep
+      // catalog casing (`DeepSeek-V4-Flash-0731`) while a node advertises the
+      // relay's normalised id (`deepseek-v4-flash-0731`). Matching raw finds
+      // nothing, and finds it silently — as "this model reports no context".
+      final byKey = modelCapabilities(const [
+        OverviewModel(
+          id: 'DeepSeek-V4-Flash-0731',
+          contextLength: 128000,
+          vision: false,
+        ),
+      ]);
+
+      final cap = modelCapabilityFor(byKey, 'deepseek-v4-flash-0731');
+
+      expect(cap?.contextLength, 128000);
+      expect(cap?.vision, isFalse);
+    });
+
+    test('two providers of one model fold to the largest window', () {
+      // The overview emits one entry per (provider, model) and they can
+      // disagree. Folding the way the relay does keeps the card from reporting
+      // whichever provider happened to be listed last.
+      final byKey = modelCapabilities(const [
+        OverviewModel(id: 'gemma-4-31B-it', contextLength: 32000),
+        OverviewModel(id: 'gemma-4-31b-it', contextLength: 128000),
+      ]);
+
+      expect(
+        modelCapabilityFor(byKey, 'gemma-4-31b-it')?.contextLength,
+        128000,
+      );
+    });
+
+    test('one provider offering vision is enough for the model to have it', () {
+      final byKey = modelCapabilities(const [
+        OverviewModel(id: 'm', vision: false),
+        OverviewModel(id: 'm', vision: true),
+      ]);
+
+      expect(modelCapabilityFor(byKey, 'm')?.vision, isTrue);
+    });
+
+    test('a relay that never mentions vision leaves it unknown, not false', () {
+      // `false` is a model saying it reads no images; null is an older relay
+      // that has no opinion. The card dims the glyph for both but says which in
+      // its tooltip, and it can only do that if the fold keeps them apart.
+      final unknown = modelCapabilities(const [OverviewModel(id: 'm')]);
+      final stated = modelCapabilities(const [
+        OverviewModel(id: 'm', vision: false),
+      ]);
+
+      expect(modelCapabilityFor(unknown, 'm')?.vision, isNull);
+      expect(modelCapabilityFor(stated, 'm')?.vision, isFalse);
+    });
+
+    test('a stated answer beats silence whichever order they arrive in', () {
+      final silenceFirst = modelCapabilities(const [
+        OverviewModel(id: 'm'),
+        OverviewModel(id: 'm', vision: false),
+      ]);
+      final silenceLast = modelCapabilities(const [
+        OverviewModel(id: 'm', vision: false),
+        OverviewModel(id: 'm'),
+      ]);
+
+      expect(modelCapabilityFor(silenceFirst, 'm')?.vision, isFalse);
+      expect(modelCapabilityFor(silenceLast, 'm')?.vision, isFalse);
+    });
+
+    test('a model the grid never listed is null, not an empty capability', () {
+      // The caller has to be able to tell "the grid says nothing about this
+      // model" from "the grid says this model has no context window".
+      expect(modelCapabilityFor(const {}, 'nobody-serves-this'), isNull);
+      expect(modelCapabilityFor(const {}, null), isNull);
+    });
+  });
+
+  group('nodeModelCapability', () {
+    /// A node reporting its own per-model capability, as the relay's
+    /// `model_capabilities` object reaches the app.
+    OverviewNode nodeSaying(Map<String, dynamic> capabilities) =>
+        OverviewNode.fromJson({
+          'name': 'n',
+          'online': true,
+          'model': 'qwen-3',
+          'models': ['qwen-3'],
+          'model_capabilities': capabilities,
+        });
+
+    test('a machine reports its own window, not the fleet best', () {
+      // The reason the field exists: `llama-server -c 8192` beside `-c 32768` is
+      // one model with two windows, and the grid entry can only quote the MAX.
+      // Reading the fold here would print 32768 on the 8192 machine's card.
+      final node = nodeSaying({
+        'qwen-3': {'context_length': 8192, 'vision': false},
+      });
+
+      final cap = nodeModelCapability(
+        node,
+        gridWide: modelCapabilities(const [
+          OverviewModel(id: 'qwen-3', contextLength: 32768, vision: true),
+        ]),
+      );
+
+      expect(cap?.contextLength, 8192);
+      expect(cap?.vision, isFalse);
+    });
+
+    test('a blank the node itself left is not filled from the fleet', () {
+      // Both facts are properties of the engine that was started — one box loads
+      // a vision projector where its neighbour did not. Merging field by field
+      // would print a co-provider's machine on this machine's card.
+      final node = nodeSaying({
+        'qwen-3': {'context_length': 8192},
+      });
+
+      final cap = nodeModelCapability(
+        node,
+        gridWide: modelCapabilities(const [
+          OverviewModel(id: 'qwen-3', vision: true),
+        ]),
+      );
+
+      expect(cap?.vision, isNull);
+    });
+
+    test('an older relay still gets the grid-wide figure', () {
+      // No `model_capabilities` on the payload at all. The fold across the fleet
+      // is the best that grid can say, and better than nothing — but only where
+      // the node said nothing itself.
+      final node = OverviewNode.fromJson({
+        'name': 'n',
+        'online': true,
+        'model': 'qwen-3',
+        'models': ['qwen-3'],
+      });
+
+      final cap = nodeModelCapability(
+        node,
+        gridWide: modelCapabilities(const [
+          OverviewModel(id: 'qwen-3', contextLength: 128000),
+        ]),
+      );
+
+      expect(node.modelCapabilities, isEmpty);
+      expect(cap?.contextLength, 128000);
+    });
+
+    test('a junk entry costs that node its figures and nothing else', () {
+      // Provider-self-reported data over an unauthenticated endpoint: one bad
+      // row must not throw and blank the whole dashboard.
+      final node = nodeSaying({
+        'qwen-3': 'not-an-object',
+        'other': {'context_length': 'eight thousand', 'vision': 'yes'},
+      });
+
+      expect(node.modelCapabilities.containsKey('qwen-3'), isFalse);
+      expect(node.modelCapabilities['other']?.contextLength, isNull);
+      expect(node.modelCapabilities['other']?.vision, isNull);
+    });
+
+    test('two nodes parsed from one payload stay equal by value', () {
+      // `gridOverviewSnapshot` leans on value equality so an unchanged grid
+      // notifies nobody; a map compared by identity would make every poll a
+      // change and recompute the whole derived graph each cadence.
+      final payload = {
+        'name': 'n',
+        'online': true,
+        'model': 'qwen-3',
+        'models': ['qwen-3'],
+        'model_capabilities': {
+          'qwen-3': {'context_length': 8192, 'vision': false},
+        },
+      };
+
+      expect(
+        OverviewNode.fromJson(payload),
+        OverviewNode.fromJson(Map<String, dynamic>.from(payload)),
+      );
+    });
+  });
+
+  group('contextLengthLabel', () {
+    test('shortens a window the way every other figure on the card is', () {
+      expect(contextLengthLabel(128000), '128K');
+      expect(contextLengthLabel(1048576), '1M');
+    });
+
+    test('reports the number the provider sent, not the marketed round one', () {
+      // 204800 is 200 × 1024 and its maker's site says "200K"; rounding it back
+      // would be the app deciding the provider meant something else.
+      expect(contextLengthLabel(204800), '205K');
+    });
+
+    test('a model advertising no window says nothing rather than a dash', () {
+      expect(contextLengthLabel(null), '');
+      expect(contextLengthLabel(0), '');
+    });
+  });
+
   group('nodeParallelLabel', () {
     test('says how many requests the machine takes at once', () {
       expect(nodeParallelLabel(_machine(concurrency: 16)), '16 parallel');

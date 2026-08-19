@@ -112,6 +112,26 @@ final gridModelsProvider = Provider.autoDispose<List<OverviewModel>>((ref) {
   ]);
 });
 
+/// What each of the grid's models can do — context window and vision — keyed by
+/// [modelKey], for the surfaces that have a model *id* and need its capabilities.
+///
+/// Its own provider rather than a fold inside each card: the overview carries one
+/// model list, and a dashboard of nine machines would otherwise rebuild the same
+/// map nine times per poll. Empty — never null — while no overview has landed, so
+/// a card asks and is told "nothing known about this model" rather than having to
+/// handle a missing map.
+///
+/// **The node payload does not carry these fields.** `/grid/overview` reports
+/// context length and vision on its `models` entries only; a node lists model
+/// *ids*. This is the join, and it is the only one — see [modelCapabilities] for
+/// why matching those ids raw would silently find nothing.
+final gridModelCapabilitiesProvider = Provider<Map<String, ModelCapability>>((
+  ref,
+) {
+  final models = ref.watch(gridOverviewSnapshot)?.models;
+  return modelCapabilities(models ?? const <OverviewModel>[]);
+});
+
 /// Collapse duplicate model ids to ONE entry, keeping the richest row for each.
 ///
 /// The relay's overview lists one entry per (provider, model), so a model served
@@ -129,9 +149,7 @@ List<OverviewModel> distinctOverviewModels(List<OverviewModel> models) {
 }
 
 bool _isRicher(OverviewModel a, OverviewModel b) {
-  int score(
-    OverviewModel m,
-  ) =>
+  int score(OverviewModel m) =>
       (m.pricing != null ? 1 : 0) +
       (m.contextLength != null ? 1 : 0) +
       (m.vision != null ? 1 : 0);
