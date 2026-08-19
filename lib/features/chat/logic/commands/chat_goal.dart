@@ -535,7 +535,7 @@ String _compactCount(int value) {
 /// TODO(BE): to put it back the strip needs a ticker of its own (a one-second
 /// `Timer.periodic` while any note is running), not a fresher `now`.
 ///
-/// Short on purpose: it sits under the composer for the whole run, next to
+/// Short on purpose: it sits above the composer for the whole run, next to
 /// whatever else is going on, and the long form — how long it has run, the
 /// evaluator's latest reason — is [goalBarLabel], which `/goal` prints on
 /// demand. What has to be there is what the user set and what it has cost.

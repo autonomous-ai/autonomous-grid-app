@@ -882,7 +882,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final compaction = active?.compaction;
     // A goal or a loop that has finished is drawn where it finished, the same
     // way a compaction is. While either is still running it says so on the
-    // status line under the composer instead ([ComposerStatus]).
+    // status line above the composer instead ([ComposerStatus]).
     final goal = active?.goal;
     final loop = active?.loop;
     // *Whether* there is an in-flight bubble, not what it says: this answers
