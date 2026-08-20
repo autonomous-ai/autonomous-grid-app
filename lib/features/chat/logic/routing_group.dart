@@ -31,13 +31,12 @@ class RoutingGroup {
   String toModelField() {
     if (!isFixed) return 'auto/${mode.wireValue}';
     if (mode == RoutingMode.bruteForce) {
-      final list = models ?? const <String>[];
-      final encoded = list.map((m) => '"$m"').join(',');
-      return '{"mode":"brute_force","models":[$encoded]}';
+      return jsonEncode({'mode': 'brute_force', 'models': models});
     }
-    return '{"mode":"judge_loop","worker":"$worker","judge":"$judge"}';
+    return jsonEncode({'mode': 'judge_loop', 'worker': worker, 'judge': judge});
   }
 
+  /// Serializes to a JSON-compatible map.
   Map<String, dynamic> toJson() => {
     'mode': mode.wireValue,
     'isFixed': isFixed,
@@ -46,6 +45,7 @@ class RoutingGroup {
     if (judge != null) 'judge': judge,
   };
 
+  /// Safely deserializes from a JSON map, returning null on invalid input.
   static RoutingGroup? tryFromJson(Map<String, dynamic> json) {
     final modeValue = json['mode'];
     final mode = RoutingMode.values
@@ -95,11 +95,13 @@ bool _listEq(List<String>? a, List<String>? b) {
 /// Result of parsing the grid's free-text answer to a suggestion probe.
 sealed class SuggestionParseResult {}
 
+/// A successfully parsed routing group suggestion.
 class SuggestionParsed extends SuggestionParseResult {
   SuggestionParsed(this.group);
   final RoutingGroup group;
 }
 
+/// A failed parsing attempt with a human-readable reason.
 class SuggestionParseFailed extends SuggestionParseResult {
   SuggestionParseFailed(this.reason);
   final String reason;
