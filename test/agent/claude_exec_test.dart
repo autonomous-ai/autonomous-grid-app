@@ -101,6 +101,71 @@ void main() {
       );
     });
 
+    test('a persistent monitor is refused with its reason, not put to the '
+        'user: a yes could not make it outlive the turn it was asked in', () {
+      final refusal = claudeToolRefusal('Monitor', {
+        'persistent': true,
+        'command': 'git fetch origin',
+      });
+
+      expect(refusal, kClaudePersistentMonitorRefusal);
+      expect(refusal, contains('hermes cron'));
+      expect(refusal, contains('/loop'));
+    });
+
+    test('a monitor that finishes inside the turn is left alone — waiting for '
+        'a server to come up is what the tool is for', () {
+      expect(claudeToolRefusal('Monitor', {'command': 'curl localhost'}), null);
+      expect(claudeToolRefusal('Bash', {'persistent': true}), null);
+    });
+
+    test('a refusal reaches the model as the reason, so it can take the route '
+        'that works instead of narrating a dead end', () {
+      final response =
+          claudePermissionResponse(
+                requestId: 'r-1',
+                optionId: kRefuseOption,
+                denyMessage: kClaudePersistentMonitorRefusal,
+              )['response']
+              as Map<String, Object?>;
+      final inner = response['response'] as Map<String, Object?>;
+
+      expect(inner['behavior'], 'deny');
+      expect(inner['message'], kClaudePersistentMonitorRefusal);
+    });
+
+    test('a plain no still says a person said it, so the model does not read '
+        'every refusal as a rule of the app', () {
+      final response =
+          claudePermissionResponse(requestId: 'r-2', optionId: null)['response']
+              as Map<String, Object?>;
+      final inner = response['response'] as Map<String, Object?>;
+
+      expect(inner['message'], 'The person asked said no.');
+    });
+
+    test('the tool and input of a request are read off the line the CLI sent, '
+        'because what is refused depends on both', () {
+      final line = {
+        'type': 'control_request',
+        'request_id': 'r-3',
+        'request': {
+          'subtype': 'can_use_tool',
+          'tool_name': 'Monitor',
+          'input': {'persistent': true, 'timeout_ms': 3600000},
+        },
+      };
+
+      expect(claudePermissionTool(line), 'Monitor');
+      expect(claudePermissionInput(line)['persistent'], true);
+      expect(claudePermissionTool(const {'type': 'control_response'}), '');
+    });
+
+    test('a finished turn does not leave its process behind — one that stayed '
+        'ran two hours past its own answer', () {
+      expect(kClaudeExitGrace, const Duration(seconds: 5));
+    });
+
     test('the grant is the one named in kClaudePermissionMode, never an '
         'argv literal that could drift from it', () {
       expect(
