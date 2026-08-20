@@ -11,6 +11,10 @@ import 'conversation.dart';
 /// `~/.grid/app/chats/`. App-owned storage (the CLI never touches it), kept
 /// lenient like [GridHomeStore]: a single corrupt file is skipped, never fatal.
 ///
+/// Beside them sits [kChatIndexName] — every conversation's *header* and none of
+/// its messages, so the sidebar can be drawn without reading the transcripts.
+/// See [loadIndex].
+///
 /// The directory is overridable so tests point at a temp dir and never touch a
 /// real grid home.
 class ChatStore {
@@ -41,6 +45,20 @@ class ChatStore {
   /// dropped rather than allowed to put the file back.
   final Set<String> _deleted = {};
 
+  /// Every known conversation's header, keyed by id — what [kChatIndexName]
+  /// holds. Seeded by [loadAll] and kept up to date by [save] and [delete].
+  final Map<String, Conversation> _index = {};
+
+  /// The index has moved since it was last written out.
+  bool _indexDirty = false;
+
+  /// The write draining [_indexDirty], or null when none is running. One at a
+  /// time and coalescing, exactly like [_draining]: a `/loop` saves the same
+  /// chat many times a second and every one of those moves its `updatedAt`, so
+  /// without this the index would be rewritten once per turn to say something
+  /// the next turn immediately supersedes.
+  Future<void>? _indexDraining;
+
   /// Every saved conversation, newest activity first. Unreadable files are
   /// skipped so one bad file can't hide the rest of the history.
   ///
@@ -54,9 +72,11 @@ class ChatStore {
     // Never read the folder out from under a write — see [_inFlight].
     await settled;
     final out = <Conversation>[];
+    var whole = true;
     try {
       await for (final entry in _dir.list()) {
         if (entry is! File || !entry.path.endsWith('.json')) continue;
+        if (entry.uri.pathSegments.last == kChatIndexName) continue;
         final parsed = await _read(entry);
         if (parsed != null) out.add(parsed);
       }
@@ -65,9 +85,77 @@ class ChatStore {
       // being read. Keep whatever was already read: the same leniency a corrupt
       // file gets, and the only alternative is turning a read into a crash the
       // user can do nothing about.
+      whole = false;
     }
     out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    // The folder is the truth and this just read all of it, so this is also the
+    // one moment the index can be *healed*: a chat restored from a backup, one
+    // deleted by hand, or anything a build that predates the index left behind.
+    //
+    // Only when the read got all the way through, though. A folder that went
+    // away mid-listing leaves a partial answer, and writing that out would
+    // recreate the folder to put a half-index in it — an index claiming the
+    // history is smaller than it is, in a place the user had just emptied.
+    if (!whole) return out;
+    _index
+      ..clear()
+      ..addEntries([for (final c in out) MapEntry(c.id, _headerOf(c))]);
+    _touchIndex();
+    // The one place the index is waited for. Everywhere else it is written
+    // behind the caller, but this is the *restore*, and a caller who has just
+    // read the whole folder is entitled to assume the index agrees with it —
+    // a test especially, which would otherwise tear its temp directory down
+    // while the heal was still landing in it. One small file, next to the
+    // hundreds of milliseconds the read above just spent.
+    await _indexDraining;
     return out;
+  }
+
+  /// Every conversation's header — id, title, model, timestamps, which project
+  /// it sits in, whether it is pinned or archived — with **no messages**.
+  ///
+  /// This is what the sidebar is drawn from on the way in. Reading the whole
+  /// history to list it costs, measured on this machine's 119 chats (15 MB),
+  /// 50 ms of disk and 137 ms of decode before the first row can appear; the
+  /// index is 119 short objects and lands in about one.
+  ///
+  /// Deliberately does **not** await [settled], unlike [loadAll]: the file is
+  /// replaced by rename so a reader never sees a torn one, and waiting for a
+  /// write to land would give back exactly the delay this exists to avoid. The
+  /// cost of that choice is that the index can be a beat behind — which is why
+  /// nothing but the sidebar may be drawn from it, and why the headers it
+  /// returns carry no messages to be mistaken for an empty transcript.
+  ///
+  /// Empty when there is no index yet — a first launch, or the first launch
+  /// after upgrading from a build that never wrote one. The caller falls back to
+  /// waiting for [loadAll], which is what every build before this did.
+  Future<List<Conversation>> loadIndex() async {
+    try {
+      final raw = jsonDecode(await _indexFile.readAsString());
+      if (raw is! Map || raw['chats'] is! List) return const [];
+      final out = [
+        for (final entry in raw['chats'] as List)
+          if (entry is Map<String, dynamic>) ?_headerFrom(entry),
+      ];
+      out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return out;
+    } on Object {
+      // No index, or an unreadable one. Same leniency as a corrupt chat file:
+      // the history is still on disk and [loadAll] will produce it.
+      return const [];
+    }
+  }
+
+  /// One conversation, whole, or null when there is no such file.
+  ///
+  /// The other half of [loadIndex]: the sidebar lists headers, and opening a row
+  /// needs that chat's transcript before the user can be shown — or allowed to
+  /// speak into — it.
+  Future<Conversation?> load(String id) async {
+    await settled;
+    final file = _fileFor(id);
+    if (!file.existsSync()) return null;
+    return _read(file);
   }
 
   /// Write [conversation] to `<id>.json` — off this isolate, and without the
@@ -101,6 +189,8 @@ class ChatStore {
     // write racing a deletion.
     _deleted.remove(id);
     _queued[id] = conversation;
+    _index[id] = _headerOf(conversation);
+    _touchIndex();
     _draining[id] ??= _track(_drain(id));
   }
 
@@ -124,6 +214,8 @@ class ChatStore {
   void delete(String id) {
     _queued.remove(id);
     _deleted.add(id);
+    _index.remove(id);
+    _touchIndex();
     final file = _fileFor(id);
     if (file.existsSync()) file.deleteSync();
   }
@@ -160,20 +252,98 @@ class ChatStore {
   Future<void> _write(Conversation conversation) async {
     final path = _fileFor(conversation.id).path;
     try {
-      await Isolate.run(() {
-        final file = File(path);
-        file.parent.createSync(recursive: true);
-        // Compact, not indented. Nothing reads these by hand — `jq` is right
-        // there when something does — and the indent cost 0.7 MB of the 9 MB
-        // chat above, which is paid again on every launch, by the decode.
-        file.writeAsStringSync(jsonEncode(conversation.toJson()), flush: true);
-      });
+      // Compact, not indented. Nothing reads these by hand — `jq` is right
+      // there when something does — and the indent cost 0.7 MB of the 9 MB chat
+      // above, which is paid again on every launch, by the decode.
+      await _atomicWrite(path, () => jsonEncode(conversation.toJson()));
     } on Object {
       // A disk that is full, a folder that has gone away, a chat deleted from
       // under the write. The conversation is in memory and on screen either
       // way, and there is nothing to tell the user to do about it here.
     }
   }
+
+  /// Note the index has moved, and make sure something is on its way to write
+  /// it out. Coalescing, like [save] — see [_indexDraining].
+  void _touchIndex() {
+    _indexDirty = true;
+    _indexDraining ??= _track(_drainIndex());
+  }
+
+  Future<void> _drainIndex() async {
+    try {
+      while (_indexDirty) {
+        _indexDirty = false;
+        // A snapshot, taken before the await: the map goes on moving while the
+        // write is in the air, and the loop condition is what catches that up.
+        final headers = _index.values.toList();
+        try {
+          await _atomicWrite(
+            _indexFile.path,
+            () => jsonEncode({
+              'chats': [for (final c in headers) c.toJson()],
+            }),
+          );
+        } on Object {
+          // Same as a chat that wouldn't write: the index is a way to draw the
+          // sidebar sooner, and the sidebar is drawn without it either way.
+        }
+      }
+    } finally {
+      _indexDraining = null;
+    }
+  }
+
+  /// Write what [encode] produces to [path] so that a reader sees either the
+  /// whole of it or the previous file, never half of each.
+  ///
+  /// [encode] rather than a string, and this is not a style choice: it is called
+  /// **inside** the isolate. Encoding at the call site instead puts the whole of
+  /// `toJson` plus `jsonEncode` back on the caller's thread — measured at 37 ms
+  /// for a 4,000-step chat, which is precisely the stall [save] exists to avoid,
+  /// re-introduced by a line that reads like a tidy-up.
+  ///
+  /// Written beside the target and renamed over it, because `rename` is the one
+  /// filesystem operation that is atomic. Writing in place — which this did —
+  /// leaves a window as wide as the write itself, and on the chat that window
+  /// was 28 ms of a 9 MB file: lose power there and the chat reloads as a
+  /// truncated file, which [_read] then skips *silently*. The whole
+  /// conversation, gone, with the app reporting nothing.
+  ///
+  /// The temporary carries a `.tmp` suffix on purpose — [loadAll] takes only
+  /// names ending in `.json`, so one left behind by a crash is invisible to it
+  /// rather than a corrupt chat to be skipped.
+  Future<void> _atomicWrite(String path, String Function() encode) =>
+      Isolate.run(() {
+        final target = File(path);
+        target.parent.createSync(recursive: true);
+        final tmp = File('$path.tmp');
+        tmp.writeAsStringSync(encode(), flush: true);
+        tmp.renameSync(path);
+      });
+
+  /// [conversation] as the index holds it: everything the sidebar reads, and no
+  /// transcript.
+  ///
+  /// Serialized by the conversation's own [Conversation.toJson], rather than by
+  /// a second writer here, so a field added to a chat reaches the index by
+  /// existing — a hand-rolled header is a thing that silently stops matching.
+  Conversation _headerOf(Conversation conversation) =>
+      conversation.messages.isEmpty
+      ? conversation
+      : conversation.copyWith(messages: const []);
+
+  /// One stored header, or null when the entry is unusable — the same leniency
+  /// [_read] gives a chat file, for the same reason.
+  Conversation? _headerFrom(Map<String, dynamic> json) {
+    try {
+      return Conversation.fromJson(json);
+    } on Object {
+      return null;
+    }
+  }
+
+  File get _indexFile => File('${_dir.path}/$kChatIndexName');
 
   File _fileFor(String id) => File('${_dir.path}/$id.json');
 
@@ -188,6 +358,11 @@ class ChatStore {
     }
   }
 }
+
+/// The sidebar's index, beside the conversations it lists. Not a chat id — every
+/// id this app writes is a timestamp or `task-<hex>` — so it can share the
+/// folder without ever colliding with one.
+const String kChatIndexName = 'index.json';
 
 /// The chat store, overridden in tests with a temp-dir-backed instance.
 final chatStoreProvider = Provider<ChatStore>((ref) => ChatStore());

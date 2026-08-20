@@ -370,8 +370,12 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   // The turn's own order — what it said, and where the steps it ran sat between
   // those passages. Written only when an agent actually ran something, so a
   // plain reply's file is byte-identical to what every build before this wrote.
+  //
+  // Through [storedParts], which caps how many steps a single turn may put on
+  // disk. An ordinary turn goes through untouched; the runaway ones a `/loop`
+  // produces are what the cap is for.
   if (message.parts.isNotEmpty)
-    'parts': [for (final p in message.parts) turnPartToJson(p)],
+    'parts': [for (final p in storedParts(message.parts)) turnPartToJson(p)],
   if (message.agent != null) 'agent': message.agent,
   if (message.model != null) 'model': message.model,
   if (message.node != null) 'node': message.node,

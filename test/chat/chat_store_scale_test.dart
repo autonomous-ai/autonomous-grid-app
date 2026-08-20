@@ -87,6 +87,10 @@ void main() {
     () async {
       final store = ChatStore(directory: dir);
       store.save(chat(1));
+      // The subject here is a folder pulled out from under a *read*. Letting
+      // the save land first keeps it that way — a delete racing the write as
+      // well only ever tested how fast this machine is.
+      await store.settled;
       final reading = store.loadAll();
       await dir.delete(recursive: true);
 
@@ -160,7 +164,9 @@ void main() {
     expect(written, greaterThanOrEqualTo(queued));
 
     final loaded = await store.loadAll();
-    expect(loaded.single.messages.first.parts, hasLength(200));
+    // 200 steps went in; [kStoredStepLimit] of them come back, plus the row
+    // saying so — see the cap's own tests below.
+    expect(loaded.single.messages.first.parts, hasLength(kStoredStepLimit + 1));
   });
 
   test(
@@ -175,4 +181,185 @@ void main() {
       expect((await store.loadAll()).single.title, 'Renamed while writing');
     },
   );
+
+  /// One assistant turn carrying [steps] steps with [passages] passages of prose
+  /// woven through it — the shape [storedParts] has to cut without spoiling.
+  Conversation turnOf({required int steps, int passages = 0}) => Conversation(
+    id: 'turn',
+    title: 'A long turn',
+    model: 'm',
+    createdAt: DateTime(2026, 1, 1),
+    updatedAt: DateTime(2026, 1, 2),
+    messages: [
+      ChatMessage(
+        role: ChatRole.assistant,
+        text: 'Done.',
+        parts: [
+          for (var i = 0; i < steps; i++) ...[
+            if (i < passages) TurnText('Passage $i'),
+            TurnStep(
+              AgentActivity(
+                id: 'step-$i',
+                kind: AgentActivityKind.command,
+                label: 'Bash · step $i',
+                status: AgentActivityStatus.done,
+              ),
+            ),
+          ],
+        ],
+      ),
+    ],
+  );
+
+  test('an ordinary turn is saved with every step it ran — the cap is for the '
+      'runaway ones, and cutting a normal turn would be the app editing the '
+      "agent's account of its own work", () async {
+    final store = ChatStore(directory: dir);
+    store.save(turnOf(steps: kStoredStepLimit));
+    await store.settled;
+
+    final parts = (await store.loadAll()).single.messages.single.parts;
+    expect(parts, hasLength(kStoredStepLimit));
+    expect(parts.whereType<TurnStep>().last.step.id, 'step-119');
+  });
+
+  test('a turn with more steps than the cap keeps the newest ones and says how '
+      'many it cut — a timeline that quietly starts in the middle is a '
+      'transcript that lies about what the agent did', () async {
+    final store = ChatStore(directory: dir);
+    store.save(turnOf(steps: 500));
+    await store.settled;
+
+    final steps = stepsOf((await store.loadAll()).single.messages.single.parts);
+    expect(steps, hasLength(kStoredStepLimit + 1));
+    expect(steps.first.id, kTrimmedStepsId);
+    expect(steps.first.label, contains('380 earlier steps trimmed'));
+    expect(steps[1].id, 'step-380', reason: 'the newest 120 are the kept ones');
+    expect(steps.last.id, 'step-499');
+  });
+
+  test('re-saving a chat that was already trimmed takes nothing more off it — '
+      'a loop commits the same message every iteration, and a cap that bit '
+      'again each time would eat the turn one step at a time', () async {
+    final store = ChatStore(directory: dir);
+    store.save(turnOf(steps: 500));
+    await store.settled;
+
+    final once = (await store.loadAll()).single;
+    store.save(once);
+    await store.settled;
+    final twice = (await store.loadAll()).single;
+
+    expect(
+      stepsOf(twice.messages.single.parts),
+      hasLength(kStoredStepLimit + 1),
+    );
+    expect(
+      stepsOf(twice.messages.single.parts).first.label,
+      contains('380 earlier steps trimmed'),
+      reason: 'the note still counts what was actually dropped',
+    );
+  });
+
+  test("the agent's own words survive a cut whole — prose is what a transcript "
+      'is read for, and it is the cheap half besides', () async {
+    final store = ChatStore(directory: dir);
+    store.save(turnOf(steps: 300, passages: 300));
+    await store.settled;
+
+    final parts = (await store.loadAll()).single.messages.single.parts;
+    expect(parts.whereType<TurnText>(), hasLength(300));
+  });
+
+  test('the sidebar can be listed from the index without a transcript being '
+      'read — that is the ~190 ms the rail used to wait out on every '
+      'launch', () async {
+    final store = ChatStore(directory: dir);
+    store.save(chat(1));
+    store.save(chat(2));
+    await store.settled;
+
+    final headers = await ChatStore(directory: dir).loadIndex();
+
+    expect(headers.map((c) => c.id), ['c2', 'c1'], reason: 'newest first');
+    expect(headers.first.title, 'Chat 2');
+    expect(
+      headers.every((c) => c.messages.isEmpty),
+      isTrue,
+      reason: 'a header carries no transcript to be mistaken for an empty one',
+    );
+  });
+
+  test('a deleted chat leaves the index too, so the rail never offers a row '
+      'for a conversation that is gone', () async {
+    final store = ChatStore(directory: dir);
+    store.save(chat(1));
+    store.save(chat(2));
+    await store.settled;
+
+    store.delete('c1');
+    await store.settled;
+
+    expect((await ChatStore(directory: dir).loadIndex()).map((c) => c.id), [
+      'c2',
+    ]);
+  });
+
+  test(
+    'reading the whole history heals an index that has gone stale — a '
+    'restored backup and a hand-deleted file both go behind its back',
+    () async {
+      File('${dir.path}/$kChatIndexName').writeAsStringSync(
+        '{"chats":[{"id":"ghost","title":"Never existed",'
+        '"createdAt":"2026-01-01T00:00:00.000Z",'
+        '"updatedAt":"2026-01-01T00:00:00.000Z"}]}',
+      );
+      final store = ChatStore(directory: dir);
+      store.save(chat(7));
+      await store.settled;
+
+      await store.loadAll();
+      await store.settled;
+
+      expect((await ChatStore(directory: dir).loadIndex()).map((c) => c.id), [
+        'c7',
+      ]);
+    },
+  );
+
+  test('no index yet reads as no rows, not a crash — the first launch after '
+      'upgrading has a history and no index for it', () async {
+    expect(await ChatStore(directory: dir).loadIndex(), isEmpty);
+  });
+
+  test('an unreadable index is ignored rather than fatal, the same leniency a '
+      'corrupt chat file gets', () async {
+    File('${dir.path}/$kChatIndexName').writeAsStringSync('{not json');
+    expect(await ChatStore(directory: dir).loadIndex(), isEmpty);
+  });
+
+  test('the index is not itself read back as a conversation', () async {
+    final store = ChatStore(directory: dir);
+    store.save(chat(1));
+    await store.settled;
+
+    expect((await store.loadAll()).map((c) => c.id), ['c1']);
+  });
+
+  test('a write leaves no scratch file behind, and one a crash did leave is '
+      'invisible to the reader rather than a corrupt chat to skip', () async {
+    final store = ChatStore(directory: dir);
+    store.save(chat(1));
+    await store.settled;
+    File('${dir.path}/c9.json.tmp').writeAsStringSync('half a chat');
+
+    final names = dir.listSync().map((e) => e.uri.pathSegments.last).toList();
+
+    expect(
+      names.where((n) => n.endsWith('.tmp')),
+      ['c9.json.tmp'],
+      reason: 'only the one planted here — the real write cleaned up after it',
+    );
+    expect((await store.loadAll()).map((c) => c.id), ['c1']);
+  });
 }

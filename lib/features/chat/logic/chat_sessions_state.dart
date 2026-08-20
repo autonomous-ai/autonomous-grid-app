@@ -67,6 +67,7 @@ class QueuedTurn {
 class ChatSessionsState {
   const ChatSessionsState({
     this.conversations = const [],
+    this.preview = const [],
     this.activeId,
     this.draftProjectId,
     this.phases = const {},
@@ -156,6 +157,34 @@ class ChatSessionsState {
   /// first one used up. In memory only — it belongs to the run of turns being
   /// worked, not to the conversation.
   final Map<String, int> carriedOn;
+
+  /// The saved chats' **headers** — titles, timestamps, which project each sits
+  /// in — read off `index.json` while the transcripts are still being decoded,
+  /// and dropped the moment they land. Empty at every other time.
+  ///
+  /// It exists so the sidebar can be drawn on the way in instead of after: the
+  /// full history costs ~190 ms of disk and decode before the first row could
+  /// appear, and the index costs about one (see [ChatStore.loadIndex]).
+  ///
+  /// **Nothing but the sidebar may read this.** These conversations carry no
+  /// messages, and a chat with no messages is indistinguishable from an empty
+  /// one — anything that appended to a header would save that header *over* the
+  /// real transcript. [railConversations] is the only intended reader, and
+  /// [ChatSessionsController.select] loads a chat's real transcript before the
+  /// user can be standing in it.
+  final List<Conversation> preview;
+
+  /// What the sidebar lists: the real conversations, or their headers while the
+  /// history is still being read.
+  ///
+  /// Returns one of the two fields as-is rather than merging them, because the
+  /// rail subscribes on list identity — a fresh list per rebuild would redraw
+  /// every row on every streamed token. The cost is that a chat *started* during
+  /// the read isn't in the rail until the history lands: a beat, self-correcting,
+  /// and the alternative is a rail that rebuilds constantly for the rest of the
+  /// session.
+  List<Conversation> get railConversations =>
+      loading && preview.isNotEmpty ? preview : conversations;
 
   /// The open conversation, or null while composing a new one.
   Conversation? get active {
@@ -250,6 +279,7 @@ class ChatSessionsState {
 
   ChatSessionsState copyWith({
     List<Conversation>? conversations,
+    List<Conversation>? preview,
     Object? activeId = _keep,
     Object? draftProjectId = _keep,
     Map<String, SendPhase>? phases,
@@ -264,6 +294,7 @@ class ChatSessionsState {
   }) => ChatSessionsState(
     loading: loading ?? this.loading,
     conversations: conversations ?? this.conversations,
+    preview: preview ?? this.preview,
     activeId: identical(activeId, _keep) ? this.activeId : activeId as String?,
     draftProjectId: identical(draftProjectId, _keep)
         ? this.draftProjectId

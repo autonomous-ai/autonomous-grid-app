@@ -131,6 +131,84 @@ String unsaidTail({required String said, required String answer}) {
   return answer.trim();
 }
 
+/// The id every trimmed-steps marker carries, so [storedParts] can tell its own
+/// row apart from a step the agent ran and stay idempotent across saves.
+const String kTrimmedStepsId = 'trimmed-steps';
+
+/// How many of a turn's steps are kept on disk.
+///
+/// Not a size limit — each row is already capped at [kStoredResultLimit], and
+/// measuring the history on this machine says the payload caps are doing their
+/// job: 8,549 saved steps, median 1.4 KB, and dropping the result cap to 300
+/// characters would only take 14% off. What there is no bound on at all is *how
+/// many* rows one message may carry, and that is where the size actually went:
+/// 13.5 MB of a 16 MB history is `parts`, and a single overnight `/loop` message
+/// held 1,689 steps — 2.7 MB re-encoded on every following turn of that chat.
+///
+/// 120, because an ordinary agent turn has to survive whole: the 90th percentile
+/// of saved turns runs 108 steps. This cuts the runaway loop turns and leaves
+/// every normal one exactly as it was.
+const int kStoredStepLimit = 120;
+
+/// [parts] as they are kept on disk: every passage the agent wrote, and at most
+/// [kStoredStepLimit] steps.
+///
+/// The **newest** steps are the ones kept. A turn is read for where it got to,
+/// and in the case this was written for — a loop working the same chat all
+/// night — the early steps are a different piece of work than the one the last
+/// message is about.
+///
+/// The prose is never touched. It is what the transcript is read *for*, and it
+/// is small: 2.4 MB of text against 13.5 MB of steps across this machine's whole
+/// history. Cutting the cheap half to save the expensive one would be the wrong
+/// trade twice over.
+///
+/// What was dropped is said out loud, as a step of its own where the cut
+/// happened — §5: a timeline that quietly starts in the middle is a transcript
+/// that lies about what the agent did. The marker doesn't count as a step, so
+/// re-saving an already-trimmed message is a no-op rather than a slow bleed that
+/// takes one more row every time the chat is spoken in.
+List<TurnPart> storedParts(List<TurnPart> parts) {
+  final total = parts.where(_isRealStep).length;
+  if (total <= kStoredStepLimit) return parts;
+  final dropped = total - kStoredStepLimit;
+  final out = <TurnPart>[];
+  var seen = 0;
+  var marked = false;
+  for (final part in parts) {
+    if (!_isRealStep(part)) {
+      out.add(part);
+      continue;
+    }
+    if (++seen <= dropped) continue;
+    if (!marked) {
+      out.add(TurnStep(_trimmedMarker(dropped)));
+      marked = true;
+    }
+    out.add(part);
+  }
+  return out;
+}
+
+/// A step the agent ran, as opposed to a marker [storedParts] left behind on an
+/// earlier save.
+bool _isRealStep(TurnPart part) =>
+    part is TurnStep && part.step.id != kTrimmedStepsId;
+
+/// The row standing in for the steps that were cut.
+///
+/// [AgentActivityStatus.unknown] for the same reason a step that never reported
+/// gets it: this row is not something that succeeded or failed, and neither a
+/// tick nor a red mark is a thing the app is entitled to say about it.
+AgentActivity _trimmedMarker(int dropped) => AgentActivity(
+  id: kTrimmedStepsId,
+  kind: AgentActivityKind.tool,
+  label: dropped == 1
+      ? '1 earlier step trimmed to keep the saved chat small'
+      : '$dropped earlier steps trimmed to keep the saved chat small',
+  status: AgentActivityStatus.unknown,
+);
+
 /// A part as it is stored with the conversation. Steps carry their own four
 /// fields rather than a nested object: a row is one flat thing on screen and one
 /// flat thing on disk.
