@@ -82,9 +82,10 @@ class _PermissionSummary extends StatelessWidget {
                 style: theme.textTheme.titleMedium,
               ),
               const SizedBox(height: 6),
-              // "this grid" is safe to say here — GridScopeBar names it directly
-              // above. Repeating the name in both would read as a stutter, and
-              // a long grid name would wreck this sentence.
+              // "this grid" is safe to say here — the page's own subtitle
+              // names it (see [ProviderView]). Repeating the name in both would
+              // read as a stutter, and a long grid name would wreck this
+              // sentence.
               Text(
                 'Its owner hasn’t allowed your account to run a model here yet.',
                 style: theme.textTheme.bodySmall?.copyWith(

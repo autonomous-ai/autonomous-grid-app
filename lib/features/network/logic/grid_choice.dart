@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/credentials_file.dart';
+import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
 
 /// Whether the app has to stop and ask which grid the user wants before it lets
@@ -30,31 +31,43 @@ bool needsGridChoice({
   return credentials.byName(chosenGridId) == null;
 }
 
-/// A way past the question for this run of the app, and no further.
+/// Whether this run of the app is already past the grid question.
 ///
-/// The screen is a fork, not a wall (§5). Without this it is a wall for exactly
-/// the user it can't help: someone with no grids yet, on the day the control
-/// plane is unreachable, would have no answer available and no way into an app
-/// they could otherwise still open. They land on [NoGridNotice] instead, which
-/// says what's missing and leads back here.
+/// **A door, not a condition the app keeps re-checking.** [needsGridChoice] can
+/// turn true again mid-session — deleting the grid you're on is enough — and
+/// without this the whole window would be replaced by the first-run screen
+/// while the user was standing in Settings, with the "Deleted …" toast still
+/// floating over it. The screen belongs to starting the app; once through, the
+/// app handles a missing grid where the user actually is (see [NoGridNotice]).
 ///
-/// Session-only on purpose — it is not an answer, so it must not be remembered
-/// as one. The question comes back next launch, and by then it is usually one
-/// click.
-final gridChoiceSkippedProvider = NotifierProvider<GridChoiceSkipped, bool>(
-  GridChoiceSkipped.new,
+/// It is also what makes "I'll choose later" possible, and why that is a door
+/// rather than a saved answer: the screen is a fork, not a wall (§5), so
+/// someone with no grids on a day the control plane is unreachable still gets
+/// into an app they could otherwise open — and is asked again next launch,
+/// because they never answered.
+final gridChoiceGateProvider = NotifierProvider<GridChoiceGate, bool>(
+  GridChoiceGate.new,
 );
 
-class GridChoiceSkipped extends Notifier<bool> {
+class GridChoiceGate extends Notifier<bool> {
   @override
   bool build() => false;
 
-  void skip() => state = true;
+  /// Take [network] as the user's grid and go in — the one path that both
+  /// answers the question and opens the door, so the two can't come apart in
+  /// one of the three places the screen offers it.
+  void choose(NetworkCredential network) {
+    ref.read(selectedNetworkProvider.notifier).select(network);
+    state = true;
+  }
+
+  /// Go in without answering. Nothing is written, so the next launch asks.
+  void later() => state = true;
 }
 
 /// The live answer, wiring the app's providers into [needsGridChoice].
 final gridChoiceNeededProvider = Provider<bool>((ref) {
-  if (ref.watch(gridChoiceSkippedProvider)) return false;
+  if (ref.watch(gridChoiceGateProvider)) return false;
   return needsGridChoice(
     credentials: ref.watch(sessionProvider),
     chosenGridId: ref.watch(chatPrefsProvider.select((p) => p.networkId)),

@@ -5,6 +5,7 @@ import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/detail_widgets.dart';
 import '../../../auth/logic/session_controller.dart';
+import '../../../network/logic/grid_choice.dart';
 
 /// The grids this account already belongs to, as rows you press to pick one.
 ///
@@ -26,11 +27,12 @@ class GridPickList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final networks = ref.watch(sessionProvider).networks;
 
-    // Selecting is all this has to do: the choice screen exists only while no
-    // grid is chosen ([gridChoiceNeededProvider]), so the answer takes the
-    // screen away with it.
+    // Through the gate, not straight at [SelectedNetwork]: answering the
+    // question and opening the door are one act, and the door has to stay open
+    // afterwards — the grid can go away again later without the app throwing
+    // the user back out to this screen.
     void pick(NetworkCredential network) =>
-        ref.read(selectedNetworkProvider.notifier).select(network);
+        ref.read(gridChoiceGateProvider.notifier).choose(network);
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: _maxHeight),

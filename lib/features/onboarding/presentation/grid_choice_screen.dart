@@ -160,7 +160,7 @@ class _RefreshRow extends ConsumerWidget {
 ///
 /// Quiet, not accent: it is the way out, not one of the answers (the same
 /// reasoning as the model fork's "I'll set this up later"). It says "later"
-/// rather than "skip" because [gridChoiceSkippedProvider] only holds for this
+/// rather than "skip" because [gridChoiceGateProvider] only holds for this
 /// run — the app will ask again, and a button promising otherwise would lie.
 class _SkipRow extends ConsumerWidget {
   const _SkipRow();
@@ -169,7 +169,7 @@ class _SkipRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Center(
       child: TextButton(
-        onPressed: () => ref.read(gridChoiceSkippedProvider.notifier).skip(),
+        onPressed: () => ref.read(gridChoiceGateProvider.notifier).later(),
         // Ink, not the faint token: a control has to clear 4.5:1 on this white
         // card, which `textFaint` doesn't (§11).
         style: TextButton.styleFrom(foregroundColor: AppPalette.textSecondary),
