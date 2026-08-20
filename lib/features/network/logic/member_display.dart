@@ -77,3 +77,79 @@ String memberLocalPart(String email) {
   final at = trimmed.indexOf('@');
   return at <= 0 ? trimmed : trimmed.substring(0, at);
 }
+
+/// The colour slot an address hashes to, in `[0, slots)` — the same one every
+/// time, on every machine, for as long as the address is the same.
+///
+/// The starting point only. A roster draws its circles through
+/// [memberAvatarSlots], which takes this and then moves whoever landed on a
+/// colour already in use — see there for why a hash alone is not enough.
+///
+/// A roster used to draw every circle in one fill, which made the column a
+/// stack of identical marks: the letter was the only thing telling two rows
+/// apart, and a letter repeats too (three people whose names start with `M`).
+/// Colour is what lets a face be recognised before it is read — but only if it
+/// is *stable*, so a person is the same colour in the members panel, in the top
+/// bar's stack and in the share dialog, today and next week.
+///
+/// Hence a hash written out here rather than `String.hashCode`: the runtime is
+/// free to salt that per process, and a colour that changed on restart would be
+/// worse than no colour at all. FNV-1a over the address's code units — small,
+/// well-spread, and pinned by tests.
+///
+/// Lower-cased and trimmed first, for the reason [memberHandles] compares that
+/// way: the control plane stores what the user typed, so the same person can
+/// arrive as `Dev@` in one list and `dev@` in another, and two colours for one
+/// person defeats the point.
+int memberAvatarSlot(String email, int slots) {
+  assert(slots > 0, 'a palette with no colours cannot colour anything');
+  var hash = 0x811C9DC5;
+  for (final unit in email.trim().toLowerCase().codeUnits) {
+    hash ^= unit;
+    // FNV prime, kept inside 32 bits — Dart ints are 64-bit on the VM and
+    // arbitrary on the web, and a hash that overflows differently per platform
+    // is not the stable thing this function promises.
+    hash = (hash * 0x01000193) & 0xFFFFFFFF;
+  }
+  return hash % slots;
+}
+
+/// A colour slot per member, in the order the rows are drawn, with **no two
+/// people within one screenful sharing one**.
+///
+/// [memberAvatarSlot] alone cannot promise that, and the numbers are not close:
+/// five people drawn from eight colours come out all-different only 21% of the
+/// time. Measured on this grid's own roster, the first five members hashed to
+/// 5, 4, 4, 5, 5 — three violets and two ambers in the five faces the top bar
+/// shows, which is the exact failure colouring a roster was meant to fix.
+///
+/// So the hash decides where a person *starts* and this decides where they
+/// land: a slot already taken by one of the previous rows is stepped past until
+/// a free one comes up. Only the last `slots - 1` assignments are held against
+/// a row, which is what keeps a free slot always available — and means the
+/// guarantee is "distinct within any run of [slots] rows" rather than "distinct
+/// across a grid of two hundred people", which eight colours cannot honour and
+/// the eye does not ask for.
+///
+/// Whole-list rather than per-address for the same reason [memberHandles] is:
+/// whether a mark still tells one person from another is a fact about the list,
+/// not about the person. The cost is that a member's colour can move when
+/// somebody above them in the list does — worth it, because a column where two
+/// adjacent circles match is the thing colour was added to prevent.
+List<int> memberAvatarSlots(List<String> emails, int slots) {
+  assert(slots > 0, 'a palette with no colours cannot colour anything');
+  // What the rows just above this one took. Capped one short of the palette so
+  // there is always somewhere free to land, which is what bounds the probe.
+  final recent = <int>[];
+  final assigned = <int>[];
+  for (final email in emails) {
+    var slot = memberAvatarSlot(email, slots);
+    while (recent.contains(slot)) {
+      slot = (slot + 1) % slots;
+    }
+    assigned.add(slot);
+    recent.add(slot);
+    if (recent.length >= slots) recent.removeAt(0);
+  }
+  return assigned;
+}
