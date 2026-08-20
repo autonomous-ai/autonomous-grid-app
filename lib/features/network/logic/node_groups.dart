@@ -243,7 +243,7 @@ double? speedShare(OverviewNode node, double peak) {
 /// machine at 35% has to land somewhere, and a gap between bands would leave it
 /// uncoloured.
 enum SpeedBand {
-  /// Under 40% of the grid's fastest.
+  /// Under a quarter of the grid's fastest.
   ///
   /// Deliberately not an error band. This grid's slowest machine is a laptop
   /// answering 12 tok/s, which is a laptop working exactly as a laptop does —
@@ -252,16 +252,24 @@ enum SpeedBand {
   /// reason this enum names positions rather than severities.
   trailing,
 
-  /// 40% to under 80%.
+  /// A quarter to under 60%.
   steady,
 
-  /// 80% and over — at or near the pace of the fastest machine on the grid.
+  /// 60% and over — at or near the pace of the fastest machine on the grid.
   leading,
 }
 
 /// [share] (0…1, from [speedShare]) as the band that colours its meter.
+///
+/// **The cuts are at 25% and 60%, not at even thirds.** A grid's throughput is
+/// not spread evenly across its machines — it is a couple of racks and a row of
+/// laptops. On this one the fastest pair answer ~220 tok/s and nothing else
+/// clears 75, so against even thirds every machine but the racks fell into one
+/// band and the middle colour was never drawn at all: a three-colour scale
+/// saying two things. Cut here, the same grid separates its racks (100%), its
+/// mid boxes (34%, 28%) and its laptops (13%, 5%) into three.
 SpeedBand speedBand(double share) {
-  if (share >= 0.8) return SpeedBand.leading;
-  if (share >= 0.4) return SpeedBand.steady;
+  if (share >= 0.6) return SpeedBand.leading;
+  if (share >= 0.25) return SpeedBand.steady;
   return SpeedBand.trailing;
 }
