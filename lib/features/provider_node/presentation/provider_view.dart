@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
-import '../../../core/app_environment.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../messaging/presentation/remote_reach_row.dart';
@@ -19,7 +19,6 @@ import 'add_engine_options.dart';
 import 'engine_block.dart';
 import 'contribution_summary.dart';
 import 'engine_failure_card.dart';
-import 'grid_scope_bar.dart';
 import 'serving_engines_section.dart';
 
 /// Provider lifecycle. Enables the provider role when missing, then serves a
@@ -48,12 +47,51 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
       });
     }
 
-    return const SectionScaffold(
+    return SectionScaffold(
       // The sidebar row's own words — one screen, one name (§5).
       title: 'Model engines',
+      // Names the grid every sentence on this page is about. It is all that
+      // survives of the scope bar that used to head the body: that block
+      // existed to name *and switch* the grid, and it justified itself by the
+      // Grids tab being developer-only — which stopped being true when Settings
+      // ▸ Grid shipped. The naming is still needed, so it moves into the header
+      // the page already had, as a line rather than a card.
+      subtitle: network == null
+          ? null
+          : 'What this computer shares on ${network.name}.',
       // _ServeSection owns its own scrolling: the running engine fills the
       // height (only its log scrolls), other states scroll as a page.
-      child: _ServeSection(),
+      child: const _ServeSection(),
+    );
+  }
+}
+
+/// What the page shows with no grid picked — the one state where nothing here
+/// can be set up.
+///
+/// A sentence naming a tab is what this was, and it named the wrong one for as
+/// long as Grids was developer-only: the tab it pointed at wasn't in a shipped
+/// build's nav. A button can't go stale that way, and §5 asks every empty state
+/// to carry its own next step.
+class _NoGridYet extends ConsumerWidget {
+  const _NoGridYet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Pick a grid before setting up an engine here.'),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: () => ref
+                .read(shellSectionProvider.notifier)
+                .select(ShellSection.grids),
+            child: const Text('Choose a grid'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -75,7 +113,7 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     final network = ref.watch(selectedNetworkProvider);
 
     if (network == null) {
-      return const Text('Select a grid first from the Grids tab.');
+      return const _NoGridYet();
     }
     return ListView(children: _children(context, network));
   }
@@ -84,23 +122,7 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     final run = ref.watch(providerRunControllerProvider);
     final serving = ref.watch(servingEnginesProvider);
 
-    // Names the grid every sentence below is about, and switches it — for
-    // anyone whose account has more than one. This page says "this grid"
-    // throughout, and with two of them that sentence is ambiguous and there is
-    // nowhere else on the screen to change which one it means: the Grids tab is
-    // developer-only, the top bar's grid pill only reports, and the chat's
-    // grid+model picker is a screen away.
-    //
-    // A single-grid account has nothing to hold apart and nothing to switch to,
-    // so the strip would only ask them to carry a distinction they never make;
-    // it stays mounted in a developer build, where which grid is selected is a
-    // thing to check.
-    final grids = ref.watch(sessionProvider).networks;
     final children = <Widget>[
-      if (grids.length > 1 || AppEnvironment.isDeveloperMode) ...[
-        GridScopeBar(network: network),
-        const SizedBox(height: 16),
-      ],
       // What this computer does while nobody is at it. The setup for it lives
       // on a developer-gated screen, but whether a bot is answering here is not
       // a developer's fact — it is the machine's.

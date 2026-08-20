@@ -8,6 +8,7 @@ import '../../../../shared/widgets/error_box.dart';
 import '../../../../shared/widgets/labeled_field.dart';
 import '../../../auth/logic/session_controller.dart';
 import '../../../network/logic/create_network_controller.dart';
+import '../../../network/logic/grid_choice.dart';
 import '../../../network/logic/grid_name.dart';
 import '../../../network/presentation/grid_type_picker.dart';
 
@@ -68,7 +69,7 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
   void _onCreated(CreateNetworkDone done) {
     final match = ref.read(sessionProvider).byName(done.network.networkId);
     if (match != null) {
-      ref.read(selectedNetworkProvider.notifier).select(match);
+      ref.read(gridChoiceGateProvider.notifier).choose(match);
       return;
     }
     setState(() {

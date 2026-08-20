@@ -38,11 +38,12 @@ CredentialsFile _credentials(List<NetworkCredential> networks) =>
     CredentialsFile(networks: networks, sessionToken: 'session');
 
 /// `~/.grid` never appears in a test (§8), so the credentials the app reads and
-/// the prefs it writes both come from here.
+/// the prefs it writes both come from here. Mutable, so a test can take a grid
+/// away the way a deletion does and re-read.
 class _FakeStore extends GridHomeStore {
-  const _FakeStore(this.credentials);
+  _FakeStore(this.credentials);
 
-  final CredentialsFile credentials;
+  CredentialsFile credentials;
 
   @override
   CredentialsFile readCredentials() => credentials;
@@ -113,12 +114,13 @@ void main() {
   group('wired to the app', () {
     late Directory temp;
 
+    late _FakeStore store;
+
     ProviderContainer containerWith(List<NetworkCredential> networks) {
+      store = _FakeStore(_credentials(networks));
       final container = ProviderContainer(
         overrides: [
-          gridHomeStoreProvider.overrideWithValue(
-            _FakeStore(_credentials(networks)),
-          ),
+          gridHomeStoreProvider.overrideWithValue(store),
           chatPrefsStoreProvider.overrideWithValue(
             ChatPrefsStore(file: File('${temp.path}/chat_prefs.json')),
           ),
@@ -135,7 +137,7 @@ void main() {
       final container = containerWith([lab, office]);
       expect(container.read(gridChoiceNeededProvider), isTrue);
 
-      container.read(selectedNetworkProvider.notifier).select(office);
+      container.read(gridChoiceGateProvider.notifier).choose(office);
 
       expect(
         container.read(gridChoiceNeededProvider),
@@ -151,11 +153,39 @@ void main() {
       );
     });
 
+    test('the screen does not come back when the grid is deleted later', () {
+      final container = containerWith([lab, office]);
+      container.read(gridChoiceGateProvider.notifier).choose(office);
+      expect(container.read(gridChoiceNeededProvider), isFalse);
+
+      // What deleting the open grid looks like from here.
+      store.credentials = _credentials([lab]);
+      container.invalidate(sessionProvider);
+
+      expect(
+        container.read(gridChoiceNeededProvider),
+        isFalse,
+        reason:
+            'the whole window must not turn into the first-run screen while '
+            'the user is standing in Settings',
+      );
+      expect(
+        needsGridChoice(
+          credentials: _credentials([lab]),
+          chosenGridId: 'net-2',
+        ),
+        isTrue,
+        reason:
+            'the rule itself still reads it as unanswered — the door is the '
+            'only thing keeping the user in, so it has to be a door',
+      );
+    });
+
     test('choosing later lets the user in without an answer on record', () {
       final container = containerWith([]);
       expect(container.read(gridChoiceNeededProvider), isTrue);
 
-      container.read(gridChoiceSkippedProvider.notifier).skip();
+      container.read(gridChoiceGateProvider.notifier).later();
 
       expect(container.read(gridChoiceNeededProvider), isFalse);
       expect(
