@@ -23,7 +23,20 @@ const String kLoopBlockFence = 'grid-loop';
 /// nothing changed, so a night of them collapses to a count instead of filling
 /// the transcript. [stop] ends the loop — the normal way a finished job stops,
 /// rather than running until the user notices or the seven days run out.
-typedef LoopPace = ({Duration? next, String? why, bool quiet, bool stop});
+///
+/// [start] is the block asking for a loop that does not exist yet, and it is
+/// the one field here the *user* is behind rather than the assistant. The app
+/// reads "lặp lại mỗi 30 phút" out of a sentence deterministically, but nobody
+/// can list every way a person says "keep going until I'm back" — so when the
+/// reading finds nothing, the assistant that just read the message says whether
+/// it was a repeat. It costs no round-trip: that turn was happening anyway.
+typedef LoopPace = ({
+  Duration? next,
+  String? why,
+  bool quiet,
+  bool stop,
+  bool start,
+});
 
 /// The `grid-loop` block in [reply], or null when it holds none.
 ///
@@ -45,6 +58,7 @@ LoopPace? parseLoopPaceBlock(String reply) {
       why: why.isEmpty ? null : why,
       quiet: decoded['quiet'] == true,
       stop: decoded['stop'] == true,
+      start: decoded['start'] == true,
     );
   }
   return null;

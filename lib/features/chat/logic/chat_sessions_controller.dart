@@ -316,7 +316,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   void _finish(String id);
 
   /// Note a reply that set up a repeat nothing is running — [_ChatLoops].
-  void _noteUnbackedLoopClaim(String id);
+  void _settleLoopClaim(String id);
 
   /// Whether chat [id] is one the app would carry on by itself as things stand
   /// — [_ChatSettle]. Read by the send that just landed, to keep an

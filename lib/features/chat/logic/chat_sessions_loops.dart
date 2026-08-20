@@ -147,18 +147,24 @@ mixin _ChatLoops on _ChatSessions {
     _logLoopStopped(id, loop, 'the chat it belonged to was cleared or deleted');
   }
 
-  /// Put a note under a finished turn whose reply set up a repeat that nothing
-  /// is running (see [kUnbackedLoopClaimNote]).
+  /// Act on a finished turn whose reply talks about a repeat that does not
+  /// exist: start the one the user asked for, or say that nothing is repeating.
   ///
   /// Runs on every turn that settles, not only a loop's: a loop beat has a
-  /// running loop by definition, so the block there is read and taken off as
-  /// usual and this does nothing. It is the *ordinary* turn — the one where an
-  /// agent decided by itself to keep going — that ends with a promise the app
-  /// never made.
+  /// running loop by definition, so the block there is read and paced as usual
+  /// and this does nothing. It is the *ordinary* turn that matters here, and it
+  /// ends one of two ways — the assistant relaying a repeat the user asked for
+  /// in words the app could not parse ([loopStartAskedFor]), or an agent that
+  /// decided by itself to keep going ([kUnbackedLoopClaimNote]).
   @override
-  void _noteUnbackedLoopClaim(String id) {
+  void _settleLoopClaim(String id) {
     final chat = _find(id);
     if (chat == null) return;
+    final asked = loopStartAskedFor(_lastReplyOf(chat), chat.loop);
+    if (asked != null) {
+      _startLoopTheUserAskedFor(id, chat, asked);
+      return;
+    }
     final noted = noteUnbackedLoopClaim(chat);
     if (identical(noted, chat)) return;
     ref
@@ -170,6 +176,53 @@ mixin _ChatLoops on _ChatSessions {
         );
     // No `updatedAt`: the turn that just landed already moved it.
     _saveAndReplace(noted);
+  }
+
+  /// Start the repeat [asked] relays, with the user's own message as its prompt.
+  ///
+  /// The first beat waits a full gap rather than going out now, unlike `/loop`:
+  /// the turn that just ended *was* the first beat — the assistant did the work
+  /// and then said to keep doing it — so sending again immediately would repeat
+  /// the same thing twice with nothing changed in between.
+  void _startLoopTheUserAskedFor(String id, Conversation chat, LoopPace asked) {
+    final gap = asked.next!;
+    final prompt = _lastAskOf(chat);
+    // Nothing the user said to repeat — a chat where the assistant spoke first.
+    // Whatever that reply meant, it did not come from an instruction, and the
+    // note below is the honest ending for it.
+    if (prompt.isEmpty) {
+      _saveAndReplace(noteUnbackedLoopClaim(chat));
+      return;
+    }
+    final now = DateTime.now();
+    ref
+        .read(appLogProvider)
+        .info(
+          'chat',
+          'loop in $id started from the reply, every ${loopIntervalLabel(gap)}: '
+              '$prompt',
+        );
+    _saveAndReplace(
+      withoutLoopBlockOnLastReply(chat).copyWith(
+        loop: ChatLoop(
+          prompt: prompt,
+          interval: gap,
+          startedAt: now,
+          nextAt: now.add(gap),
+          pacing: asked.why,
+        ),
+      ),
+    );
+    _armLoopTimer(id, gap);
+  }
+
+  /// The last thing the user typed, which is what a loop started this way
+  /// repeats. Empty when they have not spoken in this chat.
+  String _lastAskOf(Conversation chat) {
+    for (final message in chat.messages.reversed) {
+      if (message.role == ChatRole.user) return message.text.trim();
+    }
+    return '';
   }
 
   /// Say in the log that a loop stopped, and why.
