@@ -10,6 +10,24 @@ enum RoutingMode {
   final String displayName;
 }
 
+/// The plain `model` field value that asks the grid for [mode] without pinning
+/// any models — the slash string the relay has always accepted, and what
+/// Dynamic mode puts on the wire every turn.
+///
+/// Also the id the chat's model picker gives the mode's row, so a mode is
+/// picked, remembered and restored through exactly the same path an ordinary
+/// model is.
+String routingModelId(RoutingMode mode) => 'auto/${mode.wireValue}';
+
+/// The routing mode [id] names, or null when it is an ordinary model id.
+RoutingMode? routingModeForModelId(String id) {
+  final trimmed = id.trim();
+  for (final mode in RoutingMode.values) {
+    if (routingModelId(mode) == trimmed) return mode;
+  }
+  return null;
+}
+
 /// The models a chat sends to the relay for its routing mode, and whether
 /// that pick is pinned (Fixed) or re-picked by the grid every turn (Dynamic).
 class RoutingGroup {
@@ -29,7 +47,7 @@ class RoutingGroup {
 
   /// The exact string sent as the chat request's `model` field.
   String toModelField() {
-    if (!isFixed) return 'auto/${mode.wireValue}';
+    if (!isFixed) return routingModelId(mode);
     if (mode == RoutingMode.bruteForce) {
       return jsonEncode({'mode': 'brute_force', 'models': models});
     }

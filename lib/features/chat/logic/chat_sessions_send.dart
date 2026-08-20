@@ -484,9 +484,15 @@ mixin _ChatSend on _ChatSessions {
       firstToken: firstToken,
     );
 
+    // The wire's answer to "which model", which is not always the composer's:
+    // a chat pinned to a routing group sends the group (see [wireModelFor]).
+    // Built here, at the one call that leaves the app, rather than upstream —
+    // everything above reads [model] to name the pick on screen, to find the
+    // machine behind it and to work out which agents can answer with it, and
+    // none of those questions is answered by a pinned model list.
     final updates = _senderFor(viaAgent, agent).send(
       network: network,
-      model: model,
+      model: wireModelFor(conversation, model),
       // Not the whole transcript when it has been compacted: the summary
       // stands in for what it covers (see [historyForTurn]).
       history: historyForTurn(conversation.messages, conversation.compaction),

@@ -551,3 +551,17 @@ AgentApprovalMode approvalFor(
   Conversation? conversation,
   AgentApprovalMode fallback,
 ) => conversation?.approval ?? fallback;
+
+/// The string a turn in [conversation] puts in the request's `model` field,
+/// given the [picked] model id the composer is showing.
+///
+/// A chat pinned to a routing group sends the group instead: the mode's slash
+/// string under Dynamic, the pinned model list under Fixed — see
+/// [RoutingGroup.toModelField]. Everything the app shows about the turn keeps
+/// naming [picked], because the Fixed form is a JSON object and a footer
+/// answering "what answered this?" with one says nothing.
+///
+/// Pure, and here beside [approvalFor] for the same reason: a rule about a
+/// conversation belongs with the conversation, not inside the send it decides.
+String wireModelFor(Conversation conversation, String picked) =>
+    conversation.routingGroup?.toModelField() ?? picked;

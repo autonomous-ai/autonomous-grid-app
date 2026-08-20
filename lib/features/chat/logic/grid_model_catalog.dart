@@ -5,7 +5,10 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../network/logic/grid_overview_provider.dart';
 import '../../network/logic/network_models_provider.dart';
+import '../../network/logic/node_display.dart' show kAutoModelId;
 import '../../playground/logic/playground_models.dart';
+import '../../playground/logic/playground_request.dart' show PlaygroundModality;
+import 'routing_group.dart';
 
 /// Whether a grid's models are still loading, ready, or the grid is unreachable —
 /// so the unified picker can show a live state per group instead of a blank.
@@ -53,6 +56,35 @@ final gridModelCatalogProvider = Provider.autoDispose<List<GridModelGroup>>((
     ),
   ];
 });
+
+/// The orchestrator rows the chat's model picker offers on top of the models
+/// [served] lists — "Brute Force" and "Feedback Loop", the two shapes the relay
+/// accepts in a request's `model` field (see [RoutingMode]).
+///
+/// Empty unless the grid serves the `auto` router: both modes *are* auto
+/// routing with a shape put on it, so a grid with no router has nothing to run
+/// them and must not offer a row that ends at a refusal.
+///
+/// They inherit `auto`'s own answers to "where does this run" and "can it read
+/// an attached image", because that is literally who answers: the router picks
+/// per request in both cases. Pure so the picker, the composer's model field
+/// and the vision lock all read the same list.
+List<PlaygroundModelOption> routingModeOptions(
+  List<PlaygroundModelOption> served,
+) {
+  final auto = served.where((o) => o.id == kAutoModelId).firstOrNull;
+  if (auto == null) return const [];
+  return [
+    for (final mode in RoutingMode.values)
+      PlaygroundModelOption(
+        id: routingModelId(mode),
+        label: mode.displayName,
+        modality: PlaygroundModality.text,
+        hosting: ModelHosting.routed,
+        vision: auto.vision,
+      ),
+  ];
+}
 
 /// The nodes a grid's overview reports, or none while it's still loading /
 /// offline — what they add (the Image/Video modes, and which engine is behind

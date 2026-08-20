@@ -3,6 +3,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/routing_group.dart';
 
 void main() {
+  group('the id a routing mode wears in the model picker', () {
+    test('round-trips, so a chat saved on a mode reopens on that mode rather '
+        'than on a name the picker no longer recognises', () {
+      for (final mode in RoutingMode.values) {
+        expect(routingModeForModelId(routingModelId(mode)), mode);
+      }
+    });
+
+    test('an ordinary model id names no mode — a plain pick must not be read '
+        'as an orchestrator row', () {
+      expect(routingModeForModelId('qwen/qwen3.6-27b'), isNull);
+      expect(routingModeForModelId('auto'), isNull);
+      expect(routingModeForModelId(''), isNull);
+    });
+  });
+
   group('RoutingGroup.toModelField', () {
     test('dynamic brute force is the plain slash string', () {
       final g = RoutingGroup(mode: RoutingMode.bruteForce, isFixed: false);

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,7 +18,10 @@ import '../../playground/logic/chat_message.dart';
 import '../../network/logic/node_display.dart' show modelKey;
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
+import '../logic/chat_sessions_controller.dart';
 import '../logic/grid_model_catalog.dart';
+import '../logic/routing_group.dart';
+import 'routing_setup_dialog.dart';
 
 /// Called when the user picks a model: [grid] is the grid that serves it (which
 /// becomes the active grid) and [option] is the chosen model / media mode.
@@ -190,7 +195,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         if (group.status != GridModelStatus.ready) rows++;
         continue;
       }
-      rows += group.options.length;
+      rows += group.options.length + routingModeOptions(group.options).length;
     }
     // Zero is meaningful, not a floor to clamp away: [_menuSize] reads it as the
     // empty state, whose one note is taller than an option row.
@@ -221,7 +226,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
       menuChildren: [
         _ModelMenu(
           currentModelId: widget.currentModelId,
-          onSelect: widget.onSelect,
+          onSelect: _select,
           onClose: _menu.close,
           visionBlocked: widget.visionBlocked,
         ),
@@ -270,10 +275,69 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     );
   }
 
+  /// A pick from the menu, before it reaches the composer.
+  ///
+  /// An ordinary model goes straight through. The two orchestrator rows are a
+  /// choice about *how* this chat is answered rather than by what, so they set
+  /// the chat's routing group up first — and only then move the composer, so a
+  /// cancelled setup leaves the pill on what it was already showing.
+  void _select(NetworkCredential grid, PlaygroundModelOption option) {
+    final mode = routingModeForModelId(option.id);
+    if (mode == null) {
+      // Moving to a plain model hands the chat back to the grid's ordinary
+      // pick: a group left behind would go on pinning models the composer no
+      // longer names.
+      ref.read(chatSessionsProvider.notifier).clearRoutingGroup();
+      widget.onSelect(grid, option);
+      return;
+    }
+    unawaited(_setUpRouting(grid, option, mode));
+  }
+
+  /// Ask which models [mode] should use in this chat, then pin them.
+  ///
+  /// Once per chat per mode: coming back to a mode that is already set up
+  /// keeps the models the user confirmed, rather than spending another request
+  /// on a suggestion and asking them the same question again. Reopening the
+  /// setup is picking the *other* mode, or a plain model and back.
+  ///
+  /// Run from the pill rather than from inside the menu because the menu is
+  /// torn down the moment a row is tapped — the dialog has to hang off
+  /// something that is still on screen when it opens.
+  Future<void> _setUpRouting(
+    NetworkCredential grid,
+    PlaygroundModelOption option,
+    RoutingMode mode,
+  ) async {
+    final chats = ref.read(chatSessionsProvider.notifier);
+    final chat = ref.read(chatSessionsProvider).active;
+    if (chat?.routingGroup?.mode == mode) {
+      widget.onSelect(grid, option);
+      return;
+    }
+    final group = await showRoutingSetupDialog(
+      context,
+      mode: mode,
+      // What the suggestion is asked to read: an empty list for a chat with
+      // nothing said in it yet, which is the common case for this dialog.
+      conversation: chat?.messages ?? const [],
+    );
+    // Cancelled — the composer keeps whatever it was on. Falling through to
+    // the plain mode string would leave the chat routed a way the user backed
+    // out of, with the pill saying so.
+    if (!mounted || group == null) return;
+    chats.setRoutingGroup(group);
+    widget.onSelect(grid, option);
+  }
+
   String _triggerLabel(String id) {
     final trimmed = id.trim();
     if (trimmed.isEmpty) return 'Choose model';
-    return modelShortLabel(trimmed);
+    // The orchestrator rows are named, not derived: `modelShortLabel` would
+    // read `auto/brute_force` as a maker-prefixed id and put "brute_force" on
+    // the pill.
+    return routingModeForModelId(trimmed)?.displayName ??
+        modelShortLabel(trimmed);
   }
 
   /// The selected model as the menu knows it, so the pill wears the same mark
@@ -293,7 +357,10 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     final trimmed = id.trim();
     if (trimmed.isEmpty) return null;
     for (final group in groups) {
-      for (final option in group.options) {
+      for (final option in [
+        ...group.options,
+        ...routingModeOptions(group.options),
+      ]) {
         if (modelKey(option.id) == modelKey(trimmed)) return option;
       }
     }
@@ -416,7 +483,14 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         }
         continue;
       }
-      for (final option in group.options) {
+      // The grid's own models first, then the two ways of putting several of
+      // them on one question. The orchestrator rows go last because they are
+      // the rarer choice and because they read as a footnote to the list they
+      // draw from — see [routingModeOptions].
+      for (final option in [
+        ...group.options,
+        ...routingModeOptions(group.options),
+      ]) {
         rows.add(
           _OptionRow(
             option: option,

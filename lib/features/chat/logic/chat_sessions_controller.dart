@@ -52,6 +52,7 @@ import 'conversation.dart';
 import 'conversation_usage.dart';
 import 'interrupted_turn.dart';
 import 'loop_claim.dart';
+import 'routing_group.dart';
 
 /// Re-exported so every file that already imports the controller keeps seeing
 /// [ChatSessionsState] — moving the state out is not a change any caller has to
@@ -776,6 +777,43 @@ class ChatSessionsController extends _ChatSessions
     if (active == null || active.model == model) return;
     final updated = active.copyWith(model: model);
     _saveAndReplace(updated);
+  }
+
+  /// Route the open chat through [group] — which models answer in it, and
+  /// whether that pick is held or re-made every turn (see [RoutingGroup]).
+  ///
+  /// Starts the chat when the user is standing on a blank composer, the way
+  /// `/goal` does: the setup dialog this lands from spends a real request
+  /// asking the grid which models to use, and there would be nothing to keep
+  /// the answer on otherwise. The fresh chat is seeded with the mode's own
+  /// model id ([routingModelId]) — the row the picker has just moved to.
+  ///
+  /// Leaves `updatedAt` alone, like [setActiveModel]: choosing how a chat is
+  /// routed is not talking in it, and must not re-sort the sidebar.
+  void setRoutingGroup(RoutingGroup group) {
+    final active = state.active;
+    if (active != null) {
+      if (active.routingGroup == group) return;
+      _saveAndReplace(active.copyWith(routingGroup: group));
+      return;
+    }
+    _commit(
+      _activeOrNew(routingModelId(group.mode)).copyWith(routingGroup: group),
+      phase: const SendIdle(),
+      makeActive: true,
+    );
+  }
+
+  /// Hand the open chat back to the grid's ordinary pick — what choosing a
+  /// plain model in the picker means, since a group left behind would go on
+  /// pinning models the composer no longer names.
+  ///
+  /// A no-op for a chat that was never routed, so switching models in an
+  /// ordinary chat writes nothing.
+  void clearRoutingGroup() {
+    final active = state.active;
+    if (active == null || active.routingGroup == null) return;
+    _saveAndReplace(active.copyWith(clearRoutingGroup: true));
   }
 
   /// Set how much the assistant may do without asking.

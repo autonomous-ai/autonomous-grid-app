@@ -539,6 +539,41 @@ void main() {
     });
   });
 
+  group('the model field a turn puts on the wire', () {
+    test('an ordinary chat sends exactly the model the composer shows, so '
+        'nothing about routing changes a chat that was never routed', () {
+      expect(wireModelFor(_conversation(), 'qwen'), 'qwen');
+    });
+
+    test('a Fixed chat sends its pinned models rather than the composer\'s '
+        'id — the whole point of pinning is that the grid stops choosing', () {
+      final pinned = _conversation().copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      expect(
+        wireModelFor(pinned, 'auto/brute_force'),
+        '{"mode":"brute_force","models":["a","b"]}',
+      );
+    });
+
+    test('a Dynamic chat sends the plain mode string every turn, so the grid '
+        'picks afresh each time and no model list is implied', () {
+      final dynamicChat = _conversation().copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.judgeLoop,
+          isFixed: false,
+        ),
+      );
+
+      expect(wireModelFor(dynamicChat, 'auto/judge_loop'), 'auto/judge_loop');
+    });
+  });
+
   group('a turn the app went away in the middle of', () {
     test('a transcript ending in the user is a turn that never came back', () {
       final cut = _conversation(

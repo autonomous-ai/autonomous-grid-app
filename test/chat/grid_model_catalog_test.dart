@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/chat/logic/grid_model_catalog.dart';
+import 'package:grid_app/features/chat/logic/routing_group.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/features/network/logic/network_models_provider.dart';
+import 'package:grid_app/features/playground/logic/playground_models.dart';
+import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
@@ -194,6 +197,56 @@ void main() {
       container.read(gridModelCatalogProvider).single.options.map((o) => o.id),
       ['maker/m1', 'maker/m2'],
     );
+  });
+
+  group('the orchestrator rows offered beside a grid\'s models', () {
+    test('a grid with no auto router offers none, so no row can be tapped '
+        'into a mode the grid has nothing to run', () {
+      expect(
+        routingModeOptions(const [
+          PlaygroundModelOption(
+            id: 'qwen',
+            label: 'qwen',
+            modality: PlaygroundModality.text,
+          ),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('a grid serving auto offers one row per mode, each named the way '
+        'the mode is named everywhere else', () {
+      final rows = routingModeOptions(const [
+        PlaygroundModelOption(
+          id: 'auto',
+          label: 'auto',
+          modality: PlaygroundModality.text,
+        ),
+      ]);
+
+      expect(rows.map((o) => o.id), [
+        for (final mode in RoutingMode.values) routingModelId(mode),
+      ]);
+      expect(rows.map((o) => o.label), ['Brute Force', 'Feedback Loop']);
+    });
+
+    test("the rows read images exactly when the router does — they are the "
+        "router, so a vision lock must not answer differently for them", () {
+      const seeing = PlaygroundModelOption(
+        id: 'auto',
+        label: 'auto',
+        modality: PlaygroundModality.text,
+        vision: true,
+      );
+      const blind = PlaygroundModelOption(
+        id: 'auto',
+        label: 'auto',
+        modality: PlaygroundModality.text,
+      );
+
+      expect(routingModeOptions([seeing]).every((o) => o.vision), isTrue);
+      expect(routingModeOptions([blind]).any((o) => o.vision), isFalse);
+    });
   });
 
   test('catalog is empty when no grid is selected', () {

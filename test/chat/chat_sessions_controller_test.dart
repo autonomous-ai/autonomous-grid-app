@@ -15,6 +15,7 @@ import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
+import 'package:grid_app/features/chat/logic/routing_group.dart';
 import 'package:grid_app/features/agents/logic/agent_session_title.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
@@ -4414,6 +4415,102 @@ void main() {
       expect(h.hermes.history, isNull);
       expect(h.container.read(chatSessionsProvider).sending, isFalse);
     });
+  });
+
+  group('a chat routed through an orchestrator mode', () {
+    test('setting a mode on a blank composer starts the chat, so the models '
+        'the setup dialog just spent a request on have somewhere to live', () {
+      final h = _harness(tmp, updates: _kOneReply);
+      final c = h.container.read(chatSessionsProvider.notifier);
+
+      c.setRoutingGroup(
+        const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.routingGroup?.mode, RoutingMode.bruteForce);
+      // Seeded with the mode's own id — the row the picker has moved to.
+      expect(chat.model, 'auto/brute_force');
+      expect(h.container.read(chatSessionsProvider).activeId, chat.id);
+    });
+
+    test('a Fixed chat puts its pinned models on the wire while the chat '
+        'itself goes on naming the row the user picked', () async {
+      final h = _harness(tmp, updates: _kOneReply);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      c.setRoutingGroup(
+        const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      await c.send(
+        network: _credential(),
+        model: 'auto/brute_force',
+        message: 'hi',
+      );
+
+      expect(h.sender.model, '{"mode":"brute_force","models":["a","b"]}');
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.model, 'auto/brute_force');
+      // And the reply is stamped with the readable pick, not the JSON: a
+      // footer answering "what answered this?" with an object says nothing.
+      expect(chat.messages.last.model, 'auto/brute_force');
+    });
+
+    test('a Dynamic chat sends the plain mode string, so the grid picks its '
+        'models afresh every turn', () async {
+      final h = _harness(tmp, updates: _kOneReply);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      c.setRoutingGroup(
+        const RoutingGroup(mode: RoutingMode.judgeLoop, isFixed: false),
+      );
+
+      await c.send(
+        network: _credential(),
+        model: 'auto/judge_loop',
+        message: 'hi',
+      );
+
+      expect(h.sender.model, 'auto/judge_loop');
+    });
+
+    test(
+      'clearing the group hands the chat back to the grid — picking a '
+      'plain model must not go on sending models it no longer names',
+      () async {
+        final h = _harness(tmp, updates: _kOneReply);
+        final c = h.container.read(chatSessionsProvider.notifier);
+        c.setRoutingGroup(
+          const RoutingGroup(
+            mode: RoutingMode.bruteForce,
+            isFixed: true,
+            models: ['a', 'b'],
+          ),
+        );
+
+        c.clearRoutingGroup();
+        await c.send(network: _credential(), model: 'qwen', message: 'hi');
+
+        expect(h.sender.model, 'qwen');
+        final chat = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single;
+        expect(chat.routingGroup, isNull);
+        // And it survives the restart, rather than coming back pinned.
+        expect(
+          (await ChatStore(directory: tmp).loadAll()).single.routingGroup,
+          isNull,
+        );
+      },
+    );
   });
 }
 
