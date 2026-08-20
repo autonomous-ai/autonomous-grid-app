@@ -233,3 +233,35 @@ double? speedShare(OverviewNode node, double peak) {
   if (speed == null || speed <= 0 || peak <= 0) return null;
   return (speed / peak).clamp(0.0, 1.0);
 }
+
+/// Where a machine's speed falls against the grid's fastest — the band its
+/// meter is coloured by.
+///
+/// A band rather than a continuous ramp because the meter is 26px wide: a
+/// gradient across that distance is a colour nobody can name, while three steps
+/// are three states a reader can hold. The thresholds are contiguous — a
+/// machine at 35% has to land somewhere, and a gap between bands would leave it
+/// uncoloured.
+enum SpeedBand {
+  /// Under 40% of the grid's fastest.
+  ///
+  /// Deliberately not an error band. This grid's slowest machine is a laptop
+  /// answering 12 tok/s, which is a laptop working exactly as a laptop does —
+  /// it is behind the racks, not broken. The colour the panel gives this is
+  /// [AppPalette.warn], never the error one, and the distinction is the whole
+  /// reason this enum names positions rather than severities.
+  trailing,
+
+  /// 40% to under 80%.
+  steady,
+
+  /// 80% and over — at or near the pace of the fastest machine on the grid.
+  leading,
+}
+
+/// [share] (0…1, from [speedShare]) as the band that colours its meter.
+SpeedBand speedBand(double share) {
+  if (share >= 0.8) return SpeedBand.leading;
+  if (share >= 0.4) return SpeedBand.steady;
+  return SpeedBand.trailing;
+}

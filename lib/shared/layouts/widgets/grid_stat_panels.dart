@@ -919,6 +919,23 @@ class _SpeedColumn extends StatelessWidget {
   /// distinction the absent meter above is for.
   static const double _floor = _height;
 
+  /// The band's colour. Measured against the block's fill, the three clear
+  /// 4.68:1 at their worst — well past the 3:1 WCAG 1.4.11 asks of a graphic
+  /// that carries meaning, which this one does.
+  ///
+  /// Red is deliberately absent. The scale is speed *against the fastest
+  /// machine on this grid*, so its bottom is a laptop keeping up with a rack —
+  /// slower, not broken — and [AppPalette.error] in this app is reserved for
+  /// something that has actually gone wrong.
+  ///
+  /// [AppPalette.accentOnSurface], never [AppPalette.accent]: this is ink read
+  /// against a background, and `#2F5BEA` on a dark one manages 2.6:1.
+  static Color _bandColor(SpeedBand band) => switch (band) {
+    SpeedBand.trailing => AppPalette.warn,
+    SpeedBand.steady => AppPalette.accentOnSurface,
+    SpeedBand.leading => AppPalette.online,
+  };
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
@@ -954,10 +971,7 @@ class _SpeedColumn extends StatelessWidget {
                     width: math.max(_floor, _width * value),
                     height: _height,
                     decoration: BoxDecoration(
-                      // The on-surface variant, never the accent fill: this is
-                      // ink read against a background, and #2F5BEA on a dark
-                      // one manages 2.6:1.
-                      color: AppPalette.accentOnSurface,
+                      color: _bandColor(speedBand(value)),
                       borderRadius: BorderRadius.circular(_height / 2),
                     ),
                   ),
