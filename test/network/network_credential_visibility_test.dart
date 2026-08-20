@@ -28,10 +28,23 @@ void main() {
       },
     );
 
+    test('a grid made before the wire value was renamed is still Public — the '
+        'control plane keeps what it was created with', () {
+      final cred = _credOfType('permissioned-providers');
+      expect(cred.isPublic, isTrue);
+      expect(cred.visibilityLabel, 'Public');
+    });
+
     test('plain permissioned defaults to Private', () {
       final cred = _credOfType('permissioned');
       expect(cred.isPublic, isFalse);
       expect(cred.visibilityLabel, 'Private');
+    });
+
+    test('an unknown type reads as Private — a value nobody taught this must '
+        'not open a grid up on its own', () {
+      final cred = _credOfType('permissionless-v2');
+      expect(cred.isPublic, isFalse);
     });
   });
 }

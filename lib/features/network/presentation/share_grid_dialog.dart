@@ -262,9 +262,9 @@ class _GeneralAccess extends ConsumerWidget {
 /// Membership is still the list above, exactly as for a private grid, which is
 /// also why `NetworkCredential.isPublic` has always resolved it to Private.
 ///
-/// Deliberately short, but not shortened past the truth: `permissioned-
-/// providers` opens *using* the grid to anyone while still gating who may
-/// share a computer to it, so that one keeps its second clause. Collapsing it
+/// Deliberately short, but not shortened past the truth: `permissionless` opens
+/// *using* the grid to anyone while still gating who may share a computer to
+/// it, so that one keeps its second clause. Collapsing it
 /// to "anyone can use this grid" would read as "anyone can put a machine on
 /// it", which is a different and much larger promise.
 String _accessSummary(GridAccess access) => switch (access) {

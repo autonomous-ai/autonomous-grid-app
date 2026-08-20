@@ -1,8 +1,10 @@
+import '../../../infrastructure/api/models/managed_network.dart';
+
 /// Who can reach a grid, in the three shapes the control plane actually ships.
 ///
 /// Derived from `network_type`, whose **wire names read backwards** — the same
-/// trap `NetworkCredential.isPublic` carries a warning about, so this maps by
-/// the same substrings rather than by equality:
+/// trap `NetworkCredential.isPublic` carries a warning about, and read the same
+/// way it is: against [kPublicNetworkTypes], exactly.
 ///
 /// - `permissioned-public`    → [restricted]: both providers and consumers are
 ///   whitelisted, so only invited people get in. The word "public" in the wire
@@ -23,16 +25,18 @@
 /// - `permissionless` → [anyone]: only providers are whitelisted, so
 ///   anyone signed in can consume.
 ///
-/// Matched on substrings, and `domain` is checked first: an unknown future
-/// variant lands on the *narrowest* reading rather than silently opening a grid
-/// up. Guessing wrong here would tell someone their grid is invite-only while
-/// strangers use it.
+/// `domain` is still matched on a substring and checked first, and anything
+/// unrecognised lands on the *narrowest* reading: a variant nobody has taught
+/// this function must not silently open a grid up. Guessing wrong the other way
+/// would tell someone their grid is invite-only while strangers use it — which
+/// is what a substring match did on 2026-08-20, when the open grid's wire value
+/// was renamed and the substring it was matched by went with it.
 enum GridAccess { restricted, domain, anyone }
 
 /// [GridAccess] for a raw `network_type`.
 GridAccess gridAccessFor(String networkType) {
   final type = networkType.toLowerCase();
   if (type.contains('domain')) return GridAccess.domain;
-  if (type.contains('providers')) return GridAccess.anyone;
+  if (kPublicNetworkTypes.contains(type)) return GridAccess.anyone;
   return GridAccess.restricted;
 }

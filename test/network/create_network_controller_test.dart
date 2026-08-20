@@ -72,7 +72,7 @@ void main() {
 
     await container
         .read(createNetworkControllerProvider.notifier)
-        .submit(name: 'my-grid', type: ManagedNetworkType.permissionedPublic);
+        .submit(name: 'my-grid', type: ManagedNetworkType.public);
 
     final state = container.read(createNetworkControllerProvider);
     expect(state, isA<CreateNetworkDone>());
@@ -89,7 +89,7 @@ void main() {
 
     await container
         .read(createNetworkControllerProvider.notifier)
-        .submit(name: 'my-grid', type: ManagedNetworkType.permissionedPublic);
+        .submit(name: 'my-grid', type: ManagedNetworkType.public);
 
     expect(cli.runs, containsAllInOrder([_syncArgs, _useArgs]));
   });
@@ -105,7 +105,7 @@ void main() {
 
     await container
         .read(createNetworkControllerProvider.notifier)
-        .submit(name: 'dup', type: ManagedNetworkType.permissionedPublic);
+        .submit(name: 'dup', type: ManagedNetworkType.public);
 
     final state = container.read(createNetworkControllerProvider);
     expect(state, isA<CreateNetworkFailed>());
@@ -125,7 +125,7 @@ void main() {
 
     await container
         .read(createNetworkControllerProvider.notifier)
-        .submit(name: 'my-grid', type: ManagedNetworkType.permissionedPublic);
+        .submit(name: 'my-grid', type: ManagedNetworkType.public);
 
     final state = container.read(createNetworkControllerProvider);
     expect(state, isA<CreateNetworkDone>());
@@ -141,7 +141,7 @@ void main() {
 
     await container
         .read(createNetworkControllerProvider.notifier)
-        .submit(name: 'my-grid', type: ManagedNetworkType.permissionedPublic);
+        .submit(name: 'my-grid', type: ManagedNetworkType.public);
 
     expect(
       container.read(createNetworkControllerProvider),
@@ -157,7 +157,7 @@ void main() {
 
     await container
         .read(createNetworkControllerProvider.notifier)
-        .submit(name: '   ', type: ManagedNetworkType.permissionedPublic);
+        .submit(name: '   ', type: ManagedNetworkType.public);
 
     expect(
       container.read(createNetworkControllerProvider),

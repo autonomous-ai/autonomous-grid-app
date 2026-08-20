@@ -1,3 +1,5 @@
+import '../../api/models/managed_network.dart';
+
 /// The viewer's governance role on a network, taken from the `roles` claim.
 /// Distinct from [NetworkCredential.isProvider], which is a *capability*
 /// (the `provider:poll` scope), not a role.
@@ -92,14 +94,18 @@ class NetworkCredential {
     NetworkRole.member => 'Member',
   };
 
-  /// Whether the grid is publicly visible. Heads-up: the wire values read
-  /// backwards, so this is deliberately checked against `providers`, not
-  /// `public`. A `permissionless` grid is the *public* one — anyone it's
-  /// shared with can also share their models onto it — whereas
-  /// `permissioned-public` is actually *private*: visible only to people it has
-  /// been shared with. Do NOT "fix" this to `contains('public')`; that inverts
-  /// the product meaning.
-  bool get isPublic => networkType.contains('providers');
+  /// Whether the grid is publicly visible — anyone signed in can consume from
+  /// it, and anyone it is shared with can put their own models on it.
+  ///
+  /// The wire values read backwards: the one with "public" in it is the
+  /// *private* grid. So this matches [kPublicNetworkTypes] exactly and never a
+  /// substring of the name. It used to test for the word "providers", which was
+  /// in the open grid's wire value until that value was renamed on 2026-08-20 —
+  /// and the day the word went, every public grid started reading as private:
+  /// the badge said Private, and setup stopped refusing to host on one, so a
+  /// machine could be put in front of strangers by a check that had quietly
+  /// become always-false.
+  bool get isPublic => kPublicNetworkTypes.contains(networkType.toLowerCase());
 
   /// The grid's visibility: `Public` vs `Private`. Surfaced on the grid badge
   /// (a public grid the viewer merely joined) and in admin settings.
