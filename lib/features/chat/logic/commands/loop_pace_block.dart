@@ -75,6 +75,29 @@ String stripLoopPaceBlock(String text) {
   return text.replaceAll(_fence, '').trimRight();
 }
 
+/// [text] without the line the app added to it, for showing the beat.
+///
+/// The footer is the app talking to the model, and it is on the *user's* own
+/// message — so left in, a loop beat draws the user asking for a `grid-loop`
+/// block in words they never typed. [_tidyLoopBeat] takes it back off the
+/// stored message, but only once the beat has been answered: on a turn that
+/// runs for minutes, or one the app was closed during, that is far too late to
+/// be the only guard. This one is at the drawing, where the timing cannot slip.
+///
+/// It cannot simply be dropped from the message: the prompt an agent is sent is
+/// built from the transcript, so what is stored *is* what is asked.
+String withoutLoopBeatFooter(String text) {
+  if (!text.contains(kLoopBlockFence)) return text;
+  for (final footer in [
+    loopBeatFooter(selfPaced: true),
+    loopBeatFooter(selfPaced: false),
+  ]) {
+    final at = text.lastIndexOf(footer);
+    if (at != -1) return text.substring(0, at).trimRight();
+  }
+  return text;
+}
+
 /// The line the app adds to a loop iteration's prompt, asking for the block
 /// back.
 ///
