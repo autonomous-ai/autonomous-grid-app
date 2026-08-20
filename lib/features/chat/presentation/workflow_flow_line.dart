@@ -43,7 +43,6 @@ import '../logic/conversation.dart';
 import '../logic/routing_group.dart';
 import '../logic/turn_model_share.dart';
 import '../logic/turn_model_usage.dart';
-import '../logic/workflow_bubble_open.dart';
 import 'orchestration_node_diagram.dart';
 
 /// The strip above the conversation saying how this chat is being routed and
@@ -96,32 +95,29 @@ class _WorkflowFlowLineState extends ConsumerState<WorkflowFlowLine> {
   /// Hover alone can't be read from here: the diagram is wide enough to scroll
   /// sideways, and a panel that shuts the moment the pointer leaves the strip
   /// can't be scrolled at all.
+  ///
+  /// **Entirely this widget's own**, exactly as `GridPowerPill`'s is. It is
+  /// deliberately not tied to `workflowBubbleOpenProvider`: that flag says
+  /// whether the *top bar's* workflow icon is showing, which is a different
+  /// question from whether this conversation's panel is open. Tying the two
+  /// together cost a dead first click — the flag could set this true while the
+  /// open chat had no group to draw, leaving the panel shut but believing
+  /// itself pinned, so the first real click read as "unpin" and did nothing.
   bool _pinned = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // The top bar's workflow toggle is a standing "keep this open", so a chat
-    // opened while it is on starts pinned. Deferred one frame: the portal isn't
-    // mounted until this state has built once, and showing a controller with
-    // nothing attached asserts.
-    if (!ref.read(workflowBubbleOpenProvider)) return;
-    _pinned = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _pinned && _routing != null) _open();
-    });
-  }
 
   @override
   void didUpdateWidget(covariant WorkflowFlowLine oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_routing != null || !_controller.isShowing) return;
-    // Switching to a chat on the grid's ordinary pick unmounts the portal. Let
-    // go of it, or a later remount would come back already open — but not from
-    // here: this runs inside the frame's build, and hiding marks the portal
-    // dirty. One frame later it is detached, where hiding is just bookkeeping.
+    if (_routing != null) return;
+    // Switching to a chat on the grid's ordinary pick unmounts the portal, so
+    // let go of what was being held for the chat we just left.
     _pinned = false;
     _hovered = false;
+    if (!_controller.isShowing) return;
+    // Not from here, though: this runs inside the frame's build, and hiding
+    // marks the portal dirty. One frame later it is detached, where hiding is
+    // just bookkeeping — and without it a later chat *with* a group would open
+    // already showing.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _routing == null) _shut();
     });
@@ -138,8 +134,8 @@ class _WorkflowFlowLineState extends ConsumerState<WorkflowFlowLine> {
     if (_controller.isShowing) _controller.hide();
   }
 
-  /// Let the panel go and forget it was ever held — what a second click, a
-  /// click outside, and the top bar's toggle turning off all mean.
+  /// Let the panel go and forget it was ever held — what a second click and a
+  /// click outside both mean.
   void _release() {
     if (!_pinned) {
       _shut();
@@ -179,20 +175,6 @@ class _WorkflowFlowLineState extends ConsumerState<WorkflowFlowLine> {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    // The top bar's toggle, given a job here rather than left to mean nothing:
-    // it is the one control that says "show me the orchestration", so it pins
-    // and unpins this panel. Hover still opens it transiently either way.
-    ref.listen(workflowBubbleOpenProvider, (_, open) {
-      if (_routing == null) return;
-      if (!open) {
-        _release();
-        return;
-      }
-      if (_pinned) return;
-      setState(() => _pinned = true);
-      _open();
-    });
-
     final conversation = widget.conversation;
     final group = _routing;
     if (conversation == null || group == null) return const SizedBox.shrink();
