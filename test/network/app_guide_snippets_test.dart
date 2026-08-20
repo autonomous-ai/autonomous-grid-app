@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
 import 'package:grid_app/features/network/logic/client_app_detector.dart';
 import 'package:toml/toml.dart';
+import 'package:yaml_edit/yaml_edit.dart';
 
 const _base = 'https://grid.example/relay/v1';
 const _key = 'sk-test-123';
@@ -61,6 +62,32 @@ void main() {
     expect(config, contains('name: ${hermesProviderName(_base)}'));
     expect(config, contains('model: $_model'));
   });
+
+  test(
+    'Hermes config block carries a literal GRID_CHAT_ID template, not a Dart-'
+    'interpolated value — Hermes expands it itself at startup',
+    () {
+      final config = hermesConfigSnippet(_base, _key, _model);
+      // The raw text must hold the literal template string.
+      expect(config, contains('extra_headers:'));
+      expect(
+        config,
+        contains('$kGridConversationHeader: "$kGridChatIdTemplate"'),
+      );
+      // And it has to be valid YAML that round-trips to that exact string —
+      // a stray escape here would silently corrupt what Hermes reads.
+      final editor = YamlEditor(config);
+      expect(
+        editor.parseAt([
+          'custom_providers',
+          0,
+          'extra_headers',
+          kGridConversationHeader,
+        ]).value,
+        r'${GRID_CHAT_ID}',
+      );
+    },
+  );
 
   test('Hermes config speaks the Responses dialect for a codex model', () {
     const codexModel = 'codex:gpt-5.5';

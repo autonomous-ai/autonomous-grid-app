@@ -7,6 +7,7 @@ import 'package:grid_app/features/agents/logic/agent_permissions.dart';
 import 'package:grid_app/features/agents/logic/agent_steering.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/features/agents/logic/agent_server_error.dart';
+import 'package:grid_app/features/agents/logic/adapters/agent_turn_env.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_chat_sender.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
@@ -47,13 +48,21 @@ class _FakeAcp implements HermesAcpService {
   final List<List<HermesAcpEvent>> _turns;
   final sessions = <_FakeAcpSession>[];
 
+  /// The extra environment each `start` call carried, in order — lets a test
+  /// confirm the conversation id reaches the spawned process.
+  final startEnvs = <Map<String, String>>[];
+
   int get startCount => sessions.length;
 
   /// Every prompt across every session, in order — the text each turn sent.
   List<String> get prompts => [for (final s in sessions) ...s.prompts];
 
   @override
-  Future<HermesAcpSession> start({required String workdir}) async {
+  Future<HermesAcpSession> start({
+    required String workdir,
+    Map<String, String> extraEnv = const {},
+  }) async {
+    startEnvs.add(extraEnv);
     final session = _FakeAcpSession(_turns, 'sess-${sessions.length + 1}');
     sessions.add(session);
     return session;
@@ -68,8 +77,10 @@ class _FailingAcp implements HermesAcpService {
   final HermesAcpException _error;
 
   @override
-  Future<HermesAcpSession> start({required String workdir}) async =>
-      throw _error;
+  Future<HermesAcpSession> start({
+    required String workdir,
+    Map<String, String> extraEnv = const {},
+  }) async => throw _error;
 }
 
 /// A service whose session start hangs until the test lets it go, so a test can
@@ -80,7 +91,10 @@ class _HangingStartAcp implements HermesAcpService {
   var startCalled = false;
 
   @override
-  Future<HermesAcpSession> start({required String workdir}) {
+  Future<HermesAcpSession> start({
+    required String workdir,
+    Map<String, String> extraEnv = const {},
+  }) {
     startCalled = true;
     return _gate.future;
   }
@@ -152,7 +166,10 @@ class _LiveAcp implements HermesAcpService {
   final session = _LiveAcpSession();
 
   @override
-  Future<HermesAcpSession> start({required String workdir}) async => session;
+  Future<HermesAcpSession> start({
+    required String workdir,
+    Map<String, String> extraEnv = const {},
+  }) async => session;
 }
 
 class _LiveAcpSession implements HermesAcpSession {
@@ -889,6 +906,43 @@ void main() {
     // is never quoted back at it.
     expect(service.prompts, ['hello', 'thanks']);
   });
+
+  test(
+    "a fresh session's process gets the conversation id as GRID_CHAT_ID — "
+    'so a task it schedules mid-chat can say where to deliver the answer',
+    () async {
+      final service = _FakeAcp.single([const HermesAcpMessage('hi')]);
+      final container = _container(service, tmp);
+
+      await container
+          .read(hermesChatSenderProvider)
+          .send(
+            network: _credential(),
+            model: 'm',
+            conversationId: 'conv-1',
+            history: _history('hello'),
+          )
+          .toList();
+
+      expect(service.startEnvs.single, {kGridChatIdEnv: 'conv-1'});
+    },
+  );
+
+  test(
+    'a chat with no conversation id yet spawns with no GRID_CHAT_ID — nothing '
+    'to route a task into',
+    () async {
+      final service = _FakeAcp.single([const HermesAcpMessage('hi')]);
+      final container = _container(service, tmp);
+
+      await container
+          .read(hermesChatSenderProvider)
+          .send(network: _credential(), model: 'm', history: _history('hello'))
+          .toList();
+
+      expect(service.startEnvs.single, isEmpty);
+    },
+  );
 
   // A turn carrying a picture is answered by the grid's API, never the agent
   // (see `agentAnswersTurn`), so it lands in the chat with no agent turn behind

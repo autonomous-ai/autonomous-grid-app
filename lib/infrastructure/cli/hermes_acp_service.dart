@@ -176,7 +176,15 @@ abstract interface class HermesAcpService {
   /// Spawns `hermes acp`, runs the initialize → session/new handshake, and
   /// returns a live [HermesAcpSession]. Throws [HermesAcpException] if the
   /// process won't start or the handshake doesn't complete.
-  Future<HermesAcpSession> start({required String workdir});
+  ///
+  /// [extraEnv] is merged over [HostEnvironment.hermesEnvironment()] — the
+  /// caller's way to hand the process something beyond Hermes's own baseline
+  /// environment (e.g. `GRID_CHAT_ID`, so a turn's outbound calls can be
+  /// attributed to the conversation that sent it).
+  Future<HermesAcpSession> start({
+    required String workdir,
+    Map<String, String> extraEnv = const {},
+  });
 }
 
 /// A live `hermes acp` process kept across a conversation's turns. `initialize`
@@ -236,19 +244,26 @@ class HermesAcpServiceImpl implements HermesAcpService {
   final AppLog _log;
 
   @override
-  Future<HermesAcpSession> start({required String workdir}) async {
-    final session = _HermesAcpSession(_path, workdir, _log);
+  Future<HermesAcpSession> start({
+    required String workdir,
+    Map<String, String> extraEnv = const {},
+  }) async {
+    final session = _HermesAcpSession(_path, workdir, _log, extraEnv);
     await session.open();
     return session;
   }
 }
 
 class _HermesAcpSession implements HermesAcpSession {
-  _HermesAcpSession(this._path, this._workdir, this._log);
+  _HermesAcpSession(this._path, this._workdir, this._log, this._extraEnv);
 
   final String _path;
   final String _workdir;
   final AppLog _log;
+
+  /// Merged over [HostEnvironment.hermesEnvironment()] when the process is
+  /// spawned — see [HermesAcpService.start].
+  final Map<String, String> _extraEnv;
 
   // The handshake occupies ids 0 (initialize) and 1 (session/new); prompt turns
   // take the rest, one id each, so a turn's response is matched by its id.
@@ -296,7 +311,7 @@ class _HermesAcpSession implements HermesAcpSession {
         _path,
         ['acp'],
         workingDirectory: _workdir,
-        environment: HostEnvironment.hermesEnvironment(),
+        environment: {...HostEnvironment.hermesEnvironment(), ..._extraEnv},
       );
     } on ProcessException catch (e) {
       throw HermesAcpException('Hermes could not start: ${e.message}');

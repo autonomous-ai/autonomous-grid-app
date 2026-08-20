@@ -381,9 +381,12 @@ class RepairingHermesAcpService implements HermesAcpService {
   final AppLog _log;
 
   @override
-  Future<HermesAcpSession> start({required String workdir}) async {
+  Future<HermesAcpSession> start({
+    required String workdir,
+    Map<String, String> extraEnv = const {},
+  }) async {
     try {
-      return await _inner.start(workdir: workdir);
+      return await _inner.start(workdir: workdir, extraEnv: extraEnv);
     } on HermesAcpException catch (e) {
       if (!isAcpSetupIncomplete(e.message)) rethrow;
       _log.warn('agent', 'Hermes is missing its ACP support; repairing it.');
@@ -395,7 +398,7 @@ class RepairingHermesAcpService implements HermesAcpService {
           retryable: false,
         );
       }
-      return _inner.start(workdir: workdir);
+      return _inner.start(workdir: workdir, extraEnv: extraEnv);
     }
   }
 }
