@@ -70,14 +70,16 @@ class ChatHeader extends ConsumerWidget {
           size: 16,
           color: AppPalette.textSecondary,
         ),
-        const SizedBox(width: 9),
+        // 3, not the 9 this gap used to be: the title carries its own 6px of
+        // box either side (invisible until it is being edited, but always
+        // there), and the two together are the 9 the eye reads.
+        const SizedBox(width: 3),
         // Bounded, not Expanded: the title should sit beside its "…" like a
         // label on a tab, not stretch the menu button out to the far edge of
         // a wide window.
         Flexible(
           child: ChatHeaderTitle(id: active.id, title: active.title),
         ),
-        const SizedBox(width: 4),
         ChatHeaderMenuButton(conversation: active),
       ],
     );

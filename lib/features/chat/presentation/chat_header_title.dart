@@ -85,10 +85,12 @@ class _ChatHeaderTitleState extends ConsumerState<ChatHeaderTitle> {
     _controller.text = widget.title;
     // Selected, not just placed: the usual rename replaces the whole
     // auto-generated name, and leaving the caret at the end makes that a
-    // select-all first.
+    // select-all first. Anchored backwards (extent at 0) so a name too long for
+    // the bar opens showing its *start* — the field scrolls to the extent, and
+    // the other way round hands the user the tail of their own title.
     _controller.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: _controller.text.length,
+      baseOffset: _controller.text.length,
+      extentOffset: 0,
     );
     setState(() => _editing = true);
   }
@@ -184,7 +186,9 @@ class _TitleField extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: _fieldMinWidth),
       child: IntrinsicWidth(
         child: CallbackShortcuts(
-          bindings: {const SingleActivator(LogicalKeyboardKey.escape): onCancel},
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): onCancel,
+          },
           child: _TitleBox(
             editing: true,
             child: TextField(
