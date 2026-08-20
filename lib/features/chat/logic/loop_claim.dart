@@ -36,7 +36,39 @@ const String kUnbackedLoopClaimNote =
 /// app could not read is one it would not have acted on either, so noting it
 /// would report a promise the assistant never actually made.
 bool claimsLoopWithoutOne(String reply, ChatLoop? loop) =>
-    loop == null && parseLoopPaceBlock(reply) != null;
+    loop == null &&
+    parseLoopPaceBlock(reply) != null &&
+    loopStartAskedFor(reply, loop) == null;
+
+/// The repeat the assistant says the user asked for, or null when the reply
+/// asks for none.
+///
+/// The half of this file that *starts* something rather than refusing to. The
+/// app reads a command out of a sentence deterministically, which is right for
+/// "lặp lại mỗi 30 phút" — a closed set of words, no round-trip, same answer
+/// twice. It is hopeless for the other half of how people ask: "mày chạy ít
+/// nhất tới sáng mai tao vào để kiểm tra" carries no word this app owns, and no
+/// list of phrases will ever cover the next one. The assistant has already read
+/// that sentence by the time it answers, so it is asked to say so in the block
+/// it already knows — and the turn it rides was happening anyway.
+///
+/// Three things keep this from becoming an agent that loops itself:
+/// - only a block that says `start`, which the card asks for **only** when the
+///   user asked for a repeat;
+/// - only in a chat with no loop, so it can never restart one the user stopped;
+/// - and the loop's prompt is the **user's own message**, never the reply — an
+///   assistant that starts one unasked still repeats the words the person
+///   typed, in a bar that names it and stops on one word.
+///
+/// The gap has to be in the block. A repeat firing on an interval nobody chose
+/// is the schedule-with-no-hour mistake wearing another hat, so a `start` with
+/// no readable `next` falls through to [kUnbackedLoopClaimNote] instead.
+LoopPace? loopStartAskedFor(String reply, ChatLoop? loop) {
+  if (loop != null) return null;
+  final block = parseLoopPaceBlock(reply);
+  if (block == null || !block.start || block.next == null) return null;
+  return block;
+}
 
 /// [message] with its `grid-loop` blocks gone from the text *and* the parts.
 ///
@@ -50,6 +82,20 @@ ChatMessage withoutLoopBlock(ChatMessage message) => message.copyWith(
       part is TurnText ? TurnText(stripLoopPaceBlock(part.text)) : part,
   ],
 );
+
+/// [chat] with the `grid-loop` block taken off its last reply, and nothing else
+/// changed.
+///
+/// The block is how the assistant talks to the app; once the app has acted on
+/// it, leaving it in the transcript shows the user a line of JSON they never
+/// asked to read — and re-sends it as history on every turn after.
+Conversation withoutLoopBlockOnLastReply(Conversation chat) {
+  final messages = [...chat.messages];
+  final last = messages.lastIndexWhere((m) => m.role == ChatRole.assistant);
+  if (last == -1) return chat;
+  messages[last] = withoutLoopBlock(messages[last]);
+  return chat.copyWith(messages: messages);
+}
 
 /// [chat] with the unbacked block taken off its last reply and
 /// [kUnbackedLoopClaimNote] after it, or [chat] unchanged when the last reply

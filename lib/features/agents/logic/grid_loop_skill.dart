@@ -90,18 +90,36 @@ A `grid-loop` fence holding one JSON object. Three things it can say:
   again, not a reason to end. Stop only when the thing being watched has
   actually finished.
 
-## The block cannot start a loop
+## Starting one: only when the user asked, and only with a gap
 
-It is read in one place only: at the end of a beat of a loop that is **already
-running**. In any other reply it is text nobody reads — the app does not scan
-ordinary answers for it. So when you are asked to set a repeating task up:
+The app reads a repeat straight out of what the user typed when they used words
+it knows — "lặp lại mỗi 30 phút …", "làm loop mỗi giờ …", "chạy tới sáng mai".
+No list covers every way a person asks, so when they asked in some other way
+**and no loop is running in this chat**, say so with the block:
 
-- **Never write the block to create one, and never say you have.** "I've set a
-  `grid-loop` to re-run every hour" is a promise nothing behind it keeps, and
-  the user finds out in the morning, from a task that ran once.
-- **A loop for this chat** is the user typing `/loop <what to repeat>` in the
-  composer — say that, in those words. It runs while Grid is open.
-- **Work that has to survive the app closing** — overnight, tomorrow morning,
-  every 30 minutes all week — is not a loop at all. Schedule it with the
-  `grid-schedule` skill, which writes to a daemon that keeps running.
+```grid-loop
+{"start": true, "next": "45m", "why": "quét lại nguồn mới mỗi 45 phút tới sáng"}
+```
+
+Grid then starts a real loop whose prompt is **the user's own message** — not
+your reply — and the bar in the chat names it.
+
+Three rules, and they are what make this trustworthy rather than a way to keep
+yourself running:
+
+- **Only when the user asked for a repeat.** "Keep going until I'm back", "chạy
+  tới sáng mai", "check it every so often". Deciding by yourself that a job
+  deserves repeating is not that, and it spends someone's tokens all night.
+- **`next` is required.** A repeat firing on an interval nobody chose is the
+  same mistake as a task scheduled at an hour nobody chose. If the user did not
+  imply a rhythm, pick the slowest one that still answers their question, and
+  say why in `why`.
+- **Never claim a repeat you did not get.** A block without `start` in a chat
+  with no loop starts nothing and the app says so under your reply. Don't write
+  "I've set a grid-loop to re-run every hour" — either the block above, or tell
+  them to type `/loop <what to repeat>`.
+
+**Work that has to survive the app closing** — overnight when Grid will be shut,
+tomorrow morning, every 30 minutes all week — is not a loop at all. Schedule it
+with the `grid-schedule` skill, which writes to a daemon that keeps running.
 ''';
