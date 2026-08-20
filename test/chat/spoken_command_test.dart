@@ -28,6 +28,41 @@ void main() {
       expect(spoken?.certain, isFalse);
     });
 
+    test('names the loop as a thing to make, which is how it is asked for '
+        'once the task is already on screen', () {
+      final spoken = readSpokenCommand('làm loop mỗi giờ quét X');
+
+      expect(spoken?.call.command, ChatCommand.loop);
+      expect(spoken?.call.argument, '1h quét X');
+      expect(spoken?.certain, isTrue);
+    });
+
+    test('reads "mỗi giờ" — the commonest gap in the language this app is '
+        'spoken in, and one a word boundary could never match', () {
+      final spoken = readSpokenCommand('lặp lại mỗi giờ kiểm tra deploy');
+
+      expect(spoken?.call.argument, '1h kiểm tra deploy');
+      expect(spoken?.certain, isTrue);
+    });
+
+    test('reads the same ask in English', () {
+      final spoken = readSpokenCommand(
+        'make a loop every 30 minutes check the deploy',
+      );
+
+      expect(spoken?.call.argument, '30m check the deploy');
+      expect(spoken?.certain, isTrue);
+    });
+
+    test('is still read when a name comes first — but only offered, because '
+        'past those words there is less standing behind the reading', () {
+      final spoken = readSpokenCommand('tao cần mày làm loop mỗi giờ quét X');
+
+      expect(spoken?.call.command, ChatCommand.loop);
+      expect(spoken?.call.argument, '1h quét X');
+      expect(spoken?.certain, isFalse);
+    });
+
     test(
       'ending one is understood too, so stopping is as easy as starting',
       () {
@@ -117,6 +152,16 @@ void main() {
 
     test('a line already typed as a command is left to the real parser', () {
       expect(readSpokenCommand('/loop 5m check the deploy'), isNull);
+    });
+
+    test('an ask behind a name is never run on its own — the opening-word '
+        'rule is what keeps a misread from starting something unattended', () {
+      for (final line in [
+        'tao muốn lặp lại lời anh vừa nói',
+        'mình nhờ bạn đặt mục tiêu cho tuần này',
+      ]) {
+        expect(readSpokenCommand(line)?.certain, isFalse, reason: line);
+      }
     });
   });
 

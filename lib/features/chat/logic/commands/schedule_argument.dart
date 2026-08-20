@@ -1,4 +1,5 @@
 import '../../../scheduled/logic/job_schedule.dart';
+import 'word_edge.dart';
 
 /// What `/schedule` was asked for: when it runs, and what it does.
 typedef ScheduleRequest = ({JobSchedule schedule, String prompt});
@@ -83,7 +84,10 @@ final List<RegExp> _timingPhrases = [
     // of "sáng" is one, and "mỗi sáng 8h" loses its first letters to it.
     r'^(mỗi|hàng|every|each)\s*'
     r'(?:(\d+)\s*(giây|phút|giờ|seconds?|minutes?|mins?|hours?|[smh])'
-    r'|(giây|phút|giờ|second|minute|hour))\b\s*',
+    r'|(giây|phút|giờ|second|minute|hour))'
+    '$kAfterWord'
+    r'\s*',
+    unicode: true,
   ),
   // "every weekday", "mỗi sáng", "hàng ngày", "every monday".
   RegExp(
@@ -110,9 +114,12 @@ final List<RegExp> _timingPhrases = [
 /// one the user could never edit back.
 JobCadence? _interval(String timing) {
   final match = RegExp(
-    r'\b(?:mỗi|every|each)\s*'
+    '$kBeforeWord'
+    r'(?:mỗi|every|each)\s*'
     r'(?:(\d+)\s*(phút|minutes?|mins?|giờ|hours?|[hm])'
-    r'|(phút|minute|giờ|hour))\b',
+    r'|(phút|minute|giờ|hour))'
+    '$kAfterWord',
+    unicode: true,
   ).firstMatch(timing);
   if (match == null) return null;
   final unit = match.group(2) ?? match.group(3)!;

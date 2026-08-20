@@ -148,8 +148,8 @@ const String kClaudePermissionMode = 'default';
 /// page, and that is the route the agent takes instead.
 const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
 
-/// Claude Code's own scheduler, taken away on every turn: it cannot work here,
-/// and it fails by *succeeding*.
+/// Claude Code's own schedulers, taken away on every turn: none of them can
+/// work here, and they fail by *succeeding*.
 ///
 /// `CronCreate` keeps the job in the memory of the process that created it and
 /// says so — "session-only, dies when Claude exits". In a REPL that is a fair
@@ -158,13 +158,22 @@ const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
 /// minutes for seven days and both were gone twelve seconds later, with the
 /// transcript ending at the message that promised them.
 ///
+/// `ScheduleWakeup` is the same trap wearing the word the user actually says.
+/// Taking only the cron tools away on 2026-08-19 left it as the nearest thing
+/// to hand, and the next morning it was reached for twice inside eight minutes
+/// — 09:22 booking a wake-up for 10:23, 09:29 booking one for 10:30, each into
+/// a process that had exited by 09:22:57 and 09:29:43. Both turns ended by
+/// telling the user the loop was on.
+///
 /// Removing the tools is what makes the `grid-schedule` card land: left
 /// available, the nearest-to-hand answer is still the one that quietly does
-/// nothing.
-const List<String> kClaudeSessionCronTools = [
+/// nothing. A repeat *inside a chat* is not lost with them — that is `/loop`,
+/// which the app owns and the agent paces with a `grid-loop` block.
+const List<String> kClaudeSessionSchedulerTools = [
   'CronCreate',
   'CronDelete',
   'CronList',
+  'ScheduleWakeup',
 ];
 
 /// The argv for one turn: a fresh `claude -p`, or `--resume <id>` to continue a
@@ -192,13 +201,13 @@ const List<String> kClaudeSessionCronTools = [
 ///   default because it is only ever right for one lane: the flag costs context
 ///   on every turn that carries it, and a turn holding the relay's credentials
 ///   cannot use the extension at all (see [ClaudeBrowserLane]).
-/// - `--disallowedTools` takes away [kClaudeSessionCronTools] on every turn,
-///   plus the web tools a grid model can't serve — see [withoutServerWebTools].
-///   One flag, not two: it is **variadic**, so a second occurrence would be the
-///   CLI's to reconcile rather than ours. Being variadic it also swallows every
-///   following token until the next `--flag`, which is safe here because the
-///   prompt goes on stdin and this argv carries no positionals — and stays safe
-///   only as long as that holds.
+/// - `--disallowedTools` takes away [kClaudeSessionSchedulerTools] on every
+///   turn, plus the web tools a grid model can't serve — see
+///   [withoutServerWebTools]. One flag, not two: it is **variadic**, so a
+///   second occurrence would be the CLI's to reconcile rather than ours.
+///   Being variadic it also swallows every following token until the next
+///   `--flag`, which is safe here because the prompt goes on stdin and this
+///   argv carries no positionals — and stays safe only as long as that holds.
 List<String> claudeExecArgs({
   required String model,
   String? resumeSessionId,
@@ -221,7 +230,7 @@ List<String> claudeExecArgs({
   model,
   if (chrome) '--chrome',
   '--disallowedTools',
-  ...kClaudeSessionCronTools,
+  ...kClaudeSessionSchedulerTools,
   if (withoutServerWebTools) ...kClaudeServerWebTools,
   if (mcpConfigPath != null) ...[
     '--mcp-config',
