@@ -9,87 +9,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../../shared/widgets/choice_row.dart';
-import '../../../provider_node/logic/api_engine_catalog.dart';
-import '../../../provider_node/logic/api_engine_choices.dart';
 import '../../../provider_node/logic/provider_run_controller.dart';
 import '../../logic/onboarding_choice_controller.dart';
-
-/// The coding CLIs this computer already has signed in (Claude Code, Codex CLI)
-/// — the quickest way in when there is one: nothing to download, no key to go
-/// and find, and no account to hand over.
-///
-/// One option each, so the press shares the CLI the user actually picked; a
-/// single row naming both had to start whichever was found first. Renders
-/// nothing when this machine has neither, so the screen never offers a road it
-/// can't walk.
-class SeatOption extends ConsumerWidget {
-  const SeatOption({super.key, required this.network});
-
-  final NetworkCredential network;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final engines = seatEngines(
-      ref.watch(apiEnginesProvider).asData?.value ?? const [],
-    );
-    if (engines.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final engine in engines)
-          _SeatRow(network: network, provider: engine.provider),
-      ],
-    );
-  }
-}
-
-/// One signed-in CLI, offered on its own surface.
-///
-/// No form and no model picker: the CLI's whole tier list is shared (the grid's
-/// own default), and picking a tier out of it is a Model Engines decision, not a
-/// first-screen one.
-class _SeatRow extends ConsumerWidget {
-  const _SeatRow({required this.network, required this.provider});
-
-  final NetworkCredential network;
-  final ApiProvider provider;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final run = ref.watch(providerRunControllerProvider);
-    // Only the row that was pressed spins: a join with no `-m` records the kind
-    // as its model, so the *other* CLI's row stays pressable rather than
-    // claiming it is starting too.
-    final starting =
-        run is ProviderRunActive &&
-        run.grid == network.networkId &&
-        run.model == provider.kind &&
-        run.starting;
-
-    // The gap to the next option belongs to the option, not to the screen: these
-    // hide themselves on a machine without the CLI, and a gap the screen owned
-    // would stay behind as a hole.
-    return _Option(
-      child: ChoiceRow(
-        icon: const Icon(Icons.terminal_outlined),
-        title: seatRowTitle(provider),
-        line: 'Use the ${provider.label} you already have here.',
-        badge: 'No setup',
-        action: ChoiceRowAction.open,
-        busy: starting,
-        onPressed: () => ref
-            .read(providerRunControllerProvider.notifier)
-            .startApiEngine(
-              network: network.networkId,
-              provider: provider,
-              apiKey: '',
-            ),
-      ),
-    );
-  }
-}
 
 /// Run a model on this computer: installs the engine here, then the model
 /// downloads in the background and shares itself once the user is in.
@@ -128,9 +50,9 @@ class LocalOption extends ConsumerWidget {
 
 /// One option, on a surface of its own with the gap to the next one built in.
 ///
-/// Two separated targets read as two choices; the single hairline-split block
-/// the Model Engines tab uses reads as a list to work through, which is the
-/// wrong shape for a screen whose whole job is one decision.
+/// A surface each, not the single hairline-split block the Model Engines tab
+/// uses: that one reads as a list to work through, which is the wrong shape for
+/// a screen whose whole job is one decision.
 class _Option extends StatelessWidget {
   const _Option({required this.child});
 
