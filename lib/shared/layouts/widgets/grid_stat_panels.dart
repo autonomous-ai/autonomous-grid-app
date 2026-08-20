@@ -939,6 +939,11 @@ class _SpeedColumn extends StatelessWidget {
     AppTheme.watch(context);
     final figure = entryFigure(node);
     if (figure.isEmpty) return const SizedBox.shrink();
+    // The length the bar settles at, floored — computed here rather than inside
+    // the tween so the growth runs 0 → floored length. Flooring inside would
+    // put the bar at [_floor] on the first frame, which is a bar appearing
+    // rather than a bar growing.
+    final filled = share == null ? 0.0 : math.max(_floor, _width * share!);
     return Row(
       children: [
         if (share case final value?) ...[
@@ -965,12 +970,32 @@ class _SpeedColumn extends StatelessWidget {
                       borderRadius: BorderRadius.circular(_height / 2),
                     ),
                   ),
-                  Container(
-                    width: math.max(_floor, _width * value),
-                    height: _height,
-                    decoration: BoxDecoration(
-                      color: _bandColor(speedBand(value)),
-                      borderRadius: BorderRadius.circular(_height / 2),
+                  // Grows from nothing to its length, and eases between
+                  // lengths when a poll moves the figure — the same builder
+                  // does both, because it animates whenever `end` changes and
+                  // `end` starts at zero.
+                  //
+                  // The panel is rebuilt by a poll every few seconds, and this
+                  // does *not* replay then: the element survives the rebuild,
+                  // so a machine holding its speed holds its bar still. It
+                  // replays when the panel is opened again, which is the only
+                  // time there is anything new to draw.
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: filled),
+                    duration: AppMotion.meter,
+                    curve: AppMotion.curve,
+                    builder: (context, width, _) => Container(
+                      width: width,
+                      height: _height,
+                      decoration: BoxDecoration(
+                        // The band of the value it is *arriving at*, never of
+                        // the width it happens to be passing through. A bar on
+                        // its way to green would otherwise be amber for the
+                        // first hundred milliseconds and blue for the next —
+                        // three claims about one machine, two of them false.
+                        color: _bandColor(speedBand(value)),
+                        borderRadius: BorderRadius.circular(_height / 2),
+                      ),
                     ),
                   ),
                 ],

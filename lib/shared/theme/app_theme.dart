@@ -1157,6 +1157,19 @@ abstract final class AppMotion {
   /// the animation exists to prevent.
   static const Duration fold = Duration(milliseconds: 220);
 
+  /// A meter filling to the figure beside it — the node panel's speed bars.
+  ///
+  /// Longer than [fold] even though what moves is 26px, because this one is not
+  /// a surface getting out of the way: it is a value being drawn, and a reader
+  /// is meant to watch it arrive. Under about a quarter second the bars read as
+  /// having simply appeared at their length, which is the same as no animation
+  /// at all.
+  ///
+  /// Still short enough to survive repetition. These panels open on hover, so
+  /// the fill replays every time the pointer crosses the pill — anything that
+  /// lingers turns into a toll on a gesture people make dozens of times an hour.
+  static const Duration meter = Duration(milliseconds: 300);
+
   /// The app's curve. Fast to start, settling at the end — the thing arrives
   /// under the pointer rather than drifting toward it.
   static const Curve curve = Curves.easeOut;
