@@ -306,7 +306,7 @@ class _MemberRow extends StatelessWidget {
     AppTheme.watch(context);
     final row = _PanelRow(
       label: label,
-      leading: _HandleInitial(email: email),
+      leading: _MemberInitial(email: email),
       strong: true,
       badge: isOwner ? 'owner' : null,
       // The **fresh** input leg, matching the hover's "input tokens" line and the
@@ -343,37 +343,16 @@ class _MemberRow extends StatelessWidget {
   }
 }
 
-/// The tile carrying a handle's first initial, in front of the name it
-/// introduces — a member on the roster, the owner of a block of machines.
-///
-/// A column of handles needs somewhere for the eye to land, and a letter on
-/// colour is the one mark this app can make from an address without inventing an
-/// avatar service.
-///
-/// **A quiet indigo fill, white letter.** A grey disc the same value as the
-/// panel underneath it (1.06:1 in dark) was decoration the eye skipped, and the
-/// accent itself was the opposite problem — ten saturated tiles down a panel
-/// pulled the eye off the names they introduce. [AppPalette.avatarFill] is the
-/// accent's hue with the saturation taken out, and the letter still clears
-/// 5.26:1 in light and 6.19:1 in dark.
-///
-/// **Flat, and a rounded square.** The sidebar's account avatar is a gradient
-/// *disc* with a ring and a glow, and that one means **you** — repeating it down
-/// a list of other people would say everyone here is the signed-in user. Same
-/// family, different shape, no lift.
-///
-/// Reads the theme itself: this row is built by a `ListView.builder`, which
-/// keeps a child it has already built across the panel's rebuilds, so a watch
-/// higher up would never reach it on a theme flip.
-class _HandleInitial extends StatelessWidget {
-  const _HandleInitial({required this.email});
+/// The tile carrying a member's first initial, in front of their handle.
+class _MemberInitial extends StatelessWidget {
+  const _MemberInitial({required this.email});
 
   final String email;
 
   /// Sized to the row's own line, not to an avatar convention: at 22 the tile is
   /// exactly the height of a 13pt line plus its padding, so the mark sets no
   /// row height of its own.
-  static const double size = 22;
+  static const double _size = 22;
 
   /// The app's small-control step, not [AppControl.radius] (8): on a 22px box
   /// that one rounds to within a hair of a circle, and the shape here has to
@@ -384,8 +363,8 @@ class _HandleInitial extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Container(
-      width: size,
-      height: size,
+      width: _size,
+      height: _size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: AppPalette.avatarFill,
@@ -636,7 +615,7 @@ class _NodeGroupBlock extends StatelessWidget {
   /// The left column: the owner's tile at the head, every machine's bar down
   /// the side. One width for both, so a block reads as a rail rather than as
   /// three separately indented lines.
-  static const double _rail = _HandleInitial.size;
+  static const double _rail = _NodeInitial.size;
 
   /// Between the rail and the text beside it — [_PanelRow]'s own leading gap,
   /// so a node's name starts where a member's does one panel over.
@@ -673,7 +652,7 @@ class _NodeGroupBlock extends StatelessWidget {
               if (headed)
                 Row(
                   children: [
-                    _HandleInitial(email: group.email),
+                    _NodeInitial(email: group.email),
                     const SizedBox(width: _gap),
                     Expanded(
                       child: Text(
@@ -737,6 +716,73 @@ class _NodeGroupBlock extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The mark at the head of a node block — the owner's initial in an accent
+/// ring.
+///
+/// A ring rather than the members panel's filled tile, and the two lists are
+/// meant to differ. A roster is a column of people and its tiles are the
+/// column's rhythm; a node panel is a column of *machines* whose owners are the
+/// dividers between them, and a stack of saturated tiles down that panel pulled
+/// the eye onto the handles instead of the hardware they head. Drawn in the
+/// accent at its full strength, so the mark still leads the block without
+/// filling it.
+///
+/// **The one deliberate exception to the app's no-borders rule.** §1 of the
+/// design system bans a border because a border is how a surface fakes depth,
+/// and this is not a surface — it is a glyph, at the same weight the letter
+/// inside it is drawn. It carries no lift, and nothing sits on it.
+///
+/// [AppPalette.accentOnSurface], never [AppPalette.accent]: this is ink on the
+/// block's own fill, and `#2F5BEA` on a dark one manages 2.6:1. The variant
+/// holds 5.75:1 dark and 5.14:1 light.
+///
+/// Reads the theme itself: this block is built by a `ListView.builder`, which
+/// keeps a child it has already built across the panel's rebuilds, so a watch
+/// higher up would never reach it on a theme flip.
+class _NodeInitial extends StatelessWidget {
+  const _NodeInitial({required this.email});
+
+  final String email;
+
+  /// The width of the block's whole left rail, not just this mark: the work
+  /// bars beneath it are drawn to the same figure, and a tile that sized itself
+  /// would take the column out of line.
+  static const double size = 22;
+
+  /// Heavy enough to read as drawn rather than as an artefact at 22px, light
+  /// enough that the ring does not close up around the letter.
+  static const double _ring = 1.5;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final color = AppPalette.accentOnSurface;
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        // The accent at a tenth, so the disc reads as filled rather than as a
+        // hole cut in the block — the ring alone left the letter floating on
+        // the recess behind it.
+        color: AppCard.tint10,
+        border: Border.all(color: color, width: _ring),
+      ),
+      child: Text(
+        memberInitial(email),
+        // A step down from the members tile's 11.5: the ring eats 3px of the
+        // same 22px box, and the glyph has to clear it on both sides.
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: color,
         ),
       ),
     );
