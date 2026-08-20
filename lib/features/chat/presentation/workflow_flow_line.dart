@@ -43,6 +43,7 @@ import '../logic/conversation.dart';
 import '../logic/routing_group.dart';
 import '../logic/turn_model_share.dart';
 import '../logic/turn_model_usage.dart';
+import '../logic/workflow_bubble_open.dart';
 import 'orchestration_node_diagram.dart';
 
 /// The strip above the conversation saying how this chat is being routed and
@@ -51,7 +52,10 @@ import 'orchestration_node_diagram.dart';
 ///
 /// Draws nothing at all for a chat on the grid's ordinary pick: the whole
 /// feature is about a [RoutingGroup], and a bar reporting "no orchestration" on
-/// every other chat would be chrome that never says anything.
+/// every other chat would be chrome that never says anything. Nothing either
+/// while the top bar's workflow button is off ([workflowBubbleOpenProvider]) —
+/// that button is how a user puts this strip away, so it has to reach the strip
+/// and not just its own icon.
 class WorkflowFlowLine extends ConsumerStatefulWidget {
   const WorkflowFlowLine({super.key, required this.conversation});
 
@@ -98,11 +102,13 @@ class _WorkflowFlowLineState extends ConsumerState<WorkflowFlowLine> {
   ///
   /// **Entirely this widget's own**, exactly as `GridPowerPill`'s is. It is
   /// deliberately not tied to `workflowBubbleOpenProvider`: that flag says
-  /// whether the *top bar's* workflow icon is showing, which is a different
-  /// question from whether this conversation's panel is open. Tying the two
+  /// whether the strip is shown at all, which is a different question from
+  /// whether the strip's node panel is currently held open. Tying the two
   /// together cost a dead first click — the flag could set this true while the
   /// open chat had no group to draw, leaving the panel shut but believing
   /// itself pinned, so the first real click read as "unpin" and did nothing.
+  /// The one thing the flag does reach is *release*: putting the strip away
+  /// lets go of a panel it was holding (see [build]).
   bool _pinned = false;
 
   @override
@@ -175,9 +181,24 @@ class _WorkflowFlowLineState extends ConsumerState<WorkflowFlowLine> {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    // Putting the strip away takes its panel with it: unmounting the portal
+    // while the controller still believes it is showing would have the strip
+    // come back already open the next time the button is switched on — the same
+    // trap [didUpdateWidget] guards for a chat switch, arriving here as a
+    // provider change instead of a new widget.
+    ref.listen(workflowBubbleOpenProvider, (_, open) {
+      if (open || !mounted) return;
+      _hovered = false;
+      if (_pinned) setState(() => _pinned = false);
+      _shut();
+    });
     final conversation = widget.conversation;
     final group = _routing;
     if (conversation == null || group == null) return const SizedBox.shrink();
+    // Put away from the top bar. Checked after the group, not before: the
+    // button is only offered for a chat that has one, so the two gates are
+    // read in the order the user meets them.
+    if (!ref.watch(workflowBubbleOpenProvider)) return const SizedBox.shrink();
 
     // Whether *this* chat has a turn in flight, not "the app is busy": a turn
     // dispatched into another conversation must not set this one's nodes going.

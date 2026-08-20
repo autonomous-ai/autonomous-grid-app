@@ -1,13 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Whether the workflow bubble — the top-bar entry point into the
-/// orchestration overview — is showing.
+/// Whether the workflow strip — `WorkflowFlowLine`, the orchestration overview
+/// above the conversation — may be shown at all.
 ///
-/// Its own flag rather than a `PanelHost`: the bubble isn't a panel around the
-/// conversation, it's a small always-on-top indicator, and per-conversation
-/// hover/pin behaviour is separate again — this only controls whether the
-/// feature's icon is visible at all. Not persisted, for the same reason the
-/// preview panel isn't — see `previewPanelOpenProvider`.
+/// A gate over the strip's own per-chat rule, not a replacement for it: the
+/// strip still draws nothing for a chat on the grid's ordinary pick, so this
+/// only ever decides whether a chat that *does* have a routing group shows its
+/// overview. That is the question the top bar's workflow button asks, which is
+/// why it is the only thing that writes here.
+///
+/// **Starts open.** A routed chat's overview is the feature, not an opt-in: the
+/// strip appears by itself the moment a chat is routed, and this exists so a
+/// user who would rather read the transcript without it can put it away.
+///
+/// Not persisted, for the same reason the preview panel isn't — see
+/// `previewPanelOpenProvider`.
 final workflowBubbleOpenProvider =
     NotifierProvider<WorkflowBubbleOpenNotifier, bool>(
       WorkflowBubbleOpenNotifier.new,
@@ -15,7 +22,7 @@ final workflowBubbleOpenProvider =
 
 class WorkflowBubbleOpenNotifier extends Notifier<bool> {
   @override
-  bool build() => false;
+  bool build() => true;
 
   void toggle() => state = !state;
 }

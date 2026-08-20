@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/adapters/agent_turn_env.dart';
 
@@ -21,12 +19,15 @@ void main() {
       expect(claudeConversationHeaderEnv(''), isEmpty);
     });
 
-    test('sets ANTHROPIC_CUSTOM_HEADERS with the conversation id', () {
-      final env = claudeConversationHeaderEnv('conv-1');
-      expect(env, contains('ANTHROPIC_CUSTOM_HEADERS'));
-      final decoded =
-          jsonDecode(env['ANTHROPIC_CUSTOM_HEADERS']!) as Map<String, Object?>;
-      expect(decoded['X-Grid-Conversation'], 'conv-1');
+    // The literal wire string, not a decode of whatever we encoded: Claude
+    // Code splits this variable on its first `:` and takes what precedes it as
+    // the header name, so a JSON value names a header `{"X-Grid-Conversation"`
+    // and aborts the run before any request goes out. Only the exact line form
+    // works, and only asserting it catches the day someone "tidies" it back.
+    test('sets ANTHROPIC_CUSTOM_HEADERS to a literal Name: Value line', () {
+      expect(claudeConversationHeaderEnv('conv-1'), {
+        'ANTHROPIC_CUSTOM_HEADERS': 'X-Grid-Conversation: conv-1',
+      });
     });
   });
 

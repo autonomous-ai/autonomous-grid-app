@@ -978,11 +978,23 @@ mixin _ChatSend on _ChatSessions {
   /// caption — [message] comes back unchanged and the watermark comes back
   /// null (so the conversation's own is kept), never the turn itself; the
   /// failure is logged, not surfaced.
+  ///
+  /// **Only for a routed chat.** The breakdown this reads has exactly one
+  /// reader — `WorkflowFlowLine`, which draws nothing without a
+  /// [Conversation.routingGroup] — while the read costs the turn everything up
+  /// to `_kUsageDeadline` (7s) before its transcript can be committed. Charging
+  /// every turn in the app that wait, for a caption none of them will ever
+  /// show, is one feature's cost paid by everyone not using it — so a chat on
+  /// the grid's ordinary pick turns straight back here: no fetch, and no pause
+  /// of its own subscription either.
   Future<({ChatMessage message, String? watermark})> _attachOrchestrationUsage(
     NetworkCredential network,
     Conversation conversation,
     ChatMessage message,
   ) async {
+    if (conversation.routingGroup == null) {
+      return (message: message, watermark: null);
+    }
     final sub = _subs[conversation.id];
     sub?.pause();
     try {

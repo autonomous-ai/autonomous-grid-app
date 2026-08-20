@@ -119,17 +119,29 @@ class AppTopBar extends ConsumerWidget {
   }
 }
 
-/// Shows and hides the workflow bubble — the top-bar entry point into the
-/// orchestration overview.
+/// Shows and hides the orchestration overview — the strip above the
+/// conversation saying how this chat is routed and how far its turn has got.
 ///
 /// Right beside [GridPowerPill] rather than with the panel toggles: it isn't a
 /// panel around the conversation, it's a small indicator of its own, and it
 /// belongs next to the grid summary it reports on.
+///
+/// Only while the open chat is routed, the same way every other toggle in this
+/// row waits for something to move: the strip itself draws nothing for a chat
+/// on the grid's ordinary pick, so on those this button would report the state
+/// of something the user cannot see either way.
 class _WorkflowBubbleToggle extends ConsumerWidget {
   const _WorkflowBubbleToggle();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final routed = ref.watch(
+      chatSessionsProvider.select((s) => s.active?.routingGroup != null),
+    );
+    if (!ref.watch(chatIsOpenProvider) || !routed) {
+      return const SizedBox.shrink();
+    }
+
     final open = ref.watch(workflowBubbleOpenProvider);
     return PanelToggle(
       icon: LucideIcons.workflow,

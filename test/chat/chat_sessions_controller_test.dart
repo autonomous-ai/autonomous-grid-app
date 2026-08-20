@@ -805,6 +805,17 @@ void main() {
   });
 
   group('turn settle reads the grid\'s usage log', () {
+    // Every test below routes its chat first, because only a routed chat reads
+    // the log at all: the breakdown has one reader (the orchestration strip),
+    // which draws nothing without a group, so an unrouted turn must never pay
+    // the read's wait. The last test in the group holds that line.
+    const routed = RoutingGroup(
+      mode: RoutingMode.bruteForce,
+      isFixed: true,
+      models: ['a', 'b'],
+    );
+    const routedModel = 'auto/brute_force';
+
     test('a landed turn reads which models actually served it and saves the '
         'grid\'s new watermark, so the next turn\'s read never re-counts what '
         'this one already saw', () async {
@@ -823,9 +834,14 @@ void main() {
           ),
         ],
       );
-      final chat = h.container.read(chatSessionsProvider.notifier);
+      final chat = h.container.read(chatSessionsProvider.notifier)
+        ..setRoutingGroup(routed);
 
-      await chat.send(network: _credential(), model: 'qwen', message: 'hi');
+      await chat.send(
+        network: _credential(),
+        model: routedModel,
+        message: 'hi',
+      );
 
       final conv = h.container.read(chatSessionsProvider).conversations.single;
       expect(conv.lastRequestWatermark, 'wm-2');
@@ -850,7 +866,11 @@ void main() {
         models: const [ModelShare(model: 'qwen', requests: 5)],
         last: 'wm-3',
       );
-      await chat.send(network: _credential(), model: 'qwen', message: 'hi2');
+      await chat.send(
+        network: _credential(),
+        model: routedModel,
+        message: 'hi2',
+      );
       expect(_conversationScopedCalls(relay).last.from, 'wm-2');
       expect(
         h.container
@@ -880,11 +900,12 @@ void main() {
           ),
         ],
       );
-      final chat = h.container.read(chatSessionsProvider.notifier);
+      final chat = h.container.read(chatSessionsProvider.notifier)
+        ..setRoutingGroup(routed);
 
       final sent = chat.send(
         network: _credential(),
-        model: 'qwen',
+        model: routedModel,
         message: 'hi',
       );
       // Let the turn reach the usage read and stall there — not landed yet.
@@ -923,11 +944,12 @@ void main() {
             ),
           ],
         );
-        final chat = h.container.read(chatSessionsProvider.notifier);
+        final chat = h.container.read(chatSessionsProvider.notifier)
+          ..setRoutingGroup(routed);
 
         final sent = chat.send(
           network: _credential(),
-          model: 'qwen',
+          model: routedModel,
           message: 'hi',
         );
         await pumpEventQueue();
@@ -978,11 +1000,12 @@ void main() {
             ),
           ],
         );
-        final chat = h.container.read(chatSessionsProvider.notifier);
+        final chat = h.container.read(chatSessionsProvider.notifier)
+          ..setRoutingGroup(routed);
 
         final sent = chat.send(
           network: _credential(),
-          model: 'qwen',
+          model: routedModel,
           message: 'hi',
         );
         await pumpEventQueue();
@@ -1028,10 +1051,17 @@ void main() {
         ],
       );
 
-      await h.container
-          .read(chatSessionsProvider.notifier)
-          .send(network: _credential(), model: 'qwen', message: 'hi');
+      await (h.container.read(chatSessionsProvider.notifier)
+            ..setRoutingGroup(routed))
+          .send(network: _credential(), model: routedModel, message: 'hi');
 
+      expect(
+        _conversationScopedCalls(relay),
+        hasLength(1),
+        reason:
+            'the read was attempted — this is the failing read, not a '
+            'chat that never asked',
+      );
       final state = h.container.read(chatSessionsProvider);
       expect(state.sending, isFalse);
       expect(state.error, isNull);
@@ -1067,14 +1097,15 @@ void main() {
           ],
         );
 
-        await h.container
-            .read(chatSessionsProvider.notifier)
-            .send(
-              network: _credential(),
-              model: 'qwen',
-              message: 'build a game',
-            );
+        await (h.container.read(
+          chatSessionsProvider.notifier,
+        )..setRoutingGroup(routed)).send(
+          network: _credential(),
+          model: routedModel,
+          message: 'build a game',
+        );
 
+        expect(_conversationScopedCalls(relay), hasLength(1));
         final state = h.container.read(chatSessionsProvider);
         expect(
           state.error,
@@ -1085,6 +1116,39 @@ void main() {
         expect(conv.messages.last.orchestrationModels, isNull);
       },
     );
+
+    test('a chat on the grid\'s ordinary pick never reads the log at all — '
+        'the breakdown has one reader and it draws nothing here, so charging '
+        'every turn in the app up to the read\'s deadline buys nobody '
+        'anything', () async {
+      final relay = _FakeUsageRelay(
+        response: (
+          models: const [ModelShare(model: 'qwen', requests: 2)],
+          last: 'wm-2',
+        ),
+      )..hold = Completer<void>();
+      final h = _harness(
+        tmp,
+        relay: relay,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+
+      // Never completed: an unrouted turn that waited on this read would hang
+      // here, so landing at all is the assertion.
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+
+      expect(_conversationScopedCalls(relay), isEmpty);
+      final conv = h.container.read(chatSessionsProvider).conversations.single;
+      expect(conv.messages.last.text, 'hi back');
+      expect(conv.messages.last.orchestrationModels, isNull);
+      expect(conv.lastRequestWatermark, isNull);
+    });
   });
 
   test(

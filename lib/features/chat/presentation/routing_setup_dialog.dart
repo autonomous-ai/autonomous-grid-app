@@ -91,7 +91,12 @@ class _RoutingSetupDialogState extends ConsumerState<RoutingSetupDialog> {
     if (_appliedSuggestion) return;
     _appliedSuggestion = true;
     setState(() {
-      _models = [...?group.models];
+      // Clamped on the way in, not trusted: the suggestion is parsed from a
+      // model's answer, and one that names six models would otherwise sit in
+      // the editable state past the ceiling the stepper's `+` enforces and the
+      // relay's own `MAX_N` allows — the count would read "6" with no way down
+      // to it, and Confirm would pin a group the grid can't run.
+      _models = [...?group.models].take(_kMaxModels).toList();
       _worker = group.worker;
       _judge = group.judge;
     });
