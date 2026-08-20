@@ -105,6 +105,53 @@ void main() {
     );
   });
 
+  group('a night asked for without the word "loop"', () {
+    test('"chạy ít nhất tới sáng mai" is the repeat, said the way people say '
+        'it — the horizon comes after the work, not in front of it', () {
+      const line =
+          'cho task sau research + đưa ý kiến để app tối ưu về UI UX '
+          'performance mày chạy ít nhất tới sáng mai tao vào để kiểm tra';
+      final spoken = readSpokenCommand(line);
+
+      expect(spoken?.call.command, ChatCommand.loop);
+      expect(spoken?.certain, isTrue);
+      expect(
+        spoken?.call.argument,
+        line,
+        reason: 'the horizon is part of what the assistant is being told',
+      );
+    });
+
+    test('reads the English shape too', () {
+      expect(
+        readSpokenCommand('tidy the docs and keep going until morning')
+            ?.call
+            .command,
+        ChatCommand.loop,
+      );
+      expect(readSpokenCommand('run this overnight')?.certain, isTrue);
+    });
+
+    test('a "no" in front of the horizon drops it — this reading looks past '
+        'the front of the sentence, so it cannot lean on the opening rule', () {
+      for (final line in [
+        'tao không muốn mày chạy tới sáng mai',
+        'chưa cần đâu, đừng chạy qua đêm',
+      ]) {
+        expect(readSpokenCommand(line), isNull, reason: line);
+      }
+    });
+
+    test('a sentence that names a command still gets that command — the '
+        'horizon only speaks for a sentence with nothing else in it', () {
+      final spoken = readSpokenCommand(
+        'làm loop mỗi giờ quét X, chạy tới sáng mai',
+      );
+
+      expect(spoken?.call.argument, startsWith('1h '));
+    });
+  });
+
   group('a goal asked for in words', () {
     test('becomes the goal, worded as the user worded it', () {
       final spoken = readSpokenCommand(

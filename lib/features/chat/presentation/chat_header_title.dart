@@ -5,10 +5,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/chat_sessions_controller.dart';
 
-/// The widest the field ever grows. The title sits beside its "…" like a label
-/// on a tab, and a field that ran to the window's edge would turn the top bar
-/// into a form.
-const _fieldMaxWidth = 360.0;
+/// The box both states wear — see [_TitleBox]. Small numbers, but they have to
+/// be the *same* numbers on the label and on the field, or opening the field
+/// nudges the title sideways.
+const _hPad = 5.0;
+const _vPad = 3.0;
+const _boxRadius = 7.0;
+
+/// The narrowest the field draws. It sizes itself to its text, and a chat named
+/// down to two letters would otherwise leave a box too small to click back into.
+const _fieldMinWidth = 72.0;
+
+/// The title's one type style, read by the label and the field alike: same
+/// size, same weight, same line height, so the words don't shift a pixel when
+/// one replaces the other.
+TextStyle _titleStyle() => TextStyle(
+  color: AppPalette.textPrimary,
+  fontSize: 13.5,
+  fontWeight: AppFont.medium,
+  height: 1.2,
+);
 
 /// The chat's name in the top bar, renamed in place.
 ///
@@ -126,15 +142,14 @@ class _TitleLabel extends StatelessWidget {
       child: Tooltip(
         message: 'Double-click to rename',
         waitDuration: const Duration(milliseconds: 700),
-        child: Text(
-          title,
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: AppPalette.textPrimary,
-            fontSize: 13.5,
-            fontWeight: AppFont.medium,
+        child: _TitleBox(
+          editing: false,
+          child: Text(
+            title,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: _titleStyle(),
           ),
         ),
       ),
@@ -142,10 +157,13 @@ class _TitleLabel extends StatelessWidget {
   }
 }
 
-/// The editing state: the same words, now typed into.
+/// The editing state: the same words in the same place, now typed into.
 ///
-/// Sized and weighted like the label it replaces so the title doesn't jump when
-/// the field opens — only the soft well behind it appears.
+/// Sized by its own text rather than by the space available, so the field opens
+/// exactly as wide as the name it holds and the "…" beside it doesn't jump
+/// across the bar. It grows as you type, up to whatever room the top bar has —
+/// which is also what lets a name the label had to cut short be read in full
+/// while it is being edited.
 class _TitleField extends StatelessWidget {
   const _TitleField({
     required this.controller,
@@ -162,48 +180,65 @@ class _TitleField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppControl.radius),
-      borderSide: BorderSide(color: AppGlass.hair),
-    );
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: _fieldMaxWidth),
-      child: CallbackShortcuts(
-        bindings: {const SingleActivator(LogicalKeyboardKey.escape): onCancel},
-        child: TextField(
-          controller: controller,
-          focusNode: focusNode,
-          autofocus: true,
-          maxLines: 1,
-          textInputAction: TextInputAction.done,
-          cursorColor: AppPalette.accentOnSurface,
-          style: TextStyle(
-            color: AppPalette.textPrimary,
-            fontSize: 13.5,
-            fontWeight: AppFont.medium,
-            height: 1.2,
-          ),
-          onSubmitted: (_) => onSubmit(),
-          // A click elsewhere in the window ends the edit the way clicking past
-          // a rename dialog's field would — by keeping what's there, not by
-          // throwing it away.
-          onTapOutside: (_) => onSubmit(),
-          decoration: InputDecoration(
-            isDense: true,
-            filled: true,
-            fillColor: AppPalette.cardBg,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 8,
-              vertical: 6,
-            ),
-            border: border,
-            enabledBorder: border,
-            focusedBorder: border.copyWith(
-              borderSide: BorderSide(color: AppPalette.accentOnSurface),
+      constraints: const BoxConstraints(minWidth: _fieldMinWidth),
+      child: IntrinsicWidth(
+        child: CallbackShortcuts(
+          bindings: {const SingleActivator(LogicalKeyboardKey.escape): onCancel},
+          child: _TitleBox(
+            editing: true,
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              autofocus: true,
+              maxLines: 1,
+              textInputAction: TextInputAction.done,
+              cursorColor: AppPalette.accentOnSurface,
+              cursorWidth: 1.5,
+              style: _titleStyle(),
+              onSubmitted: (_) => onSubmit(),
+              // A click elsewhere in the window ends the edit the way clicking
+              // past a rename dialog's field would — by keeping what's there,
+              // not by throwing it away.
+              onTapOutside: (_) => onSubmit(),
+              // Collapsed, with the well drawn by [_TitleBox] instead:
+              // Material's own decoration carries a minimum height and padding
+              // the label can't match, which is what opened the field taller
+              // and wider than the title it replaced.
+              decoration: const InputDecoration.collapsed(hintText: ''),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The one box both states sit in: same padding, same rim thickness, same
+/// height. Only the fill and the rim's colour change, so opening the field
+/// lights a well behind the title instead of moving it.
+///
+/// The rim stays even while it is invisible — a border that appears only on
+/// edit adds its 1px to the box and shunts the words along with it.
+class _TitleBox extends StatelessWidget {
+  const _TitleBox({required this.editing, required this.child});
+
+  final bool editing;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: _hPad, vertical: _vPad),
+      decoration: BoxDecoration(
+        color: editing ? AppPalette.cardBg : Colors.transparent,
+        borderRadius: BorderRadius.circular(_boxRadius),
+        border: Border.all(
+          color: editing ? AppPalette.accentOnSurface : Colors.transparent,
+        ),
+      ),
+      child: child,
     );
   }
 }

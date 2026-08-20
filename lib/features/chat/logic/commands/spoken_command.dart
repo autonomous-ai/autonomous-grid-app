@@ -53,12 +53,15 @@ SpokenCommand? readSpokenCommand(String text) {
   return _read(line.substring(addressed), lower.substring(addressed));
 }
 
-/// The four readings, in the order a sentence is tried against them.
+/// The readings, in the order a sentence is tried against them. Anything that
+/// names a command wins over [_readHorizon], which reads one that was asked for
+/// without ever naming it.
 SpokenCommand? _read(String line, String lower) =>
     _readStop(lower) ??
     _readLoop(line, lower) ??
     _readGoal(line, lower) ??
-    _readSchedule(line, lower);
+    _readSchedule(line, lower) ??
+    _readHorizon(line, lower);
 
 /// The `/command argument` line a reading stands for — what the composer is
 /// filled with when it isn't certain enough to run.
@@ -166,6 +169,51 @@ SpokenCommand? _readSchedule(String line, String lower) {
     certain: _hasClock.hasMatch(lower),
   );
 }
+
+/// "mày chạy ít nhất tới sáng mai" — a repeat asked for without the word.
+///
+/// Someone who says *run until tomorrow morning* has asked for exactly what a
+/// self-paced `/loop` is, and said so plainly; they simply never reached for
+/// this app's word for it. Without this the sentence went to the agent as an
+/// ordinary message, which answered once, in four minutes, and stopped — the
+/// user came back in the morning to a night that never happened.
+///
+/// The one reading that does **not** need the ask to open the sentence, because
+/// a horizon is where people put it: at the end, after the work. That costs the
+/// protection the opening rule gives, so two things buy it back — the phrase is
+/// a closed set aimed at whoever is being asked ("chạy tới sáng", "qua đêm",
+/// "run overnight"), and a refusal anywhere in front of it drops the reading,
+/// since "tao không muốn mày chạy tới sáng mai" opens with neither a "no" the
+/// [_negated] guard would see nor a command.
+///
+/// The whole sentence becomes the prompt, horizon and all: it is what they
+/// asked for, and the words that say "keep going" are worth repeating to the
+/// assistant that has to keep going.
+SpokenCommand? _readHorizon(String line, String lower) {
+  final match = _horizon.firstMatch(lower);
+  if (match == null) return null;
+  if (_refusal.hasMatch(lower.substring(0, match.start))) return null;
+  return (call: (command: ChatCommand.loop, argument: line), certain: true);
+}
+
+/// Asking the assistant to keep going until a time of day, in either language.
+final RegExp _horizon = RegExp(
+  r'(?:mày|bạn|em|cậu)?\s*chạy\s+(?:liên tục\s+|ít nhất\s+|tiếp\s+)*'
+  r'(?:(?:tới|đến)\s+(?:sáng|trưa|chiều|tối|khuya|mai|hôm sau)|qua đêm'
+  r'|xuyên đêm|suốt đêm)'
+  r'|keep (?:it |them )?(?:running|going) (?:until|through|overnight)'
+  r'|run (?:it |this )?overnight',
+  unicode: true,
+);
+
+/// A "no" anywhere, for the one reading that looks past the front of the
+/// sentence and so cannot lean on [_negated].
+final RegExp _refusal = RegExp(
+  '$kBeforeWord'
+  r'(?:không|đừng|khỏi|chẳng|chớ|no|not|don.t|never)'
+  '$kAfterWord',
+  unicode: true,
+);
 
 /// Openings that mean "repeat this".
 ///
