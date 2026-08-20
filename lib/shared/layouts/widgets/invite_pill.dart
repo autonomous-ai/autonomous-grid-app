@@ -103,28 +103,42 @@ class _InvitePillState extends ConsumerState<InvitePill> {
     final showFaces = ranked.isNotEmpty && width >= InvitePill._facesFrom;
     final showLabel = width >= InvitePill._labelFrom;
 
-    return Semantics(
-      button: true,
-      label: members == null
-          ? 'Invite people to ${grid.name}'
-          : 'Invite people to ${grid.name}, '
-                '${members.length} ${plural(members.length, 'person', 'people')} '
-                'on it',
-      child: Tooltip(
-        message: members == null
+    // The gap goes on the *right*, and outside the gesture detector.
+    //
+    // Every other pill on this bar pads its own right edge by 8, so a pill's
+    // left gap is its neighbour's padding. Padding on the left instead — which
+    // is what this did — put 16px before the cluster and **nothing** after it:
+    // the button's solid edge ended up flush against the grid capsule, with
+    // only that capsule's inner padding keeping its status dot off the label.
+    //
+    // 12 rather than the bar's 8 because this is the one opaque surface in a
+    // row of translucent ones, and a saturated block sitting 8px off a glass
+    // capsule still reads as attached to it.
+    //
+    // Outside the detector so the gap is page, not target: inside, a click 10px
+    // to the left of the grid pill would open the invite dialog.
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Semantics(
+        button: true,
+        label: members == null
             ? 'Invite people to ${grid.name}'
-            : '${members.length} '
-                  '${plural(members.length, 'person', 'people')} '
-                  'on ${grid.name}',
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() => _hovered = false),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => ShareGridDialog.show(context, grid),
-            child: Padding(
-              padding: const EdgeInsets.only(left: 8),
+            : 'Invite people to ${grid.name}, '
+                  '${members.length} '
+                  '${plural(members.length, 'person', 'people')} on it',
+        child: Tooltip(
+          message: members == null
+              ? 'Invite people to ${grid.name}'
+              : '${members.length} '
+                    '${plural(members.length, 'person', 'people')} '
+                    'on ${grid.name}',
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() => _hovered = false),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => ShareGridDialog.show(context, grid),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
