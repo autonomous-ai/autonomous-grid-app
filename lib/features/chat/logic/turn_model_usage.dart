@@ -104,13 +104,14 @@ class TurnModelUsage extends Notifier<Map<String, List<ModelShare>>> {
   ) async {
     if (!ref.mounted) return null;
     try {
-      return await ref
+      final result = await ref
           .read(relayApiClientProvider)
           .usage(
             baseUrl: network.relayBaseUrl,
             apiKey: network.relayApiKey,
             since: since,
           );
+      return result.models;
     } on Object {
       return null;
     }
