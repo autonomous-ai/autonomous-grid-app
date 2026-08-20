@@ -695,7 +695,9 @@ class _FixedDynamicSection extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          fixed ? 'Same models every message.' : 'Re-picked every message.',
+          // The same line the picker's mode menu shows for this choice — see
+          // [routingHoldNote]; two copies of it would drift.
+          routingHoldNote(isFixed: fixed),
           style: theme.textTheme.bodySmall?.copyWith(
             color: AppPalette.textSecondary,
           ),

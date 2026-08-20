@@ -553,7 +553,7 @@ AgentApprovalMode approvalFor(
 ) => conversation?.approval ?? fallback;
 
 /// The string a turn in [conversation] puts in the request's `model` field,
-/// given the [picked] model id the composer is showing.
+/// given the [picked] model id the turn is actually going out on.
 ///
 /// A chat pinned to a routing group sends the group instead: the mode's slash
 /// string under Dynamic, the pinned model list under Fixed — see
@@ -561,7 +561,25 @@ AgentApprovalMode approvalFor(
 /// naming [picked], because the Fixed form is a JSON object and a footer
 /// answering "what answered this?" with one says nothing.
 ///
+/// **Only while the chat is still on that mode.** The group alone is not
+/// enough: the composer can be moved off a routing row without anything
+/// clearing it — switch to a grid that serves no router and `_syncModelField`
+/// drops the chat to a plain model, since the mode's row is no longer on the
+/// list. The pill and the reply footer would then say `qwen` while every send
+/// quietly carried the old grid's pinned ids, which is the app lying about
+/// what it sent.
+///
+/// The check reads [Conversation.model] — the row the user is on — and never
+/// [picked], which is what *this turn* goes out as. Under the Auto agent those
+/// two differ on purpose: [picked] becomes the router's own `auto`, and
+/// gating on it would drop Fixed routing for every agent turn that is
+/// legitimately still pinned.
+///
 /// Pure, and here beside [approvalFor] for the same reason: a rule about a
 /// conversation belongs with the conversation, not inside the send it decides.
-String wireModelFor(Conversation conversation, String picked) =>
-    conversation.routingGroup?.toModelField() ?? picked;
+String wireModelFor(Conversation conversation, String picked) {
+  final group = conversation.routingGroup;
+  if (group == null) return picked;
+  if (routingModeForModelId(conversation.model) != group.mode) return picked;
+  return group.toModelField();
+}

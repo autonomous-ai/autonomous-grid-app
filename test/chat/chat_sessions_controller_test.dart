@@ -4481,6 +4481,31 @@ void main() {
       expect(h.sender.model, 'auto/judge_loop');
     });
 
+    test('a group left on a chat whose composer has moved to a plain model '
+        'stops reaching the wire, so the pill and the request can never say '
+        'two different things', () async {
+      // Nothing clears the group on this path: switching to a grid that
+      // serves no router drops the composer to a plain model on its own (see
+      // `_syncModelField`), and the chat keeps the group it was pinned with.
+      final h = _harness(tmp, updates: _kOneReply);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      c.setRoutingGroup(
+        const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      await c.send(network: _credential(), model: 'qwen', message: 'hi');
+
+      expect(h.sender.model, 'qwen');
+      // The group is still there — this is the send declining to use it, not
+      // the picker having cleared it.
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.routingGroup?.mode, RoutingMode.bruteForce);
+    });
+
     test(
       'clearing the group hands the chat back to the grid — picking a '
       'plain model must not go on sending models it no longer names',

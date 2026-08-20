@@ -19,6 +19,14 @@ enum RoutingMode {
 /// model is.
 String routingModelId(RoutingMode mode) => 'auto/${mode.wireValue}';
 
+/// The one-line promise each half of the Fixed/Dynamic choice makes.
+///
+/// Shared so the picker's mode menu and the setup dialog's segmented control
+/// can never drift into describing the same choice two different ways — they
+/// are the same question asked at two moments.
+String routingHoldNote({required bool isFixed}) =>
+    isFixed ? 'Same models every message.' : 'Re-picked every message.';
+
 /// The routing mode [id] names, or null when it is an ordinary model id.
 RoutingMode? routingModeForModelId(String id) {
   final trimmed = id.trim();

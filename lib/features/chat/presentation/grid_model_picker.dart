@@ -28,6 +28,17 @@ import 'routing_setup_dialog.dart';
 typedef GridModelSelected =
     void Function(NetworkCredential grid, PlaygroundModelOption option);
 
+/// Called when the user picks one of the orchestrator rows, having said in the
+/// same gesture whether the models should be pinned ([fixed]) or re-picked by
+/// the grid every message.
+typedef _RoutingSelected =
+    void Function(
+      NetworkCredential grid,
+      PlaygroundModelOption option,
+      RoutingMode mode, {
+      required bool fixed,
+    });
+
 /// The geometry an option row is built from. `_InfoRow` needs to hang its note
 /// under the row's *text*, which means knowing where that text starts — it used
 /// to carry the hand-added answer (29) and would drift the moment any of these
@@ -227,6 +238,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         _ModelMenu(
           currentModelId: widget.currentModelId,
           onSelect: _select,
+          onSelectRouting: _selectRouting,
           onClose: _menu.close,
           visionBlocked: widget.visionBlocked,
         ),
@@ -275,43 +287,62 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     );
   }
 
-  /// A pick from the menu, before it reaches the composer.
+  /// An ordinary model pick, on its way to the composer.
   ///
-  /// An ordinary model goes straight through. The two orchestrator rows are a
-  /// choice about *how* this chat is answered rather than by what, so they set
-  /// the chat's routing group up first — and only then move the composer, so a
-  /// cancelled setup leaves the pill on what it was already showing.
+  /// Moving to a plain model hands the chat back to the grid's ordinary pick:
+  /// a group left behind would go on pinning models the composer no longer
+  /// names.
   void _select(NetworkCredential grid, PlaygroundModelOption option) {
-    final mode = routingModeForModelId(option.id);
-    if (mode == null) {
-      // Moving to a plain model hands the chat back to the grid's ordinary
-      // pick: a group left behind would go on pinning models the composer no
-      // longer names.
-      ref.read(chatSessionsProvider.notifier).clearRoutingGroup();
+    ref.read(chatSessionsProvider.notifier).clearRoutingGroup();
+    widget.onSelect(grid, option);
+  }
+
+  /// An orchestrator row, with the Fixed/Dynamic answer the row's own little
+  /// menu already collected (see [_ModeChoiceRow]).
+  ///
+  /// **Dynamic costs nothing and asks nothing.** It has no model list to hold,
+  /// so there is no suggestion to fetch and no dialog to show (design spec §4)
+  /// — the group is written on the spot and the composer moves. This is why
+  /// the choice is made *before* the setup dialog rather than inside it: that
+  /// dialog probes the grid with a real, billed chat completion the moment it
+  /// opens, and a user who wanted Dynamic would have paid for an answer they
+  /// were always going to decline.
+  void _selectRouting(
+    NetworkCredential grid,
+    PlaygroundModelOption option,
+    RoutingMode mode, {
+    required bool fixed,
+  }) {
+    if (!fixed) {
+      ref
+          .read(chatSessionsProvider.notifier)
+          .setRoutingGroup(RoutingGroup(mode: mode, isFixed: false));
       widget.onSelect(grid, option);
       return;
     }
-    unawaited(_setUpRouting(grid, option, mode));
+    unawaited(_setUpFixedRouting(grid, option, mode));
   }
 
-  /// Ask which models [mode] should use in this chat, then pin them.
+  /// Ask which models [mode] should pin in this chat, then pin them.
   ///
-  /// Once per chat per mode: coming back to a mode that is already set up
-  /// keeps the models the user confirmed, rather than spending another request
-  /// on a suggestion and asking them the same question again. Reopening the
-  /// setup is picking the *other* mode, or a plain model and back.
+  /// Once per chat per mode: coming back to a mode this chat is already pinned
+  /// to keeps the models the user confirmed, rather than spending another
+  /// request on a suggestion and asking them the same question again. A chat
+  /// on this mode *dynamically* is not already set up — that is the pick
+  /// changing, and it is what the dialog is for.
   ///
   /// Run from the pill rather than from inside the menu because the menu is
   /// torn down the moment a row is tapped — the dialog has to hang off
   /// something that is still on screen when it opens.
-  Future<void> _setUpRouting(
+  Future<void> _setUpFixedRouting(
     NetworkCredential grid,
     PlaygroundModelOption option,
     RoutingMode mode,
   ) async {
     final chats = ref.read(chatSessionsProvider.notifier);
     final chat = ref.read(chatSessionsProvider).active;
-    if (chat?.routingGroup?.mode == mode) {
+    final pinned = chat?.routingGroup;
+    if (pinned != null && pinned.mode == mode && pinned.isFixed) {
       widget.onSelect(grid, option);
       return;
     }
@@ -382,12 +413,18 @@ class _ModelMenu extends ConsumerStatefulWidget {
   const _ModelMenu({
     required this.currentModelId,
     required this.onSelect,
+    required this.onSelectRouting,
     required this.onClose,
     this.visionBlocked = false,
   });
 
   final String currentModelId;
   final GridModelSelected onSelect;
+
+  /// The orchestrator rows have a second question of their own — see
+  /// [_ModeChoiceRow] — so they report through their own callback rather than
+  /// squeezing the answer into [onSelect]'s option.
+  final _RoutingSelected onSelectRouting;
   final VoidCallback onClose;
 
   /// Set while an image is attached but the picked model can't read it — rows
@@ -483,14 +520,7 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         }
         continue;
       }
-      // The grid's own models first, then the two ways of putting several of
-      // them on one question. The orchestrator rows go last because they are
-      // the rarer choice and because they read as a footnote to the list they
-      // draw from — see [routingModeOptions].
-      for (final option in [
-        ...group.options,
-        ...routingModeOptions(group.options),
-      ]) {
+      for (final option in group.options) {
         rows.add(
           _OptionRow(
             option: option,
@@ -513,6 +543,28 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
           ),
         );
       }
+      // The grid's own models first, then the two ways of putting several of
+      // them on one question. They go last because they are the rarer choice
+      // and because they read as a footnote to the list they draw from — see
+      // [routingModeOptions].
+      for (final option in routingModeOptions(group.options)) {
+        final mode = routingModeForModelId(option.id);
+        // Unreachable — every row [routingModeOptions] builds is named after a
+        // mode — but this is a lookup, not an invariant worth a `!` (§3).
+        if (mode == null) continue;
+        rows.add(
+          _ModeChoiceRow(
+            option: option,
+            selected:
+                group.grid.networkId == currentGridId &&
+                option.id == widget.currentModelId,
+            onPick: (fixed) {
+              widget.onSelectRouting(group.grid, option, mode, fixed: fixed);
+              widget.onClose();
+            },
+          ),
+        );
+      }
     }
     // Nothing to pick — the one case where the empty picker has to explain
     // itself rather than open onto a blank panel.
@@ -522,6 +574,109 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
       );
     }
     return rows;
+  }
+}
+
+/// An orchestrator row — it asks *how* before it asks the grid anything.
+///
+/// Fixed and Dynamic are two different promises about the same mode: one pins a
+/// set of models for the whole chat, the other lets the grid re-pick every
+/// message. Only Fixed needs the setup dialog behind it, and that dialog spends
+/// a real, billed chat completion on a suggestion the moment it opens. So the
+/// choice is made here, in a two-item menu off the row, rather than inside the
+/// dialog — a user who wanted Dynamic never pays for an answer they were always
+/// going to decline (design spec §4: Dynamic has no suggestion step).
+///
+/// Draws as an ordinary [_OptionRow] so the list stays one list; the only
+/// difference is that its tap opens a menu instead of closing the picker. A
+/// [MenuAnchor] nested inside the picker's own menu children — the shape
+/// `SubmenuButton` is itself built from, so the outer panel stays open behind
+/// it rather than treating the submenu's tap as a tap outside.
+class _ModeChoiceRow extends StatelessWidget {
+  const _ModeChoiceRow({
+    required this.option,
+    required this.selected,
+    required this.onPick,
+  });
+
+  final PlaygroundModelOption option;
+  final bool selected;
+
+  /// True for Fixed, false for Dynamic.
+  final ValueChanged<bool> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    // menuChildren draw in a detached overlay, so a parent's rebuild doesn't
+    // reach them — this has to watch theme itself, as the app's other nested
+    // menus do.
+    AppTheme.watch(context);
+    return MenuAnchor(
+      style: appMenuStyle(),
+      menuChildren: [
+        for (final fixed in const [true, false])
+          _ModeItem(
+            label: fixed ? 'Fixed' : 'Dynamic',
+            note: routingHoldNote(isFixed: fixed),
+            onPressed: () => onPick(fixed),
+          ),
+      ],
+      builder: (context, controller, _) => _OptionRow(
+        option: option,
+        selected: selected,
+        onTap: () => controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
+  }
+}
+
+/// One half of the Fixed/Dynamic choice: the word, and the one line saying what
+/// it actually promises — which is the whole difference between them, and not
+/// something either word carries on its own.
+class _ModeItem extends StatelessWidget {
+  const _ModeItem({
+    required this.label,
+    required this.note,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String note;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads colour tokens; follow theme flips.
+    return MenuItemButton(
+      onPressed: onPressed,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.2,
+                fontWeight: AppFont.medium,
+                color: AppPalette.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              note,
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.2,
+                color: AppPalette.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
