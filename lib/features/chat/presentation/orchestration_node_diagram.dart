@@ -1,0 +1,481 @@
+import 'package:flutter/material.dart';
+
+import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/code_text_scope.dart';
+import '../../../shared/widgets/status_dot.dart';
+
+/// How far along a node's turn has gotten. 'You' and 'Answer' never carry
+/// one — they are the request and the reply, not a step that runs.
+enum NodeStatus { queued, running, done, rejected }
+
+/// One box in an [OrchestrationNodeDiagram] — a model id, or the literal
+/// `'You'`/`'Answer'` for the two ends every diagram frames itself with.
+/// Never a role name ("Proposer"/"Worker"/"Judge") — the diagram says what a
+/// node *is* (a model), the layout it sits in says what it's *for*.
+class DiagramNode {
+  const DiagramNode(this.label, this.status);
+
+  final String label;
+  final NodeStatus status;
+}
+
+/// Fixed geometry every layout in this file shares, so a node reads as the
+/// same box wherever it appears and a connector always meets one at the same
+/// point.
+const double _kNodeWidth = 132;
+const double _kNodeHeight = 38;
+const double _kNodeGap = 10; // between stacked proposer pills
+const double _kConnectorWidth = 44;
+const double _kLoopArcHeight = 26;
+const double _kLoopArcGap = 6; // air between the pills and the arc's foot
+const double _kLoopLabelHeight = 16;
+
+/// A horizontal node-and-connector diagram: **You → models → Answer**.
+///
+/// Pure and stateless — every node's data (label, status) comes in through
+/// the constructor, and nothing here reaches for a provider or the network.
+/// That's what lets the same widget serve two callers: the routing setup
+/// dialog renders it once with every node fixed at [NodeStatus.queued] (a
+/// preview of what a turn *would* look like), and the live workflow view
+/// renders it again, driven by a real turn's per-node status as it runs.
+///
+/// Two named constructors rather than one generic graph renderer — Brute
+/// Force's fan-out/fan-in and Feedback Loop's forward-plus-loop-back pair are
+/// structurally different shapes, not variations on one layout.
+class OrchestrationNodeDiagram extends StatelessWidget {
+  const OrchestrationNodeDiagram._(this._body);
+
+  final Widget _body;
+
+  /// You fans out into [proposers], which fan back into [aggregator], then
+  /// flow to [answer]. [proposers] should hold at least one node; an empty
+  /// list draws a bare You→Aggregator→Answer line.
+  factory OrchestrationNodeDiagram.bruteForce({
+    required DiagramNode you,
+    required List<DiagramNode> proposers,
+    required DiagramNode aggregator,
+    required DiagramNode answer,
+  }) => OrchestrationNodeDiagram._(
+    _BruteForceFlow(
+      you: you,
+      proposers: proposers,
+      aggregator: aggregator,
+      answer: answer,
+    ),
+  );
+
+  /// You flows to [worker], which trades drafts with [judge] over a forward
+  /// line and a curved [loopLabel] line looping back — then flows to
+  /// [answer]. One arc stands for every round; the diagram never repeats the
+  /// pair per round.
+  factory OrchestrationNodeDiagram.judgeLoop({
+    required DiagramNode you,
+    required DiagramNode worker,
+    required DiagramNode judge,
+    required DiagramNode answer,
+    String loopLabel = 'revise',
+  }) => OrchestrationNodeDiagram._(
+    _JudgeLoopFlow(
+      you: you,
+      worker: worker,
+      judge: judge,
+      answer: answer,
+      loopLabel: loopLabel,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    // A diagram, not prose with a model id in it — CodeTextScope is for
+    // exactly this ("a diff, a log pane, a code block, a terminal-style
+    // readout"). Every node/connector here is a fixed pixel box, so growing
+    // node labels with the UI's text scale would overflow the pills instead
+    // of the diagram simply growing with them.
+    return CodeTextScope(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: _body,
+      ),
+    );
+  }
+}
+
+/// You → (fan-out) → stacked proposers → (fan-in) → aggregator → Answer.
+class _BruteForceFlow extends StatelessWidget {
+  const _BruteForceFlow({
+    required this.you,
+    required this.proposers,
+    required this.aggregator,
+    required this.answer,
+  });
+
+  final DiagramNode you;
+  final List<DiagramNode> proposers;
+  final DiagramNode aggregator;
+  final DiagramNode answer;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final count = proposers.length;
+    // The column's own natural height — no slack, so a proposer's index
+    // alone gives its centre, and that centre lines up with the row's centre
+    // (the row is exactly this tall, see the SizedBox below).
+    final totalHeight = count == 0
+        ? _kNodeHeight
+        : count * _kNodeHeight + (count - 1) * _kNodeGap;
+    final centers = [
+      for (var i = 0; i < count; i++)
+        i * (_kNodeHeight + _kNodeGap) + _kNodeHeight / 2,
+    ];
+
+    return SizedBox(
+      height: totalHeight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _NodePill(you),
+          _DashedConnector(
+            size: Size(_kConnectorWidth, totalHeight),
+            buildPath: (size) => centers.length <= 1
+                ? _straightPath(size)
+                : _fanOutPath(size, centers),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < count; i++) ...[
+                if (i > 0) const SizedBox(height: _kNodeGap),
+                _NodePill(proposers[i]),
+              ],
+            ],
+          ),
+          _DashedConnector(
+            size: Size(_kConnectorWidth, totalHeight),
+            buildPath: (size) => centers.length <= 1
+                ? _straightPath(size)
+                : _fanInPath(size, centers),
+          ),
+          _NodePill(aggregator),
+          _DashedConnector(
+            size: Size(_kConnectorWidth, totalHeight),
+            buildPath: _straightPath,
+          ),
+          _NodePill(answer),
+        ],
+      ),
+    );
+  }
+}
+
+/// You → worker/judge pair (forward line + curved loop-back) → Answer.
+class _JudgeLoopFlow extends StatelessWidget {
+  const _JudgeLoopFlow({
+    required this.you,
+    required this.worker,
+    required this.judge,
+    required this.answer,
+    required this.loopLabel,
+  });
+
+  final DiagramNode you;
+  final DiagramNode worker;
+  final DiagramNode judge;
+  final DiagramNode answer;
+  final String loopLabel;
+
+  // The arc spans worker's centre to judge's centre: half a node past the
+  // row's start, one node plus one connector wide.
+  static const double _arcLeft = _kNodeWidth * 1.5 + _kConnectorWidth;
+  static const double _arcWidth = _kNodeWidth + _kConnectorWidth;
+  static const double _rowWidth = _kNodeWidth * 4 + _kConnectorWidth * 3;
+  static const double _totalHeight =
+      _kNodeHeight + _kLoopArcGap + _kLoopArcHeight + _kLoopLabelHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return SizedBox(
+      height: _totalHeight,
+      width: _rowWidth,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            bottom: 0,
+            left: 0,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _NodePill(you),
+                _DashedConnector(
+                  size: const Size(_kConnectorWidth, _kNodeHeight),
+                  buildPath: _straightPath,
+                ),
+                _NodePill(worker),
+                _DashedConnector(
+                  size: const Size(_kConnectorWidth, _kNodeHeight),
+                  buildPath: _straightPath,
+                ),
+                _NodePill(judge),
+                _DashedConnector(
+                  size: const Size(_kConnectorWidth, _kNodeHeight),
+                  buildPath: _straightPath,
+                ),
+                _NodePill(answer),
+              ],
+            ),
+          ),
+          Positioned(
+            left: _arcLeft,
+            bottom: _kNodeHeight + _kLoopArcGap,
+            width: _arcWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  loopLabel,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: AppFont.medium,
+                    color: AppPalette.textFaint,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                _DashedConnector(
+                  size: const Size(_arcWidth, _kLoopArcHeight),
+                  // Judge → worker: the arc runs the direction the loop
+                  // actually does (a rejected draft goes back for revision),
+                  // which is right-to-left here since judge sits right of
+                  // worker in reading order.
+                  buildPath: _loopBackPath,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A model-name pill: mono text (model ids are copied, not read) plus a
+/// status dot — except for 'You'/'Answer', which are the ends of the flow,
+/// not a step in it.
+class _NodePill extends StatelessWidget {
+  const _NodePill(this.node);
+
+  final DiagramNode node;
+
+  bool get _isEndpoint => node.label == 'You' || node.label == 'Answer';
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return SizedBox(
+      width: _kNodeWidth,
+      height: _kNodeHeight,
+      child: Tooltip(
+        message: node.label,
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: _isEndpoint ? AppGlass.bubbleFill : AppPalette.cardBg,
+            borderRadius: BorderRadius.circular(AppControl.radius),
+            border: Border.all(color: AppPalette.divider),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  node.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppFont.codeStyle(
+                    color: AppPalette.textPrimary,
+                    scale: 0.94,
+                  ),
+                ),
+              ),
+              if (!_isEndpoint) ...[
+                const SizedBox(width: 6),
+                StatusDot(
+                  color: _statusColor(node.status),
+                  size: 7,
+                  pulsing: node.status == NodeStatus.running,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A status's mark — reusing the app's existing online/offline/warn tokens
+/// (job_status.dart draws `running` the same way) rather than new colours.
+Color _statusColor(NodeStatus status) => switch (status) {
+  NodeStatus.queued => AppPalette.offline,
+  NodeStatus.running => AppPalette.online,
+  NodeStatus.done => AppPalette.online,
+  NodeStatus.rejected => AppPalette.warn,
+};
+
+/// A straight line across [size], left edge to right edge.
+Path _straightPath(Size size) => Path()
+  ..moveTo(0, size.height / 2)
+  ..lineTo(size.width, size.height / 2);
+
+/// A single left-edge point fanning out into [targets] on the right — the
+/// You→proposers spread. One sub-path per target, each its own contour, so
+/// the dash pattern in [_DashPainter] walks and animates every branch alike.
+Path _fanOutPath(Size size, List<double> targets) {
+  final path = Path();
+  final startY = size.height / 2;
+  for (final endY in targets) {
+    path
+      ..moveTo(0, startY)
+      ..quadraticBezierTo(size.width * 0.55, startY, size.width, endY);
+  }
+  return path;
+}
+
+/// [sources] on the left converging into a single right-edge point — the
+/// proposers→aggregator merge, the mirror of [_fanOutPath].
+Path _fanInPath(Size size, List<double> sources) {
+  final path = Path();
+  final endY = size.height / 2;
+  for (final startY in sources) {
+    path
+      ..moveTo(0, startY)
+      ..quadraticBezierTo(size.width * 0.45, endY, size.width, endY);
+  }
+  return path;
+}
+
+/// The "revise" arc above the worker/judge pair: starts at the bottom-right
+/// (judge's side) and ends at the bottom-left (worker's side), climbing over
+/// the top — so the flow direction (judge → worker) matches what the loop
+/// actually does.
+Path _loopBackPath(Size size) => Path()
+  ..moveTo(size.width, size.height)
+  ..cubicTo(size.width, 0, 0, 0, 0, size.height);
+
+/// One flowing dashed connector — the single visual style every line in this
+/// diagram uses, whatever shape [buildPath] describes. Built as a
+/// [CustomPainter] over a [Path] the geometry functions above construct, not
+/// hand-authored SVG.
+class _DashedConnector extends StatefulWidget {
+  const _DashedConnector({required this.size, required this.buildPath});
+
+  final Size size;
+  final Path Function(Size size) buildPath;
+
+  @override
+  State<_DashedConnector> createState() => _DashedConnectorState();
+}
+
+class _DashedConnectorState extends State<_DashedConnector>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reduce Motion: hold the dash pattern still instead of looping it — the
+    // same rule `StatusDot`'s pulse halo follows.
+    if (MediaQuery.of(context).disableAnimations) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final color = AppPalette.textFaint;
+    return RepaintBoundary(
+      child: SizedBox.fromSize(
+        size: widget.size,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => CustomPaint(
+            painter: _DashPainter(
+              path: widget.buildPath(widget.size),
+              phase: _controller.value,
+              color: color,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashPainter extends CustomPainter {
+  _DashPainter({required this.path, required this.phase, required this.color});
+
+  final Path path;
+
+  /// 0..1 through one loop — [_dashed] turns it into a distance along the
+  /// path so the pattern appears to travel from each contour's start toward
+  /// its end (see that method).
+  final double phase;
+  final Color color;
+
+  static const double _dashLength = 5;
+  static const double _dashGap = 4;
+  static const double _period = _dashLength + _dashGap;
+  static const double _strokeWidth = 1.6;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _strokeWidth
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(_dashed(path, phase * _period), paint);
+  }
+
+  /// Walks every contour of [source] and keeps only the segments the dash
+  /// pattern covers, offset by [offset]. Increasing [offset] slides each
+  /// dash from distance 0 toward higher distance — i.e. from the contour's
+  /// start toward its end, which every geometry function above always builds
+  /// as upstream-node → downstream-node. That's what makes "the dashes flow
+  /// toward the next node" true for every connector in the diagram at once,
+  /// without each shape having to reason about screen direction separately.
+  static Path _dashed(Path source, double offset) {
+    final result = Path();
+    for (final metric in source.computeMetrics()) {
+      var distance = offset % _period;
+      while (distance < metric.length) {
+        final end = (distance + _dashLength).clamp(0.0, metric.length);
+        if (end > distance) {
+          result.addPath(metric.extractPath(distance, end), Offset.zero);
+        }
+        distance += _period;
+      }
+    }
+    return result;
+  }
+
+  @override
+  bool shouldRepaint(_DashPainter oldDelegate) => true;
+}
