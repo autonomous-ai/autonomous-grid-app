@@ -464,8 +464,7 @@ class _DashPainter extends CustomPainter {
   static Path _dashed(Path source, double offset) {
     final result = Path();
     for (final metric in source.computeMetrics()) {
-      var distance = -offset % _period;
-      if (distance < 0) distance += _period;
+      var distance = offset % _period;
       while (distance < metric.length) {
         final end = (distance + _dashLength).clamp(0.0, metric.length);
         if (end > distance) {

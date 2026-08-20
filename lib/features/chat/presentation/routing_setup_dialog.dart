@@ -270,15 +270,18 @@ class _DiagramPreview extends StatelessWidget {
     final diagram = switch (mode) {
       // The suggestion pins the whole proposer set but names no separate
       // aggregator (RoutingGroup.models is a flat list) — the last model in
-      // the current pick stands in for it here. It's a real one of the
-      // models the user chose, never an invented name; which one actually
-      // aggregates a given turn is still the grid's call.
+      // the current pick stands in for it here, in *both* roles: it fans out
+      // as a proposer alongside every other pinned model (all N genuinely
+      // run in parallel — the whole premise of Brute Force, which a chain
+      // ending in a lone "aggregator" box would misrepresent at the 2-model
+      // floor) and its pill doubles as where the fan-in converges. It's a
+      // real one of the models the user chose, never an invented name; which
+      // one actually aggregates a given turn is still the grid's call.
       RoutingMode.bruteForce when models.length >= 2 =>
         OrchestrationNodeDiagram.bruteForce(
           you: _you,
           proposers: [
-            for (final id in models.sublist(0, models.length - 1))
-              DiagramNode(id, NodeStatus.queued),
+            for (final id in models) DiagramNode(id, NodeStatus.queued),
           ],
           aggregator: DiagramNode(models.last, NodeStatus.queued),
           answer: _answer,
@@ -295,12 +298,17 @@ class _DiagramPreview extends StatelessWidget {
     if (diagram == null) return const SizedBox.shrink();
 
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppSurface.recess,
         borderRadius: BorderRadius.circular(AppControl.radius),
       ),
-      child: diagram,
+      // The diagram's node/connector geometry is fixed pixels and can run
+      // wider than the dialog (a 4-model Brute Force fan-out is ~660px
+      // against this dialog's ~430px content width) — shrink to fit rather
+      // than force a horizontal scroll just to see the shape at a glance.
+      child: FittedBox(fit: BoxFit.scaleDown, child: diagram),
     );
   }
 }

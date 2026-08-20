@@ -72,6 +72,10 @@ class RoutingSuggestionController extends Notifier<RoutingSuggestionState> {
     }
 
     final models = await ref.read(networkModelsProvider.future);
+    // Cancel (closing the dialog) while the models list is still loading is
+    // ordinary — this notifier is autoDispose with only the dialog watching
+    // it, so it may already be gone by the time this resumes.
+    if (!ref.mounted) return;
     if (models.length < 2) {
       state = const RoutingSuggestionFailed(
         "This grid isn't serving enough models to route between yet.",
@@ -97,6 +101,10 @@ class RoutingSuggestionController extends Notifier<RoutingSuggestionState> {
           model: 'auto',
           messages: messages,
         );
+    // The probe is a real request that can take up to 180s — Cancel while
+    // it's in flight disposes this notifier (same reasoning as above), and
+    // the call must not touch `state` or the log after that.
+    if (!ref.mounted) return;
     log.finish(
       id,
       exitCode: error?.statusCode ?? 200,
