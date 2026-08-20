@@ -20,16 +20,24 @@ void main() {
       expect(spoken?.certain, isTrue);
     });
 
-    test('described rather than named, with no gap, is offered — "lặp lại" is '
-        'ordinary Vietnamese and carries no claim about this app', () {
+    test('with no gap named still runs — a loop with no number is the '
+        'self-paced one, not a reading with something missing', () {
       final spoken = readSpokenCommand('lặp lại việc kiểm tra deploy');
 
       expect(spoken?.call.command, ChatCommand.loop);
+      expect(spoken?.call.argument, 'việc kiểm tra deploy');
+      expect(spoken?.certain, isTrue);
+    });
+
+    test('a rhythm with no work in it is the one thing that cannot run, so it '
+        'waits in the composer for the user to finish', () {
+      final spoken = readSpokenCommand('lặp lại mỗi 30 phút');
+
+      expect(spoken?.call.argument, '30m');
       expect(spoken?.certain, isFalse);
     });
 
-    test('named with no gap runs anyway: a loop with no number is the '
-        'self-paced one, not a reading with something missing', () {
+    test('names the loop and the task, and runs on the words as typed', () {
       final spoken = readSpokenCommand(
         'làm loop cho task sau: research nguồn truyện mới',
       );
@@ -73,13 +81,13 @@ void main() {
       expect(spoken?.certain, isTrue);
     });
 
-    test('is still read when a name comes first — but only offered, because '
-        'past those words there is less standing behind the reading', () {
+    test('runs the same with a name in front of it — those words say who does '
+        'it, not what is being asked', () {
       final spoken = readSpokenCommand('tao cần mày làm loop mỗi giờ quét X');
 
       expect(spoken?.call.command, ChatCommand.loop);
       expect(spoken?.call.argument, '1h quét X');
-      expect(spoken?.certain, isFalse);
+      expect(spoken?.certain, isTrue);
     });
 
     test(
@@ -173,13 +181,13 @@ void main() {
       expect(readSpokenCommand('/loop 5m check the deploy'), isNull);
     });
 
-    test('an ask behind a name is never run on its own — the opening-word '
-        'rule is what keeps a misread from starting something unattended', () {
+    test('a refusal behind a name is still not a command — the guards that '
+        'keep unattended work from starting on a misread run first', () {
       for (final line in [
-        'tao muốn lặp lại lời anh vừa nói',
-        'mình nhờ bạn đặt mục tiêu cho tuần này',
+        'tao cần mày đừng lặp lại nữa',
+        'mình nhờ bạn khỏi đặt mục tiêu gì cả',
       ]) {
-        expect(readSpokenCommand(line)?.certain, isFalse, reason: line);
+        expect(readSpokenCommand(line), isNull, reason: line);
       }
     });
   });
@@ -201,26 +209,26 @@ void main() {
   });
 
   group('the readings a review caught before they shipped', () {
-    test('a gap buried mid-sentence is offered, never run — cutting it out '
-        'leaves words nobody wrote', () {
+    test('a gap buried mid-sentence is left where it is: the sentence runs '
+        'whole and paces itself, rather than losing words nobody could put '
+        'back', () {
       final spoken = readSpokenCommand(
         'keep checking the build every 10 minutes and tell me',
       );
 
       expect(spoken?.call.command, ChatCommand.loop);
-      expect(
-        spoken?.certain,
-        isFalse,
-        reason: 'the task around it cannot be trusted',
-      );
+      expect(spoken?.call.argument, 'the build every 10 minutes and tell me');
+      expect(spoken?.certain, isTrue);
     });
 
-    test('a duration inside the task is not the gap it repeats on', () {
+    test('a duration inside the task is not the gap it repeats on — reading '
+        'it as one would invent a rhythm and cut the task in half', () {
       final spoken = readSpokenCommand(
         'loop this check the last 24 hours of logs',
       );
 
-      expect(spoken?.certain, isFalse);
+      expect(spoken?.call.argument, 'check the last 24 hours of logs');
+      expect(spoken?.call.argument, isNot(startsWith('24h')));
     });
 
     test('a plan that mentions a goal is a message, not a goal — this is the '

@@ -3,10 +3,17 @@ import 'word_edge.dart';
 
 /// A command the app owns, read out of an ordinary sentence.
 ///
-/// [certain] separates "this sentence *is* the instruction" from "this sentence
-/// is shaped like one but is missing what it needs": certain when the ask opens
-/// the sentence and nothing about it has to be guessed, so it can simply be
-/// run. Anything less is offered, never run.
+/// [certain] separates "this can be run" from "this is missing something the
+/// app would have to invent". Reading the ask *is* the decision — a sentence
+/// that opens with one gets it run, address in front or not, gap named or not.
+/// Only two things still stop at the composer: a schedule with no hour in it,
+/// which would otherwise fire at an hour nobody chose, and a reading with no
+/// task left in it, which there is no way to run at all.
+///
+/// The offer used to cover uncertainty too, and the extra keystroke it cost on
+/// every repeat was not worth the misreads it caught: the guards that matter —
+/// a refusal, a question, an ask that does not open the sentence — drop those
+/// sentences before they are ever read as a command.
 typedef SpokenCommand = ({ChatCommandCall call, bool certain});
 
 /// The command [text] is asking for, or null when it is an ordinary message.
@@ -38,14 +45,12 @@ SpokenCommand? readSpokenCommand(String text) {
   if (spoken != null) return spoken;
   // Nothing opened the sentence — but "tao cần mày làm loop mỗi giờ" is the ask
   // with a name in front of it, and reading nothing there is what sent two
-  // mornings' worth of repeats to an agent that cannot make one. So look again
-  // behind an address, and **offer** whatever is found rather than run it: the
-  // opening-word rule is what keeps a misread from starting something
-  // unattended, and past those words there is less standing behind the reading.
+  // mornings' worth of repeats to an agent that cannot make one. The words in
+  // front say who does it, not what is being asked, so what is found behind
+  // them is the same instruction and runs like one.
   final addressed = _address.matchAsPrefix(lower)?.end ?? 0;
   if (addressed == 0) return null;
-  final asked = _read(line.substring(addressed), lower.substring(addressed));
-  return asked == null ? null : (call: asked.call, certain: false);
+  return _read(line.substring(addressed), lower.substring(addressed));
 }
 
 /// The four readings, in the order a sentence is tried against them.
@@ -107,36 +112,35 @@ final RegExp _clearGoal = RegExp(
 
 /// "lặp lại mỗi 30 phút kiểm tra deploy" / "run a loop every hour checking CI".
 ///
-/// **Where** the gap sits decides whether the rest can be trusted as the task.
-/// At the front or at the back it lifts out cleanly; buried mid-sentence,
-/// cutting it out leaves a garbled prompt ("the build every and tell me"), so
-/// that reading is offered for the user to fix rather than started behind their
-/// back.
+/// A gap at the front or the back of the sentence is the rhythm: it lifts out
+/// and the words left over are the task. **Only** there. A duration in the
+/// middle is part of what was asked — "loop this check the last 24 hours of
+/// logs" repeats a look at 24 hours of logs, it does not repeat once a day —
+/// so cutting one out would invent a rhythm nobody named and leave the task in
+/// pieces ("check the last of logs").
 ///
-/// A sentence with **no** gap in it is not missing anything: `/loop <task>` with
-/// no number is the app's self-paced loop, where the assistant picks the gap
-/// after each turn. So what is left to be sure of is the reading itself, and
-/// that is what [_loopNamedTriggers] settles — someone who typed the word
-/// "loop" is not talking about looping, they are asking for one. "lặp lại …"
-/// is the ordinary Vietnamese for "again", says nothing about this app, and
-/// keeps the extra keystroke.
+/// A sentence with no gap at either end is not missing anything: a `/loop`
+/// with no number is the app's self-paced loop, where the assistant
+/// picks the gap after each turn and can say why. So that sentence runs whole,
+/// with every word the user typed still in it — including the duration that
+/// was never the rhythm.
+///
+/// The one reading that cannot run is a rhythm with no work in it: "lặp lại
+/// mỗi 30 phút" and nothing else leaves `/loop` nothing to send, so it waits
+/// in the composer for the user to finish it.
 SpokenCommand? _readLoop(String line, String lower) {
-  final named = _opening(lower, _loopNamedTriggers);
-  final trigger = named ?? _opening(lower, _loopSaidTriggers);
+  final trigger = _opening(lower, _loopTriggers);
   if (trigger == null) return null;
   final rest = line.substring(trigger).trim();
   if (rest.isEmpty) return null;
   final gap = _liftInterval(rest);
   if (gap == null) {
-    return (
-      call: (command: ChatCommand.loop, argument: rest),
-      certain: named != null,
-    );
+    return (call: (command: ChatCommand.loop, argument: rest), certain: true);
   }
   final argument = gap.task.isEmpty ? gap.every : '${gap.every} ${gap.task}';
   return (
     call: (command: ChatCommand.loop, argument: argument),
-    certain: gap.clean && gap.task.isNotEmpty,
+    certain: gap.task.isNotEmpty,
   );
 }
 
@@ -163,31 +167,19 @@ SpokenCommand? _readSchedule(String line, String lower) {
   );
 }
 
-/// Openings that ask for a loop **by name**.
+/// Openings that mean "repeat this".
 ///
-/// "loop" and "vòng lặp" are this app's own word for the feature. Nobody
-/// reaches for them while talking about something else, so a sentence that
-/// opens with one is an instruction and needs no second look — which is what
-/// lets a gapless one run instead of waiting behind another keystroke.
-///
-/// This is also the shape people use once the task is already on screen and
-/// only the repeating is left to ask for. Missing it is what left "làm loop
-/// mỗi giờ làm 1 lần đi" to an agent on 2026-08-20, which answered that the
-/// loop was on and set nothing.
-final List<RegExp> _loopNamedTriggers = [
+/// Two shapes, because people ask for this two ways. "lặp lại mỗi 30 phút …"
+/// describes the repeating; "làm loop mỗi giờ 1 lần" names the loop as a thing
+/// to make, and that is the one reached for once the task is already on screen
+/// and only the repeating is left to ask for. Missing the second shape is what
+/// left "làm loop mỗi giờ làm 1 lần đi" to an agent on 2026-08-20, which
+/// answered that the loop was on and set nothing.
+final List<RegExp> _loopTriggers = [
   RegExp(r'^(làm|tạo|bật|đặt|chạy)\s+(cái\s+)?(loop|vòng lặp)\s+'),
   RegExp(r'^(làm|chuyển)\s+((nó|cái này)\s+)?thành\s+(loop|vòng lặp)\s+'),
   RegExp(r'^(run|start|make|create|set up) (a |the )?loop\s+'),
   RegExp(r'^loop (this|it)\s+'),
-];
-
-/// Openings that describe repeating without naming the feature.
-///
-/// "lặp lại", "keep checking" are ordinary words in an ordinary sentence, so
-/// these carry less: with a gap they run like any other reading, without one
-/// they are offered. The difference is not how much the app trusts the user —
-/// it is how much of *this sentence* is about the app.
-final List<RegExp> _loopSaidTriggers = [
   RegExp(r'^(lặp lại|lặp|chạy lặp|làm lại)\s+'),
   RegExp(r'^(keep checking|check again)\s+'),
 ];
@@ -236,24 +228,20 @@ int? _opening(String lower, List<RegExp> triggers) {
   return null;
 }
 
-/// The gap [rest] names and the task left when it is taken out.
+/// The gap [rest] names and the task left when it is taken out, or null when
+/// nothing at either end of the sentence is a gap.
 ///
-/// [clean] is false when the gap was buried in the middle of the sentence,
-/// where lifting it out cannot leave readable words behind.
-({String every, String task, bool clean})? _liftInterval(String rest) {
+/// Only the two ends count. See [_readLoop] for why a duration in the middle is
+/// left where it is rather than read as the rhythm.
+({String every, String task})? _liftInterval(String rest) {
   for (final anchor in [_intervalAtFront, _intervalAtBack]) {
     final match = anchor.firstMatch(rest.toLowerCase());
     if (match == null) continue;
     final task = (rest.substring(0, match.start) + rest.substring(match.end))
         .trim();
-    return (every: _spell(match), task: task, clean: true);
+    return (every: _spell(match), task: task);
   }
-  final buried = _interval.firstMatch(rest.toLowerCase());
-  if (buried == null) return null;
-  final task = (rest.substring(0, buried.start) + rest.substring(buried.end))
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  return (every: _spell(buried), task: task, clean: false);
+  return null;
 }
 
 /// `30m` / `2h` / `45s` — the spelling `/loop` itself takes, from the words
@@ -268,13 +256,13 @@ String _spell(Match match) {
   return '$count$unit';
 }
 
-/// `mỗi 30 phút …` — the gap where it lifts out without breaking the sentence.
+/// `mỗi 30 phút …` — a gap at one end of the sentence, where it lifts out
+/// without breaking what is left.
 final RegExp _intervalAtFront = RegExp('^$_intervalBody\\s*', unicode: true);
 final RegExp _intervalAtBack = RegExp(
   '\\s*$_intervalBody\\s*\$',
   unicode: true,
 );
-final RegExp _interval = RegExp(_intervalBody, unicode: true);
 
 /// `mỗi 30 phút`, `every 2 hours`, `mỗi giờ` — a gap with or without a number.
 ///
