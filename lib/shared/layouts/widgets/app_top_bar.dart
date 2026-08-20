@@ -8,6 +8,7 @@ import '../../../features/chat/logic/bottom_panel.dart';
 import '../../../features/chat/logic/chat_rail.dart';
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/logic/preview_panel.dart';
+import '../../../features/chat/logic/workflow_bubble_open.dart';
 import '../../../features/chat/presentation/chat_header.dart';
 import '../../../features/code/logic/code_projects_controller.dart';
 import '../../../features/code/logic/code_side_panel.dart';
@@ -105,6 +106,7 @@ class AppTopBar extends ConsumerWidget {
                 const WorkingNowPill(),
                 const _ModelDownloadPill(),
                 const GridPowerPill(),
+                const _WorkflowBubbleToggle(),
                 const _ProjectRailToggle(),
                 const _BottomPanelToggle(),
                 const _SidePanelToggle(),
@@ -113,6 +115,27 @@ class AppTopBar extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Shows and hides the workflow bubble — the top-bar entry point into the
+/// orchestration overview.
+///
+/// Right beside [GridPowerPill] rather than with the panel toggles: it isn't a
+/// panel around the conversation, it's a small indicator of its own, and it
+/// belongs next to the grid summary it reports on.
+class _WorkflowBubbleToggle extends ConsumerWidget {
+  const _WorkflowBubbleToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final open = ref.watch(workflowBubbleOpenProvider);
+    return PanelToggle(
+      icon: LucideIcons.workflow,
+      open: open,
+      label: 'orchestration overview',
+      onPressed: () => ref.read(workflowBubbleOpenProvider.notifier).toggle(),
     );
   }
 }
