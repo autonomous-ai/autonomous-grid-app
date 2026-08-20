@@ -2,7 +2,8 @@
 #include "board_pins.h"
 #include "board_i2c.h"
 #include "display.h"
-#include "ui_screens.h"   // ui_swipe_begin/end for the circular edge-swipe
+#include "ui_screens.h"
+#include "panel_client.h"   // ui_swipe_begin/end for the circular edge-swipe
 #include "driver/i2c_master.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_touch_cst9217.h"
@@ -13,9 +14,6 @@
 static const char *TAG = "touch";
 static esp_lcd_touch_handle_t s_tp;
 
-#define DOUBLE_TAP_MS 500   // two taps within this window (and close in position) = a double-tap. Also the
-                            // delay before a single tap opens the detail reader — 500ms so a (slightly slow)
-                            // double-tap-to-voice is recognised first instead of the 1st tap firing detail.
 #define LONG_PRESS_MS 5000  // hold still this long = a deliberate long-press (create project / open WiFi portal)
 #define LONG_MOVE_PX  30    // a press that moves more than this is a swipe, not a hold
 
@@ -56,31 +54,10 @@ bool touch_take_longpress(void)
     return v;
 }
 
-// Edge-triggered double-tap detector. Call EVERY read (to track the press edge); returns true once
-// on the second of two quick, nearby taps. Shared by both wake (asleep) and sleep (awake).
-static bool double_tap(bool pressed, uint16_t x, uint16_t y)
-{
-    static bool prev;
-    static uint32_t last_ms;
-    static int16_t lx, ly;
-    bool hit = false;
-    if (pressed && !prev) {                          // rising edge = a tap
-        uint32_t now = lv_tick_get();
-        int dx = (int)x - lx, dy = (int)y - ly;
-        if (now - last_ms < DOUBLE_TAP_MS && dx * dx + dy * dy < 80 * 80) {
-            hit = true; last_ms = 0;                 // consumed — a 3rd tap won't re-trigger
-        } else {
-            last_ms = now; lx = x; ly = y;
-        }
-    }
-    prev = pressed;
-    return hit;
-}
-
 // Edge-triggered swipe/tap detector. Call EVERY read (awake only). On press-down it snapshots the tile
 // position (ui_swipe_begin); on release it classifies the gesture: a mostly-horizontal drag → ui_swipe_end
-// (circular wrap); a mostly-vertical drag → ui_swipe_vert (open/close the reader); a short near-still
-// press is a TAP → STOP voice if we're recording (voice is gesture-driven: double-tap starts, tap stops).
+// (circular wrap); a mostly-vertical drag → scrolls the window (panel_client_send_scroll); a short near-still
+// press is a TAP → STOP voice if we're recording, else open the detail reader.
 #define SWIPE_MIN_PX 55
 #define TAP_MAX_MS   700   // a near-still press shorter than this = a tap (not a hold/long-press)
 // Home gesture: an upward swipe must START at/below this y (panel is 466 tall) to count as a bottom-edge
@@ -89,21 +66,54 @@ static bool double_tap(bool pressed, uint16_t x, uint16_t y)
 // On the detail reader the ONLY non-scroll vertical gesture is a tight bottom-edge up-swipe → Overview, so it
 // uses a much narrower band than the carousel screens: a swipe that STARTS within the bottom ~20px (panel 466).
 #define READER_HOME_EDGE_PX 446
-// A single tap toggles the detail reader (open on projects / close on the reader), but a double-tap
-// starts voice. They're indistinguishable until the double-tap window passes, so DEFER the tap's action
-// by DOUBLE_TAP_MS and cancel it if a 2nd tap arrives (that's a start-voice). A tap while RECORDING is
-// NOT deferred — it stops immediately (see rec_at_down below).
-static bool s_tap_pending;
-static uint32_t s_tap_pending_ms;
-// GOAL gesture: a still hold ≥3s (awake, not already recording) starts a GOAL voice command (long-press).
-// It "consumes" the press: cancels the 5s create-project longpress + swallows the rest so it lands as no UI tap.
-#define GOAL_HOLD_MS 2000
-static bool s_goal_swallow;
-// Swallow all input until the finger lifts — set after a wake tap / double-tap-voice / goal-hold so the
-// consumed gesture doesn't also drive the UI. File-scope so swipe_track can be gated off while it's set
+// THE SCREEN-WIDE VOICE GESTURES ARE GONE (2026-08-20): double-tap started a turn, a ≥2s still-hold
+// started a Goal one. Overview and every agent tile carry Voice / Goal / Loop as visible buttons now, and
+// a hidden gesture that duplicates a button is not a shortcut — it is a way to start a recording by
+// accident, on a device whose whole screen is the target.
+//
+// Their removal is what lets a tap act AT ONCE. A tap and the first half of a double-tap are the same
+// event, so the tap's action had to be deferred by the whole double-tap window before it could be
+// trusted; every tap on this panel therefore took half a second to land. Nothing to disambiguate, no
+// wait. (The reader is the one screen that loses voice altogether — it has no button row. Swiping back
+// to the tile is one gesture away, and that tile has all three.)
+//
+// Swallow all input until the finger lifts — set after a wake tap so the consumed gesture doesn't also
+// drive the UI. File-scope so swipe_track can be gated off while it's set
 // (otherwise swipe_track starts mid-gesture on the read after wake and classifies the release as a tap →
 // stray "open detail" on the very tap that woke the screen).
 static bool s_swallow_until_release;
+// Touchpad reporting: pixels travelled since the last frame went out, when that was, and how fast the
+// finger was moving while it did.
+#define SCROLL_MIN_PX   8
+#define SCROLL_EVERY_MS 50
+// Ceiling on the reported speed, px/s. A single jittery sample across a 4ms window reads as thousands of
+// pixels a second; without a lid it would land in the window as a fling to the far end of the transcript.
+// ~6000 is well past anything a hand does on a 466px screen and still finite.
+#define SCROLL_V_MAX    6000
+static int      s_scroll_acc;
+static uint32_t s_scroll_at;
+static int      s_scroll_v;      // smoothed speed, device px/s, signed like the travel
+static bool     s_scroll_live;   // is THIS stroke being reported? decided once, at press-down
+
+// Fold one reporting window into the smoothed speed.
+//
+// Measured here and not on the far side because this is the only place the hand's speed exists: by the
+// time a frame has crossed the cable, been queued, and been decoded, the interval between arrivals says
+// more about the link than about the finger.
+//
+// The window's own length is what makes a resting finger decay to nothing — a window with no travel in it
+// is a real measurement of zero, so a hand that stops before lifting is not thrown.
+static void scroll_measure(int px, uint32_t ms)
+{
+    if (!ms) return;
+    int inst = px * 1000 / (int)ms;
+    if (inst >  SCROLL_V_MAX) inst =  SCROLL_V_MAX;
+    if (inst < -SCROLL_V_MAX) inst = -SCROLL_V_MAX;
+    // Weighted 3:2 toward the newest window: enough smoothing that one bad sample can't define a fling,
+    // little enough that the flick at the END of a stroke is what gets measured — which is the whole of
+    // what a person means by "how fast I swiped".
+    s_scroll_v = (inst * 3 + s_scroll_v * 2) / 5;
+}
 static void swipe_track(bool pressed, uint16_t x, uint16_t y)
 {
     static bool prev;
@@ -112,11 +122,57 @@ static void swipe_track(bool pressed, uint16_t x, uint16_t y)
     static bool rec_at_down;   // was a turn recording when THIS press began? (see the tap-to-stop below)
     if (pressed && !prev) {                 // press down
         sx = lx = x; sy = ly = y; t0 = lv_tick_get();
+        s_scroll_acc = 0;
+        s_scroll_at = t0;
+        s_scroll_v = 0;
+        // Decided once, here, for the whole stroke — the window opens a drag on this frame and must be
+        // told when it ends, so eligibility cannot be re-judged report by report.
+        //
+        // NOT for a stroke that began at the bottom edge: that one is the home swipe, and scrolling the
+        // window on the way to leaving the screen is not what the hand meant. Nor during voice — the
+        // overlay owns the screen. (A gesture the drawer captured never reaches here at all.)
+        s_scroll_live = !ui_voice_is_active() && sy < BOTTOM_EDGE_PX;
+        if (s_scroll_live) panel_client_send_scroll(PANEL_SCROLL_DOWN, 0, 0);
         rec_at_down = ui_voice_is_recording();
         ui_swipe_begin();
-    } else if (pressed) {                   // dragging → remember the latest point
+    } else if (pressed) {                   // dragging → remember the latest point, and report the travel
+        // THE PANEL AS A TOUCHPAD. Reported while the finger is still down, in pieces, because that is
+        // what makes it feel like one: waiting for the release would move the window once, after the
+        // hand had already stopped.
+        //
+        // Throttled here rather than on the far side — this is where the touch stream is. The driver
+        // delivers 60-100 samples a second and a frame each would be pointless traffic; ~8px or ~50ms,
+        // whichever comes first, is under what a hand notices and is ~20 small frames a second at most.
+        //
+        // NOT sent while the notification drawer has captured the gesture (it owns the whole stroke
+        // then), nor during voice (the overlay owns the screen), nor for a stroke that began at the
+        // bottom edge — that one is the home swipe, and scrolling the window on the way to leaving the
+        // screen is not what the hand meant.
+        s_scroll_acc += y - ly;
+        // Voice came up mid-stroke (a button under the finger): end the drag rather than abandon it, or
+        // the window sits holding a gesture that is never coming back.
+        if (s_scroll_live && ui_voice_is_active()) {
+            panel_client_send_scroll(PANEL_SCROLL_UP, 0, 0);
+            s_scroll_live = false;
+        }
+        if (s_scroll_live && (abs(s_scroll_acc) >= SCROLL_MIN_PX
+                              || lv_tick_elaps(s_scroll_at) >= SCROLL_EVERY_MS)) {
+            scroll_measure(s_scroll_acc, lv_tick_elaps(s_scroll_at));
+            if (s_scroll_acc) panel_client_send_scroll(PANEL_SCROLL_MOVE, s_scroll_acc, 0);
+            s_scroll_acc = 0;
+            s_scroll_at = lv_tick_get();
+        }
         lx = x; ly = y;
     } else if (!pressed && prev) {          // release
+        // Close the stroke FIRST, before any gesture is classified: the window is holding a drag and the
+        // speed it left at is the one thing that turns a swipe into a throw. Whatever travel hadn't yet
+        // reached the reporting threshold rides along — it is the last few pixels of the stroke, which is
+        // exactly where a hand is aiming.
+        if (s_scroll_live) {
+            scroll_measure(s_scroll_acc, lv_tick_elaps(s_scroll_at));
+            panel_client_send_scroll(PANEL_SCROLL_UP, s_scroll_acc, s_scroll_v);
+            s_scroll_live = false;
+        }
         int dx = lx - sx, dy = ly - sy;
         // During a voice turn the overlay owns the screen: ONLY tap-to-stop is allowed — swiping must not
         // switch tiles / open detail / jump home underneath the overlay. So gate every swipe action off while
@@ -125,7 +181,6 @@ static void swipe_track(bool pressed, uint16_t x, uint16_t y)
         // The DETAIL READER has its own tight gesture set (the rest is native vertical scroll):
         //   • up-swipe from the bottom ~20px → Overview   • horizontal swipe → back to the agent screen
         // Everything else on the reader (mid-screen vertical drag, taps) is left to LVGL scroll / does nothing.
-        // (double-tap = voice and the ≥2s hold = goal are handled in touch_read, independent of this.)
         bool reader = ui_reader_is_open();
         int home_edge = reader ? READER_HOME_EDGE_PX : BOTTOM_EDGE_PX;
         // HOME gesture: an upward swipe that STARTED at the bottom edge → jump to Overview. (y grows downward;
@@ -134,15 +189,17 @@ static void swipe_track(bool pressed, uint16_t x, uint16_t y)
             ui_home_overview();
         else if (!voice && (dx > SWIPE_MIN_PX || dx < -SWIPE_MIN_PX) && abs(dx) > abs(dy))
             ui_swipe_end(dx > 0 ? 1 : -1);         // reader → back to the agent; carousel screens → wrap next/prev
-        else if (!voice && !reader && (dy > SWIPE_MIN_PX || dy < -SWIPE_MIN_PX) && abs(dy) > abs(dx))
-            ui_swipe_vert(dy < 0 ? 1 : -1);        // NOT on the reader — there vertical is pure native scroll
+        // A VERTICAL DRAG NO LONGER OPENS THE DETAIL SCREEN. It scrolls the window (above), and one
+        // gesture cannot mean two things — every scroll would have ended by opening a screen the user
+        // did not ask for. The detail screen still opens with a tap, which is the route ui_tap has
+        // always offered.
         else if (abs(dx) < LONG_MOVE_PX && abs(dy) < LONG_MOVE_PX
                  && lv_tick_elaps(t0) < TAP_MAX_MS) {   // near-still TAP
-            // A tap while RECORDING always stops the voice — on EVERY screen, including the reader (this is the
-            // only touch way to end a turn started by double-tap there). The deferred open/close tap, however,
-            // is disabled on the reader (it has no single-tap action).
+            // A tap while RECORDING always stops the voice — on EVERY screen, including the reader, where
+            // the overlay is all there is. Otherwise it opens the detail screen, immediately: see the note
+            // on the removed gestures above for why this no longer waits.
             if (rec_at_down) ui_voice_stop();
-            else if (!reader) { s_tap_pending = true; s_tap_pending_ms = t0; }
+            else if (!reader && !voice) ui_tap();
         }
         // (a swipe while recording matches none of the above → ignored; only a still tap stops the voice)
     }
@@ -165,19 +222,18 @@ static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
 
     // A touch that STARTS on one of Overview's two round voice actions belongs to that LVGL button until
     // release. Feed `false` to the screen-wide recognizers for the whole gesture, but keep the real pointer
-    // state for LVGL below. This prevents Voice-button holds/double-taps from also firing the hidden global
-    // Goal/Voice gestures. A drag can still leave the button and scroll the carousel through LVGL normally.
+    // state for LVGL below. Without it a press on one of those buttons is ALSO a near-still tap to
+    // swipe_track, which would open the detail reader on the very release that starts the recording — two
+    // things from one touch. A drag can still leave the button and scroll the carousel through LVGL.
     static bool action_prev, action_capture;
     if (pressed && !action_prev) {
-        action_capture = ui_overview_action_hit(x, y);
-        if (action_capture) s_tap_pending = false;
+        action_capture = ui_action_row_hit(x, y);
     }
     bool action_touch = action_capture && (pressed || action_prev);
     bool gesture_pressed = pressed && !action_touch;
     if (!pressed && action_prev) action_capture = false;
     action_prev = pressed;
 
-    bool dbl = double_tap(gesture_pressed, x, y);     // call every read to keep edge tracking valid
     longpress_track(gesture_pressed, x, y);           // detect a deliberate hold (portal trigger in standby)
 
     // The notification zone OWNS its gestures — like the brightness catcher — so a pull-down or a list
@@ -211,42 +267,15 @@ static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
         }
     }
 
-    // Swipes + tap-to-stop-voice. Skip while swallowing a consumed gesture (wake / voice / goal) so the
-    // release of that gesture isn't misread as a fresh tap.
-    if (!display_is_asleep() && !s_swallow_until_release && !s_goal_swallow) swipe_track(gesture_pressed, x, y);
+    // Swipes + tap-to-stop-voice. Skip while swallowing a consumed gesture (the tap that woke the screen)
+    // so the release of that gesture isn't misread as a fresh tap.
+    if (!display_is_asleep() && !s_swallow_until_release) swipe_track(gesture_pressed, x, y);
 
-    // GOAL: a still hold ≥3s (awake, not already recording) → start a GOAL voice command. Consumes the press
-    // (cancel the 5s create-project + swallow the rest so it doesn't land as a UI tap on release).
-    {
-        static bool gprev; static uint32_t gt0; static int16_t gsx, gsy; static bool gmoved, gfired;
-        if (gesture_pressed && !gprev) { gt0 = lv_tick_get(); gsx = x; gsy = y; gmoved = false; gfired = false; }
-        else if (gesture_pressed && !gfired) {
-            int dx = (int)x - gsx, dy = (int)y - gsy;
-            if (dx * dx + dy * dy > LONG_MOVE_PX * LONG_MOVE_PX) gmoved = true;
-            if (!gmoved && !display_is_asleep() && !ui_voice_is_active() && lv_tick_elaps(gt0) >= GOAL_HOLD_MS) {
-                gfired = true;
-                s_longpress = false;   // this hold is a goal, not a create-project
-                s_goal_swallow = true; // swallow until the finger lifts (no stray UI tap)
-                ui_voice_start_goal();
-            }
-        }
-        gprev = gesture_pressed;
-    }
-
-    // Resolve a deferred single tap. Anchored to the PRESS and only fires once the double-tap window has
-    // passed — so a double-tap always cancels it first. Extra guard: skip if a turn just started (voice).
-    if (dbl) s_tap_pending = false;
-    else if (s_tap_pending && lv_tick_elaps(s_tap_pending_ms) >= DOUBLE_TAP_MS) {
-        s_tap_pending = false;
-        if (!display_is_asleep() && !ui_voice_is_active()) ui_tap();
-    }
-
-    // After a double-tap starts voice, the finger is usually STILL down. Keep swallowing until it lifts,
-    // so the two taps don't also land as UI presses (a stray tile/settings click).
-    if (s_swallow_until_release || s_goal_swallow) {
+    // A consumed gesture keeps being swallowed until the finger lifts, so it doesn't also land as a UI
+    // press underneath.
+    if (s_swallow_until_release) {
         if (pressed) { data->state = LV_INDEV_STATE_RELEASED; return; }
         s_swallow_until_release = false;
-        s_goal_swallow = false;   // finger lifted → goal-hold press fully consumed
     }
 
     if (display_is_asleep()) {
@@ -261,15 +290,6 @@ static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
     // natively scroll the tileview to Settings and a stop-tap can't land on a Wifi/passcode row underneath.
     // tap-to-stop + swipe suppression already ran in swipe_track above (raw coords) — swallow everything else.
     if (ui_voice_is_active()) { data->state = LV_INDEV_STATE_RELEASED; return; }
-
-    // Awake: double-tap STARTS voice (only when fully idle — a live turn keeps audio active and blocks a
-    // restart). Stopping is a single tap (swipe_track), so this is start-only.
-    if (dbl) {
-        if (!ui_voice_is_active()) ui_voice_start();
-        s_swallow_until_release = true;              // don't let the 2 taps land as UI presses
-        data->state = LV_INDEV_STATE_RELEASED;
-        return;
-    }
 
     if (pressed) {
         data->point.x = x;

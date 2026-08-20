@@ -28,6 +28,7 @@ import '../../provider_node/logic/provider_run_controller.dart';
 import 'panel_firmware_updater.dart';
 import 'panel_chat_mirror.dart';
 import 'panel_question_mirror.dart';
+import 'panel_scroll.dart';
 import 'panel_summary_writer.dart';
 import 'panel_turn_mirror.dart';
 import 'panel_voice.dart';
@@ -255,6 +256,14 @@ class PanelController {
         _sendChats();
       case PanelFocused(:final chatId):
         _followFocus(chatId);
+      case PanelScrolled():
+        // Straight through, with no throttling or accumulation of its own: the
+        // panel already sends one report per ~8px or ~50ms, whichever comes
+        // first, and doing it twice would add lag to the one message on this
+        // link whose whole value is being immediate. Smoothing here would also
+        // blunt the release speed, which is measured on the glass precisely
+        // because that is the only place the hand's actual speed exists.
+        _ref.read(panelScrollProvider.notifier).reported(message);
       case PanelStopRequested(:final chatId):
         _stopChat(chatId);
       case PanelTurnRequested(:final chatId, :final text):

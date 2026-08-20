@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/gestures.dart' show Drag;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,6 +28,8 @@ import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_file.dart';
+import '../../../infrastructure/panel/panel_message.dart' show PanelScrollPhase;
+import '../../panel/logic/panel_scroll.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/chat_bubble.dart';
@@ -93,6 +96,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// menu can hand the caret straight back to the box it half-filled.
   final _composerFocus = FocusNode();
   final _scroll = ScrollController();
+
+  /// The transcript's drag while a finger is down on the panel — see
+  /// [_panelScrolled]. Null between strokes.
+  Drag? _panelDrag;
+  Timer? _panelDragWatch;
   final List<MediaAttachment> _attachments = [];
 
   /// The documents riding on the next message — read at attach time, so what
@@ -159,6 +167,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _model.dispose();
     _message.dispose();
     _composerFocus.dispose();
+    // Before the controller goes: a live drag holds the position, and disposing
+    // underneath one is a crash rather than a stale scroll.
+    _cancelPanelDrag();
     _scroll.dispose();
     super.dispose();
   }
@@ -748,6 +759,110 @@ class _ChatViewState extends ConsumerState<ChatView> {
     });
   }
 
+  /// Drive the transcript from a finger on the panel's glass.
+  ///
+  /// **The stroke is handed to the list's own drag machinery, not applied to its
+  /// offset.** Moving `pixels` by hand is a faithful way to lose everything the
+  /// framework already knows about scrolling: the first version did exactly that
+  /// and a flick and a crawl of the same length moved the list the same way,
+  /// because a distance is all a position can be told. [ScrollPosition.drag]
+  /// opens the same path a trackpad takes, so the release speed becomes a fling
+  /// that carries on and slows down, the ends of the list resist and spring, and
+  /// the list's own [ScrollPhysics] decides all of it — none of which is worth
+  /// re-deriving from a curve invented here.
+  ///
+  /// Travel and speed are both multiplied by [kPanelScrollGain], because the two
+  /// surfaces are nothing like the same size: one-to-one, a full sweep of a
+  /// 466px screen moves a thousand-line transcript by a third of a screenful.
+  /// Scaling only the travel would make a flick land short of where the same
+  /// flick dragged.
+  ///
+  /// A stroke that never ends — the cable pulled mid-swipe, or the panel handing
+  /// the gesture to its voice overlay — would otherwise leave the list holding a
+  /// drag forever, ignoring the mouse. [_panelDragWatch] ends it.
+  ///
+  /// Following a streaming reply stops on its own here: [_onScroll] re-reads
+  /// `_atBottom` from the new position, which is what puts the jump-to-latest
+  /// button back up. Scrolling away from the bottom means the user wants to be
+  /// away from it, whichever screen they did it from.
+  void _panelScrolled(PanelScrollTick tick) {
+    if (!mounted || !_scroll.hasClients) return;
+    switch (tick.phase) {
+      case PanelScrollPhase.down:
+        _startPanelDrag();
+      case PanelScrollPhase.move:
+        // Implicitly starts one: a `down` can be missed (the window opened
+        // mid-stroke, a frame dropped) and travel with nowhere to go is a dead
+        // touchpad — worse than a fling that begins a few pixels late.
+        final drag = _panelDrag ?? _startPanelDrag();
+        final delta = -tick.dy * kPanelScrollGain;
+        drag?.update(
+          DragUpdateDetails(
+            globalPosition: Offset.zero,
+            delta: Offset(0, delta),
+            primaryDelta: delta,
+          ),
+        );
+      case PanelScrollPhase.up:
+        final drag = _panelDrag;
+        if (drag == null) return;
+        // Whatever was left over travels first, then the throw. Dropping it
+        // would lose up to the reporting threshold at the very end of a stroke,
+        // which is where a hand is most likely to be aiming.
+        if (tick.dy != 0) {
+          final delta = -tick.dy * kPanelScrollGain;
+          drag.update(
+            DragUpdateDetails(
+              globalPosition: Offset.zero,
+              delta: Offset(0, delta),
+              primaryDelta: delta,
+            ),
+          );
+        }
+        _panelDrag = null;
+        _panelDragWatch?.cancel();
+        _panelDragWatch = null;
+        drag.end(
+          DragEndDetails(primaryVelocity: -tick.velocity * kPanelScrollGain),
+        );
+    }
+  }
+
+  /// Begin a drag on the open transcript, replacing any the panel still holds.
+  ///
+  /// The watchdog is armed here rather than at the call sites because every way
+  /// in needs it and there is exactly one way a drag becomes a leak.
+  Drag? _startPanelDrag() {
+    _cancelPanelDrag();
+    if (!_scroll.hasClients) return null;
+    final drag = _scroll.position.drag(
+      DragStartDetails(globalPosition: Offset.zero),
+      _clearPanelDrag,
+    );
+    _panelDrag = drag;
+    // The panel reports at least every 50ms while a finger is down, so silence
+    // this long is a stroke that is not coming back.
+    _panelDragWatch = Timer(const Duration(milliseconds: 600), _cancelPanelDrag);
+    return drag;
+  }
+
+  /// Let go of a half-finished stroke, leaving the list wherever it now is.
+  void _cancelPanelDrag() {
+    _panelDragWatch?.cancel();
+    _panelDragWatch = null;
+    final drag = _panelDrag;
+    _panelDrag = null;
+    drag?.cancel();
+  }
+
+  /// The list took the drag away from us (a mouse grabbed it, the position was
+  /// replaced). Forget it without calling back into it.
+  void _clearPanelDrag() {
+    _panelDragWatch?.cancel();
+    _panelDragWatch = null;
+    _panelDrag = null;
+  }
+
   void _scrollToBottom({bool animated = false}) {
     if (!_scroll.hasClients) return;
     final target = _scroll.position.maxScrollExtent;
@@ -806,6 +921,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   @override
   Widget build(BuildContext context) {
+    // The Grid Panel used as a touchpad. Listened to here rather than watched:
+    // a stroke is an event, not state this tree should rebuild for — sixty
+    // rebuilds a second of the composer and every picker, to move a list.
+    ref.listen(panelScrollProvider, (_, tick) => _panelScrolled(tick));
     // Watched field by field, not as one object. The state changes on **every
     // streamed token** (the phase carries the growing answer), and a whole-state
     // watch rebuilt this entire tree — composer, pickers, menus and all — 122

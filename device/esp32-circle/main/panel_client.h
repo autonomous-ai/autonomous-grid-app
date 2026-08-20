@@ -49,12 +49,17 @@ const char *panel_fw_version(void);
 // `chatId` and the list arrives as `chats`. Both halves ship from one repository and grid-app replaces
 // firmware whose version string differs from the image it carries, so the two cannot actually drift —
 // but a shape change that leaves the number alone is a lie told to whoever reads it next.
-// 4 since 2026-08-19: `focus` now travels BOTH ways — the window switching chats moves the carousel,
+// 6 since 2026-08-20: `scroll` grew a stroke phase and a release speed. Without them the window could only
+// ever be told a distance, so a flick and a crawl of the same length moved it identically — the hand's
+// speed lives on the glass and had no way across. The window now DEPENDS on the phases (it opens a real
+// drag on `down` and flings on `up`), which is why this is a bump and not a tolerated extra key.
+// 5 was earlier the same day: the panel became a touchpad — `scroll` reports a finger's travel so the
+// window's transcript follows it. 4 since 2026-08-19: `focus` now travels BOTH ways — the window switching chats moves the carousel,
 // the same message in the other direction. 3 was earlier the same day, when the panel gained `focus`,
 // the tile the carousel settled on, so the window could follow a swipe. Adding a MESSAGE is a message-layer change and the number has to move with it —
 // bumping only grid-app's copy is exactly what happened first, and the panel then reported 2 to an app
 // claiming 3 within seconds of taking the very image that added the feature.
-#define PANEL_PROTO_VERSION 4
+#define PANEL_PROTO_VERSION 6
 
 // How many projects the panel tracks at once — the size of the UI's tile array (`s_tiles` in
 // ui_screens.c) and of anything that walks it.
@@ -81,6 +86,18 @@ bool panel_client_start(void);
 // that could — the panel never sees a conversation. Fire-and-forget: everything after this arrives back
 // as `turn.started` / `turn.parts` / `turn.done`, or as `turn.error` in words a person can act on.
 // The tile the carousel settled on, so the desktop window can follow the panel.
+// A finger's travel on the glass, in device pixels — the window scrolls with it.
+// Where a stroke is in its life. The app needs the boundaries as much as the travel: without them a
+// scroll can only be a distance, and a flick and a crawl of the same length move the window the same way.
+typedef enum {
+    PANEL_SCROLL_DOWN,   // finger landed — stops whatever the window was still coasting through
+    PANEL_SCROLL_MOVE,   // travelled `dy` device pixels since the last report (positive = down the glass)
+    PANEL_SCROLL_UP,     // finger lifted, carrying the last of the travel and the speed it left at
+} panel_scroll_phase_t;
+
+// Report a finger on the glass to the window. `velocity` is device px/s, signed like `dy`, and is only
+// read on PANEL_SCROLL_UP — it becomes the fling.
+void panel_client_send_scroll(panel_scroll_phase_t phase, int dy, int velocity);
 void panel_client_send_focus(const char *chat_id);
 void panel_client_send_turn(const char *chat_id, const char *text);
 

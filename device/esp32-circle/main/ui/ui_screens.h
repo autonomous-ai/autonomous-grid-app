@@ -123,16 +123,16 @@ int ui_notif_pull_zone_px(void);
 void ui_swipe_begin(void);
 void ui_swipe_end(int dir);
 // Vertical edge-swipe: +1 = up (project → open the detail reader), -1 = down (reader top → close).
-void ui_swipe_vert(int dir);
 // "Home" gesture: a swipe-up that STARTED at the bottom edge → jump to the Overview tile from anywhere.
 void ui_home_overview(void);
 // Voice-state queries for the gesture layer: is_recording = actively capturing (a tap stops it);
 // is_active = recording OR the clip still uploading (blocks a new start).
 bool ui_voice_is_recording(void);
 bool ui_voice_is_active(void);
-// True when a screen-space touch begins inside one of the Overview's three action pills. touch.c uses
-// this to keep the screen-wide double-tap / hold gestures from firing on top of a normal button press.
-bool ui_overview_action_hit(uint16_t x, uint16_t y);
+// True when a screen-space touch begins on one of the visible action buttons — the Overview's three pills
+// or an agent tile's three marks. touch.c uses this to give that button the whole gesture, so a press
+// cannot also register as the tap that opens the detail reader.
+bool ui_action_row_hit(uint16_t x, uint16_t y);
 // A plain tap (touch.c, when not recording): on the detail reader → back to projects; else no-op.
 void ui_tap(void);
 // Notification centre (touch.c drives open/close).
@@ -216,9 +216,8 @@ bool ui_awaiting_answer(void);
 // --- Voice ---
 // The project id of the currently-visible tile, or "" on the Overview.
 const char *ui_active_tile_id(void);
-// Start/stop a capture for the visible project. Safe to call from a non-LVGL task.
-void ui_voice_start(void);
-void ui_voice_start_goal(void);
+// Stop the running capture. Safe to call from a non-LVGL task. There is no ui_voice_start() any more:
+// starting one is a button on the screen that owns it, so it never has to travel through this header.
 void ui_voice_stop(void);
 
 // Ask grid-app to interrupt the visible project's turn. No-op if that tile isn't working.

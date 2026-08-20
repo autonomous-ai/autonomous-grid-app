@@ -200,7 +200,7 @@ static bool drain(int max_chunks)
 }
 
 // NOTHING here pushes a voice state into the UI, where an earlier version of this file pushed four.
-// The screens own their own indicator — ui_voice_start/stop drive it, and it POLLS voice_active() and
+// The screens own their own indicator — the action buttons and ui_voice_stop drive it, and it POLLS voice_active() and
 // voice_recording() for the rest. One owner: two halves both setting the same icon is how an indicator
 // ends up stuck on a screen after the thing it indicates has finished.
 

@@ -44,7 +44,7 @@ static SemaphoreHandle_t s_lvgl_mutex;
 static bool s_asleep;                   // panel turned off after idle to save battery
 static void *s_lvgl_psram_pool;          // lifetime-owned 64KiB secondary LVGL TLSF pool
 
-// Turn the panel off after this long without a touch. Wake with a double-tap (see touch.c).
+// Turn the panel off after this long without a touch. Any touch wakes it (see touch.c).
 #define IDLE_MS 300000                  // 5 minutes
 
 // LVGL draw buffers in internal DMA RAM: each is about 1/16 screen,
@@ -89,7 +89,7 @@ static void lvgl_task(void *arg)
         // a whole voice turn is kept awake via display_bump_activity. Double-tap/PWR key wake it back.
         if (!s_asleep && lv_display_get_inactive_time(s_disp) > IDLE_MS) display_sleep();
         display_unlock();
-        // Keep a responsive loop even while asleep: touch_read (the double-tap-to-wake detector) is the
+        // Keep a responsive loop even while asleep: touch_read (which wakes on a press) is the
         // indev read that runs inside lv_timer_handler, so slowing this loop down slows touch sampling —
         // a 120ms loop made quick taps land between samples and wake took several tries. The wasted
         // spinner rendering while the panel is off is instead killed by PAUSING the display refresh timer
@@ -258,7 +258,7 @@ void display_sleep(void)
     esp_lcd_panel_disp_on_off(s_panel, false);
     // Stop the render/flush pipeline while the panel is off so a live animation (the connecting-screen
     // spinner) doesn't keep re-rendering into the draw buffers for pixels no one sees. The indev read
-    // timer is separate and keeps running, so double-tap-to-wake stays responsive.
+    // timer is separate and keeps running, so touch-to-wake stays responsive.
     lv_timer_pause(lv_display_get_refr_timer(s_disp));
     if (s_power_cb) s_power_cb(false);   // arm the screen-lock re-lock
     ESP_LOGI(TAG, "sleep (panel off)");
