@@ -42,9 +42,17 @@ class _ScriptedAcp implements HermesAcpService {
   final int healAfter;
   int starts = 0;
 
+  /// The extra environment each `start` call carried, in order — lets a test
+  /// confirm the repair path still forwards it on retry.
+  final startEnvs = <Map<String, String>>[];
+
   @override
-  Future<HermesAcpSession> start({required String workdir}) async {
+  Future<HermesAcpSession> start({
+    required String workdir,
+    Map<String, String> extraEnv = const {},
+  }) async {
     starts++;
+    startEnvs.add(extraEnv);
     if (starts <= healAfter) throw _error;
     return _DeadSession();
   }
@@ -245,6 +253,25 @@ void main() {
       expect(setup.repairs, 1);
       expect(acp.starts, 2, reason: 'retried once the piece was installed');
     });
+
+    test(
+      'the retry after a repair still carries the caller\'s extra '
+      'environment — a conversation id must survive the repair detour',
+      () async {
+        final acp = _ScriptedAcp(_missingAcp);
+        final setup = _FakeSetup();
+
+        await RepairingHermesAcpService(
+          acp,
+          setup,
+        ).start(workdir: '/tmp', extraEnv: const {'GRID_CHAT_ID': 'conv-1'});
+
+        expect(acp.startEnvs, [
+          {'GRID_CHAT_ID': 'conv-1'},
+          {'GRID_CHAT_ID': 'conv-1'},
+        ]);
+      },
+    );
 
     test('a repair that fails carries its raw reason on for the log, and does '
         'not invite a retry that fails identically', () async {

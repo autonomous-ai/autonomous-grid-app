@@ -43,6 +43,20 @@ const String kHermesResponsesApiMode = 'codex_responses';
 /// custom`, whose base_url trust path needs no named selector.
 const String kHermesGridProviderKey = 'grid';
 
+/// The header the relay reads off a Hermes turn's outbound calls to learn
+/// which conversation is asking, so it can attribute which model answered a
+/// given turn — the same job `gridTurnEnv`'s `GRID_CHAT_ID` does for an agent
+/// that schedules something, applied instead to the relay's own accounting.
+const String kGridConversationHeader = 'X-Grid-Conversation';
+
+/// A **literal** Hermes template string, written verbatim into
+/// `extra_headers`. Hermes expands it itself from its own process environment
+/// (`GRID_CHAT_ID`) at `hermes acp` startup — this is not Dart string
+/// interpolation, and must never be built with `${...}` in a normal Dart
+/// string literal (which would try to resolve `GRID_CHAT_ID` as a Dart
+/// identifier instead of emitting it verbatim).
+const String kGridChatIdTemplate = r'${GRID_CHAT_ID}';
+
 /// The `~/.openclaw/openclaw.json` provider block wiring Grid in as a model
 /// provider, listing **every** model the grid serves ([models]) and the first as
 /// the default for a fresh install. `models.mode: "merge"` appends Grid to
@@ -103,6 +117,11 @@ const String relayIdentityDoc = 'core/relay_identity.dart';
 /// (`provider: $kHermesGridProviderKey`) and carry `api_mode:
 /// $kHermesResponsesApiMode`. A chat-completions grid keeps the simpler bare
 /// `provider: custom` + base_url trust path.
+///
+/// Also carries `extra_headers`, so every call this provider makes to the
+/// relay is tagged with [kGridConversationHeader] — Hermes fills the value in
+/// from its own environment at startup (see [kGridChatIdTemplate]), so the
+/// literal template is what belongs in the file, not a value computed here.
 String hermesConfigSnippet(String base, String key, String model) {
   final responses = isResponsesOnlyModel(model);
   final buffer = StringBuffer()
@@ -118,7 +137,9 @@ String hermesConfigSnippet(String base, String key, String model) {
   buffer
     ..write('    base_url: $base\n')
     ..write('    api_key: $key\n')
-    ..write('    model: $model');
+    ..write('    model: $model\n')
+    ..write('    extra_headers:\n')
+    ..write('      $kGridConversationHeader: "$kGridChatIdTemplate"');
   if (responses) buffer.write('\n    api_mode: $kHermesResponsesApiMode');
   return buffer.toString();
 }

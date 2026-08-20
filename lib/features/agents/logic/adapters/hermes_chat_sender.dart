@@ -22,6 +22,7 @@ import '../agent_server_error.dart';
 import '../agent_permissions.dart';
 import '../agent_steering.dart';
 import '../agent_prompt.dart';
+import 'agent_turn_env.dart';
 import 'hermes_grid_link.dart';
 import 'hermes_tool.dart';
 import '../agent_providers.dart';
@@ -276,7 +277,14 @@ class HermesChatSender implements ChatSender {
     await _makeRoom();
 
     final service = _ref.read(hermesAcpServiceProvider)!;
-    final session = await service.start(workdir: root);
+    // Hands the conversation id to the process as GRID_CHAT_ID, so a task the
+    // agent schedules mid-chat knows which thread to deliver its answer into
+    // (see gridTurnEnv) — and, on the relay side, so this turn's calls carry
+    // the header that attributes them to this conversation.
+    final session = await service.start(
+      workdir: root,
+      extraEnv: gridTurnEnv(conversationId),
+    );
     final fresh = _LiveSession(
       session: session,
       key: key,
