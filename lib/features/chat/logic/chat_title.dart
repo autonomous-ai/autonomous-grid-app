@@ -3,9 +3,17 @@ import '../../../core/text_preview.dart';
 import '../../playground/logic/chat_message.dart';
 import 'conversation.dart';
 
-/// The longest a name runs before it's clipped with an ellipsis. The sidebar row
-/// clips again at whatever width it has, so this is a cap on the string rather
-/// than on what is read — which is why what matters has to come first.
+/// The longest a name runs before it's clipped with an ellipsis, for the places
+/// that need a cap on the *string* — a scheduled job's name, a device with a
+/// frame budget. **Not** for a chat's own title.
+///
+/// A title used to be cut to this on the way *in*, and the thirty characters
+/// past it were gone: the rename field could only ever offer back the stump,
+/// which is what it did on 2026-08-20 — "Làm cho task sau research + đưa ý
+/// kiến" with the rest of the sentence nowhere on the machine. Every place a
+/// title is drawn already clips it at the width it actually has (`maxLines: 1`,
+/// `TextOverflow.ellipsis`), which is a better cut than any number here, so the
+/// string is kept whole and the drawing does the clipping.
 const int kMaxChatTitleLength = 40;
 
 /// What is left of an opener before dropping it stops being worth it. Below
@@ -45,7 +53,7 @@ String chatTitleFromLine(String raw) {
   line = _shortUrls(line);
   line = _withoutTrailingPunctuation(_collapsed(line));
   if (line.isEmpty) return '';
-  return clipChatTitle(_capitalized(line));
+  return _capitalized(line);
 }
 
 /// What the model answered, as a name — the same shapes [unfenceReply] and
@@ -60,7 +68,7 @@ String tidyChatTitle(String raw) {
   line = unquoteLine(line.replaceFirst(_leadIn, '').trim());
   line = _withoutTrailingPunctuation(_collapsed(line));
   if (line.isEmpty) return '';
-  return clipChatTitle(_capitalized(line));
+  return _capitalized(line);
 }
 
 /// [text] cut to [kMaxChatTitleLength] at a word boundary — a name cut mid-word
@@ -79,11 +87,12 @@ String clipChatTitle(String text) {
 
 /// [title] as the text to hand a rename field.
 ///
-/// The "…" on the end is [clipChatTitle]'s mark for *where the name was cut*,
-/// not part of the name — so a field seeded with it invites the user to keep it,
-/// and a chat ends up called "Làm cho task sau research + đưa ý kiến…" on
-/// purpose. It also reads as the field truncating the name, which it isn't:
-/// 40 characters is all there ever was.
+/// New titles are stored whole, so this has nothing to do for them. It stays
+/// for the ones named before that: their "…" is [clipChatTitle]'s mark for
+/// *where the name was cut*, not part of the name, and a field seeded with it
+/// invites the user to keep it — a chat called "Làm cho task sau research + đưa
+/// ý kiến…" on purpose. What it cannot do is give those titles back the words
+/// that were dropped; nothing can, they were never written down.
 String editableChatTitle(String title) {
   final trimmed = title.trimRight();
   if (!trimmed.endsWith('…')) return trimmed;
