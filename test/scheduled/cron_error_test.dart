@@ -43,7 +43,7 @@ void main() {
     test('turns a "no model configured" run into a plain message with a next '
         'step, so the user never faces the raw RuntimeError and env dump', () {
       const raw =
-          "RuntimeError: Cron job 'tin mới nhất hôm nay' has no model "
+          "RuntimeError: Cron job 'latest news today' has no model "
           "configured (job.model=None, HERMES_MODEL='', config.yaml "
           'model.default missing or empty). Set a per-job model via `cronjob '
           'action=update job_id=73ee873b963f model=<name>` or set a default '

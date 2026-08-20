@@ -381,7 +381,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       return;
     }
     // Everything else goes to the assistant as the sentence it is, including
-    // "lặp lại mỗi 30 phút kiểm tra deploy". Reading a command out of ordinary
+    // "repeat every 30 minutes and check the deploy". Reading a command out of
     // words was a phrase list that guessed both ways, and the assistant has to
     // read the sentence anyway to answer it: what it was asking for comes back
     // in a `grid-ask` block (see [parseAgentAsk]).

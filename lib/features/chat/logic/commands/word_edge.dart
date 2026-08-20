@@ -1,15 +1,15 @@
 /// The edges of a word, for the patterns that have to hold in Vietnamese too.
 ///
 /// `\b` is the usual way to say "the whole word, not a piece of one", and it
-/// counts `[A-Za-z0-9_]` as word characters and nothing else. So it never held
-/// beside a word ending in a Vietnamese letter: `(giờ|phút)\b` matched "phút"
-/// on its `t` and could not match "giờ" at all — and "mỗi giờ" is the plainest
-/// way to say the commonest gap there is.
+/// counts `[A-Za-z0-9_]` as word characters and nothing else. So it never holds
+/// beside a word ending in a letter outside that set — which is every accented
+/// vowel this app's own users type. A unit ending in one could not be matched
+/// at all, while its neighbour ending in a plain consonant matched fine.
 ///
-/// Two readings were wrong because of it, both on 2026-08-20: "lặp lại mỗi giờ
-/// …" was offered instead of started, because the gap read as unnamed; and a
-/// task said as "mỗi 2 giờ" lost its cadence on the way to the scheduler and
-/// became a once-a-day one.
+/// Two readings were wrong because of it, both on 2026-08-20: an hourly repeat
+/// read as naming no gap at all, and an hourly task lost its cadence on the way
+/// to the scheduler and became a once-a-day one. Both patterns were asking for
+/// the hour, and the word for it ends in an accented vowel.
 ///
 /// A pattern using these must be built with `unicode: true` — `\p{L}` is a
 /// property escape only under that flag, and two literal characters without it.

@@ -130,25 +130,28 @@ void main() {
         'overnight loop would otherwise show them asking for a grid-loop '
         'block on every iteration', () {
       final sent =
-          'research nguồn truyện mới\n\n'
+          'look for new sources\n\n'
           '${loopBeatFooter(selfPaced: true)}';
 
-      expect(withoutLoopBeatFooter(sent), 'research nguồn truyện mới');
+      expect(withoutLoopBeatFooter(sent), 'look for new sources');
     });
 
     test('the fixed-interval footer comes off too, since both are the app '
         'talking and neither was typed', () {
-      final sent = 'kiểm tra deploy\n\n${loopBeatFooter(selfPaced: false)}';
+      final sent = 'check the deploy\n\n${loopBeatFooter(selfPaced: false)}';
 
-      expect(withoutLoopBeatFooter(sent), 'kiểm tra deploy');
+      expect(withoutLoopBeatFooter(sent), 'check the deploy');
     });
 
     test('an ordinary message is returned untouched, including one that '
         'happens to say the word', () {
-      expect(withoutLoopBeatFooter('sửa cái loop đi'), 'sửa cái loop đi');
       expect(
-        withoutLoopBeatFooter('cách grid-loop hoạt động thế nào'),
-        'cách grid-loop hoạt động thế nào',
+        withoutLoopBeatFooter('fix the loop please'),
+        'fix the loop please',
+      );
+      expect(
+        withoutLoopBeatFooter('how does grid-loop work'),
+        'how does grid-loop work',
       );
     });
   });

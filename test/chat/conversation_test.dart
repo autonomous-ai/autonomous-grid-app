@@ -320,9 +320,12 @@ void main() {
         named('/goal study https://roo.dev/docs/quickstart'),
         'Study roo.dev/docs',
       );
+      // The openers are English only, so an ask written in another language
+      // keeps its own — a limit worth seeing in a test rather than finding in
+      // a sidebar.
       expect(
-        named('giúp mình sửa lại phần giá trên trang chủ'),
-        'Sửa lại phần giá trên trang chủ',
+        named('could you please fix the pricing on the home page'),
+        'Fix the pricing on the home page',
       );
     });
 

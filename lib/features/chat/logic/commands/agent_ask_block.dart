@@ -24,14 +24,17 @@ const Set<ChatCommand> kRelayableCommands = {
 /// nothing the app will act on.
 ///
 /// **Why a block rather than a phrase.** The app reads a command straight out
-/// of what the user typed when they used words it knows — `/loop`, "lặp lại mỗi
-/// 30 phút", "nhắc tôi 8h sáng". That reading is deterministic, costs nothing
-/// and answers the same way twice, which is right for a closed set of words.
-/// It is hopeless for the rest of how people ask: "mày chạy ít nhất tới sáng
-/// mai tao vào để kiểm tra" names nothing the app owns, and a list of phrases
-/// aimed at that was wrong the day it shipped — it read *"deploy chạy tới sáng
-/// mai mới xong"* as a request to loop, and missed every way of asking it had
-/// not been taught.
+/// of a line the user typed with a slash — `/loop 30m …`. That reading is
+/// deterministic, costs nothing and answers the same way twice, which is right
+/// for a set the app itself defines.
+///
+/// It is hopeless for the rest of how people ask. "Keep at it until I'm back in
+/// the morning" names nothing the app owns, and the phrase list aimed at
+/// sentences like it was wrong the day it shipped, in both directions: it read
+/// "the deploy runs till morning" — someone describing a deploy — as a request
+/// to loop, and it missed every way of asking that it had not been taught. The
+/// app's users write in a language where "do it again" is two ordinary words,
+/// which is exactly the shape a list like that cannot tell from an instruction.
 ///
 /// So the sentence goes to the assistant, which has to read it anyway to answer
 /// it, and it says back what was being asked for. No extra call, no classifier,

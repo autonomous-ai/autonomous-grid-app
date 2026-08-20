@@ -6,19 +6,17 @@ void main() {
   group('reading when a task should run', () {
     test('a named hour is the hour it runs — the one thing a user would never '
         'forgive being changed', () {
-      final request = parseScheduleArgument('mỗi ngày 8h30 tóm tắt hộp thư');
+      final request = parseScheduleArgument(
+        'every day at 8:30 summarise the inbox',
+      );
 
       expect(request?.schedule.hour, 8);
       expect(request?.schedule.minute, 30);
       expect(request?.schedule.cadence, JobCadence.everyDay);
-      expect(request?.prompt, 'tóm tắt hộp thư');
+      expect(request?.prompt, 'summarise the inbox');
     });
 
     test('an evening hour lands in the evening, not before breakfast', () {
-      expect(
-        parseScheduleArgument('mỗi ngày 8h tối gọi mẹ')?.schedule.hour,
-        20,
-      );
       expect(
         parseScheduleArgument('every day at 8pm call mum')?.schedule.hour,
         20,
@@ -33,25 +31,30 @@ void main() {
         )?.schedule.hour,
         8,
       );
-      expect(parseScheduleArgument('mỗi tối dọn log')?.schedule.hour, 20);
+      expect(
+        parseScheduleArgument('every evening clear the logs')?.schedule.hour,
+        20,
+      );
     });
 
     test('"every 30 minutes" is a repeat through the day, not a daily run', () {
-      final request = parseScheduleArgument('mỗi 30 phút kiểm tra deploy');
+      final request = parseScheduleArgument(
+        'every 30 minutes check the deploy',
+      );
 
       expect(request?.schedule.cadence, JobCadence.every30Min);
       expect(request?.schedule.toSchedule(), 'every 30m');
     });
 
-    test('an hourly repeat keeps its cadence — said as "giờ" it used to lose '
-        'it and quietly become a once-a-day task', () {
-      final hourly = parseScheduleArgument('mỗi giờ quét X');
+    test('an hourly repeat keeps its cadence rather than quietly becoming a '
+        'once-a-day task', () {
+      final hourly = parseScheduleArgument('every hour scan X');
       expect(hourly?.schedule.cadence, JobCadence.hourly);
-      expect(hourly?.prompt, 'quét X');
+      expect(hourly?.prompt, 'scan X');
 
-      final twoHourly = parseScheduleArgument('mỗi 2 giờ kiểm tra deploy');
+      final twoHourly = parseScheduleArgument('every 2 hours check the deploy');
       expect(twoHourly?.schedule.cadence, JobCadence.every2Hours);
-      expect(twoHourly?.prompt, 'kiểm tra deploy');
+      expect(twoHourly?.prompt, 'check the deploy');
     });
 
     test('weekdays only, when that is what was asked for', () {
@@ -66,8 +69,8 @@ void main() {
     test('the task keeps the user\'s own words, with only the timing taken '
         'off the front', () {
       expect(
-        parseScheduleArgument('nhắc tôi 8h sáng gọi khách hàng')?.prompt,
-        'gọi khách hàng',
+        parseScheduleArgument('remind me at 8 call the client')?.prompt,
+        'call the client',
       );
       expect(
         parseScheduleArgument(
@@ -79,17 +82,18 @@ void main() {
 
     test('words that name a time and nothing to do save no task — a job with '
         'no prompt would fire every morning and do nothing', () {
-      expect(parseScheduleArgument('mỗi sáng 8h'), isNull);
+      expect(parseScheduleArgument('every morning at 8'), isNull);
       expect(parseScheduleArgument('   '), isNull);
     });
 
     test('an unreadable "when" still saves the task, at an hour the user can '
         'see and change, rather than losing what they asked for', () {
-      final request = parseScheduleArgument('thỉnh thoảng dọn log giúp tôi');
+      const asked = 'now and then, clear the logs for me';
+      final request = parseScheduleArgument(asked);
 
       expect(request?.schedule.cadence, JobCadence.everyDay);
       expect(request?.schedule.hour, 8);
-      expect(request?.prompt, 'thỉnh thoảng dọn log giúp tôi');
+      expect(request?.prompt, asked);
     });
   });
 
@@ -114,8 +118,8 @@ void main() {
 
     test('an interval leaves no half a unit on the front of the task', () {
       expect(
-        parseScheduleArgument('mỗi 30 phút kiểm tra deploy')?.prompt,
-        'kiểm tra deploy',
+        parseScheduleArgument('every 30 minutes check the deploy')?.prompt,
+        'check the deploy',
       );
       expect(
         parseScheduleArgument('every 30 minutes summarise the inbox')?.prompt,

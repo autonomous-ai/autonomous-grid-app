@@ -39,7 +39,8 @@ final gridCliServiceProvider = Provider<GridCliService?>((ref) {
   );
 });
 
-/// Reads state from `~/.grid` (nguồn 1). Read-only; mutations go through the CLI.
+/// Reads state from `~/.grid` (source 1). Read-only; mutations go through
+/// the CLI.
 final gridHomeStoreProvider = Provider<GridHomeStore>(
   (ref) => const GridHomeStore(),
 );
