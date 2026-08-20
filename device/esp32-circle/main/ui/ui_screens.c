@@ -1603,7 +1603,7 @@ void ui_init(void)
     lv_obj_remove_flag(s_dim, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_dim, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Voice-mode overlay (Figma "Gọi voice, có lớp overlay"): a dark full-screen layer shown while
+    // Voice-mode overlay (the Figma frame with the dimmed voice call): a dark full-screen layer shown while
     // recording/uploading, sitting BEHIND the mic/dots/pulse voice indicator. voice_overlay_set() shows it
     // AND frees all tile content while it's up, so the PCM capture keeps its internal-RAM headroom.
     s_voice_overlay = lv_obj_create(lv_layer_top());
@@ -4137,7 +4137,7 @@ static bool cp_in_font(uint32_t cp)
 {
     if (cp == '\n' || cp == '\t') return true;
     if (cp >= 0x20 && cp <= 0x7E) return true;        // ASCII
-    if (cp >= 0xA0 && cp <= 0x24F) return true;       // Latin-1 + Extended-A/B (đ ơ ư …)
+    if (cp >= 0xA0 && cp <= 0x24F) return true;       // Latin-1 + Extended-A/B
     if (cp >= 0x1E00 && cp <= 0x1EFF) return true;    // Latin Extended Additional (Vietnamese)
     if (cp >= 0x2013 && cp <= 0x2026) return true;    // – — ' ' " " …
     if (cp == 0x203A || cp == 0x2713 || cp == 0x2717) return true; // › ✓ ✗
