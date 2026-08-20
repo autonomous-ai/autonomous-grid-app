@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
 /// Locks the (deliberately counterintuitive) grid-visibility mapping so nobody
-/// "fixes" it back: on the wire, `permissioned-providers` is the *public* grid
+/// "fixes" it back: on the wire, `permissionless` is the *public* grid
 /// and `permissioned-public` is actually *private*. See [NetworkCredential.isPublic].
 NetworkCredential _credOfType(String type) => NetworkCredential.fromToml({
   'network_id': 'grid-x',
@@ -13,14 +13,11 @@ NetworkCredential _credOfType(String type) => NetworkCredential.fromToml({
 
 void main() {
   group('NetworkCredential visibility', () {
-    test(
-      'permissioned-providers is Public (shared members can share models)',
-      () {
-        final cred = _credOfType('permissioned-providers');
-        expect(cred.isPublic, isTrue);
-        expect(cred.visibilityLabel, 'Public');
-      },
-    );
+    test('permissionless is Public (shared members can share models)', () {
+      final cred = _credOfType('permissionless');
+      expect(cred.isPublic, isTrue);
+      expect(cred.visibilityLabel, 'Public');
+    });
 
     test(
       'permissioned-public is Private, despite the "public" in its name',

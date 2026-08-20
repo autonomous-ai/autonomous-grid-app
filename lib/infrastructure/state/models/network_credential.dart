@@ -94,7 +94,7 @@ class NetworkCredential {
 
   /// Whether the grid is publicly visible. Heads-up: the wire values read
   /// backwards, so this is deliberately checked against `providers`, not
-  /// `public`. A `permissioned-providers` grid is the *public* one — anyone it's
+  /// `public`. A `permissionless` grid is the *public* one — anyone it's
   /// shared with can also share their models onto it — whereas
   /// `permissioned-public` is actually *private*: visible only to people it has
   /// been shared with. Do NOT "fix" this to `contains('public')`; that inverts

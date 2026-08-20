@@ -796,7 +796,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _panelDrag = drag;
     // The panel reports at least every 50ms while a finger is down, so silence
     // this long is a stroke that is not coming back.
-    _panelDragWatch = Timer(const Duration(milliseconds: 600), _cancelPanelDrag);
+    _panelDragWatch = Timer(
+      const Duration(milliseconds: 600),
+      _cancelPanelDrag,
+    );
     return drag;
   }
 
