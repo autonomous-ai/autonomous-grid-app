@@ -238,6 +238,26 @@ static void send_pong(void)
 //
 // DEBOUNCED by the caller, not here: a fast swipe crosses several tiles, and sending each one would drag
 // the app's view through every conversation on the way past.
+// A finger's travel on the glass, in device pixels — the panel used as a touchpad.
+//
+// Sent WHILE THE FINGER IS DOWN, in pieces: one stroke arrives as several of these. The caller decides
+// when (touch.c: every ~8px or ~50ms), because the throttle belongs where the touch stream is, not here.
+//
+// Nothing is remembered on this side. The panel has no idea how tall the window's transcript is, so it
+// reports movement and lets the half that owns the list do the arithmetic.
+void panel_client_send_scroll(panel_scroll_phase_t phase, int dy, int velocity)
+{
+    static const char *const NAMES[] = { "down", "move", "up" };
+    // No early-out on a zero dy any more: an empty frame is the point of the two ends of a stroke.
+    cJSON *m = cJSON_CreateObject();
+    if (!m) return;
+    cJSON_AddStringToObject(m, "t", "scroll");
+    cJSON_AddStringToObject(m, "phase", NAMES[phase]);
+    cJSON_AddNumberToObject(m, "dy", dy);
+    if (phase == PANEL_SCROLL_UP) cJSON_AddNumberToObject(m, "v", velocity);
+    send_json(m);
+}
+
 void panel_client_send_focus(const char *chat_id)
 {
     if (!chat_id || !chat_id[0]) return;

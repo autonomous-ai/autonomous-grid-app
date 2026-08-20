@@ -7,7 +7,8 @@ document is the only place the two agree by construction rather than by coincide
 Two layers, versioned separately:
 
 - **Framing** turns a byte stream into messages. Version 1.
-- **Messages** are what the two sides say to each other. Version 1.
+- **Messages** are what the two sides say to each other. Version **5** — it has moved four times since
+  this line first said 1, and saying so is the point of versioning it separately.
 
 They are separate because they change for different reasons. Adding a message is a message-layer
 change and needs no reflash of anything that only forwards bytes; changing the envelope is a
@@ -141,6 +142,7 @@ whole message — a peer with an extra field is not a broken peer.
 | `hello` | `fw` string, `proto` int, `mac` string | First thing after the port opens. `mac` is also the device's USB serial number, so the app can tell one panel from another before a byte is exchanged. |
 | `pong` | — | The answer to a `ping`. Empty: the arrival is the content, and it is the only thing that tells the app its port handle still reaches a running panel (below). |
 | `chats.list` | — | Send me the tiles. |
+| `scroll` | `phase`, `dy`, `v` | A finger on the glass. **The panel as a touchpad** — see the note below. `phase` is `down` \| `move` \| `up`; `dy` is device pixels travelled since the last report, positive = down; `v` is device px/s at the moment of release and is only present on `up`. Sent WHILE the finger is down, in pieces — one stroke arrives as several — throttled on the device at ~8px or ~50ms, whichever comes first. It reports MOVEMENT, not a position: the panel cannot know how tall the window's list is, so the side that owns the list does the arithmetic (`kPanelScrollGain`, tuned on hardware). Not sent while the notification drawer has captured the stroke, during voice, or for a stroke that began at the bottom edge — that one is the home swipe. |
 | `focus` | `chatId` | The carousel settled on this tile. A statement about where the user is LOOKING, not a request to run anything — the window opens that chat so the two screens are one desk. Debounced on the device (~400 ms): a fast swipe crosses several tiles, and sending each would drag the window through every conversation on the way past. A `chatId` the app no longer has is ignored in silence; nobody is waiting on an answer to a look. |
 | `turn.send` | `chatId`, `text` | The user asked for something. The chat must already exist — a tile is one, so there is nothing to create. |
 | `turn.stop` | `chatId` | Interrupt that chat's turn, and only that one. The id travels because the panel can stop a chat the desktop does not have open. |
@@ -537,6 +539,44 @@ that has never heard of a modifier simply omits it.
 > so the next person does not have to find out by pressing it. **The panel's job ends at `cmd`** —
 > what the prefix comes to mean is the app's business, and it can change without reflashing anything.
 
+#### A stroke is a stroke, not a distance
+
+The first version of `scroll` sent travel and nothing else, and it was wrong in a way that is worth
+recording because it looked complete: the window moved, but a **flick and a crawl of the same length
+moved it the same way**. Nothing was broken — a distance is simply all a distance can say, and the
+speed a person means when they say "swipe" only exists on the glass, where the samples are.
+
+So the message carries the whole stroke:
+
+| phase | carries | the window does |
+|---|---|---|
+| `down` | nothing | opens a real drag on the list — which also stops whatever it was still coasting through, so a touch halts a fling the way it does on a phone |
+| `move` | `dy` since the last report | feeds the drag |
+| `up` | the leftover `dy`, then `v` | ends the drag with that speed, and the list flings |
+
+**The window must not integrate this itself.** `ScrollPosition.drag()` is public API and hands the
+stroke to the same machinery a trackpad uses, so deceleration, the resistance and spring at the ends,
+and the list's own `ScrollPhysics` all come for free and stay consistent with every other scroll in the
+app. Moving `pixels` by hand — which is what the first version did — throws all of that away and then
+has to reinvent it worse.
+
+Two rules fall out of that and both have teeth:
+
+- **Every `down` must be followed by an `up`.** A drag left open holds the list and makes it ignore the
+  mouse. The device closes the stroke on release, and also on the one thing that can steal a stroke
+  mid-flight (voice coming up under the finger). The window keeps a **600 ms watchdog** anyway, because
+  a cable can be pulled mid-swipe and the panel reports at least every 50 ms while a finger is down.
+- **`v` is measured on the device, over the reporting windows themselves**, smoothed 3:2 toward the
+  newest and capped at 6000 px/s. Timing arrivals on the app side would measure the cable, not the hand;
+  and a window with no travel in it is a real zero, which is what makes a finger that stops before
+  lifting stay put instead of being thrown.
+
+⚠️ **A vertical drag on a tile no longer opens the detail screen** (2026-08-20). It scrolls the window,
+and one gesture cannot mean two things — every scroll would have ended by opening a screen nobody asked
+for. A tap opens the detail screen, which is the route it always had. This also retired
+`ui_swipe_vert`, whose swipe-down half ("close the reader") had been unreachable since it was written:
+`touch.c` only ever called it while NOT on the reader.
+
 **The cap is 600 seconds — ten minutes**, and the device must draw the same number the app enforces. The
 app stops accepting audio at 600 s of PCM (`kPanelVoiceMaxBytes`) and closes a capture it has heard
 nothing more about at 660 s (`kPanelVoiceOpenLimit`) — the second is a backstop for a `voice.end` that
@@ -652,6 +692,11 @@ This is measured, not reasoned. The first transfer against a real panel — 128 
 almost none of it survived, and both 30-second watchdogs fired at a transfer that had never started.
 
 ### Handshake
+
+**Version 6** (2026-08-20) is `scroll` carrying a phase and a release speed. Strictly the new keys are
+additive and an older reader would ignore them — but the window now *depends* on the phases to open and
+close a drag, so a panel that only speaks travel would leave it holding one. That is a shape change and
+the number moves with it. (Version 5, earlier the same day, added `scroll` at all.)
 
 The panel sends `hello` with the protocol version it speaks. The app answers `welcome` with its
 own. A mismatch is a **state to display, not an error to swallow** — the app carries the firmware

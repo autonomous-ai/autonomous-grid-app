@@ -701,7 +701,7 @@ static void busy_compose(tile_t *p)
 
 // Tick the "Sending…" upload dots + the active project's working-status rows (verb rotates ~6s,
 // elapsed each 1s). Runs a few times/second; the status text is only re-set when the second changes.
-// The floating mic is a pure STATUS INDICATOR now (voice is driven by gestures: double-tap starts, a
+// The floating mic is a pure STATUS INDICATOR now (voice is driven by the on-screen action buttons, a
 // tap stops — see touch.c). Shown only during a live turn: the red mic while recording, the spinner
 // while the clip uploads; hidden otherwise (and while asleep). Reads s_vic_state; caller holds the lock.
 static void voice_btn_apply_visibility(void)
@@ -1249,7 +1249,7 @@ void ui_init(void)
 
     // Figma voice indicator: a 96px mic shown ONLY during a live voice turn (red while recording; the
     // spinner replaces it while the clip uploads). NOT clickable — voice is driven by gestures now
-    // (double-tap starts, a tap stops; see touch.c). On the TOP LAYER so it floats over any screen.
+    // (an action button starts, a tap stops; see touch.c). On the TOP LAYER so it floats over any screen.
     s_voice_img = lv_image_create(lv_layer_top());
     lv_image_set_src(s_voice_img, &icon_v_mic);
     lv_image_set_inner_align(s_voice_img, LV_IMAGE_ALIGN_CENTER);
@@ -1418,7 +1418,7 @@ void ui_init(void)
     lv_obj_add_flag(s_creating_spin, LV_OBJ_FLAG_HIDDEN);
 
     // Reader screen: full text of one event, vertically scrollable. Opened by swipe-up on a project,
-    // closed by swipe-down at the top (a TAP here reveals the voice button instead — see ui_swipe_vert).
+    // closed by a horizontal swipe (a TAP here reveals the voice button instead — see ui_tap).
     // Round screen: generous top/bottom padding keeps the first/last lines off the curved edge,
     // and horizontal padding keeps line ends inside the circle. Big top/bottom pad also lets the
     // very first and last lines scroll into the wide centre band to be read fully.
@@ -2673,25 +2673,36 @@ static void overview_loop_tap(lv_event_t *e)
     voice_start_impl(VOICE_CMD_LOOP);
 }
 
-// touch.c calls this on press-down before its screen-wide gesture recognizers. Capturing a gesture that
-// starts on either action prevents a long hold on Voice becoming the global Goal gesture, while LVGL still
-// receives the original pointer stream and dispatches the normal button click.
-bool ui_overview_action_hit(uint16_t x, uint16_t y)
+// touch.c calls this on press-down, before its screen-wide recognisers. A press that lands on an action
+// button belongs to that button for the whole gesture: without this, the same touch is ALSO a near-still
+// tap to touch.c, which opens the detail reader on the very release that starts the recording.
+//
+// Both rows count — the Overview's labelled pills and the three marks on an agent tile. The agent row went
+// uncovered for a while and got away with it only because the tap used to be deferred past the double-tap
+// window, by which time the recording had started and the tap was suppressed as a side effect. That
+// deferral is gone with the gestures it existed for, so the cover has to be real.
+bool ui_action_row_hit(uint16_t x, uint16_t y)
 {
     // During a voice turn the buttons are hidden under the overlay and must NOT capture the gesture — else
     // touch.c suppresses tap-to-stop for the whole press (gesture_pressed=false), so a tap to stop the voice
     // does nothing. Let the tap flow to tap-to-stop instead; the clickable overlay blocks the LVGL button click.
     if (voice_active()) return false;
-    if (display_is_asleep() || lv_screen_active() != scr_projects || !s_overview_active ||
-        !s_overview_actions || lv_obj_has_flag(s_overview_actions, LV_OBJ_FLAG_HIDDEN)) return false;
-    // ALL THREE controls. Every one of them must be listed: the long-press-to-Goal gesture is screen-wide,
-    // so a press that dwells on an unclaimed button is read as that gesture and starts a recording of its
-    // own instead of dispatching the button's click. Missing one here is a silent bug — the button still
-    // looks right and still lights on press; it just does the wrong thing when the thumb is slow.
+    if (display_is_asleep() || lv_screen_active() != scr_projects) return false;
     lv_point_t p = { .x = x, .y = y };
-    return (s_overview_voice_btn && lv_obj_hit_test(s_overview_voice_btn, &p)) ||
-           (s_overview_goal_btn  && lv_obj_hit_test(s_overview_goal_btn,  &p)) ||
-           (s_overview_loop_btn  && lv_obj_hit_test(s_overview_loop_btn,  &p));
+    // ALL THREE Overview controls. Every one of them must be listed, and missing one is a silent bug — the
+    // button still looks right and still lights on press; it just also does something else.
+    if (s_overview_active && s_overview_actions && !lv_obj_has_flag(s_overview_actions, LV_OBJ_FLAG_HIDDEN) &&
+        ((s_overview_voice_btn && lv_obj_hit_test(s_overview_voice_btn, &p)) ||
+         (s_overview_goal_btn  && lv_obj_hit_test(s_overview_goal_btn,  &p)) ||
+         (s_overview_loop_btn  && lv_obj_hit_test(s_overview_loop_btn,  &p)))) return true;
+    // The agent row is walked rather than listed: its container holds exactly the three buttons
+    // agent_act_btn made and nothing else, so a fourth action added later is covered by having been added.
+    if (s_agent_acts && !lv_obj_has_flag(s_agent_acts, LV_OBJ_FLAG_HIDDEN)) {
+        uint32_t n = lv_obj_get_child_count(s_agent_acts);
+        for (uint32_t i = 0; i < n; i++)
+            if (lv_obj_hit_test(lv_obj_get_child(s_agent_acts, i), &p)) return true;
+    }
+    return false;
 }
 
 // (Re)build the bottom page-indicator dots (Figma "overview"): one per ring tile (overview + agents + Machine +
@@ -4110,7 +4121,7 @@ static void ev_card_free(lv_event_t *e)
     if (full) free(full);
 }
 
-// Open the full-text reader on some event's text. Called by the swipe-up gesture (ui_swipe_vert).
+// Open the full-text reader on some event's text. Called by the tap gesture (ui_tap).
 // What the reader shows for a turn that has a headline and no body.
 //
 // NOT the headline again. The tile is already showing it, unclipped, two centimetres away — repeating it
@@ -5049,21 +5060,6 @@ void ui_tap(void)
 
 // Vertical edge-swipe (from touch.c). dir: +1 = swipe up, -1 = swipe down. Swipe-up on a project opens
 // its detail reader; swipe-down at the top of the reader closes it (else LVGL just scrolls the text).
-void ui_swipe_vert(int dir)
-{
-    if (dir > 0) {                   // swipe up
-        if (!on_project_page()) return;
-        if (s_active_idx < 0 || s_active_idx >= s_tile_count) return;
-        tile_t *p = &s_tiles[s_active_idx];
-        if (p->busy_model) return;   // working → keep the live tile, don't open the stale detail reader
-        if (p->m_preview) open_reader_text(p->m_full && p->m_full[0] ? p->m_full : READER_NO_BODY);
-    } else {                         // swipe down
-        if (lv_screen_active() != scr_reader) return;
-        if (lv_obj_get_scroll_y(scr_reader) > 0) return;   // not at the top → let LVGL scroll instead
-        reader_close(NULL);
-    }
-}
-
 // Show STOP only when the active tile is processing AND we aren't recording voice (mutually
 // exclusive with the mic, which shares the bottom-center spot). Caller holds the display lock.
 static void update_stop_btn(void)
@@ -5180,7 +5176,7 @@ static void voice_start_impl(voice_cmd_t cmd)
     // ⚠️ THE REFERENCE DOES NOT DO THIS, and it is not an oversight worth copying: `ui_lock_active()` is
     // declared and defined over there with **no readers at all**. The gesture layer runs its recognisers in
     // the raw indev callback, BEFORE LVGL hit-tests anything, so the lock overlay never sees the touch that
-    // matters — a double-tap under "Draw Pattern to Unlock" would start recording, upload the clip and
+    // matters — a gesture under "Draw Pattern to Unlock" would start recording, upload the clip and
     // dispatch a turn into somebody's repository, with the lock screen still up the whole time.
     //
     // A lock that stops nothing it was put there to stop is worse than no lock, because it is believed.
@@ -5236,9 +5232,6 @@ static void voice_start_impl(voice_cmd_t cmd)
     // the transcript itself and ask. An empty string would be a project id, one that matches nothing.
     voice_start(route ? NULL : pid, cmd);
 }
-
-void ui_voice_start(void)      { voice_start_impl(VOICE_CMD_NONE); }   // double-tap → normal voice turn
-void ui_voice_start_goal(void) { voice_start_impl(VOICE_CMD_GOAL); }   // long-press 3s → GOAL (see touch.c)
 
 void ui_voice_stop(void)
 {

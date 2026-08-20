@@ -18,7 +18,12 @@ import 'dart:convert';
 /// here, while changing the envelope is a change there, and conflating them
 /// forces a firmware reflash for what is only a new field.
 ///
-/// **4 since 2026-08-19**, when `focus` learned to travel the other way too:
+/// **6 since 2026-08-20**, when `scroll` grew a phase and a release velocity —
+/// without them a stroke could only be a distance, and a flick and a crawl of the
+/// same length moved the list the same way. 5 was earlier the same day, when the
+/// panel became a touchpad: `scroll` reports a finger's movement so the window's
+/// transcript follows it. 4 was the day
+/// before, when `focus` learned to travel the other way too:
 /// the window switching chats moves the carousel. 3 was earlier the same day,
 /// when the panel gained `focus` — the tile the carousel settled on, so the
 /// window could follow a swipe. 2 was the day before,
@@ -28,7 +33,7 @@ import 'dart:convert';
 /// — two numbers, hand-kept, in two languages. Bumping only the firmware's is
 /// exactly what happened first, and the panel then reported protocol 2 to an app
 /// still claiming 1, which is the mismatch this constant exists to catch.
-const int kPanelProtocolVersion = 4;
+const int kPanelProtocolVersion = 6;
 
 /// How long tile changes are gathered before the list is rebuilt.
 ///
@@ -80,6 +85,11 @@ sealed class PanelInbound {
       ),
       'chats.list' => const PanelChatsRequested(),
       'focus' => PanelFocused(chatId: _str(decoded['chatId']) ?? ''),
+      'scroll' => PanelScrolled(
+        dy: _num(decoded['dy']) ?? 0,
+        phase: PanelScrollPhase.of(_str(decoded['phase'])),
+        velocity: _num(decoded['v']) ?? 0,
+      ),
       'turn.send' => PanelTurnRequested(
         chatId: _str(decoded['chatId']) ?? '',
         text: _str(decoded['text']) ?? '',
@@ -112,6 +122,12 @@ sealed class PanelInbound {
   }
 
   static String? _str(Object? v) => v is String ? v : null;
+
+  /// A number that may arrive as either JSON type. cJSON writes a whole number
+  /// as an int, so a stroke that happens to land on a round pixel would parse as
+  /// null through a `double`-only cast — and the panel would stop scrolling for
+  /// one frame in every few, which reads as a stutter rather than a bug.
+  static double? _num(Object? v) => v is num ? v.toDouble() : null;
   static int? _int(Object? v) => v is int ? v : null;
 }
 
@@ -140,6 +156,57 @@ class PanelHello extends PanelInbound {
 /// "Send me the project list."
 class PanelChatsRequested extends PanelInbound {
   const PanelChatsRequested();
+}
+
+/// Where a stroke is in its life: touched down, moving, or lifted.
+///
+/// The list needs the boundaries, not just the movement. A scroll that only ever
+/// hears "moved 8 pixels" can do nothing but move 8 pixels, which is why the
+/// first version of this felt the same whether the hand flicked or crept — the
+/// speed was in the finger and never in the message.
+enum PanelScrollPhase {
+  down,
+  move,
+  up;
+
+  /// Unknown or absent reads as [move] — the middle of a stroke is the only
+  /// phase that is safe to guess, because it neither starts a gesture the list
+  /// is not in nor ends one it is.
+  static PanelScrollPhase of(String? raw) => switch (raw) {
+    'down' => down,
+    'up' => up,
+    _ => move,
+  };
+}
+
+/// A finger moved on the panel's glass, in device pixels.
+///
+/// The panel as a touchpad: it runs no scrollable list of the window's content
+/// and cannot know how tall the transcript is, so it reports the MOVEMENT and
+/// leaves the arithmetic to the side that owns the list. Positive [dy] is a
+/// finger travelling down the glass.
+///
+/// Sent while the finger is still down, several times a second — this is one
+/// stroke arriving in pieces, not one event per gesture.
+class PanelScrolled extends PanelInbound {
+  const PanelScrolled({
+    required this.dy,
+    this.phase = PanelScrollPhase.move,
+    this.velocity = 0,
+  });
+
+  final double dy;
+
+  /// Which end of the stroke this is, or the middle of one.
+  final PanelScrollPhase phase;
+
+  /// Device pixels per second at the moment the finger left the glass, signed
+  /// the same way as [dy]. Zero except on [PanelScrollPhase.up].
+  ///
+  /// This is the whole of "it should follow how fast I swiped": handed to the
+  /// list's own physics it becomes a fling that carries on and slows down, which
+  /// is a thing nobody should hand-roll — the platform already has it, tuned.
+  final double velocity;
 }
 
 /// The carousel settled on a tile — the user swiped to this chat.

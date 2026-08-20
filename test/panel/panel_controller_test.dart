@@ -19,6 +19,7 @@ import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/features/panel/logic/panel_controller.dart';
+import 'package:grid_app/features/panel/logic/panel_scroll.dart';
 import 'package:grid_app/features/projects/logic/selected_project.dart';
 import 'package:grid_app/features/panel/logic/panel_firmware_updater.dart';
 import 'package:grid_app/features/panel/logic/panel_chat_mirror.dart';
@@ -1748,7 +1749,7 @@ void main() {
       harness(transport);
 
       transport.deliver(
-        '{"t":"hello","fw":"0.1.0","proto":4,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","fw":"0.1.0","proto":5,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       await pumpEventQueue();
 
@@ -1761,7 +1762,7 @@ void main() {
       // The Settings page's Voice row reports this rather than choosing it, so it
       // has to be the same reading the transcriber is given.
       expect(welcome['voiceLang'], isNotNull);
-      expect(welcome['proto'], 4);
+      expect(welcome['proto'], 6);
       expect(welcome['app'], '0.9.1');
       expect((welcome['machine']! as Map<String, Object?>)['id'], 'this-mac');
     });
@@ -1778,7 +1779,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      const hello = '{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}';
+      const hello = '{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}';
       transport.deliver(hello);
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
@@ -1822,13 +1823,13 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}');
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       final beforeSwap = transport.replies.length;
 
       // Same cable, different board.
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"BB"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"BB"}');
       await pumpEventQueue();
 
       expect(
@@ -2088,7 +2089,7 @@ void main() {
       final container = harness(transport, grid: _credential());
       await container.read(chatSessionsProvider.notifier).restored;
       transport.deliver(
-        '{"t":"hello","fw":"0.1.0","proto":4,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","fw":"0.1.0","proto":5,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       await pumpEventQueue(times: 40);
       // Restoring already opened one of them, so start somewhere definite:
@@ -2115,6 +2116,71 @@ void main() {
         before,
         reason: 'an echo of what we just sent is not news',
       );
+    });
+
+    test('a finger moving on the glass is published for whatever the window '
+        'has open, in the pieces it arrives in', () async {
+      final transport = _FakeTransport();
+      seed();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+
+      transport.deliver('{"t":"scroll","dy":24}');
+      await pumpEventQueue(times: 20);
+      final first = container.read(panelScrollProvider);
+      expect(first.dy, 24);
+
+      // The SAME distance again is a new stroke, not a repeat to be swallowed —
+      // which is the whole reason the tick carries a sequence number.
+      transport.deliver('{"t":"scroll","dy":24}');
+      await pumpEventQueue(times: 20);
+      expect(container.read(panelScrollProvider).seq, first.seq + 1);
+    });
+
+    test('a whole-number dy arrives as an int on this wire and must still '
+        'read as a distance', () async {
+      // cJSON writes 12 as an int, so a stroke that lands on a round pixel goes
+      // out without a decimal point. Parsed as double-only it would read as
+      // nothing and the panel would drop a frame every few strokes — a stutter,
+      // not an error anybody could see.
+      final transport = _FakeTransport();
+      seed();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+
+      transport.deliver('{"t":"scroll","dy":12}');
+      await pumpEventQueue(times: 20);
+      expect(container.read(panelScrollProvider).dy, 12);
+      // No phase on the wire reads as the middle of a stroke: it is the only
+      // guess that neither opens a gesture the list is not in nor ends one it is.
+      expect(container.read(panelScrollProvider).phase, PanelScrollPhase.move);
+    });
+
+    test('a lift carries the speed the finger left at — the whole of "it should '
+        'follow how fast I swiped"', () async {
+      // Travel alone made a flick and a crawl of the same length move the list
+      // the same way. The speed is measured on the glass because that is the
+      // only place it exists; timing the frames here would measure the cable.
+      final transport = _FakeTransport();
+      seed();
+      final container = harness(transport, grid: _credential());
+      await container.read(chatSessionsProvider.notifier).restored;
+
+      transport.deliver('{"t":"scroll","phase":"down","dy":0}');
+      await pumpEventQueue(times: 20);
+      final down = container.read(panelScrollProvider);
+      expect(down.phase, PanelScrollPhase.down);
+      // A `down` carries nothing and must still be published: it is what stops
+      // a fling still running, so a provider that only forwards travel eats it.
+      expect(down.dy, 0);
+
+      transport.deliver('{"t":"scroll","phase":"up","dy":4,"v":-1800}');
+      await pumpEventQueue(times: 20);
+      final up = container.read(panelScrollProvider);
+      expect(up.phase, PanelScrollPhase.up);
+      expect(up.velocity, -1800);
+      expect(up.dy, 4, reason: 'the last pixels of a stroke ride on the lift');
+      expect(up.seq, down.seq + 1);
     });
 
     test('swiping the carousel to a chat opens that chat in the window — the '
@@ -2341,7 +2407,7 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}');
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2410,7 +2476,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}');
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2530,7 +2596,7 @@ void main() {
         harness(transport);
 
         transport.deliver('{"t":"screen.brightness","level":40}');
-        transport.deliver('{"t":"hello","fw":"0.1.0","proto":4,"mac":"AA"}');
+        transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2877,7 +2943,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":5,"mac":"AA"}');
       await pumpEventQueue();
 
       final offer = transport.replies.firstWhere((r) => r['t'] == 'fw.offer');
@@ -2897,7 +2963,7 @@ void main() {
           firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
         );
 
-        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":4,"mac":"AA"}');
+        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":5,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2923,7 +2989,7 @@ void main() {
       await container.read(chatSessionsProvider.notifier).restored;
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":5,"mac":"AA"}');
       await pumpEventQueue();
 
       expect(transport.replies.any((r) => r['t'] == 'fw.offer'), isFalse);
@@ -2941,7 +3007,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":5,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();
@@ -2970,7 +3036,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":4,"mac":"AA"}');
+      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":5,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();
