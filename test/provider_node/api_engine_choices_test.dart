@@ -30,7 +30,6 @@ ApiEngine _seat(String kind, String label, {required bool found}) => ApiEngine(
 );
 
 final _claude = _seat('claude', 'Claude Code', found: true);
-final _codexCli = _seat('codex-cli', 'Codex CLI', found: true);
 final _missingSeat = _seat('codex-cli', 'Codex CLI', found: false);
 final _openai = _key('openai', 'OpenAI', 'OPENAI_API_KEY');
 final _anthropic = _key('anthropic', 'Anthropic', 'ANTHROPIC_API_KEY');
@@ -80,16 +79,5 @@ void main() {
         expect(apiKeyCardLine([_claude]), isEmpty);
       },
     );
-  });
-
-  group('a seat row speaks for its own CLI', () {
-    test('the title names the one CLI the press will share, so two signed-in '
-        'CLIs read as two offers rather than one row doing one of them', () {
-      final rows = [
-        for (final engine in seatEngines([_claude, _codexCli, _openai]))
-          seatRowTitle(engine.provider),
-      ];
-      expect(rows, ['Share Claude Code', 'Share Codex CLI']);
-    });
   });
 }

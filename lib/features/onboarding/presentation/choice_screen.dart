@@ -14,12 +14,11 @@ import 'widgets/choice_options.dart';
 /// First-run choice: the user's grid has no model to chat with yet, so ask how
 /// it should get one.
 ///
-/// Two rows carry the decision, in the order they cost the user something —
-/// share a coding CLI already signed in here (nothing to fetch or find), or run
-/// a model on this computer (a download). Each is a title, one line, and a badge
-/// naming what it saves you; the detail belongs after the choice, not in front
-/// of it. The key path is folded away underneath, because it's the rarest way in
-/// and the only one that sends the user off to find something first.
+/// One row carries the decision — run a model on this computer (a download): a
+/// title, one line, and a badge naming what it saves you; the detail belongs
+/// after the choice, not in front of it. The key path is folded away underneath,
+/// because it's the rarer way in and the only one that sends the user off to
+/// find something first.
 ///
 /// Every option hides itself when this machine or the installed CLI can't offer
 /// it, and "I'll set this up later" is always there — the screen is a fork, not
@@ -51,10 +50,8 @@ class OnboardingChoiceScreen extends ConsumerWidget {
       // the screen stay this short.
       subtitle: 'Choose where your AI runs. You can change this later.',
       children: [
-        // One row per way in, quickest first. Each hides itself when this
-        // computer or the installed CLI can't offer it — and carries its own
-        // gap, so a hidden option leaves no hole.
-        if (network != null) SeatOption(network: network),
+        // One row per way in. It hides itself when this computer can't offer it
+        // — and carries its own gap, so a hidden option leaves no hole.
         if (ref.watch(supportsBuiltInEngineProvider)) const LocalOption(),
         if (network != null) ...[
           const CloudStartError(),
