@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'chat_loop.dart';
+import 'fenced_block.dart';
 
 /// The fence a self-paced loop's reply ends with to say what happens next.
 ///
@@ -24,19 +25,10 @@ const String kLoopBlockFence = 'grid-loop';
 /// the transcript. [stop] ends the loop — the normal way a finished job stops,
 /// rather than running until the user notices or the seven days run out.
 ///
-/// [start] is the block asking for a loop that does not exist yet, and it is
-/// the one field here the *user* is behind rather than the assistant. The app
-/// reads "lặp lại mỗi 30 phút" out of a sentence deterministically, but nobody
-/// can list every way a person says "keep going until I'm back" — so when the
-/// reading finds nothing, the assistant that just read the message says whether
-/// it was a repeat. It costs no round-trip: that turn was happening anyway.
-typedef LoopPace = ({
-  Duration? next,
-  String? why,
-  bool quiet,
-  bool stop,
-  bool start,
-});
+/// Starting a loop is not one of these. That is [parseAgentAsk]'s `grid-ask`
+/// block, which relays *any* of the app's own commands the user asked for —
+/// this one only ever paces a loop that is already running.
+typedef LoopPace = ({Duration? next, String? why, bool quiet, bool stop});
 
 /// The `grid-loop` block in [reply], or null when it holds none.
 ///
@@ -48,7 +40,7 @@ typedef LoopPace = ({
 /// asking the way it always did. Anything else would let one malformed reply
 /// stop a loop the user is relying on.
 LoopPace? parseLoopPaceBlock(String reply) {
-  final blocks = _fencedBlocks(reply);
+  final blocks = fencedBlocks(reply, kLoopBlockFence);
   for (final raw in blocks.reversed) {
     final decoded = _decode(raw);
     if (decoded == null) continue;
@@ -58,7 +50,6 @@ LoopPace? parseLoopPaceBlock(String reply) {
       why: why.isEmpty ? null : why,
       quiet: decoded['quiet'] == true,
       stop: decoded['stop'] == true,
-      start: decoded['start'] == true,
     );
   }
   return null;
@@ -70,10 +61,8 @@ LoopPace? parseLoopPaceBlock(String reply) {
 /// every iteration of an overnight loop ends with a line of JSON nobody asked
 /// to read. Stripped here rather than hidden by the renderer so the transcript
 /// that gets stored, re-sent as history and exported is the clean one.
-String stripLoopPaceBlock(String text) {
-  if (!text.contains(kLoopBlockFence)) return text;
-  return text.replaceAll(_fence, '').trimRight();
-}
+String stripLoopPaceBlock(String text) =>
+    withoutFencedBlocks(text, kLoopBlockFence);
 
 /// [text] without the line the app added to it, for showing the beat.
 ///
@@ -118,16 +107,6 @@ String loopBeatFooter({required bool selfPaced}) => selfPaced
           'block — `{"quiet": true}` if nothing changed, or '
           '`{"stop": true, "why": "…"}` if there is nothing left to check. '
           'Leave it out to keep going as scheduled.';
-
-/// ```grid-loop … ``` anywhere in the text, innards only.
-final RegExp _fence = RegExp(
-  '^[ \\t]*```[ \\t]*$kLoopBlockFence[ \\t]*\\r?\\n(.*?)^[ \\t]*```[ \\t]*\$',
-  multiLine: true,
-  dotAll: true,
-);
-
-List<String> _fencedBlocks(String reply) =>
-    _fence.allMatches(reply).map((m) => m.group(1) ?? '').toList();
 
 /// The block's JSON object, or null when it holds something else. A bare `{}`
 /// counts: it is a well-formed "carry on as you were".

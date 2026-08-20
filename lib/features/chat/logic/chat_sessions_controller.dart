@@ -36,6 +36,7 @@ import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
 import 'chat_title.dart';
 import 'chat_title_writer.dart';
+import 'commands/agent_ask_block.dart';
 import 'commands/chat_command.dart';
 import 'commands/chat_compaction.dart';
 import 'commands/chat_goal.dart';
@@ -315,8 +316,14 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Settle a finished send — [_ChatSettle].
   void _finish(String id);
 
-  /// Note a reply that set up a repeat nothing is running — [_ChatLoops].
+  /// Act on a reply that talked about a repeat nothing is running, or relayed
+  /// an ask the app's own reading missed — [_ChatLoops].
   void _settleLoopClaim(String id);
+
+  /// Run one of the app's own commands — implemented below, declared here so a
+  /// mixin can reach it: an ask relayed by a reply runs through exactly the
+  /// path the composer uses, rather than a second one that could drift from it.
+  Future<CommandOutcome?> runCommand(ChatCommandCall call, {String model = ''});
 
   /// Whether chat [id] is one the app would carry on by itself as things stand
   /// — [_ChatSettle]. Read by the send that just landed, to keep an
@@ -542,6 +549,7 @@ class ChatSessionsController extends _ChatSessions
   /// `/loop` has to *start* will answer with. It defaults to none because the
   /// callers with no composer to read — the status line's Stop buttons — only
   /// ever run commands that act on a chat already open.
+  @override
   Future<CommandOutcome?> runCommand(
     ChatCommandCall call, {
     String model = '',
