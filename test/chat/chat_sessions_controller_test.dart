@@ -30,8 +30,10 @@ import 'package:grid_app/features/chat/logic/chat_scope.dart';
 import 'package:grid_app/features/playground/logic/playground_models.dart';
 import 'package:grid_app/infrastructure/api/chat_transport.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
+import 'package:grid_app/features/chat/logic/turn_model_share.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
+import 'package:grid_app/infrastructure/api/relay_api_client.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
@@ -303,6 +305,58 @@ class _FlippableNetwork extends SelectedNetwork {
   }
 }
 
+/// Stands in for the relay's `/usage` endpoint, so a turn landing never
+/// reaches the real network — every other test in this file leaves this on
+/// its default (no models, no watermark), which resolves instantly and
+/// changes nothing about the turn it lands.
+class _FakeUsageRelay implements RelayApiClient {
+  _FakeUsageRelay({this.response = const (models: <ModelShare>[], last: null)});
+
+  /// Mutable, so a test can change what the *next* call returns — e.g. a
+  /// second turn reporting a new watermark after the first already landed.
+  ConversationUsage response;
+
+  /// Throw instead of answering, for the turn-still-lands-on-failure case.
+  Object? failWith;
+
+  /// Every `conversation`/`from` pair this was asked for, in call order.
+  final calls = <({String? conversation, String? from})>[];
+
+  @override
+  Future<ConversationUsage> usage({
+    required String baseUrl,
+    required String apiKey,
+    DateTime? since,
+    DateTime? until,
+    String? conversation,
+    String? from,
+    String? to,
+  }) async {
+    calls.add((conversation: conversation, from: from));
+    final fail = failWith;
+    if (fail != null) throw fail;
+    return response;
+  }
+
+  @override
+  Future<List<String>> models({
+    required String baseUrl,
+    required String apiKey,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<GridOverview> overview({
+    required String baseUrl,
+    required String apiKey,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<MemberUsageReport?> memberUsage({
+    required String baseUrl,
+    required String apiKey,
+  }) => throw UnimplementedError();
+}
+
 /// The agent's own name for a session, handed back the moment it's asked for —
 /// unless [held] is set, in which case it waits for [release].
 ///
@@ -367,6 +421,7 @@ OverviewNode _node(String name, {List<String> models = const []}) =>
   _FakeSender agent,
   _FakeAgentTitle agentTitle,
   _FakeTitleWriter titleWriter,
+  _FakeUsageRelay relay,
 })
 _harness(
   Directory dir, {
@@ -382,15 +437,21 @@ _harness(
   Duration? loopContinuousGap,
   Duration? loopResumeSettle,
   SelectedNetwork Function()? selectedNetwork,
+  _FakeUsageRelay? relay,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
   final agent = _FakeSender(updates);
   final agentTitle = _FakeAgentTitle(agentName, held: holdAgentName);
   final titleWriter = _FakeTitleWriter(modelName);
+  final usageRelay = relay ?? _FakeUsageRelay();
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
+      // Every turn's landing now reads `/usage` (see
+      // [_attachOrchestrationUsage]) — keep it off the real network like
+      // everything else here, unless a test hands in its own.
+      relayApiClientProvider.overrideWithValue(usageRelay),
       // Shorten the stall window so a test can prove a hung loop turn is stopped
       // — and a working one is left alone — without waiting the full hour.
       if (loopTurnStall != null)
@@ -468,6 +529,7 @@ _harness(
     agent: agent,
     agentTitle: agentTitle,
     titleWriter: titleWriter,
+    relay: usageRelay,
   );
 }
 
@@ -717,6 +779,145 @@ void main() {
           .last
           .node,
       isNull,
+    );
+  });
+
+  group('turn settle reads the grid\'s usage log', () {
+    test('a landed turn reads which models actually served it and saves the '
+        'grid\'s new watermark, so the next turn\'s read never re-counts what '
+        'this one already saw', () async {
+      final relay = _FakeUsageRelay(
+        response: (
+          models: const [ModelShare(model: 'qwen', requests: 2)],
+          last: 'wm-2',
+        ),
+      );
+      final h = _harness(
+        tmp,
+        relay: relay,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+      final chat = h.container.read(chatSessionsProvider.notifier);
+
+      await chat.send(network: _credential(), model: 'qwen', message: 'hi');
+
+      final conv = h.container.read(chatSessionsProvider).conversations.single;
+      expect(conv.lastRequestWatermark, 'wm-2');
+      expect(conv.messages.last.orchestrationModels, [
+        const ModelShare(model: 'qwen', requests: 2),
+      ]);
+      // Filtered to the conversation-scoped reads: the live caption's own
+      // time-window poll (`turnModelUsageProvider`) hits this same fake
+      // relay too, with no `conversation` on its call.
+      final byConversation = relay.calls
+          .where((c) => c.conversation != null)
+          .toList();
+      expect(byConversation.single.conversation, conv.id);
+      // The conversation's first tagged turn has no watermark yet.
+      expect(byConversation.single.from, isNull);
+
+      // Persisted, not only held in memory.
+      final reloaded = await ChatStore(directory: tmp).loadAll();
+      expect(reloaded.single.lastRequestWatermark, 'wm-2');
+      expect(reloaded.single.messages.last.orchestrationModels, [
+        const ModelShare(model: 'qwen', requests: 2),
+      ]);
+
+      // The second turn passes the watermark the first one just saved
+      // back as `from`, so the grid never re-counts the same requests.
+      relay.response = (
+        models: const [ModelShare(model: 'qwen', requests: 5)],
+        last: 'wm-3',
+      );
+      await chat.send(network: _credential(), model: 'qwen', message: 'hi2');
+      expect(
+        relay.calls.where((c) => c.conversation != null).last.from,
+        'wm-2',
+      );
+      expect(
+        h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single
+            .lastRequestWatermark,
+        'wm-3',
+      );
+    });
+
+    test('a usage read that fails never blocks the turn from landing — it is '
+        'enrichment, not a requirement', () async {
+      final relay = _FakeUsageRelay()
+        ..failWith = const RelayUnavailable(statusCode: 404);
+      final h = _harness(
+        tmp,
+        relay: relay,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.sending, isFalse);
+      expect(state.error, isNull);
+      final conv = state.conversations.single;
+      // The turn still landed, text and all — the failed read cost only
+      // the caption.
+      expect(conv.messages.last.text, 'hi back');
+      expect(conv.messages.last.orchestrationModels, isNull);
+      expect(conv.lastRequestWatermark, isNull);
+
+      final reloaded = await ChatStore(directory: tmp).loadAll();
+      expect(reloaded.single.messages.last.text, 'hi back');
+    });
+
+    test(
+      'a failed turn\'s kept partial reply is read for usage too, and still '
+      'lands with the error showing even when that read also fails',
+      () async {
+        final relay = _FakeUsageRelay()
+          ..failWith = const RelayUnavailable(statusCode: 500);
+        final h = _harness(
+          tmp,
+          relay: relay,
+          updates: [
+            const ChatSendStreaming("Here's my plan"),
+            ChatSendFailure(
+              'The agent planned the work but stopped before finishing it.',
+              partial: const ChatMessage(
+                role: ChatRole.assistant,
+                text: "Here's my plan",
+              ),
+            ),
+          ],
+        );
+
+        await h.container
+            .read(chatSessionsProvider.notifier)
+            .send(
+              network: _credential(),
+              model: 'qwen',
+              message: 'build a game',
+            );
+
+        final state = h.container.read(chatSessionsProvider);
+        expect(
+          state.error,
+          'The agent planned the work but stopped before finishing it.',
+        );
+        final conv = state.conversations.single;
+        expect(conv.messages.last.text, "Here's my plan");
+        expect(conv.messages.last.orchestrationModels, isNull);
+      },
     );
   });
 

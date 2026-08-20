@@ -517,7 +517,9 @@ mixin _ChatSend on _ChatSessions {
 
     String? agentSessionId;
     _subs[id] = updates.listen(
-      (update) {
+      // Async because landing a turn (below) reads the grid's usage log
+      // before committing — see [_attachOrchestrationUsage].
+      (update) async {
         // Any update is a sign of life — a streamed chunk, a status, a session
         // id. The loop's stall watchdog reads this: a turn still emitting is
         // working, however long it runs, and only silence is a hang.
@@ -554,12 +556,23 @@ mixin _ChatSend on _ChatSessions {
               );
             }
           case ChatSendSuccess(:final reply, :final outOfSteps):
-            final messages = [...current.messages, stamp(reply)];
+            final landed = await _attachOrchestrationUsage(
+              network,
+              current,
+              stamp(reply),
+            );
+            final messages = [...current.messages, landed.message];
             final answered = current.copyWith(
               updatedAt: DateTime.now(),
               // Stamp the reply with who and what answered, so the transcript
               // still says so even after switching agent or model mid-chat.
               messages: messages,
+              // The grid's cursor into this chat's requests, moved past
+              // whatever this turn's usage read just saw — see
+              // [_attachOrchestrationUsage]. Left alone (falls back to what
+              // was already there) whenever that read never happened or came
+              // back with nothing new.
+              lastRequestWatermark: landed.watermark,
               // Where this chat can pick up from next time. Written on every
               // successful agent turn — the session id and how much of the
               // transcript it holds both move — so the answer survives a quit.
@@ -632,12 +645,18 @@ mixin _ChatSend on _ChatSessions {
                   .withPhase(id, const SendIdle())
                   .withError(id, error);
             } else {
+              final landed = await _attachOrchestrationUsage(
+                network,
+                current,
+                stamp(kept),
+              );
               _commit(
                 current.copyWith(
                   updatedAt: DateTime.now(),
                   // The part-answer is stamped too: a turn that died after four
                   // minutes and one that died instantly are different problems.
-                  messages: [...current.messages, stamp(kept)],
+                  messages: [...current.messages, landed.message],
+                  lastRequestWatermark: landed.watermark,
                 ),
                 phase: const SendIdle(),
               );
@@ -912,6 +931,60 @@ mixin _ChatSend on _ChatSessions {
       ),
       phase: const SendIdle(),
     );
+  }
+
+  /// Read which models actually served [conversation]'s just-landed turn
+  /// from the grid's per-conversation usage log, and the grid's next
+  /// watermark with it — folded onto [message] and returned rather than
+  /// written in place, so the caller can land both on the message and the
+  /// conversation together, in the one [_commit] that lands the turn itself.
+  ///
+  /// The turn's own subscription is paused for the wait and resumed after
+  /// (`finally`, so a failure below still lets the stream close). Left
+  /// running, the subscription's `onDone` can complete this turn's entry in
+  /// [_dones] — and let a caller awaiting [send] see the reply "land" —
+  /// before the read below finishes, since nothing else in the stream holds
+  /// it back once the turn's last update has already gone through. Resuming
+  /// a subscription that was cancelled meanwhile (the user hit Stop while
+  /// this was in flight) is a no-op, not an error.
+  ///
+  /// Never throws. A grid whose master predates `/relay/v1/usage`, one
+  /// that's briefly unreachable, or any other failure here costs only this
+  /// caption — [message] comes back unchanged and the watermark comes back
+  /// null (so the conversation's own is kept), never the turn itself; the
+  /// failure is logged, not surfaced.
+  Future<({ChatMessage message, String? watermark})> _attachOrchestrationUsage(
+    NetworkCredential network,
+    Conversation conversation,
+    ChatMessage message,
+  ) async {
+    final sub = _subs[conversation.id];
+    sub?.pause();
+    try {
+      final usage = await fetchTurnUsage(
+        client: ref.read(relayApiClientProvider),
+        baseUrl: network.relayBaseUrl,
+        apiKey: network.relayApiKey,
+        conversationId: conversation.id,
+        from: conversation.lastRequestWatermark,
+      );
+      return (
+        message: message.copyWith(orchestrationModels: usage.models),
+        watermark: usage.last,
+      );
+    } catch (error) {
+      ref
+          .read(appLogProvider)
+          .warn(
+            'chat',
+            "couldn't read which models answered "
+                "${conversation.id}'s turn",
+            error: error,
+          );
+      return (message: message, watermark: null);
+    } finally {
+      sub?.resume();
+    }
   }
 
   /// Take the final reading of which models served [chat]'s turn and write it

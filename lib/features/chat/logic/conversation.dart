@@ -430,6 +430,13 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   // — the same reason `node` is written down rather than re-derived.
   if (message.modelShares.isNotEmpty)
     'model_shares': [for (final s in message.modelShares) s.toJson()],
+  // Same reason as model_shares: persisted so a reopened chat still says
+  // exactly which models the grid's own usage log credited with this turn,
+  // not only the live poll's guess.
+  if (message.orchestrationModels != null)
+    'orchestration_models': [
+      for (final s in message.orchestrationModels!) s.toJson(),
+    ],
   // Milliseconds, not a formatted string: the transcript re-renders it in
   // whatever shape the footer wants today, and a saved "8.4s" couldn't.
   if (message.took != null) 'took_ms': message.took!.inMilliseconds,
@@ -490,6 +497,14 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
               ?ModelShare.fromJson(row),
           ]
         : const [],
+    // Absent — every chat saved before this existed, or a read that never
+    // completed — reads as null, never as an empty reading.
+    orchestrationModels: json['orchestration_models'] is List
+        ? [
+            for (final row in json['orchestration_models'] as List)
+              ?ModelShare.fromJson(row),
+          ]
+        : null,
     took: json['took_ms'] is num
         ? Duration(milliseconds: (json['took_ms'] as num).toInt())
         : null,

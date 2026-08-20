@@ -6,6 +6,7 @@ import 'turn_model_usage.dart';
 import '../../../core/text_preview.dart';
 import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
+import '../../../infrastructure/api/relay_api_client.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/logging/app_log.dart';
@@ -48,6 +49,7 @@ import '../../scheduled/logic/task_runner.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
+import 'conversation_usage.dart';
 import 'interrupted_turn.dart';
 import 'loop_claim.dart';
 
