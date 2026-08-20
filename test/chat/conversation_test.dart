@@ -270,7 +270,9 @@ void main() {
   });
 
   group('deriveConversationTitle', () {
-    test('uses the first user line, clipped', () {
+    test('keeps the whole first user line — the rename field can only offer '
+        'back what was written down, and every place it is drawn clips it at '
+        'the width it actually has', () {
       final title = deriveConversationTitle([
         const ChatMessage(
           role: ChatRole.user,
@@ -279,9 +281,10 @@ void main() {
               'please',
         ),
       ]);
-      expect(title.length, lessThanOrEqualTo(41)); // 40 chars + ellipsis
-      expect(title, endsWith('…'));
-      expect(title, startsWith('Explain quantum tunnelling'));
+      expect(
+        title,
+        'Explain quantum tunnelling to me like I am five years old please',
+      );
     });
 
     test('skips assistant turns and blank lines', () {
@@ -339,18 +342,18 @@ void main() {
       );
     });
 
-    test(
-      'cuts at a word boundary — a name cut mid-word reads as another word',
-      () {
-        final title = deriveConversationTitle([
-          const ChatMessage(
-            role: ChatRole.user,
-            text: 'Rewrite the onboarding checklist for the desktop app',
-          ),
-        ]);
-        expect(title, 'Rewrite the onboarding checklist for…');
-      },
-    );
+    test('is not cut on the way in, so renaming one offers the sentence back '
+        'rather than its first forty characters', () {
+      final title = deriveConversationTitle([
+        const ChatMessage(
+          role: ChatRole.user,
+          text: 'Rewrite the onboarding checklist for the desktop app',
+        ),
+      ]);
+
+      expect(title, 'Rewrite the onboarding checklist for the desktop app');
+      expect(editableChatTitle(title), title);
+    });
   });
 
   group('tidyChatTitle', () {
@@ -362,13 +365,23 @@ void main() {
       expect(tidyChatTitle('   '), '');
     });
 
-    test('clips a model that answered with a sentence rather than a name', () {
+    test('keeps a model that answered with a sentence whole — a long name is '
+        'the drawing\'s problem, not the store\'s', () {
       expect(
         tidyChatTitle(
           'This conversation is about rewriting the onboarding checklist',
         ),
-        'This conversation is about rewriting…',
+        'This conversation is about rewriting the onboarding checklist',
       );
+    });
+
+    test('a name that has to fit a fixed budget is still cut to one, at a '
+        'word boundary — that is what clipChatTitle is for now', () {
+      expect(
+        clipChatTitle('Rewrite the onboarding checklist for the desktop app'),
+        'Rewrite the onboarding checklist for…',
+      );
+      expect(clipChatTitle('Ford Territory'), 'Ford Territory');
     });
   });
 
