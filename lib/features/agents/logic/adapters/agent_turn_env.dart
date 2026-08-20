@@ -1,3 +1,8 @@
+import 'dart:convert';
+
+import 'package:grid_app/features/network/logic/app_guide_snippets.dart'
+    show kCodexAppProviderId;
+
 /// The chat a turn is answering, handed to the agent as an environment
 /// variable.
 ///
@@ -21,3 +26,33 @@ Map<String, String> gridTurnEnv(String? conversationId) =>
     conversationId == null || conversationId.isEmpty
     ? const {}
     : {kGridChatIdEnv: conversationId};
+
+/// `ANTHROPIC_CUSTOM_HEADERS` for a turn — a real Claude Code CLI env var
+/// (verified against the installed binary) that lets every relay call the
+/// process makes for its lifetime carry this chat's `X-Grid-Conversation`
+/// header, so `/usage?conversation=` can attribute it exactly.
+///
+/// Empty for the same reason [gridTurnEnv] is: a chat with no id yet has
+/// nothing to attribute a call to.
+Map<String, String> claudeConversationHeaderEnv(String? conversationId) =>
+    conversationId == null || conversationId.isEmpty
+    ? const {}
+    : {
+        'ANTHROPIC_CUSTOM_HEADERS': jsonEncode({
+          'X-Grid-Conversation': conversationId,
+        }),
+      };
+
+/// Codex's equivalent of [claudeConversationHeaderEnv] — a `-c` TOML
+/// override on `model_providers.<id>.http_headers`, merged into the
+/// OpenAI-SDK client's default headers the same way Claude Code's env var
+/// does. Uses [kCodexAppProviderId], the same provider id
+/// `codexGridOverrides` configures — a header on a different provider table
+/// would never reach a relay call Codex actually makes.
+List<String> codexConversationHeaderOverrides(String? conversationId) =>
+    conversationId == null || conversationId.isEmpty
+    ? const []
+    : [
+        'model_providers.$kCodexAppProviderId.http_headers'
+            '.X-Grid-Conversation="$conversationId"',
+      ];
