@@ -2,47 +2,12 @@
 /// roster stay dumb and these stay readable on their own.
 ///
 /// A roster is a column of addresses that mostly share one domain, and the
-/// repeated half is the half the eye has to skip past on every line. These turn
-/// an address into the two things a row actually shows: a letter for its circle,
-/// and the name in front of the `@`.
+/// repeated half is the half the eye has to skip past on every line. These cut
+/// an address into the pieces a row draws differently: a letter for its circle,
+/// the name in front of the `@`, and the domain behind it — printed too, but in
+/// a lighter ink, so the whole address is still there to be read and copied
+/// while the eye lands on the part that differs.
 library;
-
-/// Each address as the handle a roster shows — `dev@autonomous.ai` → `@dev` —
-/// so a column of members reads as people rather than as the same domain printed
-/// twelve times.
-///
-/// **The `@` moves to the front rather than being dropped.** A bare `dev` reads
-/// as a word; `@dev` reads as a person, and it keeps the row honest about what
-/// was cut — a name with no marker would look like the whole of what the roster
-/// stores.
-///
-/// **Only where the short form still names one person.** Two members can share
-/// a local part across domains — `abc@gmail.com` beside `abc@autonomous.ai` —
-/// and shortening both would put two identical rows in a list whose whole job is
-/// saying who is on the grid. A clashing address is printed in full, `@`-less
-/// and unmistakable; the ones around it still become handles, the way
-/// `shortenNodeNames` trims per group rather than all-or-nothing.
-///
-/// Compared case-insensitively: the control plane stores what the user typed, so
-/// the same person can arrive as `Dev@` here and `dev@` there, and a clash that
-/// differs only in case is still a clash to a reader.
-List<String> memberHandles(List<String> emails) {
-  final counts = <String, int>{};
-  for (final email in emails) {
-    final key = memberLocalPart(email).toLowerCase();
-    counts[key] = (counts[key] ?? 0) + 1;
-  }
-  return [
-    for (final email in emails)
-      if (memberLocalPart(email) case final local
-          when local.isNotEmpty &&
-              local != email.trim() &&
-              (counts[local.toLowerCase()] ?? 0) == 1)
-        '@$local'
-      else
-        email.trim(),
-  ];
-}
 
 /// The letter for a member's circle: the first character of the name in front
 /// of the `@`, upper-cased.
@@ -64,6 +29,22 @@ String memberInitial(String email) {
     return char.toUpperCase();
   }
   return '?';
+}
+
+/// Everything from the first `@` on — `dev@autonomous.ai` → `@autonomous.ai`
+/// — or the empty string when there is no name in front of it to be the other
+/// half of.
+///
+/// Exactly complementary to [memberLocalPart]: the two always concatenate back
+/// to the trimmed address, which is what lets a roster print the whole thing
+/// while drawing the half that differs in a stronger ink. An address the
+/// control plane stored without an `@`, or with nothing before it, is all local
+/// part and no domain — so the row prints it whole and this adds nothing,
+/// rather than the two halves quietly repeating each other.
+String memberDomainPart(String email) {
+  final trimmed = email.trim();
+  final at = trimmed.indexOf('@');
+  return at <= 0 ? '' : trimmed.substring(at);
 }
 
 /// Everything in front of the first `@`, trimmed — or the whole string when
@@ -97,10 +78,9 @@ String memberLocalPart(String email) {
 /// worse than no colour at all. FNV-1a over the address's code units — small,
 /// well-spread, and pinned by tests.
 ///
-/// Lower-cased and trimmed first, for the reason [memberHandles] compares that
-/// way: the control plane stores what the user typed, so the same person can
-/// arrive as `Dev@` in one list and `dev@` in another, and two colours for one
-/// person defeats the point.
+/// Lower-cased and trimmed first: the control plane stores what the user typed,
+/// so the same person can arrive as `Dev@` in one list and `dev@` in another,
+/// and two colours for one person defeats the point.
 int memberAvatarSlot(String email, int slots) {
   assert(slots > 0, 'a palette with no colours cannot colour anything');
   var hash = 0x811C9DC5;
@@ -131,9 +111,9 @@ int memberAvatarSlot(String email, int slots) {
 /// across a grid of two hundred people", which eight colours cannot honour and
 /// the eye does not ask for.
 ///
-/// Whole-list rather than per-address for the same reason [memberHandles] is:
-/// whether a mark still tells one person from another is a fact about the list,
-/// not about the person. The cost is that a member's colour can move when
+/// Whole-list rather than per-address, because whether a mark still tells one
+/// person from another is a fact about the list, not about the person. The cost
+/// is that a member's colour can move when
 /// somebody above them in the list does — worth it, because a column where two
 /// adjacent circles match is the thing colour was added to prevent.
 List<int> memberAvatarSlots(List<String> emails, int slots) {

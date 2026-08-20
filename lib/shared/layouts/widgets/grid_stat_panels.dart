@@ -198,19 +198,13 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
               byEmail,
               emailOf: (m) => m.email,
             );
-            // The names, not the addresses: a work grid is a column of the same
-            // domain repeated, and the half that differs is the half in front
-            // of the `@`. Computed for the list rather than in the row, because
-            // whether a name still points at one person is a fact about the
-            // whole roster — see `memberHandles`.
-            final emails = [for (final m in rows) m.email];
-            final labels = memberHandles(emails);
-            // Alongside the handles, and for the same reason: whether a mark
-            // still tells two rows apart is a fact about the list.
-            final slots = memberAvatarSlots(
-              emails,
-              AppPalette.avatarPalette.length,
-            );
+            // Whether a mark still tells two rows apart is a fact about the
+            // list, not about the person — so the colours are dealt out here,
+            // over the whole roster, rather than inside a row that cannot see
+            // the ones above it.
+            final slots = memberAvatarSlots([
+              for (final m in rows) m.email,
+            ], AppPalette.avatarPalette.length);
             final hovered = memberUsageFor(byEmail, _hovered ?? '');
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -241,7 +235,6 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
                   itemBuilder: (context, i) => _MemberRow(
                     email: rows[i].email,
                     slot: slots[i],
-                    label: labels[i],
                     isOwner: rows[i].isOwner,
                     usage: memberUsageFor(byEmail, rows[i].email),
                     usageLoading: usageLoading,
@@ -292,13 +285,16 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
   }
 }
 
-/// One member: an accent tile with their initial, their handle, their 24h input
-/// figure, and the full split on hover.
+/// One member: a coloured circle with their initial, their address, their 24h
+/// input figure, and the full split on hover.
 ///
-/// **The handle rather than the whole address.** On a work grid every row ended
-/// in the same `@autonomous.ai`, so the column spent a third of its width
-/// printing the one thing every line agreed on, and the names it was looked up
-/// for ellipsized.
+/// **The whole address, weighted.** The column used to print `@dev` and stop —
+/// short, but it withheld the one string a person copies, searches for and
+/// checks a spelling of, and the leading `@` made every row start with the same
+/// character. Now the row prints `dev@autonomous.ai`: the name in the row's own
+/// ink, the domain behind it in the faint one. The width the shortening was
+/// protecting is still protected, because the ellipsis now falls on the domain
+/// — the half of the line every row agrees on.
 ///
 /// Input leads because reading is what a grid is asked to do — output follows
 /// from it, and requests count turns rather than work. The other three are a
@@ -308,7 +304,6 @@ class _MemberRow extends StatelessWidget {
   const _MemberRow({
     required this.email,
     required this.slot,
-    required this.label,
     required this.isOwner,
     required this.usage,
     required this.usageLoading,
@@ -323,11 +318,6 @@ class _MemberRow extends StatelessWidget {
   /// Which colour this row's circle takes — decided for the roster as a whole
   /// by `memberAvatarSlots`, not here, so no two visible rows match.
   final int slot;
-
-  /// What the row prints: the handle (`@dev`), or the whole address where that
-  /// handle would no longer point at one person. Decided for the list
-  /// as a whole by `memberHandles`, not here.
-  final String label;
 
   final bool isOwner;
 
@@ -355,7 +345,10 @@ class _MemberRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final row = _PanelRow(
-      label: label,
+      // The whole address, cut in two so the name leads: `dev` in the row's own
+      // ink, `@autonomous.ai` behind it in the faint one.
+      label: memberLocalPart(email),
+      labelSuffix: memberDomainPart(email),
       leading: MemberAvatar(email: email, slot: slot, size: 22, fontSize: 11.5),
       strong: true,
       badge: isOwner ? 'owner' : null,
@@ -544,7 +537,7 @@ class _MemberSkeletonRow extends StatelessWidget {
           SizedBox(width: 9),
           // Not full width: a column of bars all reaching the figure would read
           // as a grey slab rather than as a list of names of differing length.
-          Expanded(child: SkeletonLine(widthFactor: 0.55, height: 9)),
+          Expanded(child: SkeletonLine(widthFactor: 0.72, height: 9)),
           SizedBox(width: 9),
           _FigureSkeleton(),
         ],
@@ -1242,6 +1235,7 @@ class _PanelBody extends StatelessWidget {
 class _PanelRow extends StatelessWidget {
   const _PanelRow({
     required this.label,
+    this.labelSuffix,
     this.leading,
     this.trailing,
     this.badge,
@@ -1249,6 +1243,16 @@ class _PanelRow extends StatelessWidget {
   });
 
   final String label;
+
+  /// Carried straight on from [label], in the faint ink — a member's row prints
+  /// `dev` and then `@autonomous.ai`, which reads as one address with the half
+  /// that differs in front.
+  ///
+  /// One text span rather than two widgets, so the ellipsis falls at the end of
+  /// the pair: a row too narrow for the whole address loses the tail of the
+  /// domain, which every row on a work grid repeats, instead of the name, which
+  /// is the only thing the row is read for.
+  final String? labelSuffix;
 
   /// A mark in front of the label — the members list's initial tile. Null on
   /// every other panel: a node's row is already four lines and a model id is a
@@ -1289,8 +1293,24 @@ class _PanelRow extends StatelessWidget {
         children: [
           if (leading case final mark?) ...[mark, const SizedBox(width: 9)],
           Expanded(
-            child: Text(
-              label,
+            child: Text.rich(
+              TextSpan(
+                text: label,
+                children: [
+                  if (labelSuffix case final suffix?)
+                    TextSpan(
+                      text: suffix,
+                      // Regular weight as well as the faint ink: the domain is
+                      // the part every row agrees on, and repeating the label's
+                      // medium down the column would make the thing to skip as
+                      // heavy as the thing to read.
+                      style: TextStyle(
+                        fontWeight: FontWeight.w400,
+                        color: AppPalette.textFaint,
+                      ),
+                    ),
+                ],
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
