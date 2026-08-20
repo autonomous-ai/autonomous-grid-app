@@ -57,11 +57,17 @@ abstract interface class ChatTransport {
   /// vision turn carries attached images — hence the `dynamic` value.
   ///
   /// Never throws: every failure arrives as a terminal [ChatFailed].
+  ///
+  /// [conversationId], when non-null and non-empty, rides as the
+  /// `X-Grid-Conversation` header — the relay's hook for attributing which
+  /// model(s) answered a given conversation turn. Null for callers with no
+  /// conversation of their own (a one-off skill generation, the Playground).
   Stream<ChatStreamEvent> stream({
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   });
 }
 
@@ -109,6 +115,7 @@ class HttpChatTransport implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {
@@ -117,6 +124,9 @@ class HttpChatTransport implements ChatTransport {
       request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
       if (apiKey.isNotEmpty) {
         request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+      }
+      if (conversationId != null && conversationId.isNotEmpty) {
+        request.headers.set('X-Grid-Conversation', conversationId);
       }
       request.add(
         utf8.encode(

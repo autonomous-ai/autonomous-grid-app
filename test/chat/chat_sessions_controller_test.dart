@@ -4075,6 +4075,7 @@ class _FakeClassifier implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     calls++;
     final gate = _gate;

@@ -55,6 +55,7 @@ class _FakeClassifier implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     calls++;
     lastEndpoint = endpoint;

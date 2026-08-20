@@ -22,6 +22,7 @@ class _FakeTransport implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     this.endpoint = endpoint;
     this.apiKey = apiKey;

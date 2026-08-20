@@ -93,6 +93,7 @@ class _ScriptedTransport implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     for (final event in events) {
       yield event;

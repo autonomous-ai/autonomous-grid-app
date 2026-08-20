@@ -258,6 +258,7 @@ class DefaultChatSender implements ChatSender {
         network: network,
         model: model,
         history: history,
+        conversationId: conversationId,
       );
     }
 
@@ -280,6 +281,7 @@ class DefaultChatSender implements ChatSender {
           network: network,
           model: model,
           history: history,
+          conversationId: conversationId,
         );
       case PlaygroundModality.image:
         final edit = attachments.isNotEmpty;
@@ -315,6 +317,7 @@ class DefaultChatSender implements ChatSender {
     required NetworkCredential network,
     required String model,
     required List<ChatMessage> history,
+    String? conversationId,
   }) async* {
     final messages = _messagesFor(history);
     final log = _ref.read(commandLogProvider.notifier);
@@ -337,6 +340,7 @@ class DefaultChatSender implements ChatSender {
               apiKey: network.relayApiKey,
               model: model,
               messages: messages,
+              conversationId: conversationId,
             )) {
       switch (event) {
         case ChatDelta(:final text):
