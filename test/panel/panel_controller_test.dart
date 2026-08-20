@@ -151,6 +151,7 @@ class _SilentTransport implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) => Stream.value(
     const ChatFailed(ChatTransportError('nothing is serving here')),
   );
@@ -186,6 +187,7 @@ class _OneShotModel implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) {
     asked = messages;
     return Stream.fromIterable([ChatDelta(_reply), const ChatDone()]);

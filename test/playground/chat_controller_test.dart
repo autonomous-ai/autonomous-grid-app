@@ -49,6 +49,7 @@ class _FakeChatTransport implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     this.endpoint = endpoint;
     this.messages = messages;
@@ -73,6 +74,7 @@ class _DeltaTransport implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     for (final delta in deltas) {
       yield ChatDelta(delta);
