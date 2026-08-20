@@ -20,12 +20,31 @@ void main() {
       expect(spoken?.certain, isTrue);
     });
 
-    test('with no gap named is offered rather than run — a self-paced loop is '
-        'a bigger thing to start on a guess than the one they said', () {
+    test('described rather than named, with no gap, is offered — "lặp lại" is '
+        'ordinary Vietnamese and carries no claim about this app', () {
       final spoken = readSpokenCommand('lặp lại việc kiểm tra deploy');
 
       expect(spoken?.call.command, ChatCommand.loop);
       expect(spoken?.certain, isFalse);
+    });
+
+    test('named with no gap runs anyway: a loop with no number is the '
+        'self-paced one, not a reading with something missing', () {
+      final spoken = readSpokenCommand(
+        'làm loop cho task sau: research nguồn truyện mới',
+      );
+
+      expect(spoken?.call.command, ChatCommand.loop);
+      expect(spoken?.call.argument, 'cho task sau: research nguồn truyện mới');
+      expect(spoken?.certain, isTrue);
+    });
+
+    test('the same in English, so neither language waits on a keystroke the '
+        'other one skips', () {
+      expect(
+        readSpokenCommand('start a loop watching the deploy')?.certain,
+        isTrue,
+      );
     });
 
     test('names the loop as a thing to make, which is how it is asked for '

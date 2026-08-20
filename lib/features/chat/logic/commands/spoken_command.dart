@@ -5,8 +5,8 @@ import 'word_edge.dart';
 ///
 /// [certain] separates "this sentence *is* the instruction" from "this sentence
 /// is shaped like one but is missing what it needs": certain when the ask opens
-/// the sentence and carries its gap or its hour, so it can simply be run.
-/// Anything less is offered, never run.
+/// the sentence and nothing about it has to be guessed, so it can simply be
+/// run. Anything less is offered, never run.
 typedef SpokenCommand = ({ChatCommandCall call, bool certain});
 
 /// The command [text] is asking for, or null when it is an ordinary message.
@@ -107,19 +107,31 @@ final RegExp _clearGoal = RegExp(
 
 /// "lặp lại mỗi 30 phút kiểm tra deploy" / "run a loop every hour checking CI".
 ///
-/// The gap is what makes it certain, and **where** the gap sits is what decides
-/// whether the rest can be trusted as the task. At the front or at the back it
-/// lifts out cleanly; buried mid-sentence, cutting it out leaves a garbled
-/// prompt ("the build every and tell me"), so that reading is offered for the
-/// user to fix rather than started behind their back.
+/// **Where** the gap sits decides whether the rest can be trusted as the task.
+/// At the front or at the back it lifts out cleanly; buried mid-sentence,
+/// cutting it out leaves a garbled prompt ("the build every and tell me"), so
+/// that reading is offered for the user to fix rather than started behind their
+/// back.
+///
+/// A sentence with **no** gap in it is not missing anything: `/loop <task>` with
+/// no number is the app's self-paced loop, where the assistant picks the gap
+/// after each turn. So what is left to be sure of is the reading itself, and
+/// that is what [_loopNamedTriggers] settles — someone who typed the word
+/// "loop" is not talking about looping, they are asking for one. "lặp lại …"
+/// is the ordinary Vietnamese for "again", says nothing about this app, and
+/// keeps the extra keystroke.
 SpokenCommand? _readLoop(String line, String lower) {
-  final trigger = _opening(lower, _loopTriggers);
+  final named = _opening(lower, _loopNamedTriggers);
+  final trigger = named ?? _opening(lower, _loopSaidTriggers);
   if (trigger == null) return null;
   final rest = line.substring(trigger).trim();
   if (rest.isEmpty) return null;
   final gap = _liftInterval(rest);
   if (gap == null) {
-    return (call: (command: ChatCommand.loop, argument: rest), certain: false);
+    return (
+      call: (command: ChatCommand.loop, argument: rest),
+      certain: named != null,
+    );
   }
   final argument = gap.task.isEmpty ? gap.every : '${gap.every} ${gap.task}';
   return (
@@ -151,20 +163,33 @@ SpokenCommand? _readSchedule(String line, String lower) {
   );
 }
 
-/// Openings that mean "repeat this".
+/// Openings that ask for a loop **by name**.
 ///
-/// Two shapes, because people ask for this two ways. "lặp lại mỗi 30 phút …"
-/// describes the repeating; "làm loop mỗi giờ 1 lần" names the loop as a thing
-/// to make, and that is the one reached for when the task is already on screen
-/// and only the gap is left to say. Missing the second shape is what left
-/// "làm loop mỗi giờ làm 1 lần đi" to an agent on 2026-08-20, which answered
-/// that the loop was on and set nothing.
-final List<RegExp> _loopTriggers = [
-  RegExp(r'^(lặp lại|lặp|chạy lặp|làm lại)\s+'),
+/// "loop" and "vòng lặp" are this app's own word for the feature. Nobody
+/// reaches for them while talking about something else, so a sentence that
+/// opens with one is an instruction and needs no second look — which is what
+/// lets a gapless one run instead of waiting behind another keystroke.
+///
+/// This is also the shape people use once the task is already on screen and
+/// only the repeating is left to ask for. Missing it is what left "làm loop
+/// mỗi giờ làm 1 lần đi" to an agent on 2026-08-20, which answered that the
+/// loop was on and set nothing.
+final List<RegExp> _loopNamedTriggers = [
   RegExp(r'^(làm|tạo|bật|đặt|chạy)\s+(cái\s+)?(loop|vòng lặp)\s+'),
   RegExp(r'^(làm|chuyển)\s+((nó|cái này)\s+)?thành\s+(loop|vòng lặp)\s+'),
   RegExp(r'^(run|start|make|create|set up) (a |the )?loop\s+'),
-  RegExp(r'^(loop (this|it)|keep checking|check again)\s+'),
+  RegExp(r'^loop (this|it)\s+'),
+];
+
+/// Openings that describe repeating without naming the feature.
+///
+/// "lặp lại", "keep checking" are ordinary words in an ordinary sentence, so
+/// these carry less: with a gap they run like any other reading, without one
+/// they are offered. The difference is not how much the app trusts the user —
+/// it is how much of *this sentence* is about the app.
+final List<RegExp> _loopSaidTriggers = [
+  RegExp(r'^(lặp lại|lặp|chạy lặp|làm lại)\s+'),
+  RegExp(r'^(keep checking|check again)\s+'),
 ];
 
 /// Openings that mean "work until this is true".
