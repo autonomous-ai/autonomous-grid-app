@@ -10,6 +10,7 @@ import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import 'chat_header_title.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../skills/logic/skill_proposal.dart';
 
@@ -74,17 +75,7 @@ class ChatHeader extends ConsumerWidget {
         // label on a tab, not stretch the menu button out to the far edge of
         // a wide window.
         Flexible(
-          child: Text(
-            active.title,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppPalette.textPrimary,
-              fontSize: 13.5,
-              fontWeight: AppFont.medium,
-            ),
-          ),
+          child: ChatHeaderTitle(id: active.id, title: active.title),
         ),
         const SizedBox(width: 4),
         ChatHeaderMenuButton(conversation: active),
