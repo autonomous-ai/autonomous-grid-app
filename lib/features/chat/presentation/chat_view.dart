@@ -38,7 +38,6 @@ import '../../playground/presentation/message_content.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../../playground/presentation/transcript_view.dart';
 import '../logic/commands/chat_command.dart';
-import '../logic/commands/spoken_command.dart';
 import 'command_slash_menu.dart';
 import 'composer_status.dart';
 import '../../skills/presentation/save_skill_bar.dart';
@@ -370,52 +369,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return null;
   }
 
-  /// Acts on a sentence that asked for a command, and says whether it did.
-  ///
-  /// Two endings, and the difference is whether there is anything left to run.
-  /// A sentence read as a command is run — that is the whole point of saying it
-  /// out loud, and asking for a second keystroke on every repeat was friction
-  /// paid on the many for the few. What still stops here is the reading with a
-  /// hole in it: a loop with a rhythm and no work, a task with no hour. Those
-  /// are **written into the composer as the command they would be**, with a
-  /// line naming the missing piece.
-  bool _offerSpokenCommand(String message) {
-    final spoken = readSpokenCommand(message);
-    if (spoken == null) return false;
-    if (spoken.certain) {
-      // Straight to [_runCommand], which is what the typed path does: it empties
-      // the composer, and it *names* the attachments a command leaves behind
-      // instead of dropping them without a word.
-      unawaited(_runCommand(spoken.call));
-      return true;
-    }
-    // Their own words survive it: the reading only fires on a sentence that
-    // *opens* with the ask, so what is replaced is "lặp lại" — the words `/loop`
-    // stands for — and everything they actually said rides on as the argument.
-    final line = spokenCommandLine(spoken.call);
-    _message.text = line;
-    _message.selection = TextSelection.collapsed(offset: line.length);
-    ToastScope.show(
-      context,
-      ToastSpec(
-        message: _missingPieceHint(spoken.call.command),
-        severity: ToastSeverity.success,
-      ),
-    );
-    return true;
-  }
-
-  /// What the composer is still waiting for, named rather than left to guess.
-  ///
-  /// The reading itself is settled by the time this is reached — the line is
-  /// already in the composer — so the only useful thing to say is which part of
-  /// it the user has to add before it can run.
-  String _missingPieceHint(ChatCommand command) => switch (command) {
-    ChatCommand.loop => 'Read that as a loop — say what to repeat, then send.',
-    ChatCommand.schedule => 'Read that as a task — add a time, then send.',
-    _ => 'Read that as a command — send it, or edit it first.',
-  };
-
   void _send(PlaygroundModality modality) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
@@ -427,10 +380,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _runCommand(command);
       return;
     }
-    // The same instruction said in words. Nobody dictates a leading slash, so
-    // without this "lặp lại mỗi 30 phút kiểm tra deploy" went to the assistant
-    // as a sentence and set nothing — see [readSpokenCommand].
-    if (_offerSpokenCommand(message)) return;
+    // Everything else goes to the assistant as the sentence it is, including
+    // "lặp lại mỗi 30 phút kiểm tra deploy". Reading a command out of ordinary
+    // words was a phrase list that guessed both ways, and the assistant has to
+    // read the sentence anyway to answer it: what it was asking for comes back
+    // in a `grid-ask` block (see [parseAgentAsk]).
     ref
         .read(chatSessionsProvider.notifier)
         .send(
