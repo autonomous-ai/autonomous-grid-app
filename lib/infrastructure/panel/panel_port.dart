@@ -96,13 +96,29 @@ Future<String?> findPanelPort() async {
   if (!Platform.isMacOS) return null;
   if (!_hasUsbSerialPort()) return null;
 
-  final ioreg = await Process.run('ioreg', [
-    '-r',
-    '-c',
-    'IOUSBHostDevice',
-    '-l',
-    '-w0',
-  ]);
+  // BY ABSOLUTE PATH, and wrapped. `ioreg` lives in /usr/sbin, which
+  // a GUI app does not necessarily inherit: launched from Finder, this process
+  // gets launchd's PATH, not a shell's. Called by bare name it threw
+  // `ProcessException: No such file or directory` on a freshly set-up Mac
+  // (2026-08-20), and because nothing caught it the exception left this
+  // function, took `_attach` with it and the panel never connected at all —
+  // with the cable plugged in and the port sitting there in /dev.
+  //
+  // Which is the opposite of what this function promises three lines up: it
+  // reports "no panel" rather than pretending to look. A tool it cannot run is
+  // exactly that case, not a reason to bring the link down.
+  final ProcessResult ioreg;
+  try {
+    ioreg = await Process.run('/usr/sbin/ioreg', [
+      '-r',
+      '-c',
+      'IOUSBHostDevice',
+      '-l',
+      '-w0',
+    ]);
+  } on ProcessException {
+    return null;
+  }
   if (ioreg.exitCode != 0) return null;
   final out = ioreg.stdout;
   return out is String ? panelPortIn(out) : null;
