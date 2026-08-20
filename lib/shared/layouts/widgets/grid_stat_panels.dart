@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
+import '../../../features/network/logic/member_display.dart';
 import '../../../features/network/logic/member_providers.dart';
 import '../../../features/network/logic/member_usage_provider.dart';
 import '../../../features/network/logic/node_display.dart';
@@ -14,6 +15,7 @@ import '../../../features/network/logic/node_metrics.dart'
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/api/models/member_usage.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/skeleton.dart';
 import 'pill_panel_shell.dart';
 
 /// The panel behind one figure in the top bar's grid pill: hovering "21 members"
@@ -65,7 +67,7 @@ class GridStatPanel extends StatelessWidget {
 
   /// Narrower than the hardware panel: a list of names is one column, and a long
   /// email or model id ellipsizes rather than widening the popover.
-  static const double defaultWidth = 276;
+  static const double defaultWidth = 298;
 
   /// The surface's own padding, undone on the left so the list's text sits under
   /// the figure's text rather than being inset from it by a rim's width.
@@ -156,15 +158,25 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
   Widget build(BuildContext context) {
     final grid = ref.watch(selectedNetworkProvider);
     if (grid == null) return const SizedBox.shrink();
-    // Read for its *value*, never its loading state: the roster is what the
-    // panel is for, and blocking the whole list on a second request would make
-    // an already-known roster arrive late. Absent usage degrades to an
-    // unranked, unlabelled list rather than to a spinner.
-    final usage = ref.watch(gridMemberUsageProvider).value;
+    // Read for its *value*, never to gate the list: the roster is what the panel
+    // is for, and blocking the whole thing on a second request would make an
+    // already-known roster arrive late. Absent usage degrades to an unranked,
+    // unlabelled list rather than to a spinner.
+    //
+    // The loading flag comes along separately because `.value` alone cannot tell
+    // "this grid reports no rollup" from "the call is still out", and the two
+    // render differently: an empty figure column against a row of skeleton bars.
+    final usageAsync = ref.watch(gridMemberUsageProvider);
+    final usage = usageAsync.value;
+    final usageLoading = usage == null && usageAsync.isLoading;
     return ref
         .watch(networkMembersProvider(grid.networkId))
         .when(
-          loading: () => const _PanelMessage(text: 'Loading members…'),
+          // The rows in the shape they will land in, rather than a sentence
+          // that is one line tall and gets replaced by ten — the panel hangs off
+          // a pill in the top bar, so a body that changes height mid-load moves
+          // under a pointer that is already on it.
+          loading: () => const _MembersSkeleton(),
           // The provider's own message, which is already written for a person
           // ("Sign in to manage members.") rather than a socket error.
           error: (err, _) => _PanelMessage(text: '$err'),
@@ -175,6 +187,12 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
               byEmail,
               emailOf: (m) => m.email,
             );
+            // The names, not the addresses: a work grid is a column of the same
+            // domain repeated, and the half that differs is the half in front
+            // of the `@`. Computed for the list rather than in the row, because
+            // whether a name still points at one person is a fact about the
+            // whole roster — see `memberHandles`.
+            final labels = memberHandles([for (final m in rows) m.email]);
             final hovered = memberUsageFor(byEmail, _hovered ?? '');
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -204,17 +222,23 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
                   // spends its width on the figure the list is ordered by.
                   itemBuilder: (context, i) => _MemberRow(
                     email: rows[i].email,
+                    label: labels[i],
                     isOwner: rows[i].isOwner,
                     usage: memberUsageFor(byEmail, rows[i].email),
+                    usageLoading: usageLoading,
                     hovered: _hovered == rows[i].email,
                     onHover: (over) => _onHover(rows[i].email, over),
                   ),
                 ),
-                // Only where there is something to point at. A grid with no
-                // usage would otherwise carry a permanent line inviting a hover
-                // that can never say anything.
-                if (byEmail != null && rows.isNotEmpty)
-                  _MemberDetailLine(usage: hovered),
+                // Only where there is something to point at, or about to be. A
+                // grid whose master reports no usage carries no such line at
+                // all — it would invite a hover that can never say anything —
+                // but one whose figures are merely still coming keeps the block
+                // as bars: it appears the moment they land, and a panel that
+                // grows a line under a pointer already resting on it is the
+                // same jump the skeleton above exists to prevent.
+                if (rows.isNotEmpty && (byEmail != null || usageLoading))
+                  _MemberDetailLine(usage: hovered, loading: usageLoading),
               ],
             );
           },
@@ -222,22 +246,38 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
   }
 }
 
-/// One member: the address, their 24h input figure, and the full split on hover.
+/// One member: an accent tile with their initial, their handle, their 24h input
+/// figure, and the full split on hover.
+///
+/// **The handle rather than the whole address.** On a work grid every row ended
+/// in the same `@autonomous.ai`, so the column spent a third of its width
+/// printing the one thing every line agreed on, and the names it was looked up
+/// for ellipsized.
 ///
 /// Input leads because reading is what a grid is asked to do — output follows
 /// from it, and requests count turns rather than work. The other three are a
-/// hover away rather than on the row: four numbers per line in a 300px panel
-/// would leave no room for the address, which is the thing being looked up.
+/// hover away rather than on the row: four numbers per line would leave no room
+/// for the name, which is the thing being looked up.
 class _MemberRow extends StatelessWidget {
   const _MemberRow({
     required this.email,
+    required this.label,
     required this.isOwner,
     required this.usage,
+    required this.usageLoading,
     required this.hovered,
     required this.onHover,
   });
 
+  /// The address itself — what this row *is*, and the key everything else about
+  /// it is looked up by (the usage map, the hover). Never what it prints.
   final String email;
+
+  /// What the row prints: the handle (`@dev`), or the whole address where that
+  /// handle would no longer point at one person. Decided for the list
+  /// as a whole by `memberHandles`, not here.
+  final String label;
+
   final bool isOwner;
 
   /// Whether the pointer is on this row. Owned by the list rather than by the
@@ -251,17 +291,35 @@ class _MemberRow extends StatelessWidget {
   /// as idle when the truth is that nobody asked.
   final MemberUsage? usage;
 
+  /// Whether the usage call is still out — a *different* reason for [usage] to
+  /// be null, and the row says so with a skeleton bar rather than with the empty
+  /// column that means "this person has run nothing".
+  ///
+  /// The roster and the usage come from two systems and land at different times,
+  /// so this window is real on every open: the names arrive from the control
+  /// plane while the figures are still coming from the relay.
+  final bool usageLoading;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final row = _PanelRow(
-      label: email,
+      label: label,
+      leading: _MemberInitial(email: email),
+      strong: true,
       badge: isOwner ? 'owner' : null,
       // The **fresh** input leg, matching the hover's "input tokens" line and the
       // pill's own figure. Printing `tokensIn` raw here made the row larger than
       // the number the tooltip called input, which reads as a bug rather than as
       // the cache being a share of it.
-      trailing: usage == null ? null : formatCount(usage!.freshInputTokens),
+      trailing: switch (usage) {
+        // A figure the grid measured. Null is not "zero" — see [usage].
+        final measured? => _PanelFigure(
+          text: formatCount(measured.freshInputTokens),
+        ),
+        null when usageLoading => const _FigureSkeleton(),
+        null => null,
+      },
     );
     if (usage == null) return row;
     // A `MouseRegion`, never a `Tooltip`. This panel is drawn inside a
@@ -284,6 +342,140 @@ class _MemberRow extends StatelessWidget {
   }
 }
 
+/// The tile carrying a member's first initial, in front of their handle.
+///
+/// A column of handles needs somewhere for the eye to land, and a letter on
+/// colour is the one mark this app can make from an address without inventing an
+/// avatar service.
+///
+/// **A quiet indigo fill, white letter.** A grey disc the same value as the
+/// panel underneath it (1.06:1 in dark) was decoration the eye skipped, and the
+/// accent itself was the opposite problem — ten saturated tiles down a panel
+/// pulled the eye off the names they introduce. [AppPalette.avatarFill] is the
+/// accent's hue with the saturation taken out, and the letter still clears
+/// 5.26:1 in light and 6.19:1 in dark.
+///
+/// **Flat, and a rounded square.** The sidebar's account avatar is a gradient
+/// *disc* with a ring and a glow, and that one means **you** — repeating it down
+/// a list of other people would say everyone here is the signed-in user. Same
+/// family, different shape, no lift.
+///
+/// Reads the theme itself: this row is built by a `ListView.builder`, which
+/// keeps a child it has already built across the panel's rebuilds, so a watch
+/// higher up would never reach it on a theme flip.
+class _MemberInitial extends StatelessWidget {
+  const _MemberInitial({required this.email});
+
+  final String email;
+
+  /// Sized to the row's own line, not to an avatar convention: at 22 the tile is
+  /// exactly the height of a 13pt line plus its padding, so the mark sets no
+  /// row height of its own.
+  static const double _size = 22;
+
+  /// The app's small-control step, not [AppControl.radius] (8): on a 22px box
+  /// that one rounds to within a hair of a circle, and the shape here has to
+  /// stay visibly a square with soft corners.
+  static const double _radius = 7;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      width: _size,
+      height: _size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppPalette.avatarFill,
+        borderRadius: BorderRadius.circular(_radius),
+      ),
+      // Deliberately a step heavier than the row it sits in: white on a
+      // saturated fill reads thinner than the same weight on a flat surface, and
+      // at 11.5 the glyph needs it to hold its own inside the tile.
+      child: Text(
+        memberInitial(email),
+        style: const TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+/// The members panel while the roster is still coming: the heading, five rows
+/// and the detail block, in the shape they will land in.
+///
+/// A skeleton rather than "Loading members…" for the reason every list in this
+/// app uses one — but with an extra edge here. This panel hangs off a figure in
+/// the top bar and stays open only while the pointer is on it or on the pill; a
+/// body that is one line tall and then ten pulls the panel's own edges out from
+/// under that pointer, which closes the thing you were waiting for.
+///
+/// Five rows, and their metrics are [_MemberRow]'s exactly — a 22px tile in a
+/// row padded by 4 — so nothing shifts sideways or down when the names arrive.
+class _MembersSkeleton extends StatelessWidget {
+  const _MembersSkeleton();
+
+  /// How many placeholder rows. Enough to read as a list, few enough that a
+  /// three-person grid does not shrink dramatically when it loads.
+  static const int _rows = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // The heading's own line box, held by a bar rather than by the words
+        // "N MEMBERS" — the count is the one thing this state cannot know.
+        const SizedBox(
+          height: 15,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Skeleton.text(width: 78, height: 8),
+          ),
+        ),
+        const SizedBox(height: 10),
+        // Fading down the column so the block reads as "more below" rather than
+        // as a wall that stops at an arbitrary row — SkeletonList's trick, kept
+        // here because these rows are this panel's shape, not its.
+        for (var i = 0; i < _rows; i++)
+          Opacity(
+            opacity: 1 - (i / _rows) * 0.65,
+            child: const _MemberSkeletonRow(),
+          ),
+        const _MemberDetailLine(usage: null, loading: true),
+      ],
+    );
+  }
+}
+
+/// One placeholder member: the tile, the handle, the figure.
+class _MemberSkeletonRow extends StatelessWidget {
+  const _MemberSkeletonRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Skeleton(width: 22, height: 22, radius: 7),
+          SizedBox(width: 9),
+          // Not full width: a column of bars all reaching the figure would read
+          // as a grey slab rather than as a list of names of differing length.
+          Expanded(child: SkeletonLine(widthFactor: 0.55, height: 9)),
+          SizedBox(width: 9),
+          _FigureSkeleton(),
+        ],
+      ),
+    );
+  }
+}
+
 /// The hovered member's whole 24h split, under the list — requests, fresh
 /// input, cache and output.
 ///
@@ -298,9 +490,19 @@ class _MemberRow extends StatelessWidget {
 /// on one line also ran past the panel and were ellipsized from the right,
 /// which cost cache and output — the two a reader cannot infer from the row.
 class _MemberDetailLine extends StatelessWidget {
-  const _MemberDetailLine({required this.usage});
+  const _MemberDetailLine({required this.usage, this.loading = false});
 
   final MemberUsage? usage;
+
+  /// Whether the usage call is still out. The two lines are then bars rather
+  /// than words: the hint ("Point at a member…") would be an invitation to hover
+  /// for numbers that cannot be shown yet.
+  final bool loading;
+
+  /// One line of this block, text or bar. Set explicitly so the skeleton can be
+  /// the same height as the sentence it stands in for.
+  static const double _fontSize = 11.5;
+  static const double _lineHeight = 1.3;
 
   @override
   Widget build(BuildContext context) {
@@ -314,25 +516,37 @@ class _MemberDetailLine extends StatelessWidget {
         ? memberUsageLines(usage!)
         : const ['Point at a member for their 24h split.', ''];
     final style = TextStyle(
-      fontSize: 10.5,
+      fontSize: _fontSize,
+      height: _lineHeight,
       color: measured ? AppPalette.textSecondary : AppPalette.textFaint,
       fontFeatures: AppFont.tabularFigures,
     );
     return Padding(
-      padding: const EdgeInsets.only(top: 9),
+      padding: const EdgeInsets.only(top: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
           Divider(height: 1, color: AppPalette.divider),
-          const SizedBox(height: 7),
-          for (final line in lines)
-            Text(
-              line,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: style,
-            ),
+          const SizedBox(height: 8),
+          if (loading)
+            // Two bars of unequal width, exactly as tall as the two lines they
+            // become — the block's height is what must not move.
+            for (final factor in const [0.72, 0.54])
+              SizedBox(
+                height: _fontSize * _lineHeight,
+                child: Center(
+                  child: SkeletonLine(widthFactor: factor, height: 8),
+                ),
+              )
+          else
+            for (final line in lines)
+              Text(
+                line,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
         ],
       ),
     );
@@ -365,7 +579,7 @@ class GridNodesList extends ConsumerWidget {
       // cap still bites well before a long grid could outgrow the window — past
       // it the list scrolls, which is the right trade for a panel that hangs
       // over the page it opened from.
-      maxHeight: 360,
+      maxHeight: 388,
       itemBuilder: (context, i) => _NodeRow(name: labels[i], node: nodes[i]),
     );
   }
@@ -385,7 +599,7 @@ class _NodeRow extends StatelessWidget {
     final serving = nodeServingLine(node);
     final activity = nodeActivityLine(node);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 5.5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -403,7 +617,10 @@ class _NodeRow extends StatelessWidget {
               '' => name,
               final handle => '$handle · $name',
             },
-            trailing: _nodeDetail(node),
+            trailing: switch (_nodeDetail(node)) {
+              final detail? => _PanelFigure(text: detail),
+              null => null,
+            },
             dense: true,
           ),
           if (machine.isNotEmpty)
@@ -444,13 +661,13 @@ class _NodeDetailLine extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.only(top: 3),
       child: Text(
         text,
         maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          fontSize: 10.5,
+          fontSize: 11.5,
           color: live ? AppPalette.textSecondary : AppPalette.textFaint,
           fontFeatures: live ? AppFont.tabularFigures : null,
         ),
@@ -501,7 +718,7 @@ class GridModelsList extends ConsumerWidget {
       itemCount: models.length,
       // Taller than the models list used to be: every row is two lines now that
       // an unused model states its zero instead of going quiet.
-      maxHeight: 320,
+      maxHeight: 346,
       itemBuilder: (context, i) => _ModelRow(
         model: models[i],
         answered: modelAnswered(answered, models[i].id, gridTotal: gridTotal),
@@ -527,7 +744,7 @@ class _ModelRow extends StatelessWidget {
     AppTheme.watch(context);
     final summary = answeredSummary(answered);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 5.5),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -536,7 +753,10 @@ class _ModelRow extends StatelessWidget {
             mono: true,
             // Only media capabilities are named: labelling every text model
             // "Chat" would paint one word down the whole column and say nothing.
-            trailing: mediaCapabilityLabel(model.id),
+            trailing: switch (mediaCapabilityLabel(model.id)) {
+              final label? => _PanelFigure(text: label),
+              null => null,
+            },
             dense: true,
           ),
           if (summary.isNotEmpty) _NodeDetailLine(text: summary, live: true),
@@ -589,7 +809,7 @@ class GridTokensList extends ConsumerWidget {
           label: 'Tokens',
           trailing: window.isEmpty ? null : 'last $window',
         ),
-        const SizedBox(height: 9),
+        const SizedBox(height: 10),
         PillPanelStatRow(
           label: 'Input',
           value: formatCount(answered.freshInputTokens),
@@ -630,7 +850,7 @@ class _PanelBody extends StatelessWidget {
     required this.emptyText,
     required this.itemCount,
     required this.itemBuilder,
-    this.maxHeight = 252,
+    this.maxHeight = 272,
   });
 
   final String label;
@@ -657,7 +877,7 @@ class _PanelBody extends StatelessWidget {
   /// the thumb rather than under it. The heading pays the same inset, so the
   /// section's count stays in line with the column beneath it whether or not
   /// there is enough list to scroll.
-  static const double _thumbLane = 10;
+  static const double _thumbLane = 11;
 
   @override
   Widget build(BuildContext context) {
@@ -670,12 +890,12 @@ class _PanelBody extends StatelessWidget {
           padding: const EdgeInsets.only(right: _thumbLane),
           child: PillPanelLabel(label: label, trailing: trailing),
         ),
-        const SizedBox(height: 9),
+        const SizedBox(height: 10),
         if (itemCount == 0)
           Text(
             emptyText,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               height: 1.35,
               color: AppPalette.textSecondary,
             ),
@@ -699,14 +919,36 @@ class _PanelBody extends StatelessWidget {
 class _PanelRow extends StatelessWidget {
   const _PanelRow({
     required this.label,
+    this.leading,
     this.trailing,
     this.badge,
+    this.strong = false,
     this.mono = false,
     this.dense = false,
   });
 
   final String label;
-  final String? trailing;
+
+  /// A mark in front of the label — the members list's initial tile. Null on
+  /// every other panel: a node's row is already four lines and a model id is a
+  /// string, not a person.
+  final Widget? leading;
+
+  /// Whether the label is the row's subject rather than one of its facts.
+  ///
+  /// A member's handle is what the whole row is about and carries a coloured
+  /// mark beside it; at regular weight the two read as unrelated. A machine name
+  /// or a model id sits above its own detail lines and needs no such lift.
+  final bool strong;
+
+  /// The right-hand column: a figure ([_PanelFigure]), or its skeleton while the
+  /// call that produces it is still out.
+  ///
+  /// A widget rather than a string, so "the number isn't here yet" and "there is
+  /// no number" can look different. They are different facts — a member with no
+  /// figure has run nothing, a member whose figure is still loading may have run
+  /// the most on the grid — and a `String?` could only ever say the second.
+  final Widget? trailing;
 
   /// A chip between the label and the figure — what this row *is*, where the
   /// two sides say what it is called and what it holds.
@@ -728,9 +970,10 @@ class _PanelRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final row = Padding(
-      padding: EdgeInsets.symmetric(vertical: dense ? 0 : 3.5),
+      padding: EdgeInsets.symmetric(vertical: dense ? 0 : 4),
       child: Row(
         children: [
+          if (leading case final mark?) ...[mark, const SizedBox(width: 9)],
           Expanded(
             child: Text(
               label,
@@ -741,31 +984,74 @@ class _PanelRow extends StatelessWidget {
                 fontFamilyFallback: mono
                     ? AppFont.monoFallback
                     : AppFont.sansFallback,
-                fontSize: 12,
+                fontSize: 13,
+                fontWeight: strong ? AppFont.medium : null,
                 color: AppPalette.textPrimary,
               ),
             ),
           ),
           if (badge case final text?) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: 9),
             PillPanelBadge(label: text),
           ],
-          if (trailing != null) ...[
-            const SizedBox(width: 8),
-            Text(
-              trailing!,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-                color: AppPalette.textFaint,
-                fontFeatures: AppFont.tabularFigures,
-              ),
-            ),
+          if (trailing case final figure?) ...[
+            const SizedBox(width: 9),
+            figure,
           ],
         ],
       ),
     );
     return row;
+  }
+}
+
+/// A row's right-hand figure — what it holds, where the label says what it is.
+///
+/// Its own widget because the skeleton that stands in for it has to match its
+/// metrics exactly, and a style written inline in [_PanelRow] gave the skeleton
+/// nothing to measure itself against.
+class _PanelFigure extends StatelessWidget {
+  const _PanelFigure({required this.text});
+
+  final String text;
+
+  /// The type this figure is set in. Shared with [_FigureSkeleton] so the bar
+  /// and the number it becomes occupy the same line box.
+  static const double fontSize = 11.5;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: fontSize,
+        fontWeight: FontWeight.w500,
+        color: AppPalette.textFaint,
+        // These refresh in place when a poll lands, and digits of differing
+        // width make the column twitch.
+        fontFeatures: AppFont.tabularFigures,
+      ),
+    );
+  }
+}
+
+/// The bar standing in for a figure whose request is still out.
+///
+/// Sized to the figure it replaces rather than to the skeleton default: this
+/// column sits at the end of a row that is already on screen, so a bar of the
+/// wrong height would shift the row when the number lands — the one thing a
+/// skeleton exists to prevent.
+class _FigureSkeleton extends StatelessWidget {
+  const _FigureSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: _PanelFigure.fontSize * 1.3,
+      width: 38,
+      child: Center(child: Skeleton.text(height: 8)),
+    );
   }
 }
 
@@ -781,7 +1067,7 @@ class _PanelMessage extends StatelessWidget {
     return Text(
       text,
       style: TextStyle(
-        fontSize: 12,
+        fontSize: 13,
         height: 1.35,
         color: AppPalette.textSecondary,
       ),

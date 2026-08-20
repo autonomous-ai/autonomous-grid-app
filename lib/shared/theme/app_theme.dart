@@ -262,6 +262,26 @@ abstract final class AppPalette {
   static Color get accentMuted =>
       AppTheme.pick(const Color(0xFF3550C8), const Color(0xFF4E6BF0));
 
+  /// The initial tile beside a name in a roster — the accent's hue with most of
+  /// its saturation taken out, so a column of ten of them reads as a list rather
+  /// than as ten buttons.
+  ///
+  /// **Not [accent] or [accentMuted].** Both are made to be *loud*: one is the
+  /// fill under a primary button, the other the base of the account avatar that
+  /// marks **you**. A saturated indigo is right for one mark on a screen and
+  /// wrong for a mark on every row — a whole panel of them pulled the eye off
+  /// the names they were meant to introduce.
+  ///
+  /// Still a solid fill under white text, and still measured for it: 5.26:1 in
+  /// light, 6.19:1 in dark. Softening a mark must not cost the letter inside it,
+  /// which is the only part carrying information — a tint at 14% alpha would
+  /// have taken the glyph to 4.5:1 at rest and under it on a hovered row.
+  ///
+  /// Slightly deeper in dark, where the tile stands on charcoal (2.63:1 against
+  /// the panel) rather than on white (5.26:1).
+  static Color get avatarFill =>
+      AppTheme.pick(const Color(0xFF5369AC), const Color(0xFF4B5F9B));
+
   // "Owner" badge — a teal that stays legible on either surface.
   static Color get teal =>
       AppTheme.pick(const Color(0xFF0F766E), const Color(0xFF2DD4BF));
