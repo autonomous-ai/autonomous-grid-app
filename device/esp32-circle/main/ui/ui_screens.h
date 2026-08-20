@@ -147,6 +147,12 @@ void ui_set_creating(bool on);
 void ui_focus_tile_from_app(const char *chat_id);
 void ui_focus_tile(const char *chat_id);
 // Drop every project tile (the app went away and its list is now a claim about a machine that is gone).
+// Put the tiles in this order — the app's list order, which is the order its sidebar shows. Called at the
+// end of the reconcile, once every add and removal has landed.
+//
+// The id width is spelled out because ID_MAX lives in panel_client.h and these two headers do not include
+// each other; the call site asserts the two agree.
+void ui_tiles_reorder(const char ids[][48], int n);
 void ui_tile_clear_all(void);
 
 // Voice router result, from `voice.transcript`. `auto_sent` = grid-app already dispatched (just focus the
