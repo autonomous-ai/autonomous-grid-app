@@ -11,6 +11,7 @@ import '../../../features/network/logic/node_metrics.dart'
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
 import '../shell_state.dart';
+import 'grid_models_panel.dart';
 import 'grid_power_panel.dart';
 import 'grid_stat_panels.dart';
 import 'top_bar_pill.dart';
@@ -257,7 +258,16 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
       const GridNodesList(),
       width: 358,
     ),
-    _PanelKind.models => _statPanel(kind, _modelAnchor, const GridModelsList()),
+    // Wider than a plain list panel, and for the same reason the nodes panel is:
+    // each row now ends in two figure columns, and at the list width they would
+    // take the width out of the model id — the one string every row is read for,
+    // and the one nothing bounds the length of.
+    _PanelKind.models => _statPanel(
+      kind,
+      _modelAnchor,
+      const GridModelsList(),
+      width: 352,
+    ),
     // Narrower than a list panel: four label/figure rows, none of them long. At
     // the list width the figures would drift half a panel from their words.
     _PanelKind.tokens => _statPanel(

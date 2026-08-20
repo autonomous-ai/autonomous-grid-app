@@ -161,3 +161,28 @@ class PillPanelLabel extends StatelessWidget {
     );
   }
 }
+
+/// A panel that has a sentence where its rows would be — nothing to list, or
+/// nothing readable to list it from.
+///
+/// Shared with the surface and the heading for the same reason they are: four
+/// popovers open from one capsule, and an empty state that set its own size
+/// would read as a surface from somewhere else.
+class PillPanelMessage extends StatelessWidget {
+  const PillPanelMessage({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 13,
+        height: 1.35,
+        color: AppPalette.textSecondary,
+      ),
+    );
+  }
+}

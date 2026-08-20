@@ -87,6 +87,18 @@ final gridOverviewProvider = FutureProvider.autoDispose<GridOverview>((
 ///   the value equality on [GridOverview], an unchanged grid now notifies nobody.
 final gridOverviewSnapshot = gridOverviewProvider.select((a) => a.value);
 
+/// Whether the first overview is still on its way — the only moment a panel is
+/// allowed to draw a skeleton.
+///
+/// Selected, and guarded on `value == null`, for the reason above: the overview
+/// is *polled*, so its `AsyncValue` goes loading→data on every round. A widget
+/// watching the flag alone would flash its skeleton over figures it already has,
+/// every cadence, which reads as the panel breaking rather than refreshing. This
+/// flips exactly once, when the first payload lands.
+final gridOverviewLoading = gridOverviewProvider.select(
+  (a) => a.isLoading && a.value == null,
+);
+
 /// The grid's models to surface in the UI, richest source first: the relay
 /// overview's detailed list (id + modality + pricing) when it has one, otherwise
 /// plain ids from the OpenAI-style `/models`. Both the Models section (tiles) and
@@ -139,11 +151,20 @@ final gridModelCapabilitiesProvider = Provider<Map<String, ModelCapability>>((
 /// and the model count should show a model once. "Richest" = has pricing, then
 /// a known context length, then a definite vision flag — an entry that only
 /// carries an id loses to one that can label the tile.
+///
+/// **Keyed by [modelKey], not by the raw id.** The ids reach the overview from
+/// providers that disagree on case (`qwen/qwen3.8-27b` beside `Qwen/Qwen3.8-27B`
+/// is one model advertised twice), and a raw key lets both through as separate
+/// models. Every *figure* in the app is already keyed the folded way — see
+/// [answeredByModel] — so the twins were not merely listed twice: they printed
+/// the same rollup each, the count said one model more than the grid serves, and
+/// a column of them summed past its own total.
 List<OverviewModel> distinctOverviewModels(List<OverviewModel> models) {
   final best = <String, OverviewModel>{};
   for (final model in models) {
-    final prev = best[model.id];
-    if (prev == null || _isRicher(model, prev)) best[model.id] = model;
+    final key = modelKey(model.id);
+    final prev = best[key];
+    if (prev == null || _isRicher(model, prev)) best[key] = model;
   }
   return best.values.toList(growable: false);
 }

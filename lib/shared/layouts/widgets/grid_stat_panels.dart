@@ -4,14 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../features/auth/logic/session_controller.dart';
-import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/network/logic/member_display.dart';
 import '../../../features/network/logic/member_providers.dart';
 import '../../../features/network/logic/member_usage_provider.dart';
 import '../../../features/network/logic/node_display.dart';
 import '../../../features/network/logic/node_metrics.dart'
-    show answeredSummary, answeredWindowLabel, formatCount;
+    show answeredWindowLabel, formatCount;
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/api/models/member_usage.dart';
 import '../../theme/app_theme.dart';
@@ -179,7 +178,7 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
           loading: () => const _MembersSkeleton(),
           // The provider's own message, which is already written for a person
           // ("Sign in to manage members.") rather than a socket error.
-          error: (err, _) => _PanelMessage(text: '$err'),
+          error: (err, _) => PillPanelMessage(text: '$err'),
           data: (members) {
             final byEmail = usage?.byEmail;
             final rows = sortMembersByUsage(
@@ -694,78 +693,6 @@ String? _nodeDetail(OverviewNode node) {
   return spec.isEmpty ? null : spec;
 }
 
-/// The models this grid can answer with — the panel behind the pill's model
-/// count. Ids in mono, like every other place the app shows one: a model id gets
-/// pasted into a config, so `l`/`1` and `0`/`O` have to stay apart.
-class GridModelsList extends ConsumerWidget {
-  const GridModelsList({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final models = ref.watch(gridModelsProvider);
-    // Summed across the machines serving each model: the relay reports the
-    // rollup per node, so the grid-level figure for a model exists nowhere in
-    // the payload and is added up here.
-    final answered = answeredByModel(ref.watch(gridOnlineNodesProvider));
-    // The grid-level rollup, used only to tell "served nothing today" from
-    // "nothing measured it" for a model the map has no rows for — see
-    // [modelAnswered].
-    final gridTotal = ref.watch(gridPowerProvider).answered;
-    return _PanelBody(
-      label: 'Models',
-      trailing: '${models.length}',
-      emptyText: 'This grid serves no model yet.',
-      itemCount: models.length,
-      // Taller than the models list used to be: every row is two lines now that
-      // an unused model states its zero instead of going quiet.
-      maxHeight: 346,
-      itemBuilder: (context, i) => _ModelRow(
-        model: models[i],
-        answered: modelAnswered(answered, models[i].id, gridTotal: gridTotal),
-      ),
-    );
-  }
-}
-
-/// One model: its id, and what the grid answered with it.
-class _ModelRow extends StatelessWidget {
-  const _ModelRow({required this.model, required this.answered});
-
-  final OverviewModel model;
-
-  /// Null when no relay measured this model — the second line is then omitted
-  /// rather than printed as zeros, which would claim the grid has a model
-  /// nobody uses. A model that was measured and answered nothing does get its
-  /// `0 tokens`, which is a different and true statement.
-  final NodeAnswered? answered;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final summary = answeredSummary(answered);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5.5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _PanelRow(
-            label: model.id,
-            mono: true,
-            // Only media capabilities are named: labelling every text model
-            // "Chat" would paint one word down the whole column and say nothing.
-            trailing: switch (mediaCapabilityLabel(model.id)) {
-              final label? => _PanelFigure(text: label),
-              null => null,
-            },
-            dense: true,
-          ),
-          if (summary.isNotEmpty) _NodeDetailLine(text: summary, live: true),
-        ],
-      ),
-    );
-  }
-}
-
 /// What the grid's tokens were made of — the panel behind the pill's token
 /// figure.
 ///
@@ -793,7 +720,7 @@ class GridTokensList extends ConsumerWidget {
     AppTheme.watch(context);
     final answered = ref.watch(gridPowerProvider).answered;
     if (answered == null) {
-      return const _PanelMessage(
+      return const PillPanelMessage(
         text: 'This grid has not reported what it has answered yet.',
       );
     }
@@ -923,7 +850,6 @@ class _PanelRow extends StatelessWidget {
     this.trailing,
     this.badge,
     this.strong = false,
-    this.mono = false,
     this.dense = false,
   });
 
@@ -959,9 +885,6 @@ class _PanelRow extends StatelessWidget {
   /// address ellipsizes into the chip rather than pushing it off the row.
   final String? badge;
 
-  /// Whether [label] is a string people copy (a model id) rather than read.
-  final bool mono;
-
   /// Drops the row's own vertical breathing room — for a caller that is itself
   /// a multi-line block ([_NodeRow]) and spaces its lines as a whole.
   final bool dense;
@@ -980,10 +903,8 @@ class _PanelRow extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: mono ? AppFont.mono : AppFont.sans,
-                fontFamilyFallback: mono
-                    ? AppFont.monoFallback
-                    : AppFont.sansFallback,
+                fontFamily: AppFont.sans,
+                fontFamilyFallback: AppFont.sansFallback,
                 fontSize: 13,
                 fontWeight: strong ? AppFont.medium : null,
                 color: AppPalette.textPrimary,
@@ -1051,26 +972,6 @@ class _FigureSkeleton extends StatelessWidget {
       height: _PanelFigure.fontSize * 1.3,
       width: 38,
       child: Center(child: Skeleton.text(height: 8)),
-    );
-  }
-}
-
-/// The panel while its list is loading, or when it can't be read at all.
-class _PanelMessage extends StatelessWidget {
-  const _PanelMessage({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Text(
-      text,
-      style: TextStyle(
-        fontSize: 13,
-        height: 1.35,
-        color: AppPalette.textSecondary,
-      ),
     );
   }
 }
