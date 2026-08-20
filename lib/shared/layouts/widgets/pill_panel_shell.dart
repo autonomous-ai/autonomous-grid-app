@@ -55,30 +55,30 @@ class PillPanelStatRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3.5),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
-              style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
+              style: TextStyle(fontSize: 13.5, color: AppPalette.textSecondary),
             ),
           ),
           Text(
             value,
             style: TextStyle(
-              fontSize: 12.5,
+              fontSize: 13.5,
               fontWeight: AppFont.medium,
               color: AppPalette.textPrimary,
               fontFeatures: AppFont.tabularFigures,
             ),
           ),
           if (unit != null) ...[
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
             Text(
               unit!,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: AppPalette.textFaint,
               ),
@@ -111,15 +111,15 @@ class PillPanelBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
       decoration: BoxDecoration(
         color: AppPalette.accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(7),
       ),
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 10.5,
+          fontSize: 11.5,
           fontWeight: FontWeight.w700,
           color: AppPalette.accent,
         ),
@@ -140,7 +140,7 @@ class PillPanelLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final style = TextStyle(
-      fontSize: 10.5,
+      fontSize: 11.5,
       fontWeight: AppFont.medium,
       letterSpacing: 0.5,
       color: AppPalette.textFaint,

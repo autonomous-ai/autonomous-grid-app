@@ -9,6 +9,7 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/skeleton.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../auth/logic/session_controller.dart';
+import '../logic/member_display.dart';
 import '../logic/member_providers.dart';
 
 /// The "People with access" block of [ShareGridDialog] — everyone already on
@@ -149,12 +150,11 @@ class _PersonRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final email = member.email;
-    final initial = email.trim().isEmpty ? '?' : email.trim()[0].toUpperCase();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          _Initial(initial: initial),
+          _Initial(initial: memberInitial(email)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

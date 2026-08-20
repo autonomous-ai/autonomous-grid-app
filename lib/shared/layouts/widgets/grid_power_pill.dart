@@ -240,13 +240,14 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
     ),
     // Wider than the default: the line under the list carries four figures on
     // one row ("12 requests · 600K input tokens · 400K from cache · 150K output
-    // tokens"), and at 276 it ellipsized away the two that matter most — the
-    // ones at the end.
+    // tokens"), and at the list width it ellipsized away the two that matter
+    // most — the ones at the end. Grown with the type it holds (340 → 368 when
+    // the panel's text went up a point): the line was already exactly full.
     _PanelKind.members => _statPanel(
       kind,
       _memberAnchor,
       const GridMembersList(),
-      width: 340,
+      width: 368,
     ),
     // Wider: a node's rows carry a spec line and a live line under the name,
     // and at the list width those ellipsize to nothing worth reading.
@@ -254,7 +255,7 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
       kind,
       _nodeAnchor,
       const GridNodesList(),
-      width: 332,
+      width: 358,
     ),
     _PanelKind.models => _statPanel(kind, _modelAnchor, const GridModelsList()),
     // Narrower than a list panel: four label/figure rows, none of them long. At
@@ -263,7 +264,7 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
       kind,
       _tokenAnchor,
       const GridTokensList(),
-      width: 236,
+      width: 255,
     ),
   };
 
