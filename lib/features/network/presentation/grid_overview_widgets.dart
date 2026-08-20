@@ -77,7 +77,7 @@ class CapabilityChip extends StatelessWidget {
 /// It used to be a ~90px card of three big numbers, which mostly restated the
 /// screen it sat on — "MODELS 9" directly above a list of nine countable models,
 /// "NODES 2" above the Nodes section — and pushed the pane's one real action
-/// ("Use this grid") toward the fold to do it. Only uptime carried anything new.
+/// toward the fold to do it. Only uptime carried anything new.
 /// So the numbers stay and the furniture goes: a line reads just as fast and
 /// costs a fifth of the height.
 ///

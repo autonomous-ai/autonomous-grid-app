@@ -9,7 +9,6 @@ import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../auto_router/presentation/auto_router_card.dart';
-import '../../playground/presentation/playground_dialog.dart';
 import '../logic/delete_network_controller.dart';
 import '../logic/grid_overview_provider.dart';
 import 'share_grid_dialog.dart';
@@ -97,7 +96,7 @@ class _OverviewTab extends StatelessWidget {
         // One primary action for everyone: use the grid once it serves a model,
         // otherwise set it up (owner/provider) or wait for one (consumer).
         const SizedBox(height: 18),
-        _PrimaryAction(network: network),
+        _NotReadyYet(network: network),
         // The models it serves, and the nodes serving them. Each adds its own
         // leading gap and collapses to nothing when empty.
         const GridModelsSection(),
@@ -117,9 +116,9 @@ class _OverviewTab extends StatelessWidget {
         // capacity, speed — read before the per-machine Nodes list below it.
         const GridHardwareSection(),
         const GridNodesSection(),
-        // Raw developer credentials are a consumer convenience; owners/providers
-        // manage via the Engines tab and reach the guide from "Use this grid",
-        // so the API-access block is dropped from their overview.
+        // Raw developer credentials are a consumer convenience; owners and
+        // providers manage the grid from the Engines tab instead, so the
+        // API-access block is dropped from their overview.
         if (!network.canManageProvider) ...[
           const SizedBox(height: 24),
           ConsumerEnvCard(network: network),
@@ -180,8 +179,9 @@ class _Header extends ConsumerWidget {
             // into [ShareGridDialog] can't disagree about who gets to see it.
             // It used to gate on `canManageProvider`, which let a provider in
             // but kept a pure consumer out: a third answer, and one nobody had
-            // decided on. Using the grid is the body's "Use this grid" card, so
-            // the header carries no test/try button.
+            // decided on. There is no test/try button beside it: chatting with
+            // the grid is what the Chat section is, and this page is for
+            // looking at the grid rather than using it.
             const SizedBox(width: 12),
             _AddMemberButton(network: network),
           ],
@@ -268,14 +268,21 @@ class _SetUpThisGrid extends ConsumerWidget {
   }
 }
 
-/// The grid's front-door action — the plain answer to "what do I do here?".
+/// What to do about a grid that can't answer yet — and nothing at all once it
+/// can.
+///
 /// Waits for the overview (the stats section owns the loading/error message),
-/// then branches on whether the grid serves anything usable yet:
-/// - serving a model → a prominent "Use this grid" for everyone;
-/// - nothing yet + can host (owner/provider) → just "Set up engine";
-/// - nothing yet + consumer → a human "come back later" note, never a dead end.
-class _PrimaryAction extends ConsumerWidget {
-  const _PrimaryAction({required this.network});
+/// then branches:
+/// - nothing served + can host (owner/provider) → "Set up engine";
+/// - nothing served + consumer → a human "come back later" note, never a dead
+///   end.
+///
+/// A working grid used to get a "Use this grid" card here — a title, a line and
+/// two buttons for something the app already leads with. Chat *is* the front
+/// door, and the guide is a row in the nav; a card restating both sat on the
+/// one screen a user opens to look at the grid itself.
+class _NotReadyYet extends ConsumerWidget {
+  const _NotReadyYet({required this.network});
 
   final NetworkCredential network;
 
@@ -288,68 +295,10 @@ class _PrimaryAction extends ConsumerWidget {
     final usable =
         ref.watch(gridHasChatProvider) ||
         ref.watch(gridMediaCapabilitiesProvider).any;
-    if (usable) return const _TryThisGrid();
+    if (usable) return const SizedBox.shrink();
     return network.canManageProvider
         ? const _SetUpThisGrid()
         : const _NothingServedYet();
-  }
-}
-
-/// Prominent "use this grid" card for a consumer — the two ways to actually use
-/// it, side by side: **Try it** opens the quick in-app chat (the same dialog the
-/// header "Test" opens for providers), and **How to use** jumps to the guide for
-/// wiring the grid into their own apps. No jargon, no setup.
-class _TryThisGrid extends ConsumerWidget {
-  const _TryThisGrid();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Use this grid',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Send it a message here, or connect it to your own apps.',
-            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              FilledButton.icon(
-                onPressed: () => openPlaygroundDialog(context, ref),
-                icon: const Icon(
-                  Icons.chat_bubble_outline,
-                  size: AppControl.iconSize,
-                ),
-                label: const Text('Try it'),
-              ),
-              // Jumps to the guide, so it wears the guide's own glyph — see the
-              // note on [_SetUpThisGrid]'s pair above. ("Try it" opens a dialog
-              // rather than a section, so its chat mark stays its own.)
-              OutlinedButton.icon(
-                onPressed: () => ref
-                    .read(shellSectionProvider.notifier)
-                    .select(ShellSection.guide),
-                icon: Icon(ShellSection.guide.icon, size: AppControl.iconSize),
-                label: const Text('How to use'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 }
 
