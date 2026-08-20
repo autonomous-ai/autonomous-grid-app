@@ -637,6 +637,10 @@ class _NodeGroupBlock extends StatelessWidget {
     final rows = headed && group.isSingle
         ? const <NodeEntry>[]
         : group.machines;
+    // A one-machine block's bar, which its description line carries in place of
+    // the row it doesn't have. Null on a block with rows — they carry their own
+    // — and on a machine the relay reported no rollup for.
+    final bar = group.isSingle ? workShare(group.first, peak) : null;
     return Padding(
       padding: EdgeInsets.only(bottom: last ? 0 : 8),
       child: DecoratedBox(
@@ -666,22 +670,43 @@ class _NodeGroupBlock extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (memory.isNotEmpty) ...[
+                    // Both of the block's figures, stacked into one right-hand
+                    // column: what it brings, then what it did. They shared the
+                    // line below with the hardware description, and on a block
+                    // of four Mac Studios the two together ran 280px into a
+                    // 246px line — which wrapped `4 × Apple M2 Ultra ·` onto one
+                    // row and `macOS` onto the next, breaking the phrase at its
+                    // separator. Moved here, the description gets the full width
+                    // and the figures get a column that can be read down.
+                    if (memory.isNotEmpty || work.isNotEmpty) ...[
                       const SizedBox(width: 9),
-                      _PanelFigure(text: memory),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (memory.isNotEmpty) _PanelFigure(text: memory),
+                          if (work.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                top: memory.isEmpty ? 0 : 3,
+                              ),
+                              child: _PanelFigure(text: work),
+                            ),
+                        ],
+                      ),
                     ],
                   ],
                 ),
-              if (spec.isNotEmpty || work.isNotEmpty)
+              if (spec.isNotEmpty || bar != null)
                 Padding(
-                  padding: EdgeInsets.only(top: headed ? 4 : 0),
+                  padding: EdgeInsets.only(top: headed ? 5 : 0),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // A one-machine block has no rows, so this line *is* the
                       // machine's row and takes the bar the rail is for.
-                      if (group.isSingle)
-                        _WorkBar(share: workShare(group.first, peak))
+                      if (bar != null)
+                        _WorkBar(share: bar)
                       else
                         const SizedBox(width: _rail),
                       const SizedBox(width: _gap),
@@ -701,10 +726,6 @@ class _NodeGroupBlock extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (work.isNotEmpty) ...[
-                        const SizedBox(width: 9),
-                        _PanelFigure(text: work),
-                      ],
                     ],
                   ),
                 ),
@@ -896,9 +917,14 @@ class _WorkBar extends StatelessWidget {
       child: SizedBox(
         width: _NodeGroupBlock._rail,
         height: _height,
+        // Both bars carry their own width *and* height. A `DecoratedBox` with
+        // no child collapses to `constraints.smallest` under a `Stack`'s loose
+        // fit — which is 0×0, and drew nothing at all on every row.
         child: Stack(
           children: [
-            DecoratedBox(
+            Container(
+              width: _NodeGroupBlock._rail,
+              height: _height,
               decoration: BoxDecoration(
                 // A hairline token (8% white on the block's fill) measures
                 // 1.25:1 against it — a groove nobody would find. Derived from
@@ -910,16 +936,15 @@ class _WorkBar extends StatelessWidget {
               ),
             ),
             if (value > 0)
-              SizedBox(
+              Container(
                 width: math.max(_floor, _NodeGroupBlock._rail * value),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    // The accent's on-surface variant, not the fill: this is a
-                    // mark read *against* a background, and #2F5BEA on a dark
-                    // one manages 2.6:1.
-                    color: AppPalette.accentOnSurface,
-                    borderRadius: BorderRadius.circular(_height / 2),
-                  ),
+                height: _height,
+                decoration: BoxDecoration(
+                  // The accent's on-surface variant, not the fill: this is a
+                  // mark read *against* a background, and #2F5BEA on a dark one
+                  // manages 2.6:1.
+                  color: AppPalette.accentOnSurface,
+                  borderRadius: BorderRadius.circular(_height / 2),
                 ),
               ),
           ],
