@@ -8,7 +8,7 @@ import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/network/logic/member_display.dart';
 import '../../../features/network/logic/member_providers.dart';
 import '../../../features/network/logic/member_usage_provider.dart';
-import '../../../features/network/logic/node_display.dart';
+import '../../../features/network/logic/node_groups.dart';
 import '../../../features/network/logic/node_metrics.dart'
     show answeredWindowLabel, formatCount;
 import '../../../infrastructure/api/models/grid_overview.dart';
@@ -342,26 +342,6 @@ class _MemberRow extends StatelessWidget {
 }
 
 /// The tile carrying a member's first initial, in front of their handle.
-///
-/// A column of handles needs somewhere for the eye to land, and a letter on
-/// colour is the one mark this app can make from an address without inventing an
-/// avatar service.
-///
-/// **A quiet indigo fill, white letter.** A grey disc the same value as the
-/// panel underneath it (1.06:1 in dark) was decoration the eye skipped, and the
-/// accent itself was the opposite problem — ten saturated tiles down a panel
-/// pulled the eye off the names they introduce. [AppPalette.avatarFill] is the
-/// accent's hue with the saturation taken out, and the letter still clears
-/// 5.26:1 in light and 6.19:1 in dark.
-///
-/// **Flat, and a rounded square.** The sidebar's account avatar is a gradient
-/// *disc* with a ring and a glow, and that one means **you** — repeating it down
-/// a list of other people would say everyone here is the signed-in user. Same
-/// family, different shape, no lift.
-///
-/// Reads the theme itself: this row is built by a `ListView.builder`, which
-/// keeps a child it has already built across the panel's rebuilds, so a watch
-/// higher up would never reach it on a theme flip.
 class _MemberInitial extends StatelessWidget {
   const _MemberInitial({required this.email});
 
@@ -552,16 +532,29 @@ class _MemberDetailLine extends StatelessWidget {
   }
 }
 
-/// The machines online right now — the panel behind the pill's node count.
+/// The machines online right now, gathered under the people who run them — the
+/// panel behind the pill's node count.
 ///
 /// Strongest first ([gridOnlineNodesProvider]) and named the way the hardware
 /// panel names them ([shortenNodeNames]), so the same machine reads the same in
 /// both places.
 ///
-/// Three lines a machine, because a name and a memory figure don't answer what
-/// people actually ask of this list: which box is which ("M3 Ultra"), what it
-/// serves (chat or images), and whether it is busy. The last line is live
-/// telemetry and is routinely short or absent — see [nodeActivityLine].
+/// **A block an owner, not a row a machine.** Four lines each was four lines
+/// of which two were shared with the row above: on a grid where one person runs
+/// three identical Mac Studios, `@design`, `Apple M2 Ultra · macOS` and
+/// `1 chat model` were each printed three times, and the panel spent its width
+/// saying the same thing over. [groupNodesByOwner] states the shared half once,
+/// at the head of a block, and leaves each row carrying only the name and the
+/// speed that tell its machine from its neighbour.
+///
+/// **The work is counted once a block, and only in words.** "Which of these
+/// machines is carrying the grid" is what the list is opened to answer, and it
+/// gets answered at the level the list is now organised by — the owner
+/// ([groupWorkLabel]). Two attempts to answer it per machine, in ink, are gone:
+/// a 3px rule in the rail read as a bullet in front of the name, and a tinted
+/// band behind the row read as a row that had been selected. A 332px popover
+/// has no room for a measure that argues, and a measure nobody can read is
+/// worse than the figure it replaced.
 class GridNodesList extends ConsumerWidget {
   const GridNodesList({super.key});
 
@@ -569,128 +562,433 @@ class GridNodesList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final nodes = ref.watch(gridOnlineNodesProvider);
     final labels = shortenNodeNames([for (final n in nodes) n.name]);
+    final groups = groupNodesByOwner(nodes, labels);
+    // One scale across the whole panel, not one per block: the meters are read
+    // down the list, and a scale that restarted at each owner would draw a
+    // laptop as fast as a rack.
+    final peak = peakThroughput(nodes);
     return _PanelBody(
       label: 'Nodes',
       trailing: '${nodes.length}',
       emptyText: 'No computer is online on this grid right now.',
-      itemCount: nodes.length,
-      // Taller than the other two panels: its rows are four lines, not one. The
+      itemCount: groups.length,
+      // Taller than the other two panels: its items are blocks, not lines. The
       // cap still bites well before a long grid could outgrow the window — past
       // it the list scrolls, which is the right trade for a panel that hangs
       // over the page it opened from.
       maxHeight: 388,
-      itemBuilder: (context, i) => _NodeRow(name: labels[i], node: nodes[i]),
-    );
-  }
-}
-
-/// One machine: its name and memory, what it is, and what it's doing.
-class _NodeRow extends StatelessWidget {
-  const _NodeRow({required this.name, required this.node});
-
-  final String name;
-  final OverviewNode node;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final machine = nodeMachineLine(node);
-    final serving = nodeServingLine(node);
-    final activity = nodeActivityLine(node);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5.5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // What it's called, what it is, what it offers, what it has done — in
-          // that order, because that is the order the questions get asked. Each
-          // on its own line: the machine name is the one string here whose
-          // length nothing bounds, and every fact sharing its line was a fact
-          // that disappeared when a box turned out to be an EPYC.
-          // The owner's handle before the machine's name: on a shared grid the
-          // first question a row answers is whose box this is, and a hostname
-          // rarely says. Dropped when the relay named nobody, so the row falls
-          // back to the name alone rather than leading with an empty marker.
-          _PanelRow(
-            label: switch (nodeHostHandle(node)) {
-              '' => name,
-              final handle => '$handle · $name',
-            },
-            trailing: switch (_nodeDetail(node)) {
-              final detail? => _PanelFigure(text: detail),
-              null => null,
-            },
-            dense: true,
-          ),
-          if (machine.isNotEmpty)
-            _NodeDetailLine(text: machine, live: false, maxLines: 2),
-          if (serving.isNotEmpty) _NodeDetailLine(text: serving, live: false),
-          if (activity.isNotEmpty) _NodeDetailLine(text: activity, live: true),
-        ],
+      itemBuilder: (context, i) => _NodeGroupBlock(
+        group: groups[i],
+        peak: peak,
+        last: i == groups.length - 1,
       ),
     );
   }
 }
 
-/// A machine's second or third line. The live one ([live]) sits a step brighter
-/// than the static spec above it, and in tabular figures — it is the line whose
-/// numbers move, and digits of differing width would make the row twitch on
-/// every refresh.
-class _NodeDetailLine extends StatelessWidget {
-  const _NodeDetailLine({
-    required this.text,
-    required this.live,
-    this.maxLines = 1,
+/// One owner's machines: who they are and what they bring, then a row a
+/// machine.
+///
+/// Recessed rather than divided, because the blocks are what the eye counts
+/// first and a rule between them would leave the rows and the headings on one
+/// flat plane. [AppCard.inset] inside the panel's own surface is the app's
+/// recipe for exactly this — a well inside a card — and it is barely a step
+/// (1.09:1 dark, 1.07:1 light) on purpose: the grouping is carried by the tile
+/// and the heading above it, and the fill only agrees with them.
+class _NodeGroupBlock extends StatelessWidget {
+  const _NodeGroupBlock({
+    required this.group,
+    required this.peak,
+    required this.last,
   });
 
-  final String text;
-  final bool live;
+  final NodeGroup group;
 
-  /// How far this line may wrap before it ellipsizes.
-  ///
-  /// Two for the machine line, one for the live one. The machine line's length
-  /// is set by strings the app doesn't control — a server CPU brand runs half
-  /// again as long as any GPU name, even after the boilerplate is stripped — and
-  /// what gets cut there is the tail, where the model count lives. The live line
-  /// is figures the app formats itself, so it is bounded by construction and a
-  /// second row would only ever be empty space.
-  final int maxLines;
+  /// The fastest machine on the grid, in tokens a second — every meter's full
+  /// length.
+  final double peak;
+
+  /// Whether this is the bottom block, which pays no gap under it — the panel
+  /// has its own padding, and a block's margin on top of it reads as the list
+  /// having stopped short.
+  final bool last;
+
+  /// The left column the owner's tile stands in. Its machines are indented past
+  /// it, so a name reads as belonging to the handle above it and the block has
+  /// one left edge rather than three.
+  static const double _rail = _NodeInitial.size;
+
+  /// Between the rail and the text beside it — [_PanelRow]'s own leading gap,
+  /// so a node's name starts where a member's does one panel over.
+  static const double _gap = 9;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    // A machine the relay attributed to nobody has no owner to head a block
+    // with, and nothing shared to say above its rows. They fall into one
+    // headless block whose rows carry their own hardware, rather than into a
+    // heading that would have to invent a name for them.
+    final headed = group.handle.isNotEmpty;
+    final spec = groupSpecLine(group);
+    final work = headed ? groupWorkLabel(group) : '';
+    final memory = headed ? groupMemoryLabel(group) : '';
+    // A one-machine block names its machine in the heading and describes it on
+    // the line below; a row under that would print the same name twice.
+    final rows = headed && group.isSingle
+        ? const <NodeEntry>[]
+        : group.machines;
     return Padding(
-      padding: const EdgeInsets.only(top: 3),
-      child: Text(
-        text,
-        maxLines: maxLines,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 11.5,
-          color: live ? AppPalette.textSecondary : AppPalette.textFaint,
-          fontFeatures: live ? AppFont.tabularFigures : null,
+      padding: EdgeInsets.only(bottom: last ? 0 : 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppCard.inset,
+          borderRadius: BorderRadius.circular(AppControl.radius),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(9, 8, 9, 9),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (headed)
+                Row(
+                  children: [
+                    _NodeInitial(email: group.email),
+                    const SizedBox(width: _gap),
+                    Expanded(
+                      child: Text(
+                        groupTitle(group),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: AppFont.medium,
+                          color: AppPalette.textPrimary,
+                        ),
+                      ),
+                    ),
+                    // Both of the block's figures, stacked into one right-hand
+                    // column: what it brings, then what it did. They shared the
+                    // line below with the hardware description, and on a block
+                    // of four Mac Studios the two together ran 280px into a
+                    // 246px line — which wrapped `4 × Apple M2 Ultra ·` onto one
+                    // row and `macOS` onto the next, breaking the phrase at its
+                    // separator. Moved here, the description gets the full width
+                    // and the figures get a column that can be read down.
+                    if (memory.isNotEmpty || work.isNotEmpty) ...[
+                      const SizedBox(width: 9),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (memory.isNotEmpty) _PanelFigure(text: memory),
+                          if (work.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                top: memory.isEmpty ? 0 : 3,
+                              ),
+                              child: _PanelFigure(text: work),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              if (spec.isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.only(top: headed ? 5 : 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(width: _rail),
+                      const SizedBox(width: _gap),
+                      Expanded(
+                        child: Text(
+                          spec,
+                          // Two, for the one string here whose length nothing
+                          // bounds: a server CPU brand runs half again as long
+                          // as any GPU name.
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            height: 1.3,
+                            color: AppPalette.textFaint,
+                          ),
+                        ),
+                      ),
+                      // A one-machine block has no rows, so this line is that
+                      // machine's row and ends the way one does.
+                      if (group.isSingle)
+                        _SpeedColumn(
+                          node: group.first,
+                          share: speedShare(group.first, peak),
+                        ),
+                    ],
+                  ),
+                ),
+              for (final entry in rows)
+                _MachineRow(
+                  entry: entry,
+                  spec: entrySpecLine(group, entry.node),
+                  share: speedShare(entry.node, peak),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// What a node brings, in the order that says most about it: the memory it puts
-/// into the pool, else its subscription tier, else whatever spec it reports.
-/// Null when it reports nothing — the row is then the machine's name alone,
-/// which is honest, where a placeholder would not be.
+/// The mark at the head of a node block — the owner's initial in an accent
+/// ring.
 ///
-/// Through [nodeVramGb] and [nodeMemoryKind], the same pair the hardware panel
-/// uses, so a machine reads identically in both: a codex seat falls to its plan
-/// rather than advertising RAM that runs no model for the grid, and Apple
-/// Silicon's unified memory is called RAM in both places.
-String? _nodeDetail(OverviewNode node) {
-  final gb = nodeVramGb(node);
-  if (gb != null) return '${formatVram(gb)} ${nodeMemoryKind(node)}';
-  final plan = nodePlanLabel(node);
-  if (plan != null) return plan;
-  final spec = nodeSpecLine(node);
-  return spec.isEmpty ? null : spec;
+/// A ring rather than the members panel's filled tile, and the two lists are
+/// meant to differ. A roster is a column of people and its tiles are the
+/// column's rhythm; a node panel is a column of *machines* whose owners are the
+/// dividers between them, and a stack of saturated tiles down that panel pulled
+/// the eye onto the handles instead of the hardware they head. Drawn in the
+/// accent at its full strength, so the mark still leads the block without
+/// filling it.
+///
+/// **The one deliberate exception to the app's no-borders rule.** §1 of the
+/// design system bans a border because a border is how a surface fakes depth,
+/// and this is not a surface — it is a glyph, at the same weight the letter
+/// inside it is drawn. It carries no lift, and nothing sits on it.
+///
+/// [AppPalette.accentOnSurface], never [AppPalette.accent]: this is ink on the
+/// block's own fill, and `#2F5BEA` on a dark one manages 2.6:1. The variant
+/// holds 5.75:1 dark and 5.14:1 light.
+///
+/// Reads the theme itself: this block is built by a `ListView.builder`, which
+/// keeps a child it has already built across the panel's rebuilds, so a watch
+/// higher up would never reach it on a theme flip.
+class _NodeInitial extends StatelessWidget {
+  const _NodeInitial({required this.email});
+
+  final String email;
+
+  /// The width of the block's whole left rail, not just this mark: the work
+  /// bars beneath it are drawn to the same figure, and a tile that sized itself
+  /// would take the column out of line.
+  static const double size = 22;
+
+  /// Heavy enough to read as drawn rather than as an artefact at 22px, light
+  /// enough that the ring does not close up around the letter.
+  static const double _ring = 1.5;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final color = AppPalette.accentOnSurface;
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        // The accent at a tenth, so the disc reads as filled rather than as a
+        // hole cut in the block — the ring alone left the letter floating on
+        // the recess behind it.
+        color: AppCard.tint10,
+        border: Border.all(color: color, width: _ring),
+      ),
+      child: Text(
+        memberInitial(email),
+        // A step down from the members tile's 11.5: the ring eats 3px of the
+        // same 22px box, and the glyph has to clear it on both sides.
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+/// One machine inside a block: its name and how fast it answers.
+///
+/// [spec] is normally empty: the block above already said what these machines
+/// are. It fills only where a block's machines disagree, and then the row has
+/// to describe itself.
+class _MachineRow extends StatelessWidget {
+  const _MachineRow({
+    required this.entry,
+    required this.spec,
+    required this.share,
+  });
+
+  final NodeEntry entry;
+  final String spec;
+
+  /// This machine's speed against the grid's fastest, 0…1, or null when it
+  /// advertised none.
+  final double? share;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(width: _NodeGroupBlock._rail),
+          const SizedBox(width: _NodeGroupBlock._gap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+                if (spec.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      spec,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppPalette.textFaint,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          _SpeedColumn(node: entry.node, share: share),
+        ],
+      ),
+    );
+  }
+}
+
+/// A machine's speed, as a meter and the figure it fills to.
+///
+/// **The meter sits against its own number, in the row's numeric column.** Two
+/// earlier attempts put a measure elsewhere and both were misread: a rule in
+/// the block's left rail landed where a bullet lands and read as one, and a
+/// band behind the whole row landed in the language of hover and read as a
+/// selection. Beside the figure it explains, in a column that already means
+/// "how much", a bar has nowhere else to be read as.
+///
+/// Empty — no meter, no figure, no width — when the machine advertised no
+/// throughput, so a row for a provider too old to report it keeps its whole
+/// line for its name rather than reserving a lane for a blank.
+class _SpeedColumn extends StatelessWidget {
+  const _SpeedColumn({required this.node, required this.share});
+
+  final OverviewNode node;
+  final double? share;
+
+  /// Short, because it is paying for the name beside it. A meter reading
+  /// against a figure does not need length to be understood — the number is
+  /// right there — only enough to sort fast from slow at a glance.
+  static const double _width = 26;
+
+  static const double _height = 4;
+
+  /// The figure's own column, so every meter on the panel starts at the same x.
+  ///
+  /// Without it the figures set their own widths and each meter floated to
+  /// wherever its number left room — `~222 tok/s` pushing its bar ten pixels
+  /// left of `~12 tok/s`'s. A column of bars read against each other is the
+  /// whole reason to draw bars at all, and bars measured from different
+  /// origins cannot be. Wide enough for the longest throughput a node
+  /// realistically advertises (`~222 tok/s`); a four-digit one would sit tight
+  /// rather than shift the column.
+  static const double _figureWidth = 62;
+
+  /// Centres the rule on the 12.5pt line the machine's name occupies.
+  static const double _lift = 6;
+
+  /// A machine at 2% of the grid's fastest would otherwise fill half a pixel,
+  /// and "slow" would render exactly like "not measured" — which is the
+  /// distinction the absent meter above is for.
+  static const double _floor = _height;
+
+  /// The band's colour. Measured against the block's fill, the three clear
+  /// 4.68:1 at their worst — well past the 3:1 WCAG 1.4.11 asks of a graphic
+  /// that carries meaning, which this one does.
+  ///
+  /// Red is deliberately absent. The scale is speed *against the fastest
+  /// machine on this grid*, so its bottom is a laptop keeping up with a rack —
+  /// slower, not broken — and [AppPalette.error] in this app is reserved for
+  /// something that has actually gone wrong.
+  ///
+  /// [AppPalette.accentOnSurface], never [AppPalette.accent]: this is ink read
+  /// against a background, and `#2F5BEA` on a dark one manages 2.6:1.
+  static Color _bandColor(SpeedBand band) => switch (band) {
+    SpeedBand.trailing => AppPalette.warn,
+    SpeedBand.steady => AppPalette.accentOnSurface,
+    SpeedBand.leading => AppPalette.online,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final figure = entryFigure(node);
+    if (figure.isEmpty) return const SizedBox.shrink();
+    return Row(
+      children: [
+        if (share case final value?) ...[
+          const SizedBox(width: 9),
+          Padding(
+            padding: const EdgeInsets.only(top: _lift),
+            child: SizedBox(
+              width: _width,
+              height: _height,
+              // Both bars carry their own width *and* height: a `DecoratedBox`
+              // with no child collapses to `constraints.smallest` under a
+              // `Stack`'s loose fit, which is 0×0 and drew nothing at all.
+              child: Stack(
+                children: [
+                  Container(
+                    width: _width,
+                    height: _height,
+                    decoration: BoxDecoration(
+                      // Derived from the faint ink rather than a hairline
+                      // token: 8% white on the block's fill measures 1.25:1
+                      // against it, a groove nobody would find. This holds
+                      // 1.47:1 dark and 1.41:1 light.
+                      color: AppPalette.textFaint.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(_height / 2),
+                    ),
+                  ),
+                  Container(
+                    width: math.max(_floor, _width * value),
+                    height: _height,
+                    decoration: BoxDecoration(
+                      color: _bandColor(speedBand(value)),
+                      borderRadius: BorderRadius.circular(_height / 2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(width: 7),
+        SizedBox(
+          width: _figureWidth,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _PanelFigure(text: figure),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// What the grid's tokens were made of — the panel behind the pill's token
@@ -850,7 +1148,6 @@ class _PanelRow extends StatelessWidget {
     this.trailing,
     this.badge,
     this.strong = false,
-    this.dense = false,
   });
 
   final String label;
@@ -885,15 +1182,11 @@ class _PanelRow extends StatelessWidget {
   /// address ellipsizes into the chip rather than pushing it off the row.
   final String? badge;
 
-  /// Drops the row's own vertical breathing room — for a caller that is itself
-  /// a multi-line block ([_NodeRow]) and spaces its lines as a whole.
-  final bool dense;
-
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final row = Padding(
-      padding: EdgeInsets.symmetric(vertical: dense ? 0 : 4),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           if (leading case final mark?) ...[mark, const SizedBox(width: 9)],

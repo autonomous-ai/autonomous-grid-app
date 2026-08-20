@@ -240,6 +240,18 @@ List<String> claudeExecArgs({
   if (resumeSessionId != null) ...['--resume', resumeSessionId],
 ];
 
+/// How long a finished turn's process is given to exit on its own.
+///
+/// A turn is a `claude -p` that should end with its answer, and the app closes
+/// stdin to let it. One that stays is holding something the app has already shut
+/// the door on — a `persistent` monitor is how this happens (see
+/// [claudeToolRefusal]) — and it stays for good: 2h02m and 684 MB of resident
+/// memory on 2026-08-20, waking to ask permissions on a pipe with nobody at the
+/// other end and being told "Stream closed" every time.
+///
+/// Five seconds is room to flush and exit, and not room to stay the night.
+const Duration kClaudeExitGrace = Duration(seconds: 5);
+
 /// Real implementation: spawns `claude -p`, feeds the prompt on stdin, and turns
 /// its JSONL into [ClaudeExecEvent]s.
 class ClaudeExecServiceImpl implements ClaudeExecService {
@@ -305,6 +317,10 @@ class _ClaudeExecTurn {
   IOSink? _stdin;
   var _inputClosed = false;
   var _killed = false;
+
+  /// Counts down [kClaudeExitGrace] once the turn has ended, and stops a
+  /// process that has not gone by itself.
+  Timer? _exitGrace;
 
   /// The tool input of every permission request still waiting on an answer, by
   /// the id it arrived with. Kept because a yes has to echo the input back, and
@@ -416,15 +432,24 @@ class _ClaudeExecTurn {
     final type = decoded['type'];
     if (type is! String || !type.startsWith('control_')) return false;
     final request = parseClaudePermission(decoded, readBefore: readTextFileNow);
-    if (request != null) {
-      final input = decoded['request'];
-      final tool = input is Map ? input['input'] : null;
-      _pending[request.id] = {
-        if (tool is Map)
-          for (final entry in tool.entries) '${entry.key}': entry.value,
-      };
-      _events.add(ClaudePermissionRequested(request));
+    if (request == null) return true;
+    final input = claudePermissionInput(decoded);
+    // Answered here rather than put to the user: a yes would not make it work,
+    // so the card would be theatre and the no is the honest answer — with the
+    // reason, so the model can take the route that does work.
+    final refusal = claudeToolRefusal(claudePermissionTool(decoded), input);
+    if (refusal != null) {
+      _send(
+        claudePermissionResponse(
+          requestId: '${request.id}',
+          optionId: kRefuseOption,
+          denyMessage: refusal,
+        ),
+      );
+      return true;
     }
+    _pending[request.id] = input;
+    _events.add(ClaudePermissionRequested(request));
     return true;
   }
 
@@ -468,7 +493,8 @@ class _ClaudeExecTurn {
   }
 
   /// Let the process go. With stdin held open it would sit waiting for another
-  /// message long after the answer landed, so the turn's own ending closes it.
+  /// message long after the answer landed, so the turn's own ending closes it —
+  /// and [kClaudeExitGrace] later, so does the process if it is still there.
   void _endInput() {
     if (_inputClosed) return;
     _inputClosed = true;
@@ -478,6 +504,21 @@ class _ClaudeExecTurn {
     } on StateError {
       // Already gone.
     }
+    if (_killed) return;
+    _exitGrace = Timer(kClaudeExitGrace, _stopIfStillRunning);
+  }
+
+  /// Stop a process that outlived the turn it was started for.
+  ///
+  /// Nothing is reported: the turn has already ended and said how, and a second
+  /// verdict on a finished turn would be news about the app's own bookkeeping,
+  /// not about the work. [_killed] is set first so the exit below reads as ours
+  /// rather than as a turn that died without a word.
+  void _stopIfStillRunning() {
+    if (_process == null || _done.isCompleted) return;
+    _killed = true;
+    _process?.kill();
+    _finish();
   }
 
   /// Remember what the turn has told us, for the exit path below.
@@ -527,6 +568,7 @@ class _ClaudeExecTurn {
   }
 
   void _finish() {
+    _exitGrace?.cancel();
     _pending.clear();
     if (_done.isCompleted) return;
     _done.complete();

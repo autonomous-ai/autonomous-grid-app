@@ -361,12 +361,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   /// Acts on a sentence that asked for a command, and says whether it did.
   ///
-  /// Two endings, and the difference is who is sure. A sentence that opens with
-  /// the ask and carries what the command needs is run — that is the whole
-  /// point of saying it out loud. Anything less is **written into the composer
-  /// as the command it would be** and left there: the user reads the exact line
-  /// before it happens, edits it or sends it, and a misheard sentence costs a
-  /// keystroke instead of starting an unattended loop.
+  /// Two endings, and the difference is whether there is anything left to run.
+  /// A sentence read as a command is run — that is the whole point of saying it
+  /// out loud, and asking for a second keystroke on every repeat was friction
+  /// paid on the many for the few. What still stops here is the reading with a
+  /// hole in it: a loop with a rhythm and no work, a task with no hour. Those
+  /// are **written into the composer as the command they would be**, with a
+  /// line naming the missing piece.
   bool _offerSpokenCommand(String message) {
     final spoken = readSpokenCommand(message);
     if (spoken == null) return false;
@@ -385,13 +386,24 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _message.selection = TextSelection.collapsed(offset: line.length);
     ToastScope.show(
       context,
-      const ToastSpec(
-        message: 'Read that as a command — send it, or edit it first.',
+      ToastSpec(
+        message: _missingPieceHint(spoken.call.command),
         severity: ToastSeverity.success,
       ),
     );
     return true;
   }
+
+  /// What the composer is still waiting for, named rather than left to guess.
+  ///
+  /// The reading itself is settled by the time this is reached — the line is
+  /// already in the composer — so the only useful thing to say is which part of
+  /// it the user has to add before it can run.
+  String _missingPieceHint(ChatCommand command) => switch (command) {
+    ChatCommand.loop => 'Read that as a loop — say what to repeat, then send.',
+    ChatCommand.schedule => 'Read that as a task — add a time, then send.',
+    _ => 'Read that as a command — send it, or edit it first.',
+  };
 
   void _send(PlaygroundModality modality) {
     final message = _message.text.trim();

@@ -48,7 +48,6 @@ class AddEngineOptions extends ConsumerWidget {
     // (see `_addEngineBlocks`). Every row can act.
     return ChoiceRowGroup(
       children: [
-        ..._seatRows(ref),
         if (ref.watch(supportsBuiltInEngineProvider))
           _LocalRow(network: network),
         ?_ApiKeyRow.forCatalog(ref, network),
@@ -56,37 +55,6 @@ class AddEngineOptions extends ConsumerWidget {
       ],
     );
   }
-
-  /// A row per coding CLI already signed in on this computer (Claude Code,
-  /// Codex CLI) — nothing to download and no key to find, so they lead. Empty on
-  /// a machine with none of them, so the group never offers a road it can't
-  /// walk.
-  ///
-  /// One row each, not one row naming both: the joined row started whichever CLI
-  /// was found first, so a user with two of them could only share the other by
-  /// finding the dropdown in the Cloud Provider block further down the page.
-  List<Widget> _seatRows(WidgetRef ref) => [
-    for (final engine in seatEngines(
-      ref.watch(apiEnginesProvider).asData?.value ?? const [],
-    ))
-      _seatRow(ref, engine.provider),
-  ];
-
-  /// One seat's row. It carries no busy state — the starting card above owns
-  /// that, and these rows leave the page the moment a join begins.
-  ChoiceRow _seatRow(WidgetRef ref, ApiProvider provider) => ChoiceRow(
-    icon: const Icon(Icons.terminal_outlined),
-    title: seatRowTitle(provider),
-    line: 'Already installed and signed in — nothing to set up',
-    action: ChoiceRowAction.open,
-    onPressed: () => ref
-        .read(providerRunControllerProvider.notifier)
-        .startApiEngine(
-          network: network.networkId,
-          provider: provider,
-          apiKey: '',
-        ),
-  );
 }
 
 /// Run a downloaded model here with the built-in engine.
