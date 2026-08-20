@@ -105,53 +105,6 @@ void main() {
     );
   });
 
-  group('a night asked for without the word "loop"', () {
-    test('"chạy ít nhất tới sáng mai" is the repeat, said the way people say '
-        'it — the horizon comes after the work, not in front of it', () {
-      const line =
-          'cho task sau research + đưa ý kiến để app tối ưu về UI UX '
-          'performance mày chạy ít nhất tới sáng mai tao vào để kiểm tra';
-      final spoken = readSpokenCommand(line);
-
-      expect(spoken?.call.command, ChatCommand.loop);
-      expect(spoken?.certain, isTrue);
-      expect(
-        spoken?.call.argument,
-        line,
-        reason: 'the horizon is part of what the assistant is being told',
-      );
-    });
-
-    test('reads the English shape too', () {
-      expect(
-        readSpokenCommand('tidy the docs and keep going until morning')
-            ?.call
-            .command,
-        ChatCommand.loop,
-      );
-      expect(readSpokenCommand('run this overnight')?.certain, isTrue);
-    });
-
-    test('a "no" in front of the horizon drops it — this reading looks past '
-        'the front of the sentence, so it cannot lean on the opening rule', () {
-      for (final line in [
-        'tao không muốn mày chạy tới sáng mai',
-        'chưa cần đâu, đừng chạy qua đêm',
-      ]) {
-        expect(readSpokenCommand(line), isNull, reason: line);
-      }
-    });
-
-    test('a sentence that names a command still gets that command — the '
-        'horizon only speaks for a sentence with nothing else in it', () {
-      final spoken = readSpokenCommand(
-        'làm loop mỗi giờ quét X, chạy tới sáng mai',
-      );
-
-      expect(spoken?.call.argument, startsWith('1h '));
-    });
-  });
-
   group('a goal asked for in words', () {
     test('becomes the goal, worded as the user worded it', () {
       final spoken = readSpokenCommand(
@@ -228,11 +181,13 @@ void main() {
       expect(readSpokenCommand('/loop 5m check the deploy'), isNull);
     });
 
-    test('a refusal behind a name is still not a command — the guards that '
-        'keep unattended work from starting on a misread run first', () {
+    test('a sentence that merely talks about running is not a command — the '
+        'app reads the words it owns, and leaves the rest to the assistant '
+        'that has to read the sentence anyway', () {
       for (final line in [
         'tao cần mày đừng lặp lại nữa',
         'mình nhờ bạn khỏi đặt mục tiêu gì cả',
+        'deploy chạy tới sáng mai mới xong, mày xem hộ',
       ]) {
         expect(readSpokenCommand(line), isNull, reason: line);
       }

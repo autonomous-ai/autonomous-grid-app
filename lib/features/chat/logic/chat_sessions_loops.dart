@@ -160,9 +160,9 @@ mixin _ChatLoops on _ChatSessions {
   void _settleLoopClaim(String id) {
     final chat = _find(id);
     if (chat == null) return;
-    final asked = loopStartAskedFor(_lastReplyOf(chat), chat.loop);
-    if (asked != null) {
-      _startLoopTheUserAskedFor(id, chat, asked);
+    final relayed = parseAgentAsk(_lastReplyOf(chat));
+    if (relayed != null) {
+      _runTheAskItRelayed(id, chat, relayed);
       return;
     }
     final noted = noteUnbackedLoopClaim(chat);
@@ -178,51 +178,27 @@ mixin _ChatLoops on _ChatSessions {
     _saveAndReplace(noted);
   }
 
-  /// Start the repeat [asked] relays, with the user's own message as its prompt.
+  /// Run the command the reply relayed, in the chat it was asked in.
   ///
-  /// The first beat waits a full gap rather than going out now, unlike `/loop`:
-  /// the turn that just ended *was* the first beat — the assistant did the work
-  /// and then said to keep doing it — so sending again immediately would repeat
-  /// the same thing twice with nothing changed in between.
-  void _startLoopTheUserAskedFor(String id, Conversation chat, LoopPace asked) {
-    final gap = asked.next!;
-    final prompt = _lastAskOf(chat);
-    // Nothing the user said to repeat — a chat where the assistant spoke first.
-    // Whatever that reply meant, it did not come from an instruction, and the
-    // note below is the honest ending for it.
-    if (prompt.isEmpty) {
-      _saveAndReplace(noteUnbackedLoopClaim(chat));
-      return;
-    }
-    final now = DateTime.now();
+  /// The assistant read a sentence the app's own reading could not, and said
+  /// back what was being asked for (see [parseAgentAsk]). It goes through the
+  /// same [runCommand] the composer uses, so a `/loop` started this way is the
+  /// same object as one typed, with the same bar and the same stop.
+  ///
+  /// The block comes off the reply first: the app has acted on it, and leaving
+  /// it in shows the user a line of JSON and re-sends it as history forever.
+  void _runTheAskItRelayed(String id, Conversation chat, ChatCommandCall call) {
     ref
         .read(appLogProvider)
         .info(
           'chat',
-          'loop in $id started from the reply, every ${loopIntervalLabel(gap)}: '
-              '$prompt',
+          'chat $id: the reply relayed an ask — running '
+              '/${call.command.name} ${call.argument}',
         );
-    _saveAndReplace(
-      withoutLoopBlockOnLastReply(chat).copyWith(
-        loop: ChatLoop(
-          prompt: prompt,
-          interval: gap,
-          startedAt: now,
-          nextAt: now.add(gap),
-          pacing: asked.why,
-        ),
-      ),
-    );
-    _armLoopTimer(id, gap);
-  }
-
-  /// The last thing the user typed, which is what a loop started this way
-  /// repeats. Empty when they have not spoken in this chat.
-  String _lastAskOf(Conversation chat) {
-    for (final message in chat.messages.reversed) {
-      if (message.role == ChatRole.user) return message.text.trim();
-    }
-    return '';
+    _saveAndReplace(withoutAppBlocksOnLastReply(chat));
+    // Unawaited on purpose: this is the tail of a turn that has already ended,
+    // and a command that opens a card or asks the grid must not hold it open.
+    unawaited(runCommand(call, model: chat.model));
   }
 
   /// Say in the log that a loop stopped, and why.
@@ -452,7 +428,7 @@ mixin _ChatLoops on _ChatSessions {
       final message = messages[i];
       switch (message.role) {
         case ChatRole.assistant:
-          final clean = withoutLoopBlock(message);
+          final clean = withoutAppBlocks(message);
           if (clean.text == message.text) continue;
           messages[i] = clean;
           changed = true;
