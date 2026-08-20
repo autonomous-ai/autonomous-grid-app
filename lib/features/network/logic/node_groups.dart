@@ -167,9 +167,10 @@ String groupMemoryLabel(NodeGroup group) {
 
 /// What the block answered in the relay's window — `37.8K tokens · 24h`.
 ///
-/// The figure the rows no longer carry. Per machine it is a bar ([workShare]),
-/// which says who is carrying the grid without asking anyone to compare nine
-/// numbers; the magnitude those bars are drawn against belongs once, here.
+/// The figure the rows deliberately do not carry. Split per machine it was nine
+/// counts down a column that nobody compares, and drawn per machine — as a rule
+/// in the rail, then as a band behind the row — it read first as a bullet and
+/// then as a selection. At the owner, in words, it is one number a block.
 ///
 /// Empty when no machine in the block reported a rollup — a relay too old to
 /// compute one sends none, and a `0` standing in for "not measured" would read
@@ -189,35 +190,6 @@ String groupWorkLabel(NodeGroup group) {
   final label = answeredWindowLabel(window);
   final counts = '${formatCount(total)} output tokens';
   return label.isEmpty ? counts : '$counts · $label';
-}
-
-/// The busiest machine's output in the window — what every bar is drawn
-/// against. Zero when nothing was measured, which draws no bars at all.
-int peakTokensOut(List<OverviewNode> nodes) {
-  var peak = 0;
-  for (final node in nodes) {
-    if (node.answered case final answered?) {
-      if (answered.tokensOut > peak) peak = answered.tokensOut;
-    }
-  }
-  return peak;
-}
-
-/// How much of the grid's busiest machine's work this one did, 0…1 — the length
-/// of its bar.
-///
-/// Linear, and deliberately so. On a real grid two boxes answer a thousand
-/// times what the laptops do, and a scale that flattered the laptops would
-/// hide the one fact this panel exists to show. A machine that answered
-/// something still gets a visible nub (the row enforces a floor), so "a little"
-/// and "nothing at all" stay different.
-///
-/// Null when the machine reported no rollup — an absent bar, not an empty one:
-/// the relay never said this machine was idle.
-double? workShare(OverviewNode node, int peak) {
-  final answered = node.answered;
-  if (answered == null || peak <= 0) return null;
-  return (answered.tokensOut / peak).clamp(0.0, 1.0);
 }
 
 /// The right-hand figure on a machine's row: how fast it answers, else the plan

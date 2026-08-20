@@ -549,11 +549,14 @@ class _MemberDetailLine extends StatelessWidget {
 /// at the head of a block, and leaves each row carrying only the name and the
 /// speed that tell its machine from its neighbour.
 ///
-/// **The work is a bar, not a number.** "Which of these machines is carrying
-/// the grid" is the question this list is opened to answer, and nine token
-/// counts down a column is not an answer anyone can read at a glance — see
-/// [workShare]. The magnitude those bars are drawn against is stated once per
-/// block ([groupWorkLabel]).
+/// **The work is counted once a block, and only in words.** "Which of these
+/// machines is carrying the grid" is what the list is opened to answer, and it
+/// gets answered at the level the list is now organised by — the owner
+/// ([groupWorkLabel]). Two attempts to answer it per machine, in ink, are gone:
+/// a 3px rule in the rail read as a bullet in front of the name, and a tinted
+/// band behind the row read as a row that had been selected. A 332px popover
+/// has no room for a measure that argues, and a measure nobody can read is
+/// worse than the figure it replaced.
 class GridNodesList extends ConsumerWidget {
   const GridNodesList({super.key});
 
@@ -562,10 +565,6 @@ class GridNodesList extends ConsumerWidget {
     final nodes = ref.watch(gridOnlineNodesProvider);
     final labels = shortenNodeNames([for (final n in nodes) n.name]);
     final groups = groupNodesByOwner(nodes, labels);
-    // Across the whole panel, not per block: the bars are read down the list,
-    // and a scale that restarted at each owner would draw a laptop's morning
-    // the same length as a rack's.
-    final peak = peakTokensOut(nodes);
     return _PanelBody(
       label: 'Nodes',
       trailing: '${nodes.length}',
@@ -576,11 +575,8 @@ class GridNodesList extends ConsumerWidget {
       // it the list scrolls, which is the right trade for a panel that hangs
       // over the page it opened from.
       maxHeight: 388,
-      itemBuilder: (context, i) => _NodeGroupBlock(
-        group: groups[i],
-        peak: peak,
-        last: i == groups.length - 1,
-      ),
+      itemBuilder: (context, i) =>
+          _NodeGroupBlock(group: groups[i], last: i == groups.length - 1),
     );
   }
 }
@@ -595,26 +591,18 @@ class GridNodesList extends ConsumerWidget {
 /// (1.09:1 dark, 1.07:1 light) on purpose: the grouping is carried by the tile
 /// and the heading above it, and the fill only agrees with them.
 class _NodeGroupBlock extends StatelessWidget {
-  const _NodeGroupBlock({
-    required this.group,
-    required this.peak,
-    required this.last,
-  });
+  const _NodeGroupBlock({required this.group, required this.last});
 
   final NodeGroup group;
-
-  /// The busiest machine on the grid, in output tokens — every bar's full
-  /// length.
-  final int peak;
 
   /// Whether this is the bottom block, which pays no gap under it — the panel
   /// has its own padding, and a block's margin on top of it reads as the list
   /// having stopped short.
   final bool last;
 
-  /// The left column: the owner's tile at the head, every machine's bar down
-  /// the side. One width for both, so a block reads as a rail rather than as
-  /// three separately indented lines.
+  /// The left column the owner's tile stands in. Its machines are indented past
+  /// it, so a name reads as belonging to the handle above it and the block has
+  /// one left edge rather than three.
   static const double _rail = _NodeInitial.size;
 
   /// Between the rail and the text beside it — [_PanelRow]'s own leading gap,
@@ -637,10 +625,6 @@ class _NodeGroupBlock extends StatelessWidget {
     final rows = headed && group.isSingle
         ? const <NodeEntry>[]
         : group.machines;
-    // A one-machine block's bar, which its description line carries in place of
-    // the row it doesn't have. Null on a block with rows — they carry their own
-    // — and on a machine the relay reported no rollup for.
-    final bar = group.isSingle ? workShare(group.first, peak) : null;
     return Padding(
       padding: EdgeInsets.only(bottom: last ? 0 : 8),
       child: DecoratedBox(
@@ -697,43 +681,37 @@ class _NodeGroupBlock extends StatelessWidget {
                     ],
                   ],
                 ),
-              if (spec.isNotEmpty || bar != null)
+              if (spec.isNotEmpty)
                 Padding(
                   padding: EdgeInsets.only(top: headed ? 5 : 0),
-                  // A one-machine block has no rows, so this line *is* the
-                  // machine's row and carries its measure.
-                  child: _WorkBand(
-                    share: bar,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(width: _rail),
-                        const SizedBox(width: _gap),
-                        Expanded(
-                          child: Text(
-                            spec,
-                            // Two, for the one string here whose length nothing
-                            // bounds: a server CPU brand runs half again as long
-                            // as any GPU name, and what a single line cuts is
-                            // the tail, where the speed lives.
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              height: 1.3,
-                              color: AppPalette.textFaint,
-                            ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(width: _rail),
+                      const SizedBox(width: _gap),
+                      Expanded(
+                        child: Text(
+                          spec,
+                          // Two, for the one string here whose length nothing
+                          // bounds: a server CPU brand runs half again as long
+                          // as any GPU name, and what a single line cuts is the
+                          // tail, where the speed lives.
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            height: 1.3,
+                            color: AppPalette.textFaint,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               for (final entry in rows)
                 _MachineRow(
                   entry: entry,
                   spec: entrySpecLine(group, entry.node),
-                  share: workShare(entry.node, peak),
                 ),
             ],
           ),
@@ -810,140 +788,61 @@ class _NodeInitial extends StatelessWidget {
   }
 }
 
-/// One machine inside a block: its name, how fast it answers, and — drawn
-/// behind both — how much of the grid's work it did.
+/// One machine inside a block: its name and how fast it answers.
 ///
 /// [spec] is normally empty: the block above already said what these machines
 /// are. It fills only where a block's machines disagree, and then the row has
 /// to describe itself.
 class _MachineRow extends StatelessWidget {
-  const _MachineRow({
-    required this.entry,
-    required this.spec,
-    required this.share,
-  });
+  const _MachineRow({required this.entry, required this.spec});
 
   final NodeEntry entry;
   final String spec;
-  final double? share;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final figure = entryFigure(entry.node);
     return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: _WorkBand(
-        share: share,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // The rail the block's mark stands in, kept empty here: a machine's
-            // name lines up with its owner's handle above it, and the measure
-            // that used to sit in this column is now the row itself.
-            const SizedBox(width: _NodeGroupBlock._rail),
-            const SizedBox(width: _NodeGroupBlock._gap),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    entry.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: AppPalette.textPrimary,
-                    ),
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(width: _NodeGroupBlock._rail),
+          const SizedBox(width: _NodeGroupBlock._gap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppPalette.textPrimary,
                   ),
-                  if (spec.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        spec,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppPalette.textFaint,
-                        ),
+                ),
+                if (spec.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      spec,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppPalette.textFaint,
                       ),
                     ),
-                ],
-              ),
-            ),
-            if (figure.isNotEmpty) ...[
-              const SizedBox(width: 9),
-              _PanelFigure(text: figure),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// How much of the grid's work one machine did, drawn as the row it is written
-/// on — a band running in from the block's left edge, as long a share of the
-/// row as the machine took of the grid's busiest.
-///
-/// **The row is the bar.** This started as a 3px rule in the block's rail, and
-/// at 22px wide, sitting where a bullet sits, that is what it read as: a dash
-/// in front of a name. A measure needs length to argue with, and the only place
-/// on a 332px panel with length to spare is the row itself — which costs no
-/// column, no extra line, and hands the rail back to the names.
-///
-/// Linear, and deliberately so. On a real grid two boxes answer a thousand
-/// times what the laptops do, and a scale that flattered the laptops would hide
-/// the one fact this panel exists to show. [_floor] keeps a machine that
-/// answered *something* from rendering as a machine that answered nothing —
-/// far enough in to reach past the rail, so the band always connects to the
-/// name it belongs to instead of stranding a tab at the left edge.
-///
-/// No band at all covers two cases that a 1.16:1 wash could not tell apart
-/// anyway: a machine that answered nothing, and one the relay reported no
-/// rollup for. The block's own figure ([groupWorkLabel]) is where "this lot did
-/// nothing today" is stated in words.
-class _WorkBand extends StatelessWidget {
-  const _WorkBand({required this.share, required this.child});
-
-  /// 0…1 of [peakTokensOut], or null when the machine reported no rollup.
-  final double? share;
-
-  final Widget child;
-
-  /// The shortest band that still reads as one — past the rail, so it meets
-  /// the name.
-  static const double _floor = 44;
-
-  /// Below the block's own 8: a row inside a well is a smaller box than the
-  /// well, and the ladder never lets a child round harder than its parent.
-  static const double _radius = 6;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final value = share;
-    if (value == null || value <= 0) return child;
-    return LayoutBuilder(
-      builder: (context, constraints) => Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: math.max(_floor, constraints.maxWidth * value),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                // The accent at a fifth. A 3px rule needed 1.47:1 to be found
-                // at all; a band this size is legible at 1.16:1, and anything
-                // heavier would read as a row that had been selected.
-                color: AppCard.tint18,
-                borderRadius: BorderRadius.circular(_radius),
-              ),
+                  ),
+              ],
             ),
           ),
-          child,
+          if (figure.isNotEmpty) ...[
+            const SizedBox(width: 9),
+            _PanelFigure(text: figure),
+          ],
         ],
       ),
     );
