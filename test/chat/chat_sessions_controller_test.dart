@@ -319,6 +319,16 @@ class _FakeUsageRelay implements RelayApiClient {
   /// Throw instead of answering, for the turn-still-lands-on-failure case.
   Object? failWith;
 
+  /// When set, a call *waits right here* until the test completes it —
+  /// instead of guessing at a real delay's timing, this pins the read to a
+  /// window a test can act inside deterministically (stop the turn, delete
+  /// the chat) before letting it finish. Also what proves the turn's landing
+  /// genuinely waits on this call rather than merely happening to, since an
+  /// instantly-resolving fake can't tell a paused subscription from an
+  /// unpaused one that just got lucky (see the race [chat_sessions_send.dart]
+  /// documents on `_attachOrchestrationUsage`).
+  Completer<void>? hold;
+
   /// Every `conversation`/`from` pair this was asked for, in call order.
   final calls = <({String? conversation, String? from})>[];
 
@@ -333,6 +343,8 @@ class _FakeUsageRelay implements RelayApiClient {
     String? to,
   }) async {
     calls.add((conversation: conversation, from: from));
+    final gate = hold;
+    if (gate != null) await gate.future;
     final fail = failWith;
     if (fail != null) throw fail;
     return response;
@@ -356,6 +368,15 @@ class _FakeUsageRelay implements RelayApiClient {
     required String apiKey,
   }) => throw UnimplementedError();
 }
+
+/// [relay]'s calls that actually named a conversation — filtering out the
+/// live caption's own background poll (`turnModelUsageProvider`, started the
+/// moment a turn dispatches and independent of anything this file is
+/// testing), which hits the same fake with a `since`/`until` window and no
+/// `conversation` on it.
+List<({String? conversation, String? from})> _conversationScopedCalls(
+  _FakeUsageRelay relay,
+) => relay.calls.where((c) => c.conversation != null).toList();
 
 /// The agent's own name for a session, handed back the moment it's asked for —
 /// unless [held] is set, in which case it waits for [release].
@@ -810,12 +831,7 @@ void main() {
       expect(conv.messages.last.orchestrationModels, [
         const ModelShare(model: 'qwen', requests: 2),
       ]);
-      // Filtered to the conversation-scoped reads: the live caption's own
-      // time-window poll (`turnModelUsageProvider`) hits this same fake
-      // relay too, with no `conversation` on its call.
-      final byConversation = relay.calls
-          .where((c) => c.conversation != null)
-          .toList();
+      final byConversation = _conversationScopedCalls(relay);
       expect(byConversation.single.conversation, conv.id);
       // The conversation's first tagged turn has no watermark yet.
       expect(byConversation.single.from, isNull);
@@ -834,10 +850,7 @@ void main() {
         last: 'wm-3',
       );
       await chat.send(network: _credential(), model: 'qwen', message: 'hi2');
-      expect(
-        relay.calls.where((c) => c.conversation != null).last.from,
-        'wm-2',
-      );
+      expect(_conversationScopedCalls(relay).last.from, 'wm-2');
       expect(
         h.container
             .read(chatSessionsProvider)
@@ -847,6 +860,158 @@ void main() {
         'wm-3',
       );
     });
+
+    test('a turn genuinely waits for its usage read to finish before landing — '
+        'not merely correct on an instant fake, which an unpaused version '
+        'would pass too, only by luck of the microtask ordering', () async {
+      final relay = _FakeUsageRelay(
+        response: (
+          models: const [ModelShare(model: 'qwen', requests: 2)],
+          last: 'wm-2',
+        ),
+      )..hold = Completer<void>();
+      final h = _harness(
+        tmp,
+        relay: relay,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+      final chat = h.container.read(chatSessionsProvider.notifier);
+
+      final sent = chat.send(
+        network: _credential(),
+        model: 'qwen',
+        message: 'hi',
+      );
+      // Let the turn reach the usage read and stall there — not landed yet.
+      await pumpEventQueue();
+      expect(_conversationScopedCalls(relay), hasLength(1));
+      final mid = h.container.read(chatSessionsProvider).conversations.single;
+      expect(mid.messages.map((m) => m.role), [ChatRole.user]);
+
+      relay.hold!.complete();
+      await sent;
+
+      final conv = h.container.read(chatSessionsProvider).conversations.single;
+      expect(conv.lastRequestWatermark, 'wm-2');
+      expect(conv.messages.last.orchestrationModels, [
+        const ModelShare(model: 'qwen', requests: 2),
+      ]);
+    });
+
+    test(
+      'Stop while a turn\'s usage read is still in flight leaves the stop in '
+      'place — the read finishing afterward must not overwrite it with the '
+      'full reply it never got to see land',
+      () async {
+        final relay = _FakeUsageRelay(
+          response: (
+            models: const [ModelShare(model: 'qwen', requests: 2)],
+            last: 'wm-2',
+          ),
+        )..hold = Completer<void>();
+        final h = _harness(
+          tmp,
+          relay: relay,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+            ),
+          ],
+        );
+        final chat = h.container.read(chatSessionsProvider.notifier);
+
+        final sent = chat.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'hi',
+        );
+        await pumpEventQueue();
+        expect(
+          _conversationScopedCalls(relay),
+          hasLength(1),
+          reason: 'the read has started',
+        );
+
+        // The user hits Stop while the read is still in flight.
+        chat.stop();
+
+        // Only now does the read resolve — after the turn was already
+        // stopped.
+        relay.hold!.complete();
+        await sent;
+        await pumpEventQueue();
+
+        final conv = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single;
+        // Stop wins: nothing had streamed, so no assistant message landed —
+        // and critically, the reply the read was fetching usage *for* never
+        // gets to write itself in on top of that afterward.
+        expect(conv.messages.map((m) => m.role), [ChatRole.user]);
+        expect(conv.lastRequestWatermark, isNull);
+        expect(h.container.read(chatSessionsProvider).sending, isFalse);
+      },
+    );
+
+    test(
+      'deleting a chat while its turn\'s usage read is still in flight keeps '
+      'it deleted — the read finishing afterward must not resurrect it',
+      () async {
+        final relay = _FakeUsageRelay(
+          response: (
+            models: const [ModelShare(model: 'qwen', requests: 2)],
+            last: 'wm-2',
+          ),
+        )..hold = Completer<void>();
+        final h = _harness(
+          tmp,
+          relay: relay,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+            ),
+          ],
+        );
+        final chat = h.container.read(chatSessionsProvider.notifier);
+
+        final sent = chat.send(
+          network: _credential(),
+          model: 'qwen',
+          message: 'hi',
+        );
+        await pumpEventQueue();
+        expect(
+          _conversationScopedCalls(relay),
+          hasLength(1),
+          reason: 'the read has started',
+        );
+
+        final id = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single
+            .id;
+        chat.deleteConversation(id);
+
+        // Only now does the read resolve — after the chat was already gone.
+        relay.hold!.complete();
+        await sent;
+        await pumpEventQueue();
+
+        final state = h.container.read(chatSessionsProvider);
+        expect(state.conversations, isEmpty);
+        expect(
+          await ChatStore(directory: tmp).loadAll(),
+          isEmpty,
+          reason: 'the read landing late must not write the chat back to disk',
+        );
+      },
+    );
 
     test('a usage read that fails never blocks the turn from landing — it is '
         'enrichment, not a requirement', () async {

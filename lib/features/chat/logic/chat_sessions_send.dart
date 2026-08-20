@@ -561,6 +561,17 @@ mixin _ChatSend on _ChatSessions {
               current,
               stamp(reply),
             );
+            // The turn can be stopped, or the chat deleted, while that read
+            // was in flight: [_attachOrchestrationUsage] only pauses the
+            // *subscription*, and pausing doesn't reach back to abort a
+            // continuation already sitting at its `await` — cancelling the
+            // subscription (what Stop/Delete both do, via [_cancel]) stops
+            // future events, not this one already in progress. [done] is
+            // this exact turn's completer; [_startCommittedTurn] guards its
+            // own await the same way. Landing the reply regardless would
+            // overwrite a Stop with the full answer, or resurrect a chat the
+            // user just deleted.
+            if (!identical(_dones[id], done)) return;
             final messages = [...current.messages, landed.message];
             final answered = current.copyWith(
               updatedAt: DateTime.now(),
@@ -650,6 +661,9 @@ mixin _ChatSend on _ChatSessions {
                 current,
                 stamp(kept),
               );
+              // Same guard as the success branch above, and the same reason
+              // — Stop/Delete can land while this read is in flight.
+              if (!identical(_dones[id], done)) return;
               _commit(
                 current.copyWith(
                   updatedAt: DateTime.now(),
@@ -946,7 +960,12 @@ mixin _ChatSend on _ChatSessions {
   /// before the read below finishes, since nothing else in the stream holds
   /// it back once the turn's last update has already gone through. Resuming
   /// a subscription that was cancelled meanwhile (the user hit Stop while
-  /// this was in flight) is a no-op, not an error.
+  /// this was in flight) is a no-op, not an error — but pausing only reaches
+  /// *future* events; it cannot reach back into a continuation of this same
+  /// call that is already sitting at the `await` below. Cancelling never
+  /// aborts that continuation, so **every caller must re-check
+  /// `identical(_dones[id], done)` after this returns**, before doing
+  /// anything with the result — see the two call sites in [_dispatch].
   ///
   /// Never throws. A grid whose master predates `/relay/v1/usage`, one
   /// that's briefly unreachable, or any other failure here costs only this
