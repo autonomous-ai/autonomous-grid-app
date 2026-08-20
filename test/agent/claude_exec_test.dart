@@ -68,15 +68,20 @@ void main() {
       expect(args, containsAllInOrder(['--resume', 'sess-1']));
     });
 
-    test('every turn takes away the session-only scheduler, which would '
+    test('every turn takes away the session-only schedulers, which would '
         'report a job scheduled and then never fire it', () {
       final args = claudeExecArgs(model: 'm');
       final flag = args.indexOf('--disallowedTools');
       expect(flag, isNot(-1));
       expect(
-        args.sublist(flag + 1, flag + 1 + kClaudeSessionCronTools.length),
-        kClaudeSessionCronTools,
+        args.sublist(flag + 1, flag + 1 + kClaudeSessionSchedulerTools.length),
+        kClaudeSessionSchedulerTools,
       );
+    });
+
+    test('the wake-up timer goes with the cron tools: it is the one an agent '
+        'reaches for when asked for a loop, and it dies with the turn', () {
+      expect(kClaudeSessionSchedulerTools, contains('ScheduleWakeup'));
     });
 
     test('a relay turn drops the web tools onto that same flag — a second '
@@ -84,10 +89,16 @@ void main() {
       final args = claudeExecArgs(model: 'm', withoutServerWebTools: true);
       expect(args.where((a) => a == '--disallowedTools'), hasLength(1));
       final flag = args.indexOf('--disallowedTools');
-      expect(args.sublist(flag + 1, flag + 1 + 5), [
-        ...kClaudeSessionCronTools,
-        ...kClaudeServerWebTools,
-      ]);
+      expect(
+        args.sublist(
+          flag + 1,
+          flag +
+              1 +
+              kClaudeSessionSchedulerTools.length +
+              kClaudeServerWebTools.length,
+        ),
+        [...kClaudeSessionSchedulerTools, ...kClaudeServerWebTools],
+      );
     });
 
     test('the grant is the one named in kClaudePermissionMode, never an '

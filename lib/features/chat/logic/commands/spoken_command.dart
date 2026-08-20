@@ -1,4 +1,5 @@
 import 'chat_command.dart';
+import 'word_edge.dart';
 
 /// A command the app owns, read out of an ordinary sentence.
 ///
@@ -33,11 +34,26 @@ SpokenCommand? readSpokenCommand(String text) {
   final lower = line.toLowerCase();
   // Questions and refusals first: both open with the words a command uses.
   if (_negated.hasMatch(lower) || _asking.hasMatch(lower)) return null;
-  return _readStop(lower) ??
-      _readLoop(line, lower) ??
-      _readGoal(line, lower) ??
-      _readSchedule(line, lower);
+  final spoken = _read(line, lower);
+  if (spoken != null) return spoken;
+  // Nothing opened the sentence — but "tao cần mày làm loop mỗi giờ" is the ask
+  // with a name in front of it, and reading nothing there is what sent two
+  // mornings' worth of repeats to an agent that cannot make one. So look again
+  // behind an address, and **offer** whatever is found rather than run it: the
+  // opening-word rule is what keeps a misread from starting something
+  // unattended, and past those words there is less standing behind the reading.
+  final addressed = _address.matchAsPrefix(lower)?.end ?? 0;
+  if (addressed == 0) return null;
+  final asked = _read(line.substring(addressed), lower.substring(addressed));
+  return asked == null ? null : (call: asked.call, certain: false);
 }
+
+/// The four readings, in the order a sentence is tried against them.
+SpokenCommand? _read(String line, String lower) =>
+    _readStop(lower) ??
+    _readLoop(line, lower) ??
+    _readGoal(line, lower) ??
+    _readSchedule(line, lower);
 
 /// The `/command argument` line a reading stands for — what the composer is
 /// filled with when it isn't certain enough to run.
@@ -136,9 +152,18 @@ SpokenCommand? _readSchedule(String line, String lower) {
 }
 
 /// Openings that mean "repeat this".
+///
+/// Two shapes, because people ask for this two ways. "lặp lại mỗi 30 phút …"
+/// describes the repeating; "làm loop mỗi giờ 1 lần" names the loop as a thing
+/// to make, and that is the one reached for when the task is already on screen
+/// and only the gap is left to say. Missing the second shape is what left
+/// "làm loop mỗi giờ làm 1 lần đi" to an agent on 2026-08-20, which answered
+/// that the loop was on and set nothing.
 final List<RegExp> _loopTriggers = [
   RegExp(r'^(lặp lại|lặp|chạy lặp|làm lại)\s+'),
-  RegExp(r'^(run|start) (a |the )?loop\s+'),
+  RegExp(r'^(làm|tạo|bật|đặt|chạy)\s+(cái\s+)?(loop|vòng lặp)\s+'),
+  RegExp(r'^(làm|chuyển)\s+((nó|cái này)\s+)?thành\s+(loop|vòng lặp)\s+'),
+  RegExp(r'^(run|start|make|create|set up) (a |the )?loop\s+'),
   RegExp(r'^(loop (this|it)|keep checking|check again)\s+'),
 ];
 
@@ -160,6 +185,17 @@ final List<RegExp> _scheduleTriggers = [
     r'|wednesday|thursday|friday|saturday|sunday|weekday)\b',
   ),
 ];
+
+/// Naming who does it, before saying what to do.
+///
+/// Every part is optional so that it matches the way people actually stack them
+/// ("tao cần mày …", "mày …", "hãy …"), and an empty match means the sentence
+/// was not addressed at all — which the caller reads as "no command here".
+final RegExp _address = RegExp(
+  r'^((tao|tôi|mình|em|anh|chị)\s+(cần|muốn|nhờ)\s+)?'
+  r'((mày|bạn|em|cậu|you)\s+)?'
+  r'((hãy|làm ơn|please)\s+)?',
+);
 
 /// A time of day, in either language — what makes a schedule specific.
 final RegExp _hasClock = RegExp(
@@ -208,14 +244,22 @@ String _spell(Match match) {
 }
 
 /// `mỗi 30 phút …` — the gap where it lifts out without breaking the sentence.
-final RegExp _intervalAtFront = RegExp('^${_intervalBody}s*');
-final RegExp _intervalAtBack = RegExp('\\s*$_intervalBody\\s*\$');
-final RegExp _interval = RegExp(_intervalBody);
+final RegExp _intervalAtFront = RegExp('^$_intervalBody\\s*', unicode: true);
+final RegExp _intervalAtBack = RegExp(
+  '\\s*$_intervalBody\\s*\$',
+  unicode: true,
+);
+final RegExp _interval = RegExp(_intervalBody, unicode: true);
 
 /// `mỗi 30 phút`, `every 2 hours`, `mỗi giờ` — a gap with or without a number.
+///
+/// Its edges are [kBeforeWord]/[kAfterWord] rather than `\b`, which is what
+/// the `unicode: true` above is for: `\b` could not match "mỗi giờ" at all.
 const String _intervalBody =
-    r'\b(?:mỗi|sau|every|each)?\s*'
+    '$kBeforeWord'
+    r'(?:mỗi|sau|every|each)?\s*'
     // A bare `s`/`m`/`h` only counts behind a number: without that, the "s" of
     // "sáng" is a unit and "mỗi sáng 8h" reads as an interval.
     r'(?:(\d+)\s*(giây|phút|giờ|seconds?|minutes?|mins?|hours?|[smh])'
-    r'|(giây|phút|giờ|second|minute|hour))\b';
+    r'|(giây|phút|giờ|second|minute|hour))'
+    '$kAfterWord';

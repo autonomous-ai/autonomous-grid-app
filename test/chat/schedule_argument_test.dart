@@ -43,6 +43,17 @@ void main() {
       expect(request?.schedule.toSchedule(), 'every 30m');
     });
 
+    test('an hourly repeat keeps its cadence — said as "giờ" it used to lose '
+        'it and quietly become a once-a-day task', () {
+      final hourly = parseScheduleArgument('mỗi giờ quét X');
+      expect(hourly?.schedule.cadence, JobCadence.hourly);
+      expect(hourly?.prompt, 'quét X');
+
+      final twoHourly = parseScheduleArgument('mỗi 2 giờ kiểm tra deploy');
+      expect(twoHourly?.schedule.cadence, JobCadence.every2Hours);
+      expect(twoHourly?.prompt, 'kiểm tra deploy');
+    });
+
     test('weekdays only, when that is what was asked for', () {
       expect(
         parseScheduleArgument(
