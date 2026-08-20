@@ -77,6 +77,19 @@ String clipChatTitle(String text) {
   return '${kept.trimRight()}…';
 }
 
+/// [title] as the text to hand a rename field.
+///
+/// The "…" on the end is [clipChatTitle]'s mark for *where the name was cut*,
+/// not part of the name — so a field seeded with it invites the user to keep it,
+/// and a chat ends up called "Làm cho task sau research + đưa ý kiến…" on
+/// purpose. It also reads as the field truncating the name, which it isn't:
+/// 40 characters is all there ever was.
+String editableChatTitle(String title) {
+  final trimmed = title.trimRight();
+  if (!trimmed.endsWith('…')) return trimmed;
+  return trimmed.substring(0, trimmed.length - 1).trimRight();
+}
+
 /// The lead-in a model writes in front of the answer it was asked for alone.
 final _leadIn = RegExp(
   r'^(?:chat\s+)?(?:title|name)\s*[:\-]\s*',

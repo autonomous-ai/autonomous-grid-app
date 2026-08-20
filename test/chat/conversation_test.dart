@@ -372,6 +372,20 @@ void main() {
     });
   });
 
+  group('editableChatTitle', () {
+    test("drops the clip mark so a rename doesn't keep someone else's "
+        'ellipsis', () {
+      expect(
+        editableChatTitle('Rewrite the onboarding checklist for…'),
+        'Rewrite the onboarding checklist for',
+      );
+    });
+
+    test('leaves a name that was never clipped exactly as it is', () {
+      expect(editableChatTitle('Ford Territory'), 'Ford Territory');
+    });
+  });
+
   group('liveConversations', () {
     test('hides the archived chats and keeps the order it was given', () {
       final live = liveConversations([

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../logic/chat_sessions_controller.dart';
+import '../logic/chat_title.dart';
 
 /// The box both states wear — see [_TitleBox]. Small numbers, but they have to
 /// be the *same* numbers on the label and on the field, or opening the field
@@ -82,7 +83,7 @@ class _ChatHeaderTitleState extends ConsumerState<ChatHeaderTitle> {
   }
 
   void _startEditing() {
-    _controller.text = widget.title;
+    _controller.text = editableChatTitle(widget.title);
     // Selected, not just placed: the usual rename replaces the whole
     // auto-generated name, and leaving the caret at the end makes that a
     // select-all first. Anchored backwards (extent at 0) so a name too long for
