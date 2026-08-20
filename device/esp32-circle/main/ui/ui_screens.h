@@ -222,8 +222,11 @@ bool ui_awaiting_answer(void);
 // --- Voice ---
 // The project id of the currently-visible tile, or "" on the Overview.
 const char *ui_active_tile_id(void);
-// Stop the running capture. Safe to call from a non-LVGL task. There is no ui_voice_start() any more:
-// starting one is a button on the screen that owns it, so it never has to travel through this header.
+// Start a plain capture for the visible tile — the double-tap gesture's way in (touch.c). The buttons on
+// the Overview and on an agent tile do not come through here: they name the command they mean (Goal, Loop)
+// and call it directly.
+void ui_voice_start(void);
+// Stop the running capture. Safe to call from a non-LVGL task.
 void ui_voice_stop(void);
 
 // Ask grid-app to interrupt the visible project's turn. No-op if that tile isn't working.

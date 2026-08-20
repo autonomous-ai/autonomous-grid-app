@@ -5300,6 +5300,11 @@ static void voice_start_impl(voice_cmd_t cmd)
     voice_start(route ? NULL : pid, cmd);
 }
 
+// Double-tap on an agent tile / its reader (touch.c). The Overview and the tiles' own action rows call
+// voice_start_impl directly with the command they mean; this is the gesture's way in, and it means the
+// plain kind — a Goal or a Loop is a deliberate thing you pick, not something a gesture should guess.
+void ui_voice_start(void) { voice_start_impl(VOICE_CMD_NONE); }
+
 void ui_voice_stop(void)
 {
     // Hide the recording indicator FIRST and unconditionally: voice_stop() can block

@@ -14,6 +14,9 @@
 static const char *TAG = "touch";
 static esp_lcd_touch_handle_t s_tp;
 
+#define DOUBLE_TAP_MS 500   // two taps within this window (and close in position) = a double-tap. Also the
+                            // delay before a single tap opens the detail reader ON THE SCREENS WHERE A
+                            // DOUBLE-TAP MEANS SOMETHING — see voice_gesture_here().
 #define LONG_PRESS_MS 5000  // hold still this long = a deliberate long-press (create project / open WiFi portal)
 #define LONG_MOVE_PX  30    // a press that moves more than this is a swipe, not a hold
 
@@ -47,6 +50,38 @@ static void longpress_track(bool pressed, uint16_t x, uint16_t y)
     prev = pressed;
 }
 
+// Edge-triggered double-tap detector. Call EVERY read (to track the press edge); returns true once
+// on the second of two quick, nearby taps.
+static bool double_tap(bool pressed, uint16_t x, uint16_t y)
+{
+    static bool prev;
+    static uint32_t last_ms;
+    static int16_t lx, ly;
+    bool hit = false;
+    if (pressed && !prev) {                          // rising edge = a tap
+        uint32_t now = lv_tick_get();
+        int dx = (int)x - lx, dy = (int)y - ly;
+        if (now - last_ms < DOUBLE_TAP_MS && dx * dx + dy * dy < 80 * 80) {
+            hit = true; last_ms = 0;                 // consumed — a 3rd tap won't re-trigger
+        } else {
+            last_ms = now; lx = x; ly = y;
+        }
+    }
+    prev = pressed;
+    return hit;
+}
+
+// Where a double-tap starts a voice turn: on an agent tile, and inside its detail reader. NOT on the
+// Overview or Settings — the Overview has its own labelled Voice / Goal / Loop row, and Settings has
+// nothing to talk to.
+//
+// ui_active_tile_id() answers both at once: it is "" on the Overview and on Settings, and the reader
+// belongs to the tile underneath it, so a non-empty id IS "there is an agent here to speak to".
+static bool voice_gesture_here(void)
+{
+    return ui_active_tile_id()[0] != '\0';
+}
+
 bool touch_take_longpress(void)
 {
     bool v = s_longpress;
@@ -66,22 +101,28 @@ bool touch_take_longpress(void)
 // On the detail reader the ONLY non-scroll vertical gesture is a tight bottom-edge up-swipe → Overview, so it
 // uses a much narrower band than the carousel screens: a swipe that STARTS within the bottom ~20px (panel 466).
 #define READER_HOME_EDGE_PX 446
-// THE SCREEN-WIDE VOICE GESTURES ARE GONE (2026-08-20): double-tap started a turn, a ≥2s still-hold
-// started a Goal one. Overview and every agent tile carry Voice / Goal / Loop as visible buttons now, and
-// a hidden gesture that duplicates a button is not a shortcut — it is a way to start a recording by
-// accident, on a device whose whole screen is the target.
+// DOUBLE-TAP STARTS VOICE, on an agent tile and in its detail reader only (voice_gesture_here()). It was
+// removed screen-wide on 2026-08-20 — every screen has a visible Voice button, and a hidden gesture that
+// duplicates a button is a way to start a recording by accident — and put back the same day for these two
+// screens, where reaching a 40px mark is worse than tapping twice anywhere. The Overview keeps its
+// labelled row and nothing else; the ≥2s hold-for-Goal stayed gone, since Goal has a button of its own.
 //
-// Their removal is what lets a tap act AT ONCE. A tap and the first half of a double-tap are the same
-// event, so the tap's action had to be deferred by the whole double-tap window before it could be
-// trusted; every tap on this panel therefore took half a second to land. Nothing to disambiguate, no
-// wait. (The reader is the one screen that loses voice altogether — it has no button row. Swiping back
-// to the tile is one gesture away, and that tile has all three.)
+// The COST is the deferral below, and it is worth stating plainly: a tap and the first half of a
+// double-tap are the same event, so wherever a double-tap means something the tap's action has to wait out
+// DOUBLE_TAP_MS before it can be trusted. That is why the deferral is scoped to exactly those screens
+// rather than applied everywhere — on the Overview a tap acts at once, and on the reader there is no
+// single-tap action to race, so the only screen that pays is the agent tile.
 //
-// Swallow all input until the finger lifts — set after a wake tap so the consumed gesture doesn't also
-// drive the UI. File-scope so swipe_track can be gated off while it's set
+// Swallow all input until the finger lifts — set after a wake tap or a double-tap-voice so the consumed
+// gesture doesn't also drive the UI. File-scope so swipe_track can be gated off while it's set
 // (otherwise swipe_track starts mid-gesture on the read after wake and classifies the release as a tap →
 // stray "open detail" on the very tap that woke the screen).
 static bool s_swallow_until_release;
+// A tap whose action is held back until the double-tap window has passed, cancelled if a 2nd tap arrives.
+// Anchored to the PRESS, so the wait is the window and not the window plus however long the finger stayed
+// down. Only ever set where voice_gesture_here() — see the note above.
+static bool s_tap_pending;
+static uint32_t s_tap_pending_ms;
 // Touchpad reporting: pixels travelled since the last frame went out, when that was, and how fast the
 // finger was moving while it did.
 #define SCROLL_MIN_PX   8
@@ -196,10 +237,17 @@ static void swipe_track(bool pressed, uint16_t x, uint16_t y)
         else if (abs(dx) < LONG_MOVE_PX && abs(dy) < LONG_MOVE_PX
                  && lv_tick_elaps(t0) < TAP_MAX_MS) {   // near-still TAP
             // A tap while RECORDING always stops the voice — on EVERY screen, including the reader, where
-            // the overlay is all there is. Otherwise it opens the detail screen, immediately: see the note
-            // on the removed gestures above for why this no longer waits.
+            // the overlay is all there is. That one is never deferred: stopping must feel immediate, and
+            // a second tap during a recording means nothing anyway.
+            //
+            // Otherwise it opens the detail screen — held back only on the screens where a double-tap is
+            // also a gesture, because there the two are the same event until the window passes. The reader
+            // has no single-tap action to hold back at all.
             if (rec_at_down) ui_voice_stop();
-            else if (!reader && !voice) ui_tap();
+            else if (!reader && !voice) {
+                if (voice_gesture_here()) { s_tap_pending = true; s_tap_pending_ms = t0; }
+                else ui_tap();
+            }
         }
         // (a swipe while recording matches none of the above → ignored; only a still tap stops the voice)
     }
@@ -228,12 +276,14 @@ static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
     static bool action_prev, action_capture;
     if (pressed && !action_prev) {
         action_capture = ui_action_row_hit(x, y);
+        if (action_capture) s_tap_pending = false;
     }
     bool action_touch = action_capture && (pressed || action_prev);
     bool gesture_pressed = pressed && !action_touch;
     if (!pressed && action_prev) action_capture = false;
     action_prev = pressed;
 
+    bool dbl = double_tap(gesture_pressed, x, y);     // call every read to keep edge tracking valid
     longpress_track(gesture_pressed, x, y);           // detect a deliberate hold (portal trigger in standby)
 
     // The notification zone OWNS its gestures — like the brightness catcher — so a pull-down or a list
@@ -271,6 +321,14 @@ static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
     // so the release of that gesture isn't misread as a fresh tap.
     if (!display_is_asleep() && !s_swallow_until_release) swipe_track(gesture_pressed, x, y);
 
+    // Resolve a deferred single tap. Anchored to the PRESS and only fires once the double-tap window has
+    // passed — so a double-tap always cancels it first. Extra guard: skip if a turn just started (voice).
+    if (dbl) s_tap_pending = false;
+    else if (s_tap_pending && lv_tick_elaps(s_tap_pending_ms) >= DOUBLE_TAP_MS) {
+        s_tap_pending = false;
+        if (!display_is_asleep() && !ui_voice_is_active()) ui_tap();
+    }
+
     // A consumed gesture keeps being swallowed until the finger lifts, so it doesn't also land as a UI
     // press underneath.
     if (s_swallow_until_release) {
@@ -290,6 +348,18 @@ static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
     // natively scroll the tileview to Settings and a stop-tap can't land on a Wifi/passcode row underneath.
     // tap-to-stop + swipe suppression already ran in swipe_track above (raw coords) — swallow everything else.
     if (ui_voice_is_active()) { data->state = LV_INDEV_STATE_RELEASED; return; }
+
+    // Awake: double-tap STARTS voice, on the two screens that have an agent behind them. Start-only —
+    // stopping is a single tap (swipe_track). A live turn keeps audio active and blocks a restart.
+    //
+    // Swallowed ONLY when it actually started something: on the Overview and in Settings a double-tap is
+    // two ordinary taps, and eating them would break double-tapping a row.
+    if (dbl && voice_gesture_here() && !ui_voice_is_active()) {
+        ui_voice_start();
+        s_swallow_until_release = true;              // don't let the 2 taps land as UI presses
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
 
     if (pressed) {
         data->point.x = x;
