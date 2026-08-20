@@ -700,33 +700,33 @@ class _NodeGroupBlock extends StatelessWidget {
               if (spec.isNotEmpty || bar != null)
                 Padding(
                   padding: EdgeInsets.only(top: headed ? 5 : 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // A one-machine block has no rows, so this line *is* the
-                      // machine's row and takes the bar the rail is for.
-                      if (bar != null)
-                        _WorkBar(share: bar)
-                      else
+                  // A one-machine block has no rows, so this line *is* the
+                  // machine's row and carries its measure.
+                  child: _WorkBand(
+                    share: bar,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         const SizedBox(width: _rail),
-                      const SizedBox(width: _gap),
-                      Expanded(
-                        child: Text(
-                          spec,
-                          // Two, for the one string here whose length nothing
-                          // bounds: a server CPU brand runs half again as long
-                          // as any GPU name, and what a single line cuts is the
-                          // tail, where the speed lives.
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            height: 1.3,
-                            color: AppPalette.textFaint,
+                        const SizedBox(width: _gap),
+                        Expanded(
+                          child: Text(
+                            spec,
+                            // Two, for the one string here whose length nothing
+                            // bounds: a server CPU brand runs half again as long
+                            // as any GPU name, and what a single line cuts is
+                            // the tail, where the speed lives.
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              height: 1.3,
+                              color: AppPalette.textFaint,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               for (final entry in rows)
@@ -810,9 +810,10 @@ class _NodeInitial extends StatelessWidget {
   }
 }
 
-/// One machine inside a block: its bar, its name, and how fast it answers.
+/// One machine inside a block: its name, how fast it answers, and — drawn
+/// behind both — how much of the grid's work it did.
 ///
-/// [spec] is normally empty — the block above already said what these machines
+/// [spec] is normally empty: the block above already said what these machines
 /// are. It fills only where a block's machines disagree, and then the row has
 /// to describe itself.
 class _MachineRow extends StatelessWidget {
@@ -831,124 +832,119 @@ class _MachineRow extends StatelessWidget {
     AppTheme.watch(context);
     final figure = entryFigure(entry.node);
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _WorkBar(share: share),
-          const SizedBox(width: _NodeGroupBlock._gap),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: AppPalette.textPrimary,
-                  ),
-                ),
-                if (spec.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      spec,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppPalette.textFaint,
-                      ),
+      padding: const EdgeInsets.only(top: 4),
+      child: _WorkBand(
+        share: share,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // The rail the block's mark stands in, kept empty here: a machine's
+            // name lines up with its owner's handle above it, and the measure
+            // that used to sit in this column is now the row itself.
+            const SizedBox(width: _NodeGroupBlock._rail),
+            const SizedBox(width: _NodeGroupBlock._gap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: AppPalette.textPrimary,
                     ),
                   ),
-              ],
+                  if (spec.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        spec,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppPalette.textFaint,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (figure.isNotEmpty) ...[
-            const SizedBox(width: 9),
-            _PanelFigure(text: figure),
+            if (figure.isNotEmpty) ...[
+              const SizedBox(width: 9),
+              _PanelFigure(text: figure),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
-/// How much of the grid's work one machine did, as a rule in the block's rail.
+/// How much of the grid's work one machine did, drawn as the row it is written
+/// on — a band running in from the block's left edge, as long a share of the
+/// row as the machine took of the grid's busiest.
 ///
-/// Always the rail's full width, so the bars line up into a column that can be
-/// read down whether or not any given machine reported anything — a bar that
-/// shrank its own box would take the name beside it along.
+/// **The row is the bar.** This started as a 3px rule in the block's rail, and
+/// at 22px wide, sitting where a bullet sits, that is what it read as: a dash
+/// in front of a name. A measure needs length to argue with, and the only place
+/// on a 332px panel with length to spare is the row itself — which costs no
+/// column, no extra line, and hands the rail back to the names.
 ///
-/// Three states, and they are three different facts: a filled bar (this
-/// machine answered), an empty track (it answered nothing, and the relay
-/// counted), and nothing at all (the relay reported no rollup for it, so
-/// nobody knows). A track standing in for the third would call an unmeasured
-/// machine idle.
-class _WorkBar extends StatelessWidget {
-  const _WorkBar({required this.share});
+/// Linear, and deliberately so. On a real grid two boxes answer a thousand
+/// times what the laptops do, and a scale that flattered the laptops would hide
+/// the one fact this panel exists to show. [_floor] keeps a machine that
+/// answered *something* from rendering as a machine that answered nothing —
+/// far enough in to reach past the rail, so the band always connects to the
+/// name it belongs to instead of stranding a tab at the left edge.
+///
+/// No band at all covers two cases that a 1.16:1 wash could not tell apart
+/// anyway: a machine that answered nothing, and one the relay reported no
+/// rollup for. The block's own figure ([groupWorkLabel]) is where "this lot did
+/// nothing today" is stated in words.
+class _WorkBand extends StatelessWidget {
+  const _WorkBand({required this.share, required this.child});
 
   /// 0…1 of [peakTokensOut], or null when the machine reported no rollup.
   final double? share;
 
-  static const double _height = 3;
+  final Widget child;
 
-  /// Where the rule sits against the line beside it — centred on the 12.5pt
-  /// line box a machine's name occupies.
-  static const double _lift = 6;
+  /// The shortest band that still reads as one — past the rail, so it meets
+  /// the name.
+  static const double _floor = 44;
 
-  /// The shortest a bar may be and still read as one. Linear against a grid
-  /// whose busiest box answers a thousand times what a laptop does puts a
-  /// working machine under half a pixel, and "did a little" would then render
-  /// exactly like "did nothing" — the one distinction the empty track is for.
-  static const double _floor = 3;
+  /// Below the block's own 8: a row inside a well is a smaller box than the
+  /// well, and the ladder never lets a child round harder than its parent.
+  static const double _radius = 6;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final value = share;
-    if (value == null) {
-      return const SizedBox(width: _NodeGroupBlock._rail);
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: _lift),
-      child: SizedBox(
-        width: _NodeGroupBlock._rail,
-        height: _height,
-        // Both bars carry their own width *and* height. A `DecoratedBox` with
-        // no child collapses to `constraints.smallest` under a `Stack`'s loose
-        // fit — which is 0×0, and drew nothing at all on every row.
-        child: Stack(
-          children: [
-            Container(
-              width: _NodeGroupBlock._rail,
-              height: _height,
+    if (value == null || value <= 0) return child;
+    return LayoutBuilder(
+      builder: (context, constraints) => Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: math.max(_floor, constraints.maxWidth * value),
+            child: DecoratedBox(
               decoration: BoxDecoration(
-                // A hairline token (8% white on the block's fill) measures
-                // 1.25:1 against it — a groove nobody would find. Derived from
-                // the faint ink instead, the empty track holds 1.47:1 dark and
-                // 1.41:1 light, which is what the third state below needs to
-                // exist at all.
-                color: AppPalette.textFaint.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(_height / 2),
+                // The accent at a fifth. A 3px rule needed 1.47:1 to be found
+                // at all; a band this size is legible at 1.16:1, and anything
+                // heavier would read as a row that had been selected.
+                color: AppCard.tint18,
+                borderRadius: BorderRadius.circular(_radius),
               ),
             ),
-            if (value > 0)
-              Container(
-                width: math.max(_floor, _NodeGroupBlock._rail * value),
-                height: _height,
-                decoration: BoxDecoration(
-                  // The accent's on-surface variant, not the fill: this is a
-                  // mark read *against* a background, and #2F5BEA on a dark one
-                  // manages 2.6:1.
-                  color: AppPalette.accentOnSurface,
-                  borderRadius: BorderRadius.circular(_height / 2),
-                ),
-              ),
-          ],
-        ),
+          ),
+          child,
+        ],
       ),
     );
   }
