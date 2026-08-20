@@ -19,6 +19,7 @@ import '../../widgets/app_spinner.dart';
 import '../../widgets/panel_toggle.dart';
 import '../shell_state.dart';
 import 'grid_power_pill.dart';
+import 'invite_pill.dart';
 import 'top_bar_pill.dart';
 import 'working_now_pill.dart';
 
@@ -104,6 +105,12 @@ class AppTopBar extends ConsumerWidget {
                 // they may want to act on.
                 const WorkingNowPill(),
                 const _ModelDownloadPill(),
+                // Immediately before the grid pill, because the grid is what an
+                // invite is *to*: the faces, then the name of the place they
+                // are on, reads as one sentence. Behind the download pill so a
+                // transfer in progress — which is temporary and time-sensitive
+                // — still lands nearest the eye's entry point.
+                const InvitePill(),
                 const GridPowerPill(),
                 const _ProjectRailToggle(),
                 const _BottomPanelToggle(),
