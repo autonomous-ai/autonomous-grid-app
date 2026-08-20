@@ -47,6 +47,7 @@ class _FakeChatTransport implements ChatTransport {
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     yield ChatDelta(reply);
     yield const ChatDone();
