@@ -1,3 +1,4 @@
+import 'routing_group.dart';
 import 'turn_model_share.dart';
 import '../../../infrastructure/cli/model_control_tokens.dart';
 import '../../../infrastructure/cli/agent_event.dart';
@@ -31,6 +32,8 @@ class Conversation {
     this.compaction,
     this.resume,
     this.documentPath,
+    this.lastRequestWatermark,
+    this.routingGroup,
   });
 
   final String id;
@@ -142,6 +145,18 @@ class Conversation {
   /// longer opened any.
   final String? documentPath;
 
+  /// The cursor the grid returned with this chat's last request, or null
+  /// before any request has gone out.
+  ///
+  /// Opaque to the app — it exists only to be sent back on the next request
+  /// so the grid can resume from where this chat's polling left off, rather
+  /// than replaying answers it already delivered.
+  final String? lastRequestWatermark;
+
+  /// The routing mode and models this chat is pinned to, or null for the
+  /// grid's ordinary pick. See [RoutingGroup].
+  final RoutingGroup? routingGroup;
+
   /// True when this chat is hidden from the sidebar, the tray and ⌘K.
   bool get isArchived => archivedAt != null;
 
@@ -192,6 +207,12 @@ class Conversation {
     // on being that document's chat. There is no gesture that unpairs them —
     // the way to a conversation about something else is a new chat.
     String? documentPath,
+    String? lastRequestWatermark,
+    // Only ever *set*, like [documentPath]: a chat pinned to a routing mode
+    // stays pinned until the picker explicitly asks to go back to the grid's
+    // own choice, which is what [clearRoutingGroup] says.
+    RoutingGroup? routingGroup,
+    bool clearRoutingGroup = false,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -210,6 +231,10 @@ class Conversation {
     compaction: compaction ?? this.compaction,
     resume: clearResume ? null : (resume ?? this.resume),
     documentPath: documentPath ?? this.documentPath,
+    lastRequestWatermark: lastRequestWatermark ?? this.lastRequestWatermark,
+    routingGroup: clearRoutingGroup
+        ? null
+        : (routingGroup ?? this.routingGroup),
   );
 
   Map<String, dynamic> toJson() => {
@@ -246,6 +271,13 @@ class Conversation {
     // Same rule once more: absent means an ordinary chat, which is what every
     // conversation written before Docs existed is.
     if (documentPath != null) 'documentPath': documentPath,
+    // Same rule again: absent means "no request has gone out yet", which is
+    // what every chat written before polling could resume was.
+    if (lastRequestWatermark != null)
+      'lastRequestWatermark': lastRequestWatermark,
+    // Same rule once more: absent means the grid's own pick, which is what
+    // every chat written before routing modes existed used.
+    if (routingGroup != null) 'routingGroup': routingGroup!.toJson(),
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -298,6 +330,21 @@ class Conversation {
           json['documentPath'] is String &&
               (json['documentPath'] as String).isNotEmpty
           ? json['documentPath'] as String
+          : null,
+      // An empty string reads as none, the same reasoning as documentPath: a
+      // blank cursor is not a cursor to resume from.
+      lastRequestWatermark:
+          json['lastRequestWatermark'] is String &&
+              (json['lastRequestWatermark'] as String).isNotEmpty
+          ? json['lastRequestWatermark'] as String
+          : null,
+      // Unparseable (a shape this build no longer understands) reads as
+      // none — the recoverable answer, since it hands the chat back to the
+      // grid's own pick instead of guessing at a mode.
+      routingGroup: json['routingGroup'] is Map<String, dynamic>
+          ? RoutingGroup.tryFromJson(
+              json['routingGroup'] as Map<String, dynamic>,
+            )
           : null,
       messages: [
         if (rawMessages is List)

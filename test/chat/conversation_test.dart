@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_title.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
+import 'package:grid_app/features/chat/logic/routing_group.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
@@ -474,6 +475,67 @@ void main() {
       final json = _conversation().toJson()..['documentPath'] = '';
 
       expect(Conversation.fromJson(json).documentPath, isNull);
+    });
+  });
+
+  group('the routing mode a chat is pinned to', () {
+    test('lastRequestWatermark survives a restart, so a resumed poll knows '
+        'where it left off', () {
+      final marked = _conversation().copyWith(lastRequestWatermark: 'wm-123');
+
+      final read = Conversation.fromJson(marked.toJson());
+
+      expect(read.lastRequestWatermark, 'wm-123');
+    });
+
+    test('a chat with no watermark writes no field at all, so a file saved '
+        'before this existed stays byte-identical', () {
+      final plain = _conversation();
+      expect(plain.toJson().containsKey('lastRequestWatermark'), isFalse);
+      expect(
+        Conversation.fromJson(plain.toJson()).lastRequestWatermark,
+        isNull,
+      );
+    });
+
+    test('a routing group survives a restart, so a chat pinned to Brute '
+        'Force reopens still pinned to it', () {
+      const group = RoutingGroup(
+        mode: RoutingMode.bruteForce,
+        isFixed: true,
+        models: ['qwen2.5-72b', 'llama-3.1-70b'],
+      );
+      final withGroup = _conversation().copyWith(routingGroup: group);
+
+      final read = Conversation.fromJson(withGroup.toJson());
+
+      expect(read.routingGroup, group);
+    });
+
+    test('an ordinary chat writes no routingGroup field, and one saved '
+        'before routing modes existed reads as ordinary rather than pinned '
+        'to a mode nobody chose', () {
+      final plain = _conversation();
+      expect(plain.toJson().containsKey('routingGroup'), isFalse);
+      expect(Conversation.fromJson(plain.toJson()).routingGroup, isNull);
+    });
+
+    test('clearRoutingGroup removes a previously-set group, the way '
+        'clearArchivedAt un-archives — `?? this` alone could never say null '
+        'on purpose', () {
+      final withGroup = _conversation().copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.judgeLoop,
+          isFixed: true,
+          worker: 'a',
+          judge: 'b',
+        ),
+      );
+
+      final cleared = withGroup.copyWith(clearRoutingGroup: true);
+
+      expect(cleared.routingGroup, isNull);
+      expect(cleared.toJson().containsKey('routingGroup'), isFalse);
     });
   });
 
