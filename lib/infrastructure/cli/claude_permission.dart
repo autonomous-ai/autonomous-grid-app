@@ -75,16 +75,67 @@ Map<String, Object?> claudePermissionResponse({
   required String requestId,
   required String? optionId,
   Map<String, Object?> input = const {},
+  String? denyMessage,
 }) => {
   'type': 'control_response',
   'response': {
     'subtype': 'success',
     'request_id': requestId,
     'response': optionId == null || optionId == kRefuseOption
-        ? {'behavior': 'deny', 'message': 'The person asked said no.'}
+        ? {
+            'behavior': 'deny',
+            'message': denyMessage ?? 'The person asked said no.',
+          }
         : {'behavior': 'allow', 'updatedInput': input},
   },
 };
+
+/// Claude Code's watcher. Useful inside a turn, a lie across one.
+const String kClaudeMonitorTool = 'Monitor';
+
+/// Why a `persistent` monitor is refused before the user is ever asked.
+///
+/// Written to the model, so it says what to do instead rather than only what it
+/// cannot have.
+const String kClaudePersistentMonitorRefusal =
+    'A persistent monitor cannot work here. This turn is a process Grid closes '
+    'when the answer lands, so the monitor dies with it and any tool it reaches '
+    'for afterwards gets "Stream closed" — the user is told a watch is running '
+    'while nothing is watching. For work that must outlive this chat use '
+    '`hermes cron` (see the grid-schedule skill). For a repeat inside the chat, '
+    'tell the user to type /loop — the app owns that one and you pace it with a '
+    'grid-loop block. A monitor without `persistent` is fine: it just has to '
+    'finish inside this turn.';
+
+/// Why this tool call cannot work in Grid, or null when it can.
+///
+/// Answered by the transport before the request ever reaches a card: the user
+/// saying yes would not make it work, so asking them would be theatre. The one
+/// case is a `persistent` monitor, which on 2026-08-20 left a `claude -p` alive
+/// two hours past its own turn, aborting every permission it asked for.
+String? claudeToolRefusal(String tool, Map<Object?, Object?> input) =>
+    tool == kClaudeMonitorTool && input['persistent'] == true
+    ? kClaudePersistentMonitorRefusal
+    : null;
+
+/// The tool a `can_use_tool` request is about, or '' when the line isn't one.
+String claudePermissionTool(Map<String, dynamic> event) {
+  final request = event['request'];
+  if (request is! Map) return '';
+  final tool = request['tool_name'];
+  return tool is String ? tool : '';
+}
+
+/// The input a `can_use_tool` request carries, keyed by name.
+///
+/// A yes has to echo this back unchanged, and [claudeToolRefusal] reads it to
+/// decide whether a yes would mean anything.
+Map<String, Object?> claudePermissionInput(Map<String, dynamic> event) {
+  final request = event['request'];
+  final input = request is Map ? request['input'] : null;
+  if (input is! Map) return const {};
+  return {for (final entry in input.entries) '${entry.key}': entry.value};
+}
 
 /// The request Claude Code is blocked on, or null when the line isn't one.
 ///
