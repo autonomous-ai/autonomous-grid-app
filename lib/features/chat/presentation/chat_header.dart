@@ -9,8 +9,8 @@ import '../../../shared/widgets/header_hover_button.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/chat_sessions_controller.dart';
+import '../logic/chat_title.dart';
 import '../logic/conversation.dart';
-import 'chat_header_title.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../skills/logic/skill_proposal.dart';
 
@@ -70,20 +70,65 @@ class ChatHeader extends ConsumerWidget {
           size: 16,
           color: AppPalette.textSecondary,
         ),
-        // 3, not the 9 this gap used to be: the title carries its own 6px of
-        // box either side (invisible until it is being edited, but always
-        // there), and the two together are the 9 the eye reads.
-        const SizedBox(width: 3),
+        const SizedBox(width: 9),
         // Bounded, not Expanded: the title should sit beside its "…" like a
         // label on a tab, not stretch the menu button out to the far edge of
         // a wide window.
-        Flexible(
-          child: ChatHeaderTitle(id: active.id, title: active.title),
-        ),
+        Flexible(child: _ChatTitle(chat: active)),
+        const SizedBox(width: 4),
         ChatHeaderMenuButton(conversation: active),
       ],
     );
   }
+}
+
+/// The conversation's name, and the second way to change it: double-click.
+///
+/// The rename is the same one the "…" offers — the same dialog, the same
+/// validation — because a title people can edit two ways has to mean the same
+/// thing both times. Double-click rather than a single: this strip is the
+/// window's drag handle, so one click has to stay free for it.
+class _ChatTitle extends ConsumerWidget {
+  const _ChatTitle({required this.chat});
+
+  final Conversation chat;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    return GestureDetector(
+      onDoubleTap: () => renameChat(context, ref, chat),
+      behavior: HitTestBehavior.opaque,
+      child: Tooltip(
+        message: 'Double-click to rename',
+        waitDuration: const Duration(milliseconds: 700),
+        child: Text(
+          chat.title,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: AppPalette.textPrimary,
+            fontSize: 13.5,
+            fontWeight: AppFont.medium,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Asks for a new name for [chat] and keeps it. The one rename path — the
+/// header's "…" and a double-click on the title both come through here, so
+/// neither can drift into asking a different question.
+Future<void> renameChat(
+  BuildContext context,
+  WidgetRef ref,
+  Conversation chat,
+) async {
+  final title = await showRenameChatDialog(context, chat);
+  if (title == null) return;
+  ref.read(chatSessionsProvider.notifier).renameConversation(chat.id, title);
 }
 
 /// Whether the chat view currently wants its header in the top bar.
@@ -119,11 +164,9 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
 
   Conversation get _chat => widget.conversation;
 
-  Future<void> _rename() async {
+  Future<void> _rename() {
     _menu.close();
-    final title = await showRenameChatDialog(context, _chat);
-    if (title == null) return;
-    ref.read(chatSessionsProvider.notifier).renameConversation(_chat.id, title);
+    return renameChat(context, ref, _chat);
   }
 
   /// Pin or unpin without a toast: the row jumping to the top of the rail (or
@@ -434,7 +477,17 @@ Future<String?> showRenameChatDialog(
   BuildContext context,
   Conversation chat,
 ) async {
-  final controller = TextEditingController(text: chat.title);
+  // [editableChatTitle], not the raw title: a chat named before titles were
+  // kept whole carries an "…" that marks where it was cut, and a field seeded
+  // with it invites the user to keep someone else's ellipsis.
+  final text = editableChatTitle(chat.title);
+  final controller = TextEditingController(text: text)
+    // Selected whole, anchored backwards. A title is a sentence now rather than
+    // forty characters, and a field left to place its own caret puts it at the
+    // end — which opens a long name scrolled to its tail, the half nobody needs
+    // to read. Extent at 0 scrolls it to the start instead, and typing still
+    // replaces the lot.
+    ..selection = TextSelection(baseOffset: text.length, extentOffset: 0);
   try {
     final name = await showDialog<String>(
       context: context,
