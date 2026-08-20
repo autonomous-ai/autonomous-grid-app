@@ -282,6 +282,43 @@ abstract final class AppPalette {
   static Color get avatarFill =>
       AppTheme.pick(const Color(0xFF5369AC), const Color(0xFF4B5F9B));
 
+  /// The colours a member's circle is drawn in, one per person — see
+  /// `memberAvatarSlot`, which decides which of them an address takes.
+  ///
+  /// **The same list in both themes, deliberately.** Every other colour here
+  /// resolves per brightness; this one must not, because here the colour *is*
+  /// the identity. A person who is teal on the dark theme and green on the light
+  /// one is two people to the eye, and the whole reason for colouring a roster
+  /// is that a face can be found before it is read.
+  ///
+  /// Eight hues rather than a generated spread: a hash over a continuous wheel
+  /// puts neighbouring people two degrees apart as often as not, and a palette
+  /// picked by hand is the only way the marks stay *told apart*. All eight carry
+  /// white at ≥5:1 (measured: 5.02 green → 7.10 violet), which is what the
+  /// letter needs — the disc itself is a container, and lands at 2.3–3.5:1
+  /// against the panels it sits on, the same band [avatarFill] occupies today.
+  static const avatarPalette = <Color>[
+    Color(0xFF1D5BD6), // blue
+    Color(0xFF0F766E), // teal
+    Color(0xFF15803D), // green
+    Color(0xFFA65A08), // amber
+    Color(0xFFBE123C), // rose
+    Color(0xFF6D28D9), // violet
+    Color(0xFFA21CAF), // fuchsia
+    Color(0xFF4E5D78), // slate
+  ];
+
+  /// The primary action's fill under the pointer — the top bar's Invite button.
+  ///
+  /// **Deepens in light, brightens in dark**, rather than one shift applied to
+  /// both: hover should raise the control's contrast against the page it sits
+  /// on, and the page runs the other way in the other theme. The numbers force
+  /// it too — the obvious "lift toward [AppCard.accentStrong]" puts dark on
+  /// `#5C7CFF`, where the button's own white label falls to **3.63:1**. These
+  /// two hold it at 6.50:1 (light) and 4.76:1 (dark).
+  static Color get accentHover =>
+      AppTheme.pick(const Color(0xFF2850D8), const Color(0xFF4166F2));
+
   // "Owner" badge — a teal that stays legible on either surface.
   static Color get teal =>
       AppTheme.pick(const Color(0xFF0F766E), const Color(0xFF2DD4BF));
@@ -1156,6 +1193,19 @@ abstract final class AppMotion {
   /// as the layout jumping rather than the rail folding, which is the one thing
   /// the animation exists to prevent.
   static const Duration fold = Duration(milliseconds: 220);
+
+  /// A meter filling to the figure beside it — the node panel's speed bars.
+  ///
+  /// Longer than [fold] even though what moves is 26px, because this one is not
+  /// a surface getting out of the way: it is a value being drawn, and a reader
+  /// is meant to watch it arrive. Under about a quarter second the bars read as
+  /// having simply appeared at their length, which is the same as no animation
+  /// at all.
+  ///
+  /// Still short enough to survive repetition. These panels open on hover, so
+  /// the fill replays every time the pointer crosses the pill — anything that
+  /// lingers turns into a toll on a gesture people make dozens of times an hour.
+  static const Duration meter = Duration(milliseconds: 300);
 
   /// The app's curve. Fast to start, settling at the end — the thing arrives
   /// under the pointer rather than drifting toward it.
