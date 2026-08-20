@@ -6,6 +6,7 @@ import '../../../infrastructure/cli/command_log.dart';
 import '../../../infrastructure/providers.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../auth/logic/session_expiry_controller.dart';
+import 'grid_name.dart';
 
 /// The `POST /v1/grid/managed-networks` call, behind a provider so tests can
 /// swap in a fake without a real HTTP round-trip. Defaults to the live client.
@@ -66,12 +67,21 @@ class CreateNetworkController extends Notifier<CreateNetworkState> {
     required ManagedNetworkType type,
   }) async {
     final trimmed = name.trim();
-    if (trimmed.isEmpty) {
-      state = const CreateNetworkFailed('Enter a name for your grid.');
+    final session = ref.read(sessionProvider);
+    // The rule a rename is already held to, applied before the round-trip:
+    // the control plane rejects everything else with a 4xx whose body is not a
+    // line to show a person, and two grids sharing a name are indistinguishable
+    // in every list the app draws. Only emptiness was checked here, so the
+    // create form and the rename form disagreed about what a legal name is.
+    final invalid = gridNameError(
+      trimmed,
+      takenNames: session.networks.map((n) => n.name),
+    );
+    if (invalid != null) {
+      state = CreateNetworkFailed(invalid);
       return;
     }
 
-    final session = ref.read(sessionProvider);
     final token = session.sessionToken;
     if (token == null || token.isEmpty) {
       state = const CreateNetworkFailed('Sign in before creating a grid.');

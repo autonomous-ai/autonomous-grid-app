@@ -169,7 +169,7 @@ enum ShellSection {
     thinIcon: LucideIcons.send300,
     devOnly: true,
   ),
-  grids(LucideIcons.zap, 'Grids', thinIcon: LucideIcons.zap300, devOnly: true),
+  grids(LucideIcons.zap, 'Grids', thinIcon: LucideIcons.zap300),
   // "Model engines", not "This computer": the rail names what a row *is*, and
   // a row called after a place tells a first-time user nothing about the thing
   // this app exists to do. The screen's own title says the same words — it was
@@ -219,9 +219,13 @@ enum ShellSection {
   /// weight than the default used elsewhere, tuned for the rail's rows.
   final IconData thinIcon;
 
-  /// Internal tooling — shown only in developer builds. Raw grid management and
-  /// the CLI log aren't for end users, so these are hidden from shipped release
-  /// builds. See [isVisibleForBuild] and [AppEnvironment.isDeveloperMode].
+  /// Internal tooling — shown only in developer builds. The CLI log and the
+  /// half-built screens aren't for end users, so these are hidden from shipped
+  /// release builds. See [isVisibleForBuild] and [AppEnvironment.isDeveloperMode].
+  ///
+  /// Grid management is no longer among them: it is the first thing the app
+  /// asks about, so hiding the only screen that could change the answer left
+  /// the question unanswerable in a shipped build.
   final bool devOnly;
 
   /// True for the screens Settings owns — they're drawn full-screen with the
@@ -296,6 +300,16 @@ class SettingsGroup {
 /// point the assistant at something outside the app (a Telegram gateway, the
 /// skills/MCP it may call) — even though both are developer-gated today.
 const kSettingsGroups = [
+  // Which grids this account can talk to, and everything about the open one —
+  // members, sharing, the models it serves. First, and its own group, because
+  // it answers the app's first question ([GridChoiceScreen]) and is the only
+  // place to answer it differently later.
+  //
+  // It was filed under Developer and [ShellSection.devOnly] with it, which hid
+  // it from every shipped build while three screens still sent users here
+  // (`enable_provider_card`, `sharing_locked_view`, `NoGridNotice`) — a button
+  // that opened Settings onto a screen its own nav didn't list.
+  SettingsGroup('Grid', [ShellSection.grids]),
   // No "This computer" row: [ShellSection.engines] moved out to the sidebar (see
   // [kSidebarSections]). It was never plumbing you set up once — it is the
   // screen a host comes back to every time they add a model or stop an engine,
@@ -337,7 +351,7 @@ const kSettingsGroups = [
     // dev only for now, so this whole group is invisible in a shipped build.
     ShellSection.messages,
   ]),
-  SettingsGroup('Developer', [ShellSection.grids, ShellSection.debug]),
+  SettingsGroup('Developer', [ShellSection.debug]),
   // Where a chat goes when it leaves the sidebar. Its own run at the bottom:
   // it's the one row here that manages content rather than configuration.
   SettingsGroup('Archived', [ShellSection.archived]),
@@ -368,11 +382,15 @@ List<SettingsGroup> visibleSettingsGroups({
 }
 
 /// Where Settings opens when the user asked for Settings rather than for one
-/// screen inside it (the account menu, ⌘K) — the first screen every build shows.
-/// Appearance, not Grids: Grids is developer-only now, so it can't be the
-/// landing screen an end user would get. It was Model engines until that screen
-/// left Settings for the sidebar.
-const kDefaultSettingsSection = ShellSection.appearance;
+/// screen inside it (the account menu, ⌘K) — the first screen every build shows,
+/// and the first row of the nav beside it, so the highlight isn't four rows
+/// below what's on screen.
+///
+/// Grids. It was Appearance only because Grids was developer-only and couldn't
+/// be a landing screen an end user would get; now that it ships, the screen a
+/// user opens Settings *for* leads again. (It was Model engines before that,
+/// until that screen left Settings for the sidebar.)
+const kDefaultSettingsSection = ShellSection.grids;
 
 /// The open section. Chat on launch — that's what the app is for.
 ///

@@ -4,20 +4,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/logic/session_controller.dart';
 import '../features/auth/logic/session_expiry_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
+import '../features/network/logic/grid_choice.dart';
 import '../features/onboarding/logic/installer_rows.dart';
 import '../features/onboarding/logic/onboarding_gate.dart';
 import '../features/onboarding/logic/welcome_controller.dart';
 import '../features/onboarding/preflight_providers.dart';
 import '../features/onboarding/preflight_screen.dart';
 import '../features/onboarding/presentation/choice_screen.dart';
+import '../features/onboarding/presentation/grid_choice_screen.dart';
 import '../features/onboarding/presentation/installer_screen.dart';
 import '../features/onboarding/presentation/welcome_screen.dart';
 import '../shared/layouts/home_shell.dart';
 import '../shared/widgets/app_spinner.dart';
 
 /// Routes between the top-level states: preflight, login (no session), first-run
-/// setup (installing the assistant), the choose-a-model fork (a grid with nothing
-/// to chat with yet), and the app shell.
+/// setup (installing the assistant), the choose-a-grid fork, the choose-a-model
+/// fork (a grid with nothing to chat with yet), and the app shell.
 class RootView extends ConsumerWidget {
   const RootView({super.key});
 
@@ -46,6 +48,14 @@ class RootView extends ConsumerWidget {
             // the user, as its own screen, before anything else.
             if (ref.watch(showInstallerProvider)) {
               return const InstallerScreen();
+            }
+
+            // Which grid, before anything that reads the answer. The model
+            // fork below asks what *the selected grid* serves, so deciding it
+            // first would judge a grid the user hadn't chosen yet — and on a
+            // second launch this is already answered, so it costs nothing.
+            if (ref.watch(gridChoiceNeededProvider)) {
+              return const GridChoiceScreen();
             }
 
             // With the assistant in place, decide where to land: straight into

@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/create_network_controller.dart';
+import 'grid_type_picker.dart';
 
 /// Modal to create a managed (hosted) grid via the control-plane API.
 /// Open with [CreateNetworkDialog.show].
@@ -99,7 +101,7 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
             ),
             const SizedBox(height: 14),
             const FieldLabel('Type'),
-            _TypePicker(
+            GridTypePicker(
               value: _type,
               enabled: !submitting,
               onChanged: (value) => setState(() => _type = value),
@@ -115,7 +117,7 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
             ),
             if (error != null) ...[
               const SizedBox(height: 14),
-              _ErrorBanner(message: error),
+              ErrorBox(message: error),
             ],
           ],
         ),
@@ -138,135 +140,6 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
               : const Text('Create'),
         ),
       ],
-    );
-  }
-}
-
-/// The grid's visibility, as a two-way segmented control.
-///
-/// It was a dropdown, which is the wrong instrument for two options: it costs a
-/// click, a menu, a read and a second click to flip what is really a switch —
-/// and until that first click it *hides* the other choice, so you couldn't tell
-/// a private grid was even possible. Laid out flat, both options are readable
-/// before you touch anything, and picking one is a single click.
-///
-/// It also stopped a dropdown from wearing [InputDecoration], the recipe for a
-/// box you *type* in. That's why it read as a disabled text field: same fill,
-/// same rim, no affordance saying it opens.
-///
-/// A recessed groove with the picked cell lifted in accent — the app's segmented
-/// control, built here rather than shared: this dialog is 380px wide with two
-/// glyph-less cells, which is nothing like the narrow, glyph-stacked cells the
-/// pattern came from.
-class _TypePicker extends StatelessWidget {
-  const _TypePicker({
-    required this.value,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  final ManagedNetworkType value;
-  final bool enabled;
-  final ValueChanged<ManagedNetworkType> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: enabled ? 1 : 0.5,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppSurface.recess,
-          borderRadius: BorderRadius.circular(AppControl.radius + 2),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(3),
-          child: Row(
-            children: [
-              for (final type in ManagedNetworkType.values)
-                Expanded(
-                  child: _TypeSegment(
-                    label: type.label,
-                    selected: type == value,
-                    onTap: enabled ? () => onChanged(type) : null,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One cell of [_TypePicker].
-class _TypeSegment extends StatelessWidget {
-  const _TypeSegment({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = selected ? Colors.white : AppPalette.textSecondary;
-    return Material(
-      color: selected ? AppPalette.accent : Colors.transparent,
-      borderRadius: BorderRadius.circular(AppControl.radius),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppControl.radius),
-        onTap: onTap,
-        child: SizedBox(
-          height: AppControl.height,
-          child: Center(
-            child: Text(
-              label,
-              maxLines: 1,
-              style: TextStyle(
-                fontFamily: AppFont.sans,
-                fontFamilyFallback: AppFont.sansFallback,
-                fontSize: AppControl.fontSize,
-                fontWeight: FontWeight.w600,
-                color: foreground,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.error;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.error_outline, size: 16, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: color, fontSize: 12.5),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
