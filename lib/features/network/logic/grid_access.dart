@@ -20,7 +20,7 @@
 ///   whole company when it wasn't. The evidence was in the repo the whole
 ///   time: `NetworkCredential.isPublic` keys off `providers`, so this type has
 ///   always resolved to Private.
-/// - `permissioned-providers` → [anyone]: only providers are whitelisted, so
+/// - `permissionless` → [anyone]: only providers are whitelisted, so
 ///   anyone signed in can consume.
 ///
 /// Matched on substrings, and `domain` is checked first: an unknown future

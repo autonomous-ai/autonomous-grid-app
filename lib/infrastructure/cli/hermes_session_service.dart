@@ -6,8 +6,9 @@ import 'host_environment.dart';
 /// Reads what Hermes knows about a chat session it ran.
 ///
 /// Hermes names every session itself: a few seconds after the first reply it
-/// writes a short line describing what the conversation is about ("Kiểm tra thư
-/// mục dự án Flutter"), in the language the user wrote in. The app asks for that
+/// writes a short line describing what the conversation is about ("Checking
+/// the Flutter project folder"), in the language the user wrote in — so this
+/// is stored as it comes back. The app asks for that
 /// name instead of inventing one from the raw first message — "hi" tells nobody
 /// what a chat was for.
 abstract interface class HermesSessionService {

@@ -357,15 +357,16 @@ PanelTurnSummary splitPanelSummary(String raw) {
   );
 }
 
-/// Trailing connectors, Vietnamese and English, a headline must never END on.
-/// A hard cut landing here leaves it dangling — "…2-1, nhờ".
+/// Trailing connectors a headline must never END on.
+/// A hard cut landing here leaves it dangling — "…2-1, thanks to".
 ///
 /// Prefixed with a separator class rather than `\b`, because **Dart's `\b` is
 /// ASCII-only** — exactly as JavaScript's is — so it cannot see the boundary of
-/// a word ending in a diacritic ("nhờ" ends in "ờ") and the dangle survives.
+/// a word ending in an accented vowel, and the dangle survives. The list is
+/// English, so a headline written in another language can still end on one of
+/// its own connectors.
 final RegExp _danglingTail = RegExp(
-  r'[\s,;:–—-]+(nhờ|vì|do|bởi|để|và|hoặc|nhưng|mà|với|của|cho|khi|nếu|thì|'
-  r'theo|cùng|rằng|là|nên|and|or|but|with|because|since|so|to|for|of|in|on|'
+  r'[\s,;:–—-]+(and|or|but|with|because|since|so|to|for|of|in|on|'
   r'at|the|a|an)[\s,;:–—-]*$',
   caseSensitive: false,
 );

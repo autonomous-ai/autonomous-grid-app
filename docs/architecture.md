@@ -1567,7 +1567,7 @@ lands on the **narrowest** reading:
 |---|---|---|
 | `permissioned-public` | `restricted` | providers **and** consumers whitelisted — invite-only. *The word "public" in the wire value is the one that lies* |
 | `private-domain` | `domain` | an organisation's grid, named for its email domain — **also invite-only** |
-| `permissioned-providers` | `anyone` | only providers whitelisted, so anyone signed in can consume |
+| `permissionless` | `anyone` | only providers whitelisted, so anyone signed in can consume |
 
 > ⚠️ **`domain` was first read the other way**, from the name and an analogy with Google Workspace rather
 > than from anything the product does — and the dialog told users their grid was open to their whole company
@@ -1627,7 +1627,7 @@ Every write is `_backupThenWrite`.
 
 #### Traps
 
-- **`isPublic` is deliberately inverted**: `permissioned-providers` = **Public**, `permissioned-public` =
+- **`isPublic` is deliberately inverted**: `permissionless` = **Public**, `permissioned-public` =
   **Private**. There's a "Do NOT fix this" comment
 - **Rename uses a different path from create/delete**: `PATCH /v1/grid/networks/{id}` vs
   `/v1/grid/managed-networks/{id}`. `TODO(BE)`: the rename endpoint **validates nothing**

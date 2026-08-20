@@ -6,10 +6,11 @@ import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/member_avatar.dart';
 import '../../../shared/widgets/skeleton.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../auth/logic/session_controller.dart';
-import '../logic/member_display.dart';
+import '../logic/member_display.dart' show memberAvatarSlots;
 import '../logic/member_providers.dart';
 
 /// The "People with access" block of [ShareGridDialog] — everyone already on
@@ -104,25 +105,60 @@ class _SharePeopleListState extends ConsumerState<SharePeopleList> {
       error: (err, _) => _Note(text: '$err'),
       data: (people) => people.isEmpty
           ? const _Note(text: 'Only you, for now.')
-          : ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: SharePeopleList.capFor(context),
-              ),
-              // Shrink-wraps until it hits the cap, so three people don't sit
-              // in a box sized for ten.
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                itemCount: people.length,
-                itemBuilder: (context, i) => _PersonRow(
-                  member: people[i],
-                  isYou: people[i].email.toLowerCase() == me,
-                  canRemove: widget.canRemove,
-                  removing: _removing.contains(people[i].email),
-                  onRemove: () => _remove(people[i]),
-                ),
-              ),
+          : _People(
+              people: people,
+              me: me,
+              canRemove: widget.canRemove,
+              removing: _removing,
+              onRemove: _remove,
             ),
+    );
+  }
+}
+
+/// The rows themselves, once there is a roster to draw.
+///
+/// Split out of the `when` above so the colour assignment — which is a fact
+/// about the whole list, see `memberAvatarSlots` — has somewhere to be computed
+/// once per build instead of inside the item builder, where it would be redone
+/// for every row and could not see the rows around it anyway.
+class _People extends StatelessWidget {
+  const _People({
+    required this.people,
+    required this.me,
+    required this.canRemove,
+    required this.removing,
+    required this.onRemove,
+  });
+
+  final List<ManagedNetworkMember> people;
+  final String? me;
+  final bool canRemove;
+  final Set<String> removing;
+  final ValueChanged<ManagedNetworkMember> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final slots = memberAvatarSlots([
+      for (final person in people) person.email,
+    ], AppPalette.avatarPalette.length);
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: SharePeopleList.capFor(context)),
+      // Shrink-wraps until it hits the cap, so three people don't sit in a box
+      // sized for ten.
+      child: ListView.builder(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: people.length,
+        itemBuilder: (context, i) => _PersonRow(
+          member: people[i],
+          slot: slots[i],
+          isYou: people[i].email.toLowerCase() == me,
+          canRemove: canRemove,
+          removing: removing.contains(people[i].email),
+          onRemove: () => onRemove(people[i]),
+        ),
+      ),
     );
   }
 }
@@ -131,6 +167,7 @@ class _SharePeopleListState extends ConsumerState<SharePeopleList> {
 class _PersonRow extends StatelessWidget {
   const _PersonRow({
     required this.member,
+    required this.slot,
     required this.isYou,
     required this.canRemove,
     required this.removing,
@@ -138,6 +175,11 @@ class _PersonRow extends StatelessWidget {
   });
 
   final ManagedNetworkMember member;
+
+  /// Which colour this person's circle takes — decided for the whole list by
+  /// `memberAvatarSlots`, so two rows next to each other never match.
+  final int slot;
+
   final bool isYou;
 
   /// The viewer owns this grid — see [SharePeopleList.canRemove].
@@ -154,7 +196,7 @@ class _PersonRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          _Initial(initial: memberInitial(email)),
+          MemberAvatar(email: email, slot: slot, size: 30, fontSize: 13),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -227,38 +269,6 @@ class _PersonRow extends StatelessWidget {
               onPressed: onRemove,
             ),
         ],
-      ),
-    );
-  }
-}
-
-/// The circle carrying a person's first initial.
-///
-/// Deliberately not the gradient disc the sidebar's account pill wears: that
-/// one marks *you*, and repeating it down a list of other people would say
-/// everyone here is the signed-in user.
-class _Initial extends StatelessWidget {
-  const _Initial({required this.initial});
-  final String initial;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Container(
-      width: 30,
-      height: 30,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppPalette.cardBgHover,
-      ),
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: AppPalette.textSecondary,
-          fontSize: 13,
-          fontWeight: AppFont.medium,
-        ),
       ),
     );
   }

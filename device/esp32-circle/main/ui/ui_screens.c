@@ -3459,6 +3459,73 @@ void ui_tile_remove(const char *chat_id)
     display_unlock();
 }
 
+// Put the tiles in the order the app sent, in place.
+//
+// THE CAROUSEL USED TO IGNORE ORDER ENTIRELY. The reconcile in panel_client.c matches incoming tiles by
+// id — update in place, or append — so a tile's position was the order it FIRST appeared and nothing
+// afterwards could change it. The app has reordered its list all along (`_commit` re-sorts newest-first,
+// pinned first, and the panel is built from the same `liveConversations` the sidebar uses) and the mirror
+// has always resent the whole list when the order moved, saying so in as many words. This end simply
+// dropped it. The visible cost: a chat you just spoke in stayed where it was, and a NEW chat — first in
+// the app — arrived at the far end of the ring.
+//
+// Caller holds the lock (this runs inside the reconcile's single display_lock, whose whole point is that
+// the poll lands as one transition rather than a wobble).
+void ui_tiles_reorder(const char ids[][48], int n)
+{
+    if (!ids || n < 0) return;
+    // Most pushes carry the order already on the glass — a tile whose recap changed, a model swapped. Do
+    // nothing then, so the common case costs one walk of the ids and no teardown at all.
+    if (n == s_tile_count) {
+        bool same = true;
+        for (int i = 0; i < n; i++)
+            if (strcmp(s_tiles[i].id, ids[i]) != 0) { same = false; break; }
+        if (same) return;
+    }
+
+    // The chat in front of the user, remembered BY ID — its index is exactly what is about to change.
+    int cc = carousel_col();
+    int cr = ring_of_col(cc);
+    char keep[48] = "";
+    if (cr >= RING_LEAD && cr < ring_agents_end()) {
+        int ai = agent_of_ring(cr);
+        if (ai >= 0 && ai < s_tile_count) snprintf(keep, sizeof keep, "%s", s_tiles[ai].id);
+    }
+
+    // Selection sort against the app's list. Whole-struct swaps, so a tile carries its materialised LVGL
+    // subtree, its live turn and its PSRAM strings to the new slot — nothing is rebuilt to move it.
+    // Anything the app did not name (there should be none; the reconcile removes them first) is pushed to
+    // the tail keeping its relative order, rather than being stranded in the middle.
+    for (int i = 0; i < n && i < s_tile_count; i++) {
+        int j = -1;
+        for (int k = i; k < s_tile_count; k++)
+            if (strcmp(s_tiles[k].id, ids[i]) == 0) { j = k; break; }
+        if (j < 0 || j == i) continue;
+        tile_t t = s_tiles[i]; s_tiles[i] = s_tiles[j]; s_tiles[j] = t;
+    }
+
+    // Re-anchor so the same CHAT stays centred, not the same position. Cheaper than the add/remove path:
+    // the ring length did not change, so only this one index moved.
+    int ni = keep[0] ? find_proj(keep) : -1;
+    if (ni >= 0) {
+        int col = col_for_ring_near(cc, ring_of_agent(ni));
+        carousel_goto(col, LV_ANIM_OFF);
+        // ...and hand the watched tile its new column DIRECTLY, instead of letting update_content_window
+        // free it for sitting at one that no longer maps to it. It is the tile a live turn is drawing
+        // into, and its tool line, sub-agent rows and todo list are LVGL-only — materialize_content
+        // rebuilds the recap card and the Working… row from the model, but those three have no model
+        // behind them and would blank until the next `turn.parts`. Reordering happens *because* a turn
+        // started here, so that is precisely the moment it would show.
+        tile_t *p = &s_tiles[ni];
+        if (p->content_live && p->tile) {
+            lv_obj_set_x(p->tile, col * carousel_w());
+            p->tile_col = col;
+        }
+    }
+    apply_active_from_col();   // s_active_idx follows the ring; the focus it stages is deduped by id
+    update_content_window();   // frees the neighbours that no longer map to their column, builds the rest
+}
+
 void ui_tile_clear_all(void)
 {
     display_lock();

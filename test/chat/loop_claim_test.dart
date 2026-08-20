@@ -61,58 +61,6 @@ void main() {
     });
   });
 
-  group('a repeat the user asked for in words the app could not read', () {
-    const block =
-        '```grid-loop\n'
-        '{"start": true, "next": "45m", "why": "quét lại tới sáng"}\n'
-        '```';
-
-    test('is read off the reply, because the assistant read the sentence the '
-        'app could not — and that turn was happening anyway', () {
-      final asked = loopStartAskedFor('Rõ rồi.\n$block', null);
-
-      expect(asked?.next, const Duration(minutes: 45));
-      expect(asked?.why, 'quét lại tới sáng');
-    });
-
-    test('is not also scolded — the note is for the other kind of block, and '
-        'saying both would be the app arguing with itself', () {
-      expect(claimsLoopWithoutOne('Rõ rồi.\n$block', null), isFalse);
-    });
-
-    test('never restarts a loop the user stopped: a chat that has a loop at '
-        'all is one the app already knows the answer for', () {
-      expect(loopStartAskedFor('Rõ rồi.\n$block', _loop(LoopStatus.running)), isNull);
-    });
-
-    test('with no gap in it starts nothing — a repeat firing on an interval '
-        'nobody chose is a task scheduled at an hour nobody chose', () {
-      const gapless = '```grid-loop\n{"start": true, "why": "tới sáng"}\n```';
-
-      expect(loopStartAskedFor('Rõ.\n$gapless', null), isNull);
-      expect(
-        claimsLoopWithoutOne('Rõ.\n$gapless', null),
-        isTrue,
-        reason: 'it still claimed a repeat, so the note still belongs',
-      );
-    });
-
-    test('a pacing block is not a start: the two are told apart by the word, '
-        'not by which chat they landed in', () {
-      const pacing = '```grid-loop\n{"next": "20m", "why": "chờ build"}\n```';
-
-      expect(loopStartAskedFor('Xong.\n$pacing', null), isNull);
-    });
-
-    test('the block comes off the reply once it has been acted on, so the '
-        'transcript keeps the answer and none of the machinery', () {
-      final chat = withoutLoopBlockOnLastReply(_chat(reply: 'Rõ rồi.\n$block'));
-
-      expect(chat.messages.last.text, 'Rõ rồi.');
-      expect(chat.messages.last.text, isNot(contains('grid-loop')));
-    });
-  });
-
   group('an answer the app will act on', () {
     test('is left alone while the loop runs — that block is the loop pacing '
         'itself, and the beat strips it', () {

@@ -20,7 +20,7 @@ import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 NetworkCredential _credential() => const NetworkCredential(
   networkId: 'grid-1',
   name: 'Test grid',
-  networkType: 'permissioned-providers',
+  networkType: 'permissionless',
   lanSignalingUrl: 'https://grid.example/grid-1',
   accessToken: 'secret-token',
   refreshToken: '',

@@ -9,8 +9,8 @@ import 'conversation.dart';
 ///
 /// A title used to be cut to this on the way *in*, and the thirty characters
 /// past it were gone: the rename field could only ever offer back the stump,
-/// which is what it did on 2026-08-20 — "Làm cho task sau research + đưa ý
-/// kiến" with the rest of the sentence nowhere on the machine. Every place a
+/// which is what it did on 2026-08-20: a title showing the first six words of
+/// the ask, with the rest of the sentence nowhere on the machine. Every place a
 /// title is drawn already clips it at the width it actually has (`maxLines: 1`,
 /// `TextOverflow.ellipsis`), which is a better cut than any number here, so the
 /// string is kept whole and the drawing does the clipping.
@@ -90,9 +90,9 @@ String clipChatTitle(String text) {
 /// New titles are stored whole, so this has nothing to do for them. It stays
 /// for the ones named before that: their "…" is [clipChatTitle]'s mark for
 /// *where the name was cut*, not part of the name, and a field seeded with it
-/// invites the user to keep it — a chat called "Làm cho task sau research + đưa
-/// ý kiến…" on purpose. What it cannot do is give those titles back the words
-/// that were dropped; nothing can, they were never written down.
+/// invites the user to keep the ellipsis on purpose. What it cannot do is give
+/// those titles back the words that were dropped; nothing can, they were never
+/// written down.
 String editableChatTitle(String title) {
   final trimmed = title.trimRight();
   if (!trimmed.endsWith('…')) return trimmed;
@@ -139,9 +139,9 @@ String _withoutOpener(String line) {
   return text;
 }
 
-/// Both languages this app is used in, because the noise is the same in both and
-/// a Vietnamese chat named "Giúp mình sửa lại đoạn…" is as blank as an English
-/// one named "Help me edit this…". Longest first, so "can you please" is dropped
+/// English only, and that is a real limit: the same noise in another language
+/// is not dropped, so a chat opened in one keeps "help me" — in that language —
+/// on the front of its name. Longest first, so "can you please" is dropped
 /// whole rather than leaving "please" behind.
 const List<String> _openers = [
   "i'd like you to",
@@ -170,18 +170,6 @@ const List<String> _openers = [
   'ok',
   'okay',
   'so',
-  'bạn hãy',
-  'bạn giúp',
-  'giúp tôi',
-  'giúp mình',
-  'giúp em',
-  'cho tôi',
-  'cho mình',
-  'tôi muốn bạn',
-  'tôi muốn',
-  'mình muốn',
-  'làm ơn',
-  'hãy',
 ];
 
 final _opener = RegExp(

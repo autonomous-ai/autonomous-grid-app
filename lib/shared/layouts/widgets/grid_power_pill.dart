@@ -247,7 +247,7 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
     _PanelKind.members => _statPanel(
       kind,
       _memberAnchor,
-      const GridMembersList(),
+      GridMembersList(onDismiss: _hide),
       width: 368,
     ),
     // Wider: a node's rows carry a spec line and a live line under the name,

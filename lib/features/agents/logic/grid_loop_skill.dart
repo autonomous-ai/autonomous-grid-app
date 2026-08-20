@@ -90,36 +90,54 @@ A `grid-loop` fence holding one JSON object. Three things it can say:
   again, not a reason to end. Stop only when the thing being watched has
   actually finished.
 
-## Starting one: only when the user asked, and only with a gap
+## When the user asks for something the app owns
 
-The app reads a repeat straight out of what the user typed when they used words
-it knows — "lặp lại mỗi 30 phút …", "làm loop mỗi giờ …", "chạy tới sáng mai".
-No list covers every way a person asks, so when they asked in some other way
-**and no loop is running in this chat**, say so with the block:
+Grid runs a command the user **typed** with a slash — `/loop 30m …`, `/goal …`,
+`/schedule …`. It does not try to read one out of an ordinary sentence: no list
+of phrases covers every way a person asks, and the one that lived here read
+"redo the header for me" as a request to loop.
 
-```grid-loop
-{"start": true, "next": "45m", "why": "quét lại nguồn mới mỗi 45 phút tới sáng"}
+So that reading is yours. You have the sentence in front of you; when it is
+asking for one of these, **say so with a `grid-ask` block** and Grid runs it:
+
+```grid-ask
+{"run": "/loop 45m look for new sources, report the ones worth adding"}
 ```
 
-Grid then starts a real loop whose prompt is **the user's own message** — not
-your reply — and the bar in the chat names it.
+Three commands can be asked for this way, and nothing else — starting
+something, and ending it:
 
-Three rules, and they are what make this trustworthy rather than a way to keep
+| The user is asking for | Write |
+|---|---|
+| this repeated while Grid is open — "keep checking", "run till morning" | `/loop <gap> <what to repeat>` |
+| you kept at it until something is true — "until the tests pass" | `/goal <what has to be true>` |
+| work that must survive Grid being closed — "every morning at 8", "every 30 minutes all week" | `/schedule <when> <what>` |
+| the repeat to **stop** — "stop the loop", "that's enough repeating" | `/loop stop` |
+| the goal to be **dropped** — "drop the goal" | `/goal clear` |
+
+Rules, and they are what make this worth trusting rather than a way to keep
 yourself running:
 
-- **Only when the user asked for a repeat.** "Keep going until I'm back", "chạy
-  tới sáng mai", "check it every so often". Deciding by yourself that a job
-  deserves repeating is not that, and it spends someone's tokens all night.
-- **`next` is required.** A repeat firing on an interval nobody chose is the
-  same mistake as a task scheduled at an hour nobody chose. If the user did not
-  imply a rhythm, pick the slowest one that still answers their question, and
-  say why in `why`.
-- **Never claim a repeat you did not get.** A block without `start` in a chat
-  with no loop starts nothing and the app says so under your reply. Don't write
-  "I've set a grid-loop to re-run every hour" — either the block above, or tell
-  them to type `/loop <what to repeat>`.
+- **Only when the user asked for it.** Deciding by yourself that a job deserves
+  repeating is not that, and it spends someone's tokens all night.
+- **Read the sentence, not the words in it.** "the deploy runs till morning"
+  is someone telling you about a deploy; "keep at it till morning" is someone
+  asking you to keep going. "don't repeat it any more" is a stop, and "how do I
+  stop the loop?" is a question — answer it, don't run it.
+- **The user may not be writing in English.** Read whatever they wrote; the
+  command line you put in the block is always the app's own English one.
+- **Stopping is the one to be quick about.** A repeat the user has asked to end
+  keeps costing them until the block lands, so put it in the reply that answers
+  them, not the one after.
+- **Their words, not yours.** The prompt you write is what gets re-run or
+  scheduled, so it has to say what *they* asked for.
+- **Name the gap and the time.** `/loop` with no gap paces itself, which is
+  fine; `/schedule` with no hour fires at one nobody chose, which is not.
+- **One block, at the end, and nothing else claimed.** Don't also write "I've
+  set a grid-loop to re-run every hour" — either the block, or tell them to
+  type the command themselves. A reply that claims a repeat without the block
+  gets a note under it saying nothing is repeating.
 
-**Work that has to survive the app closing** — overnight when Grid will be shut,
-tomorrow morning, every 30 minutes all week — is not a loop at all. Schedule it
-with the `grid-schedule` skill, which writes to a daemon that keeps running.
+Grid tells you what it did: a loop gets a bar in the chat, a goal gets its own,
+a scheduled task gets a row in **Scheduled**. All three the user can stop.
 ''';

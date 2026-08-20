@@ -26,7 +26,7 @@ NetworkCredential _grid({
 }) => NetworkCredential(
   networkId: 'ag-1',
   name: 'My AI Grid',
-  networkType: public ? 'permissioned-providers' : 'permissioned',
+  networkType: public ? 'permissionless' : 'permissioned',
   lanSignalingUrl: 'http://127.0.0.1:8090',
   accessToken: 'tok',
   refreshToken: '',

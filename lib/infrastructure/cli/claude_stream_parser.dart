@@ -364,7 +364,8 @@ class ClaudeStreamParser {
   /// This is the one the chat may cut a passage at when a step arrives. The
   /// difference is not cosmetic: a step can land between two deltas of a
   /// sentence still being typed (a sub-agent's, most often), and cutting there
-  /// splits the agent's own words mid-syllable — "…và chạ" above the step,
+  /// splits the agent's own words mid-syllable — a half-written word above the
+  /// step,
   /// "y vài ph" below it.
   String _settled() => stripControlTokens(_completed.join('\n\n'));
 }

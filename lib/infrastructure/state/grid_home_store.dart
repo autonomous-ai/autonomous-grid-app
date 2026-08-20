@@ -9,7 +9,7 @@ import 'models/engine_run.dart';
 import 'models/local_files.dart';
 import 'models/network_config.dart';
 
-/// Reads state straight off `~/.grid` (nguồn 1 in the contract). This is the
+/// Reads state straight off `~/.grid` (source 1 in the contract). This is the
 /// robust path — it reads exactly what the CLI writes, so it never breaks on a
 /// reworded log line. Mutations still go through the CLI; this only reads.
 class GridHomeStore {

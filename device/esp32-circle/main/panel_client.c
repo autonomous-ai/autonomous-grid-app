@@ -611,6 +611,13 @@ static void on_chats(const cJSON *root)
         for (int j = 0; j < n; j++) if (strcmp(cur, s_ids[j]) == 0) { present = true; break; }
         if (!present) ui_tile_remove(cur);
     }
+    // ...and now the ORDER, which the two steps above do not touch: the walk matches tiles by id and the
+    // append lands at the end, so without this the ring keeps whatever order the tiles first arrived in.
+    // The app's list is the sidebar's — pinned first, most recently spoken in first — and it resends the
+    // whole thing whenever that moves, which is the only reason there is anything here to apply.
+    _Static_assert(ID_MAX == 48, "ui_tiles_reorder spells the id width out — keep it equal to ID_MAX");
+    ui_tiles_reorder(s_ids, n);
+
     // The list is built: drop the boot spinner and land on a project (or stay on the empty page).
     ui_land_after_reload();
     display_unlock();

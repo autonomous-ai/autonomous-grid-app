@@ -1521,12 +1521,12 @@ void main() {
             projectId: 'p-1',
             at: DateTime(2026, 8, 17),
             messages: [
-              ChatMessage(role: ChatRole.user, text: 'Giá bao nhiêu?'),
+              ChatMessage(role: ChatRole.user, text: 'How much is it?'),
               ChatMessage(role: ChatRole.assistant, text: 'Nó là 240 nghìn.'),
             ],
           ),
         );
-        expect(ask, 'Giá bao nhiêu?');
+        expect(ask, 'How much is it?');
         expect(panelSummaryPrompt('Nó là 240 nghìn.', ask), contains(ask));
       },
     );
@@ -1561,9 +1561,9 @@ void main() {
       expect(capped, isNot(endsWith(',')));
     });
 
-    test('a cut landing on a Vietnamese connector is stripped — Dart word '
-        'boundaries are ASCII-only, so "nhờ" would otherwise dangle', () {
-      expect(capPanelRecap('Grid thắng 2-1, nhờ', 15), 'Grid thắng 2-1');
+    test('a cut landing on a connector is stripped, so a headline never ends '
+        'mid-thought', () {
+      expect(capPanelRecap('Grid won 2-1, because', 15), 'Grid won 2-1');
       expect(capPanelRecap('It works, because', 15), 'It works');
     });
 
@@ -1585,20 +1585,14 @@ void main() {
 
     test('an answer in another script is caught without naming a language, in '
         'both directions', () {
-      expect(
-        panelLanguageDrifted(
-          'Giá của nó là 240 nghìn đồng, đã bao gồm thuế và phí giao hàng',
-          'The price is 240 thousand dong, including tax and delivery',
-        ),
-        isTrue,
-      );
-      expect(
-        panelLanguageDrifted(
-          'The price is 240 thousand dong, including tax and delivery',
-          'Giá của nó là 240 nghìn đồng, đã bao gồm thuế và phí giao hàng',
-        ),
-        isTrue,
-      );
+      const accented =
+          'Le prix réglé est déjà très élevé, et la réduction accordée '
+          'hier était déjà appliquée';
+      const plain =
+          'The price is 240 thousand dong, including tax and delivery';
+
+      expect(panelLanguageDrifted(accented, plain), isTrue);
+      expect(panelLanguageDrifted(plain, accented), isTrue);
     });
 
     test('quoting a product name in another script is not a drift', () {
@@ -1607,14 +1601,14 @@ void main() {
           'The tests all pass on the build server now, every single one of '
               'them, across all of the packages we have in the repository today',
           'All of the tests pass on the build server now, every one of them, '
-              'across every package in the repository, including the Đạo module',
+              'across every package in the repository, including the Café module',
         ),
         isFalse,
       );
     });
 
     test('too little text to judge is never called a drift', () {
-      expect(panelLanguageDrifted('ok', 'rồi'), isFalse);
+      expect(panelLanguageDrifted('ok', 'oké'), isFalse);
     });
   });
 
@@ -2736,7 +2730,7 @@ void main() {
     test("the device's chosen language is what the clip is transcribed in, not "
         "the machine's locale — the panel's Settings page owns it", () async {
       final agent = _HeldTurn();
-      final stt = _FakeStt(const SttSuccess('mở lại retry guard'));
+      final stt = _FakeStt(const SttSuccess('reopen the retry guard'));
       final transport = _FakeTransport();
       seed();
       final container = harness(

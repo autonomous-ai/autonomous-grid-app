@@ -19,7 +19,6 @@ import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/auto_agent.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
-import '../../chat/logic/commands/spoken_command.dart';
 import '../../chat/logic/conversation.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
@@ -724,17 +723,6 @@ class PanelController {
       // without this the reply streams into a chat nobody is looking at.
       _showInWindow(chat.projectId, chat.id);
       final sessions = _ref.read(chatSessionsProvider.notifier);
-      // The panel is the surface people actually *speak* to, so a spoken
-      // "lặp lại mỗi 30 phút…" has to reach the command here as much as in the
-      // composer. Only a certain reading: nobody at a panel can be shown a
-      // half-read line to fix, so anything less goes to the assistant as the
-      // sentence it was, which is what the panel did for every turn before.
-      final spoken = readSpokenCommand(text);
-      if (spoken != null && spoken.certain) {
-        _log.info('panel', 'Panel said ${spoken.call.command.slash}');
-        await sessions.runCommand(spoken.call, model: model);
-        return;
-      }
       await sessions.send(
         network: network,
         model: model,
