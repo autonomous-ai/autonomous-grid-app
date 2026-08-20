@@ -73,14 +73,20 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
     // The conversation list itself, not the whole state: the rail's contents
     // depend on nothing else, and watching the state rebuilt every row on each
     // streamed token and each chat switch. The field is only ever replaced, so
-    // its identity is the change signal.
+    // its identity is the change signal — which is why this reads
+    // [ChatSessionsState.railConversations], whose whole job is to hand back one
+    // field or the other rather than a list built here.
     final conversations = ref.watch(
-      chatSessionsProvider.select((s) => s.conversations),
+      chatSessionsProvider.select((s) => s.railConversations),
     );
     // The saved chats are read off the first frame, so an empty list is two
     // different facts — nothing saved, or nothing read *yet*. Only the first of
-    // them may be told to the user.
-    final loading = ref.watch(chatSessionsProvider.select((s) => s.loading));
+    // them may be told to the user. Once the index has been read the rail has
+    // its rows and is no longer waiting on anything, however much of the history
+    // is still being decoded behind it.
+    final loading = ref.watch(
+      chatSessionsProvider.select((s) => s.loading && s.preview.isEmpty),
+    );
     final projects = ref.watch(sortedProjectsProvider);
     // Live only: an archived chat is hidden from the rail until the user brings
     // it back from Settings › Archived.

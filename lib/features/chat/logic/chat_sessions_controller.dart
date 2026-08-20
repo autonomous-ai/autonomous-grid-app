@@ -380,7 +380,30 @@ class ChatSessionsController extends _ChatSessions
     // here is the frame's budget spent before anything is drawn (see
     // [ChatStore.loadAll]). The rail shows its loading state until this lands.
     _restoring = _restore();
+    // And, racing it, the index — which carries every chat's title and nothing
+    // else, so the sidebar fills in about a millisecond instead of waiting out
+    // the ~190 ms the transcripts take. Not awaited by [restored]: it is a way
+    // to draw sooner, never a step the history depends on.
+    unawaited(_previewFromIndex());
     return const ChatSessionsState(loading: true);
+  }
+
+  /// Put the saved chats' headers in front of the user while their transcripts
+  /// are still being read. See [ChatSessionsState.preview].
+  ///
+  /// Drops what it read if the full history got there first — the index is the
+  /// weaker source of the two, and overwriting the real conversations with
+  /// headers would empty every transcript on screen.
+  Future<void> _previewFromIndex() async {
+    final headers = await _store.loadIndex();
+    if (_disposed || headers.isEmpty || !state.loading) return;
+    final deleted = _deletedWhileLoading ?? const <String>{};
+    state = state.copyWith(
+      preview: [
+        for (final c in headers)
+          if (!deleted.contains(c.id)) c,
+      ],
+    );
   }
 
   /// Fold the saved conversations in once they're read.
@@ -415,6 +438,8 @@ class ChatSessionsController extends _ChatSessions
     state = state.copyWith(
       loading: false,
       conversations: merged,
+      // The headers have been superseded by the transcripts they stood in for.
+      preview: const [],
       activeId: settled
           ? state.activeId
           : (opening.isEmpty ? null : opening.first.id),
@@ -702,7 +727,40 @@ class ChatSessionsController extends _ChatSessions
   void select(String id) {
     if (id == state.activeId) return;
     _chose = true;
-    state = state.copyWith(activeId: id);
+    // The ordinary case, and synchronous as it has always been: the chat is in
+    // hand, so opening it is one assignment.
+    if (state.conversations.any((c) => c.id == id)) {
+      state = state.copyWith(activeId: id);
+      return;
+    }
+    unawaited(_openUnread(id));
+  }
+
+  /// Open a chat the sidebar drew from the index, whose transcript hasn't been
+  /// read yet — the one window where that can happen is the moment or two
+  /// between the rail filling in and the history landing.
+  ///
+  /// The switch waits for the file rather than happening first, because the
+  /// alternative is the user standing in a chat the app believes is empty: the
+  /// composer would let them speak into it, and the send would save that one
+  /// message *over* the transcript. A single file is a few milliseconds; losing
+  /// a conversation is forever.
+  Future<void> _openUnread(String id) async {
+    final loaded = await _store.load(id);
+    if (_disposed) return;
+    final gone = _deletedWhileLoading?.contains(id) ?? false;
+    // Not `else`: the full history can have landed while this file was read, in
+    // which case the chat is already in hand and this copy is the older one.
+    final known = state.conversations.any((c) => c.id == id);
+    final merged = loaded == null || gone || known
+        ? state.conversations
+        : ([
+            ...state.conversations,
+            ..._closeInterruptedTurns([loaded]),
+          ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)));
+    // The id is set even when nothing was read: a click that visibly does
+    // nothing is worse than a chat that fills in when the history lands.
+    state = state.copyWith(conversations: merged, activeId: gone ? null : id);
   }
 
   /// Remember the model chosen for the open conversation, so leaving the chat and
