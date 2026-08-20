@@ -125,6 +125,34 @@ void main() {
     });
   });
 
+  group('drawing a beat the app added a line to', () {
+    test('the line the app appended is not drawn as the user\'s words — an '
+        'overnight loop would otherwise show them asking for a grid-loop '
+        'block on every iteration', () {
+      final sent =
+          'research nguồn truyện mới\n\n'
+          '${loopBeatFooter(selfPaced: true)}';
+
+      expect(withoutLoopBeatFooter(sent), 'research nguồn truyện mới');
+    });
+
+    test('the fixed-interval footer comes off too, since both are the app '
+        'talking and neither was typed', () {
+      final sent = 'kiểm tra deploy\n\n${loopBeatFooter(selfPaced: false)}';
+
+      expect(withoutLoopBeatFooter(sent), 'kiểm tra deploy');
+    });
+
+    test('an ordinary message is returned untouched, including one that '
+        'happens to say the word', () {
+      expect(withoutLoopBeatFooter('sửa cái loop đi'), 'sửa cái loop đi');
+      expect(
+        withoutLoopBeatFooter('cách grid-loop hoạt động thế nào'),
+        'cách grid-loop hoạt động thế nào',
+      );
+    });
+  });
+
   group('what the app asks for with each beat', () {
     test('a self-paced loop is asked for the gap; one on the user\'s own '
         'interval is only ever asked whether to stop', () {
