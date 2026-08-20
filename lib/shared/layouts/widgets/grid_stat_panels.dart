@@ -900,6 +900,17 @@ class _SpeedColumn extends StatelessWidget {
 
   static const double _height = 4;
 
+  /// The figure's own column, so every meter on the panel starts at the same x.
+  ///
+  /// Without it the figures set their own widths and each meter floated to
+  /// wherever its number left room — `~222 tok/s` pushing its bar ten pixels
+  /// left of `~12 tok/s`'s. A column of bars read against each other is the
+  /// whole reason to draw bars at all, and bars measured from different
+  /// origins cannot be. Wide enough for the longest throughput a node
+  /// realistically advertises (`~222 tok/s`); a four-digit one would sit tight
+  /// rather than shift the column.
+  static const double _figureWidth = 62;
+
   /// Centres the rule on the 12.5pt line the machine's name occupies.
   static const double _lift = 6;
 
@@ -956,7 +967,13 @@ class _SpeedColumn extends StatelessWidget {
           ),
         ],
         const SizedBox(width: 7),
-        _PanelFigure(text: figure),
+        SizedBox(
+          width: _figureWidth,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _PanelFigure(text: figure),
+          ),
+        ),
       ],
     );
   }
