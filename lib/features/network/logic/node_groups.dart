@@ -117,12 +117,10 @@ String groupSpecLine(NodeGroup group) {
   if (first.isEmpty) return '';
   if (!group.isSingle) return '${group.machines.length} × $first';
   // A one-machine block has no rows under it, so this line is that machine's
-  // row: it carries the speed a row would have shown on its right.
-  return [
-    first,
-    if (nodeServingLine(group.first).isNotEmpty) nodeServingLine(group.first),
-    if (entryFigure(group.first).isNotEmpty) entryFigure(group.first),
-  ].join(' · ');
+  // row — but only for the description. Its speed goes where every other
+  // machine's goes: the meter and figure at the row's right end.
+  final serving = nodeServingLine(group.first);
+  return serving.isEmpty ? first : '$first · $serving';
 }
 
 /// A machine's own hardware, for a row inside a block whose machines disagree.
@@ -202,4 +200,36 @@ String entryFigure(OverviewNode node) {
   final speed = node.throughputTokS;
   if (speed != null && speed > 0) return '~${speed.round()} tok/s';
   return nodePlanLabel(node) ?? '';
+}
+
+/// The fastest machine on the grid, in tokens a second — what every speed meter
+/// is drawn against. Zero when no machine advertised a throughput at all, which
+/// draws no meters.
+double peakThroughput(List<OverviewNode> nodes) {
+  var peak = 0.0;
+  for (final node in nodes) {
+    final speed = node.throughputTokS;
+    if (speed != null && speed > peak) peak = speed;
+  }
+  return peak;
+}
+
+/// How fast this machine is against the fastest on the grid, 0…1 — the fill in
+/// the meter beside its figure.
+///
+/// Speed rather than the work it did, and that is the whole reason a meter can
+/// exist here at all. A grid's 24h output spans three orders of magnitude — 2K
+/// beside 4.8M — so a linear bar drawn across it is one full row and eight
+/// invisible ones, which is what sank the two earlier attempts at charting this
+/// panel. Throughput spans a single order (4 tok/s beside 222 on this grid),
+/// and that is a range a bar can argue about.
+///
+/// Null when the machine advertised no throughput. An absent meter, not an
+/// empty one: a provider too old to report the field never said it was slow —
+/// the same distinction [nodeActivityLine] makes by dropping the figure instead
+/// of printing `0 tok/s`.
+double? speedShare(OverviewNode node, double peak) {
+  final speed = node.throughputTokS;
+  if (speed == null || speed <= 0 || peak <= 0) return null;
+  return (speed / peak).clamp(0.0, 1.0);
 }

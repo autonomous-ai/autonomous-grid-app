@@ -565,6 +565,10 @@ class GridNodesList extends ConsumerWidget {
     final nodes = ref.watch(gridOnlineNodesProvider);
     final labels = shortenNodeNames([for (final n in nodes) n.name]);
     final groups = groupNodesByOwner(nodes, labels);
+    // One scale across the whole panel, not one per block: the meters are read
+    // down the list, and a scale that restarted at each owner would draw a
+    // laptop as fast as a rack.
+    final peak = peakThroughput(nodes);
     return _PanelBody(
       label: 'Nodes',
       trailing: '${nodes.length}',
@@ -575,8 +579,11 @@ class GridNodesList extends ConsumerWidget {
       // it the list scrolls, which is the right trade for a panel that hangs
       // over the page it opened from.
       maxHeight: 388,
-      itemBuilder: (context, i) =>
-          _NodeGroupBlock(group: groups[i], last: i == groups.length - 1),
+      itemBuilder: (context, i) => _NodeGroupBlock(
+        group: groups[i],
+        peak: peak,
+        last: i == groups.length - 1,
+      ),
     );
   }
 }
@@ -591,9 +598,17 @@ class GridNodesList extends ConsumerWidget {
 /// (1.09:1 dark, 1.07:1 light) on purpose: the grouping is carried by the tile
 /// and the heading above it, and the fill only agrees with them.
 class _NodeGroupBlock extends StatelessWidget {
-  const _NodeGroupBlock({required this.group, required this.last});
+  const _NodeGroupBlock({
+    required this.group,
+    required this.peak,
+    required this.last,
+  });
 
   final NodeGroup group;
+
+  /// The fastest machine on the grid, in tokens a second — every meter's full
+  /// length.
+  final double peak;
 
   /// Whether this is the bottom block, which pays no gap under it — the panel
   /// has its own padding, and a block's margin on top of it reads as the list
@@ -694,8 +709,7 @@ class _NodeGroupBlock extends StatelessWidget {
                           spec,
                           // Two, for the one string here whose length nothing
                           // bounds: a server CPU brand runs half again as long
-                          // as any GPU name, and what a single line cuts is the
-                          // tail, where the speed lives.
+                          // as any GPU name.
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -705,6 +719,13 @@ class _NodeGroupBlock extends StatelessWidget {
                           ),
                         ),
                       ),
+                      // A one-machine block has no rows, so this line is that
+                      // machine's row and ends the way one does.
+                      if (group.isSingle)
+                        _SpeedColumn(
+                          node: group.first,
+                          share: speedShare(group.first, peak),
+                        ),
                     ],
                   ),
                 ),
@@ -712,6 +733,7 @@ class _NodeGroupBlock extends StatelessWidget {
                 _MachineRow(
                   entry: entry,
                   spec: entrySpecLine(group, entry.node),
+                  share: speedShare(entry.node, peak),
                 ),
             ],
           ),
@@ -794,15 +816,22 @@ class _NodeInitial extends StatelessWidget {
 /// are. It fills only where a block's machines disagree, and then the row has
 /// to describe itself.
 class _MachineRow extends StatelessWidget {
-  const _MachineRow({required this.entry, required this.spec});
+  const _MachineRow({
+    required this.entry,
+    required this.spec,
+    required this.share,
+  });
 
   final NodeEntry entry;
   final String spec;
 
+  /// This machine's speed against the grid's fastest, 0…1, or null when it
+  /// advertised none.
+  final double? share;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final figure = entryFigure(entry.node);
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
@@ -839,12 +868,96 @@ class _MachineRow extends StatelessWidget {
               ],
             ),
           ),
-          if (figure.isNotEmpty) ...[
-            const SizedBox(width: 9),
-            _PanelFigure(text: figure),
-          ],
+          _SpeedColumn(node: entry.node, share: share),
         ],
       ),
+    );
+  }
+}
+
+/// A machine's speed, as a meter and the figure it fills to.
+///
+/// **The meter sits against its own number, in the row's numeric column.** Two
+/// earlier attempts put a measure elsewhere and both were misread: a rule in
+/// the block's left rail landed where a bullet lands and read as one, and a
+/// band behind the whole row landed in the language of hover and read as a
+/// selection. Beside the figure it explains, in a column that already means
+/// "how much", a bar has nowhere else to be read as.
+///
+/// Empty — no meter, no figure, no width — when the machine advertised no
+/// throughput, so a row for a provider too old to report it keeps its whole
+/// line for its name rather than reserving a lane for a blank.
+class _SpeedColumn extends StatelessWidget {
+  const _SpeedColumn({required this.node, required this.share});
+
+  final OverviewNode node;
+  final double? share;
+
+  /// Short, because it is paying for the name beside it. A meter reading
+  /// against a figure does not need length to be understood — the number is
+  /// right there — only enough to sort fast from slow at a glance.
+  static const double _width = 26;
+
+  static const double _height = 4;
+
+  /// Centres the rule on the 12.5pt line the machine's name occupies.
+  static const double _lift = 6;
+
+  /// A machine at 2% of the grid's fastest would otherwise fill half a pixel,
+  /// and "slow" would render exactly like "not measured" — which is the
+  /// distinction the absent meter above is for.
+  static const double _floor = _height;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final figure = entryFigure(node);
+    if (figure.isEmpty) return const SizedBox.shrink();
+    return Row(
+      children: [
+        if (share case final value?) ...[
+          const SizedBox(width: 9),
+          Padding(
+            padding: const EdgeInsets.only(top: _lift),
+            child: SizedBox(
+              width: _width,
+              height: _height,
+              // Both bars carry their own width *and* height: a `DecoratedBox`
+              // with no child collapses to `constraints.smallest` under a
+              // `Stack`'s loose fit, which is 0×0 and drew nothing at all.
+              child: Stack(
+                children: [
+                  Container(
+                    width: _width,
+                    height: _height,
+                    decoration: BoxDecoration(
+                      // Derived from the faint ink rather than a hairline
+                      // token: 8% white on the block's fill measures 1.25:1
+                      // against it, a groove nobody would find. This holds
+                      // 1.47:1 dark and 1.41:1 light.
+                      color: AppPalette.textFaint.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(_height / 2),
+                    ),
+                  ),
+                  Container(
+                    width: math.max(_floor, _width * value),
+                    height: _height,
+                    decoration: BoxDecoration(
+                      // The on-surface variant, never the accent fill: this is
+                      // ink read against a background, and #2F5BEA on a dark
+                      // one manages 2.6:1.
+                      color: AppPalette.accentOnSurface,
+                      borderRadius: BorderRadius.circular(_height / 2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(width: 7),
+        _PanelFigure(text: figure),
+      ],
     );
   }
 }
