@@ -28,11 +28,13 @@ const String kGridLoopSkillMd = '''
 ---
 name: grid-loop
 description: >-
-  Decide when a repeating task in Grid's chat should run again, and when it
-  should stop. Use whenever the message you are answering asks for a
-  `grid-loop` block — a task on a loop, watching a deploy, a build, a PR, an
-  inbox — to say how long to wait before the next check, that nothing changed,
-  or that the job is finished and the loop can end.
+  Repeating, continuing and scheduled work in Grid's chat. Use whenever the
+  user asks you to keep doing something, to keep going until something is true,
+  to run at a time or every so often, or to stop one of those — "chạy tới sáng
+  mai", "mục tiêu của mày là…", "keep checking", "mỗi sáng 8h", "dừng loop đi".
+  Grid owns those; this says how to ask it for one, in the same reply you answer
+  them in. Also use when the message you are answering asks for a `grid-loop`
+  block, to pace a loop that is already running.
 ---
 
 # Pacing a repeating task
@@ -118,6 +120,11 @@ something, and ending it:
 Rules, and they are what make this worth trusting rather than a way to keep
 yourself running:
 
+- **Answer them *and* write the block.** These are not alternatives. On
+  2026-08-21 "mục tiêu của mày là làm performance cho repo này" got twenty-five
+  minutes of real work and no block, so the goal was never set and the work
+  stopped when the turn did — which is the opposite of what a goal is for. Do
+  the work, then relay the ask at the end of the same reply.
 - **Only when the user asked for it.** Deciding by yourself that a job deserves
   repeating is not that, and it spends someone's tokens all night.
 - **Read the sentence, not the words in it.** "the deploy runs till morning"
