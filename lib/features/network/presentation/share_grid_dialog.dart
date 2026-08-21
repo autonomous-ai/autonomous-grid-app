@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -8,30 +10,39 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
-import '../../../infrastructure/api/models/managed_network.dart';
-import '../../auth/logic/session_controller.dart';
 import '../logic/change_grid_type_controller.dart';
-import '../logic/grid_access.dart';
 import '../logic/grid_access_types.dart';
 import '../logic/invite_email.dart';
 import '../logic/member_providers.dart';
-import 'grid_type_picker.dart';
+import 'general_access_row.dart';
 import 'invite_role_picker.dart';
+import 'share_banner.dart';
 import 'share_grid_people.dart';
 
 /// Everything about who can reach a grid, in one modal — invite someone, see
-/// who is already on it, and read how the grid is reachable in general.
+/// who is already on it, and read (or change) how the grid is reachable in
+/// general.
 ///
-/// Replaces the old one-field `AddMemberDialog`, and is opened from both places
-/// that used it: the grid's own header and the sidebar's account menu. One
-/// dialog rather than two, so the words and the rules can't drift — and the
-/// title names the grid, which the account-menu route had no other way of
-/// saying.
+/// Opened from both places the old `AddMemberDialog` was: the grid's own header
+/// and the sidebar's account menu. One dialog rather than two, so the words and
+/// the rules can't drift — and the title names the grid, which the account-menu
+/// route had no other way of saying.
 ///
-/// Modelled on Google Drive's share sheet because that shape is the one
-/// non-technical users already know: add at the top, the list of people in the
-/// middle, the blanket rule at the bottom. **The bottom section is a sentence,
-/// not a control** — see [_GeneralAccess].
+/// **Modelled on Google Docs' share sheet**, which is the shape non-technical
+/// users already know: a full-width address field, the people below it, the
+/// blanket rule at the bottom, and one primary button that closes the sheet.
+/// Three of its habits are load-bearing here:
+///
+/// - the address field is the only boxed control, so it is where the eye lands;
+/// - a menu lists **labels and a tick**, and the sentence explaining a choice
+///   lives in the row that opened it, at dialog width. Grid learned this the
+///   hard way: its access menu printed "…can use this grid — includi…";
+/// - the role for a person is a noun ("User", "Host"), not a clause.
+///
+/// One thing is deliberately un-Google: changing the access rule is confirmed
+/// before it runs. Docs can flip a document's sharing instantly and harmlessly;
+/// changing a grid's rule restarts it under everyone using it, cuts off whoever
+/// the new rule excludes, and — for the open rule — stops the grid billing.
 class ShareGridDialog extends ConsumerStatefulWidget {
   const ShareGridDialog({super.key, required this.network});
 
@@ -48,10 +59,42 @@ class ShareGridDialog extends ConsumerStatefulWidget {
   ConsumerState<ShareGridDialog> createState() => _ShareGridDialogState();
 }
 
+/// The sheet's width, and the inset every block inside it pays.
+///
+/// `contentPadding` is zero so the banner and the footer's hairline can run
+/// edge to edge; everything else insets itself by [_sheetInset]. The footer
+/// takes the same width explicitly, because `AlertDialog` hands its actions to
+/// an `OverflowBar` that would let a `Row` stretch to the window and drag the
+/// whole dialog wide with it.
+const double _sheetWidth = 512;
+const double _sheetInset = 24;
+
 class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
   final _email = TextEditingController();
+  final _emailFocus = FocusNode();
   bool _inviting = false;
-  String? _error;
+
+  /// What the control plane said no to — a 403, a seat cap, a network error.
+  /// Cleared the moment the address is edited, since it was about the old one.
+  String? _serverError;
+
+  /// What `inviteEmailError` says about the text in the field, once the user
+  /// has finished a first attempt at it. Null until [_showErrors].
+  String? _localError;
+
+  /// Whether validation is allowed to speak yet.
+  ///
+  /// False while the address is being typed for the first time: every half-typed
+  /// address is invalid, so live checking from keystroke one would sit there
+  /// scolding someone who is doing nothing wrong. It flips on the first blur or
+  /// the first Invite — after that the verdict updates on every keystroke, so it
+  /// disappears the instant the address becomes usable.
+  bool _showErrors = false;
+
+  /// The one message the field shows. A server refusal outranks a syntax
+  /// complaint: it is the newer fact, and it is about an address the client
+  /// already accepted.
+  String? get _error => _serverError ?? _localError;
 
   /// What the invited person will be able to do. Defaults to the widest grant —
   /// see [ManagedMemberRole.fallback].
@@ -74,22 +117,70 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
   String get _networkId => widget.network.networkId;
 
   @override
+  void initState() {
+    super.initState();
+    // The access controller outlives the sheet, so a rule picked and then
+    // abandoned — Esc, Done, a click outside — would still be sitting there
+    // "not saved yet" the next time anyone opens this dialog, on any grid.
+    //
+    // Post-frame, not inline: touching a provider during `initState` mutates
+    // state while the tree is building.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = ref.read(changeGridTypeControllerProvider);
+      // Applying is left alone: that request is in flight and owns its own
+      // state until it lands.
+      if (state is ChangeGridTypeConfirming || state is ChangeGridTypeFailed) {
+        ref.read(changeGridTypeControllerProvider.notifier).cancel();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _email.dispose();
+    _emailFocus.dispose();
     super.dispose();
+  }
+
+  /// Re-runs the address check, once [_showErrors] has let it speak.
+  void _revalidate() {
+    if (!_showErrors) return;
+    final next = inviteEmailError(_email.text.trim());
+    if (next != _localError) setState(() => _localError = next);
+  }
+
+  /// Leaving the field is a finished attempt — but only if there is something
+  /// in it. Blurring an empty box is someone clicking elsewhere, not someone
+  /// failing to type an address.
+  void _onFocusChange(bool hasFocus) {
+    if (hasFocus || _email.text.trim().isEmpty) return;
+    setState(() {
+      _showErrors = true;
+      _localError = inviteEmailError(_email.text.trim());
+    });
   }
 
   Future<void> _invite() async {
     final email = _email.text.trim();
+    // Checked here, not only on the server: a 422 comes back as one flat
+    // "Invalid email", while `inviteEmailError` names the half that is broken.
+    // The request is never sent when the client already knows the answer.
     final invalid = inviteEmailError(email);
     if (invalid != null) {
-      setState(() => _error = invalid);
+      setState(() {
+        _showErrors = true;
+        _localError = invalid;
+        _serverError = null;
+      });
+      _emailFocus.requestFocus();
       return;
     }
 
     setState(() {
       _inviting = true;
-      _error = null;
+      _serverError = null;
+      _localError = null;
     });
 
     final error = await ref.read(addMemberActionProvider)(
@@ -102,7 +193,7 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
     if (error != null) {
       setState(() {
         _inviting = false;
-        _error = error;
+        _serverError = error;
       });
       return;
     }
@@ -114,6 +205,10 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
     setState(() {
       _inviting = false;
       _email.clear();
+      // The next address starts clean: the field is empty again, and an empty
+      // field has not been got wrong yet.
+      _showErrors = false;
+      _localError = null;
     });
     ToastScope.show(
       context,
@@ -121,355 +216,13 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return AlertDialog(
-      // Deliberately **not** `scrollable: true` — the same trap
-      // [ConnectorDetailsDialog] carries a note about, and this dialog walked
-      // straight into it. That flag wraps the content in an `IntrinsicWidth`,
-      // which asks every child for its natural height; the people list is a
-      // `ListView` and cannot answer, and `AppSelectField` is a `LayoutBuilder`
-      // that cannot either. The result was a relayout that re-entered the
-      // mouse tracker's device-update phase every frame — the app froze on
-      // open, spewing `!_debugDuringDeviceUpdate`.
-      //
-      // The one part that can outgrow the window scrolls on its own instead;
-      // see [SharePeopleList.maxHeight].
-      title: Text('Share “${widget.network.name}”'),
-      content: SizedBox(
-        width: 460,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // [FieldLabel] + a hand-built field rather than [LabeledField],
-            // which stacks its own label above its own box: inside a Row the
-            // button would then centre against label *and* field and sit too
-            // high. This is the split the label was extracted for.
-            const FieldLabel('Add people'),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _email,
-                    enabled: !_inviting,
-                    autofocus: true,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.done,
-                    // Enter still sends. The button is what says so now — a
-                    // line of prose explaining how to submit a form is a
-                    // missing button with extra steps.
-                    onSubmitted: (_) => _invite(),
-                    // Validation fires on submit, never per keystroke: every
-                    // half-typed address is invalid, so live checking would sit
-                    // there scolding from the first character. But once a
-                    // verdict is on screen it clears the moment the user starts
-                    // fixing it — an error that outlives the mistake reads as
-                    // the app being stuck. Guarded, so the common case (no
-                    // error) costs no rebuild.
-                    onChanged: (_) {
-                      if (_error != null) setState(() => _error = null);
-                    },
-                    style: const TextStyle(fontSize: 14, height: 1.4),
-                    // The field sits on the dialog's raised surface, not the
-                    // page, so the page-tuned default fill would measure
-                    // 1.023:1 against it in dark and vanish. See
-                    // [labeledFieldDecoration].
-                    decoration: labeledFieldDecoration(
-                      'teammate@example.com',
-                      fill: AppCard.inset,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                // Beside the address, the way Drive puts it: the role belongs to
-                // the person being typed in, and a picker further down would read
-                // as a setting for the grid instead. Fixed width so the field
-                // does not resize as the label changes length.
-                SizedBox(
-                  // Sized to the longest label ("Use + run models") plus the
-                  // caret. The email field is Expanded, so it yields the space.
-                  // Measured against "Can use and share", one character wider
-                  // than today's longest — so this still has room, and a new
-                  // label longer than that one needs the width re-measured.
-                  width: 196,
-                  child: InviteRolePicker(
-                    value: _effectiveRole,
-                    roles: _grantable,
-                    enabled: !_inviting,
-                    onChanged: (value) => setState(() => _role = value),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _effectiveRole.description,
-                    style: TextStyle(
-                      color: AppPalette.textSecondary,
-                      fontSize: 12.5,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                // Rebuilt on every keystroke, but only this subtree — the
-                // button has to dim while the field is empty (that dimming is
-                // the affordance the prose line was standing in for) and
-                // `setState` on the dialog would rebuild the members list under
-                // it for nothing.
-                ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: _email,
-                  builder: (context, value, _) => FilledButton(
-                    onPressed: _inviting || value.text.trim().isEmpty
-                        ? null
-                        : _invite,
-                    child: _inviting
-                        ? const AppSpinner.onAccent()
-                        : const Text('Invite'),
-                  ),
-                ),
-              ],
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              ErrorBox(message: _error!, maxHeight: 96),
-            ],
-            const _Heading('People with access'),
-            // Removing is the owner's alone — see [SharePeopleList.canRemove].
-            // `widget.network.isOwner` is about *this viewer*, not about the
-            // people in the rows.
-            SharePeopleList(
-              networkId: _networkId,
-              canRemove: widget.network.isOwner,
-            ),
-            const _Heading('General access'),
-            _GeneralAccess(network: widget.network),
-          ],
-        ),
-      ),
-      // No footer at all. Google's two buttons don't survive the translation:
-      // "Copy link" has nothing behind it here (Grid invites by email; there
-      // is no link), and "Done" confirmed nothing — every action in this
-      // dialog already took effect the moment it was pressed. A button that
-      // only closes a window is a button the window's own dismiss already is.
-      //
-      // Esc and a click outside still close it — `showDialog` gives both.
-      //
-      // TODO(BE): Google's "Copy link" has no counterpart until there is an
-      // invite link — a token someone can be sent that joins them to the grid.
-      // Membership is by email only today, so there is nothing to copy.
-      // `.claude/share-grid-plan.md` §7.
-    );
-  }
-}
-
-/// The blanket rule: who can reach this grid without being on the list above.
-///
-/// One sentence, no control. The three modes are real — they are exactly how
-/// the control plane labels a grid — but `network_type` is set at
-/// `POST /managed-networks` and the only PATCH the app has takes `name`, so
-/// there is nothing to send. A picker here could be changed and never saved,
-/// which cost the dialog a yellow "not saved" line whose whole job was to
-/// contradict the field above it. See `.claude/share-grid-plan.md` §2.1.
-///
-/// It stays *visible* rather than being dropped: whether a grid is invite-only
-/// or open to anyone signed in is the fact that decides how carefully you pick
-/// who to add, and it is not readable anywhere else in this dialog.
-///
-/// TODO(BE): restore a picker here once `PATCH /v1/grid/networks/{id}` accepts
-/// `network_type`. Until then the app cannot fake it — access is enforced by
-/// the relay, and `~/.grid/credentials.toml` is a local cache the CLI owns, so
-/// writing a mode into it would change this sentence and nothing else.
-/// `.claude/share-grid-plan.md` §2.1.
-class _GeneralAccess extends ConsumerWidget {
-  const _GeneralAccess({required this.network});
-
-  final NetworkCredential network;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppTheme.watch(context);
-    // ⚠️ **Read the rule from the store, not from [network].** That field is a
-    // snapshot taken when the dialog was OPENED — `ShareGridDialog.show` is
-    // handed a NetworkCredential and holds it — so it cannot change while the
-    // dialog is up. A change that succeeded then left the field on the old
-    // rule, and it only looked right after closing and reopening: the change
-    // reads as having silently failed, which is the exact impression the
-    // `grid sync` in `ChangeGridTypeController.apply` was added to prevent.
-    // That sync does its half (credentials.toml is rewritten and
-    // `sessionProvider` invalidated); nothing was watching it here.
-    //
-    // Falls back to the snapshot rather than vanishing when the grid is not in
-    // the file — `grid sync` rewrites it, and a read landing mid-write must not
-    // blank the section.
-    final live = ref.watch(sessionProvider).byName(network.networkId) ?? network;
-    final current = ManagedNetworkType.fromWire(live.networkType);
-
-    // Not the owner, or a rule this picker doesn't offer
-    // (`permissioned-providers`, `private-domain`): a sentence, not a control.
-    // A picker that cannot save is worse than none — it looks like it worked.
-    if (!live.isOwner || current == null) {
-      return Text(
-        _accessSummary(gridAccessFor(live.networkType)),
-        style: TextStyle(
-          color: AppPalette.textSecondary,
-          fontSize: 12.5,
-          height: 1.4,
-        ),
-      );
-    }
-    return _AccessRulePicker(network: live, current: current);
-  }
-}
-
-/// The owner's control over who can reach the grid.
-class _AccessRulePicker extends ConsumerWidget {
-  const _AccessRulePicker({required this.network, required this.current});
-
-  final NetworkCredential network;
-  final ManagedNetworkType current;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(changeGridTypeControllerProvider);
-    final applying = state is ChangeGridTypeApplying;
-    final domain = ref.watch(gridDomainProvider).value;
-    // The field shows what was PICKED, not what is saved — a select that snaps
-    // back to the old value the moment you choose reads as the click not having
-    // registered. The confirmation below is what says it has not taken effect
-    // yet, and Cancel puts the field back.
-    final shown = switch (state) {
-      ChangeGridTypeConfirming(:final target) => target,
-      ChangeGridTypeApplying(:final target) => target,
-      _ => current,
-    };
-    // The rule this grid is already on stays listed even when the account can
-    // no longer choose it — an owner whose address moved to a public provider
-    // would otherwise find their current setting missing, and no way off it.
-    final types = {
-      ...accessTypesFor(canRestrictToDomain: domain != null),
-      current,
-    }.toList()..sort((a, b) => a.index.compareTo(b.index));
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GridTypePicker(
-          label: '',
-          fill: AppCard.inset,
-          domain: domain,
-          value: shown,
-          types: types,
-          enabled: !applying,
-          onChanged: (next) => ref
-              .read(changeGridTypeControllerProvider.notifier)
-              .select(target: next, current: current),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          accessDescriptionFor(shown, domain: domain),
-          style: TextStyle(
-            color: AppPalette.textSecondary,
-            fontSize: 12.5,
-            height: 1.4,
-          ),
-        ),
-        if (state is ChangeGridTypeConfirming)
-          _ConfirmChange(
-            network: network,
-            target: state.target,
-            domain: domain,
-          ),
-        if (applying) ...[
-          const SizedBox(height: 10),
-          Text(
-            'Changing to “${accessLabelFor(state.target, domain: domain)}”… '
-            'the grid restarts, so it is unavailable for a few seconds.',
-            style: TextStyle(
-              color: AppPalette.textSecondary,
-              fontSize: 12.5,
-              height: 1.4,
-            ),
-          ),
-        ],
-        if (state is ChangeGridTypeFailed) ...[
-          const SizedBox(height: 10),
-          ErrorBox(message: state.message, maxHeight: 96),
-        ],
-      ],
-    );
-  }
-}
-
-/// What the owner is about to give up, and the button that does it.
-class _ConfirmChange extends ConsumerWidget {
-  const _ConfirmChange({
-    required this.network,
-    required this.target,
-    required this.domain,
-  });
-
-  final NetworkCredential network;
-  final ManagedNetworkType target;
-  final String? domain;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Change to “${accessLabelFor(target, domain: domain)}”?',
-            style: TextStyle(
-              color: AppPalette.textPrimary,
-              fontSize: 13,
-              fontWeight: AppFont.medium,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${accessDescriptionFor(target, domain: domain)} '
-            '${_costOf(target)}',
-            style: TextStyle(
-              color: AppPalette.textSecondary,
-              fontSize: 12.5,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => ref
-                    .read(changeGridTypeControllerProvider.notifier)
-                    .cancel(),
-                child: const Text('Cancel'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: () => _apply(context, ref),
-                child: const Text('Change'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _apply(BuildContext context, WidgetRef ref) async {
+  /// Sends the access rule the owner picked, then tells them it landed.
+  Future<void> _applyAccessChange(ManagedNetworkType target) async {
+    final domain = ref.read(gridDomainProvider).value;
     final failure = await ref
         .read(changeGridTypeControllerProvider.notifier)
-        .apply(networkId: network.networkId, target: target);
-    if (!context.mounted || failure != null) return;
+        .apply(networkId: _networkId, target: target);
+    if (!mounted || failure != null) return;
     ToastScope.show(
       context,
       ToastSpec(
@@ -479,55 +232,371 @@ class _ConfirmChange extends ConsumerWidget {
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final change = ref.watch(changeGridTypeControllerProvider);
+    final domain = ref.watch(gridDomainProvider).value;
+
+    return AlertDialog(
+      // Deliberately **not** `scrollable: true` — the same trap
+      // [ConnectorDetailsDialog] carries a note about, and this dialog walked
+      // straight into it. That flag wraps the content in an `IntrinsicWidth`,
+      // which asks every child for its natural height; the people list is a
+      // `ListView` and cannot answer. The result was a relayout that re-entered
+      // the mouse tracker's device-update phase every frame — the app froze on
+      // open, spewing `!_debugDuringDeviceUpdate`.
+      //
+      // The one part that can outgrow the window scrolls on its own instead;
+      // see [SharePeopleList.maxHeight].
+      titlePadding: const EdgeInsets.fromLTRB(24, 20, 14, 0),
+      title: Row(
+        children: [
+          Expanded(child: Text('Share “${widget.network.name}”')),
+          // A tooltip on a glyph, the app's own help affordance — not a
+          // button. Docs' ⟨?⟩ opens a help centre; there is nothing here for a
+          // click to go to, and a control that does nothing when pressed is
+          // worse than a mark that never invited the press.
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Tooltip(
+              message:
+                  'People you add can use the models on this grid. Whether '
+                  'anyone else can reach it is set under General access.',
+              child: Icon(
+                LucideIcons.circleHelp300,
+                size: 16,
+                color: AppPalette.textFaint,
+              ),
+            ),
+          ),
+        ],
+      ),
+      // Zero, so the banner and the footer's hairline run the full width of the
+      // sheet the way Docs draws them. Every block below pays its own inset.
+      contentPadding: EdgeInsets.zero,
+      content: SizedBox(
+        width: _sheetWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_bannerFor(change, domain) case final banner?)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                child: banner,
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _InviteField(
+                    controller: _email,
+                    focusNode: _emailFocus,
+                    enabled: !_inviting,
+                    hasError: _error != null,
+                    onSubmitted: _invite,
+                    onFocusChange: _onFocusChange,
+                    onChanged: () {
+                      // The refusal was about the address that has just been
+                      // edited, so it is out of date the moment a key lands.
+                      if (_serverError != null) {
+                        setState(() => _serverError = null);
+                      }
+                      _revalidate();
+                    },
+                  ),
+                  // The role and the send button appear only once there is
+                  // something to send — Docs' own behaviour, and what gives the
+                  // address field the whole width it needs.
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _email,
+                    builder: (context, value, _) {
+                      if (value.text.trim().isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return _InviteActions(
+                        role: _effectiveRole,
+                        roles: _grantable,
+                        inviting: _inviting,
+                        onRoleChanged: (role) => setState(() => _role = role),
+                        onInvite: _invite,
+                      );
+                    },
+                  ),
+                  if (_error case final message?) ...[
+                    const SizedBox(height: 12),
+                    ErrorBox(message: message, maxHeight: 96),
+                  ],
+                  const _Heading('People with access'),
+                  // Removing is the owner's alone — see
+                  // [SharePeopleList.canRemove]. `widget.network.isOwner` is
+                  // about *this viewer*, not about the people in the rows.
+                  SharePeopleList(
+                    networkId: _networkId,
+                    canRemove: widget.network.isOwner,
+                    grantable: _grantable,
+                  ),
+                  const _Heading('General access'),
+                  GeneralAccessRow(network: widget.network),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+            Divider(height: 1, thickness: 1, color: AppPalette.divider),
+          ],
+        ),
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 14, 24, 18),
+      actions: [
+        SizedBox(
+          width: _sheetWidth - _sheetInset * 2,
+          child: _Footer(
+            change: change,
+            current: ManagedNetworkType.fromWire(widget.network.networkType),
+            domain: domain,
+            onApply: _applyAccessChange,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The strip under the title: what is about to happen, or what is happening.
+  ///
+  /// Nothing else earns this slot. An invite failure belongs beside the field
+  /// that caused it, and a failed rule change beside the rule.
+  Widget? _bannerFor(ChangeGridTypeState state, String? domain) =>
+      switch (state) {
+        ChangeGridTypeConfirming(:final target) => ShareBanner(
+          tone: ShareBannerTone.warning,
+          icon: LucideIcons.triangleAlert300,
+          message: accessChangeWarning(target, domain: domain),
+        ),
+        ChangeGridTypeApplying() => ShareBanner(
+          icon: LucideIcons.refreshCw300,
+          message:
+              '${widget.network.name} is restarting on the new rule. '
+              'Everyone on it reconnects in a few seconds.',
+        ),
+        _ => null,
+      };
 }
 
-/// What the rule permits, in one line — the read-only view, for a member who
-/// cannot change it and for the two rules this picker does not offer.
-///
-/// [GridAccess.domain] says the same as [GridAccess.restricted] on purpose. It
-/// used to claim "anyone with an @autonomous.ai email can use this grid", which
-/// was **wrong** for `private-domain` — an invention read off the wire value's
-/// name. That grid is the organisation's own; the domain names *whose* grid it
-/// is. (`domain-restricted`, the rule an owner picks, really is gated by domain
-/// — but that one resolves to a [ManagedNetworkType] and never reaches here.)
-///
-/// Deliberately short, but not shortened past the truth: `permissionless` opens
-/// *using* the grid to anyone while still gating who may run a model for
-/// it, so that one keeps its second clause. Collapsing it
-/// to "anyone can use this grid" would read as "anyone can put a machine on
-/// it", which is a different and much larger promise.
-String _accessSummary(GridAccess access) => switch (access) {
-  GridAccess.restricted ||
-  GridAccess.domain => 'Only the people listed above can use this grid.',
-  GridAccess.anyone =>
-    'Anyone signed in to Grid can use this grid. Only the people listed '
-        'above can run a model for it.',
-};
+/// The address field: full width, and the only boxed control in the sheet.
+class _InviteField extends StatelessWidget {
+  const _InviteField({
+    required this.controller,
+    required this.focusNode,
+    required this.enabled,
+    required this.hasError,
+    required this.onSubmitted,
+    required this.onChanged,
+    required this.onFocusChange,
+  });
 
-/// The part of a switch that nobody expects — what it TAKES rather than gives.
-///
-/// Every one of the three costs something: two cut people off mid-session, and
-/// the open one stops the grid billing for usage, which is a money change no
-/// one would guess from the word "anyone".
-String _costOf(ManagedNetworkType target) => switch (target) {
-  ManagedNetworkType.restricted =>
-    'Anyone using it who is not on the list above loses access, and any model '
-        'they run for it stops serving. The grid restarts, so everyone '
-        'reconnects once.',
-  // This used to warn that everyone off the domain lost access "even though
-  // they stay on the list". They do not any more — the domain admits, and the
-  // list keeps working beside it — so the cost is only for someone who is on
-  // neither, which is who a switch away from “Anyone” takes it from.
-  ManagedNetworkType.domain =>
-    'Anyone using it who is neither on that domain nor on the list above '
-        'loses access, and any model they run for it stops serving. The grid '
-        'restarts, so everyone reconnects once.',
-  ManagedNetworkType.anyone =>
-    'Usage on this grid stops being billed, and you can no longer block an '
-        'individual person. The grid restarts, so everyone reconnects once.',
-};
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool enabled;
+  final bool hasError;
+  final VoidCallback onSubmitted;
+  final VoidCallback onChanged;
 
-/// A section title inside the dialog.
+  /// Leaving the field counts as a finished attempt — see `_onFocusChange`.
+  final ValueChanged<bool> onFocusChange;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const FieldLabel('Add people'),
+        Focus(
+          onFocusChange: onFocusChange,
+          child: TextField(
+            controller: controller,
+            focusNode: focusNode,
+            enabled: enabled,
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => onSubmitted(),
+            onChanged: (_) => onChanged(),
+            style: const TextStyle(fontSize: 14, height: 1.4),
+            decoration: _decoration(hasError),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The app's field, plus the one hairline the design system's "no borders"
+  /// rule has to give way for.
+  ///
+  /// Measured: `AppCard.inset` on this dialog's own surface is **1.065:1** in
+  /// dark and **1.073:1** in light — a fill that cannot separate a layer, which
+  /// §2 says is exactly when a border or a shadow has to. A shadow would read
+  /// as a raised block; this box is recessed, so it takes the rim instead, and
+  /// [AppCard.insetHair] is the token already made for it. Scoped to this one
+  /// field on purpose — it is the sheet's entry point, and Docs boxes the same
+  /// one for the same reason.
+  InputDecoration _decoration(bool hasError) {
+    final base = labeledFieldDecoration(
+      'Add people by email',
+      fill: AppCard.inset,
+      hasError: hasError,
+    );
+    if (hasError) return base;
+    return base.copyWith(
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppCard.insetHair),
+      ),
+    );
+  }
+}
+
+/// The role for this invite and the button that sends it — shown only once an
+/// address has been typed.
+class _InviteActions extends StatelessWidget {
+  const _InviteActions({
+    required this.role,
+    required this.roles,
+    required this.inviting,
+    required this.onRoleChanged,
+    required this.onInvite,
+  });
+
+  final ManagedMemberRole role;
+  final List<ManagedMemberRole> roles;
+  final bool inviting;
+  final ValueChanged<ManagedMemberRole> onRoleChanged;
+  final VoidCallback onInvite;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              InviteRolePicker(
+                value: role,
+                roles: roles,
+                enabled: !inviting,
+                onChanged: onRoleChanged,
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: inviting ? null : onInvite,
+                child: inviting
+                    ? const AppSpinner.onAccent()
+                    : const Text('Invite'),
+              ),
+            ],
+          ),
+          // Under the role rather than beside it: a sentence squeezed into
+          // what is left of the row wraps to three ragged lines caught between
+          // two controls, and it explains the control on its left, so it reads
+          // better hanging under it.
+          Padding(
+            padding: const EdgeInsets.only(left: 10, top: 6, right: 4),
+            child: Text(
+              role.description,
+              style: TextStyle(
+                color: AppPalette.textSecondary,
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The sheet's bottom bar.
+///
+/// Docs closes with a single **Done** that saves nothing — every action above
+/// took effect when it was pressed. Grid keeps that, and grows a Save only for
+/// the one thing here that is *not* immediate: the access rule, which is
+/// confirmed before it restarts the grid.
+class _Footer extends StatelessWidget {
+  const _Footer({
+    required this.change,
+    required this.current,
+    required this.domain,
+    required this.onApply,
+  });
+
+  final ChangeGridTypeState change;
+
+  /// The rule the grid is actually on — what the footer says while the row
+  /// above shows the rule being considered.
+  final ManagedNetworkType? current;
+
+  final String? domain;
+  final ValueChanged<ManagedNetworkType> onApply;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Consumer(
+      builder: (context, ref, _) => Row(
+        children: [
+          Expanded(child: _status(context)),
+          ...switch (change) {
+            ChangeGridTypeConfirming(:final target) => [
+              TextButton(
+                onPressed: () => ref
+                    .read(changeGridTypeControllerProvider.notifier)
+                    .cancel(),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: () => onApply(target),
+                child: const Text('Save'),
+              ),
+            ],
+            ChangeGridTypeApplying() => [
+              const FilledButton(onPressed: null, child: AppSpinner.onAccent()),
+            ],
+            _ => [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Done'),
+              ),
+            ],
+          },
+        ],
+      ),
+    );
+  }
+
+  /// While a change is pending the row above shows the rule that was PICKED, so
+  /// this is the only place left that can say what the grid is on right now.
+  Widget _status(BuildContext context) {
+    if (change is! ChangeGridTypeConfirming) return const SizedBox.shrink();
+    if (current case final saved?) {
+      return Text(
+        'Not saved yet — this grid is still '
+        '“${accessLabelFor(saved, domain: domain)}”.',
+        style: TextStyle(color: AppPalette.textSecondary, fontSize: 12.5),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+/// A section title inside the sheet.
 class _Heading extends StatelessWidget {
   const _Heading(this.text);
   final String text;
@@ -536,7 +605,7 @@ class _Heading extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 22, bottom: 10),
+      padding: const EdgeInsets.only(top: 22, bottom: 8),
       child: Text(
         text,
         style: TextStyle(
