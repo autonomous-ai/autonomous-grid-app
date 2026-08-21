@@ -9,6 +9,7 @@ import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../infrastructure/api/models/managed_network.dart';
+import '../../auth/logic/session_controller.dart';
 import '../logic/change_grid_type_controller.dart';
 import '../logic/grid_access.dart';
 import '../logic/grid_access_types.dart';
@@ -293,14 +294,28 @@ class _GeneralAccess extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final current = ManagedNetworkType.fromWire(network.networkType);
+    // ⚠️ **Read the rule from the store, not from [network].** That field is a
+    // snapshot taken when the dialog was OPENED — `ShareGridDialog.show` is
+    // handed a NetworkCredential and holds it — so it cannot change while the
+    // dialog is up. A change that succeeded then left the field on the old
+    // rule, and it only looked right after closing and reopening: the change
+    // reads as having silently failed, which is the exact impression the
+    // `grid sync` in `ChangeGridTypeController.apply` was added to prevent.
+    // That sync does its half (credentials.toml is rewritten and
+    // `sessionProvider` invalidated); nothing was watching it here.
+    //
+    // Falls back to the snapshot rather than vanishing when the grid is not in
+    // the file — `grid sync` rewrites it, and a read landing mid-write must not
+    // blank the section.
+    final live = ref.watch(sessionProvider).byName(network.networkId) ?? network;
+    final current = ManagedNetworkType.fromWire(live.networkType);
 
     // Not the owner, or a rule this picker doesn't offer
     // (`permissioned-providers`, `private-domain`): a sentence, not a control.
     // A picker that cannot save is worse than none — it looks like it worked.
-    if (!network.isOwner || current == null) {
+    if (!live.isOwner || current == null) {
       return Text(
-        _accessSummary(gridAccessFor(network.networkType)),
+        _accessSummary(gridAccessFor(live.networkType)),
         style: TextStyle(
           color: AppPalette.textSecondary,
           fontSize: 12.5,
@@ -308,7 +323,7 @@ class _GeneralAccess extends ConsumerWidget {
         ),
       );
     }
-    return _AccessRulePicker(network: network, current: current);
+    return _AccessRulePicker(network: live, current: current);
   }
 }
 
