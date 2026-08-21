@@ -106,7 +106,10 @@ extern const lv_font_t geist_sem_24;  // largest display: tile agent name + over
 // it cannot disagree about how many there can be. The UI keeps only a thin shell per project and
 // materialises the heavy content for the active tile ± a window.
 #define MAX_EVENTS   1      // tile shows only the latest event (the most recent summary)
-#define TODO_VISIBLE_ROWS 4 // todo checklist shows this many rows; the rest scroll (keeps status on screen)
+#define TODO_COUNT_W  62    // room reserved on a todo row for its "n/total" counter
+#define TODO_VISIBLE_ROWS 2 // most a plan may draw at once — see ui_tile_set_todos, which shows the work in
+                            // hand and not the plan around it. Only reached by an agent that runs two
+                            // items at once; the ordinary answer is one row.
 #define AGENTS_VISIBLE_ROWS 3 // sub-agent list shows this many rows; the rest scroll (coexists with the tool line)
 #define BUSY_DOTS    3      // "processing" indicator = this many blinking dots (a loading animation)
 #define PREVIEW_BYTES 220   // tile teaser length (bytes, UTF-8 safe) — one card has room for a longer
@@ -4697,9 +4700,21 @@ void ui_tile_set_agents(const char *chat_id, const struct cJSON *agents_)
     display_unlock();
 }
 
-// The plan, from `turn.parts.todos[]` — an array of `{text, status}`. Windows to TODO_VISIBLE_ROWS rows
-// and scrolls the rest, auto-scrolling the running item into view; the recap card is hidden while it
-// shows. NULL/empty clears it and restores the card.
+// The plan, from `turn.parts.todos[]` — an array of `{text, status}`. Draws THE WORK IN HAND, not the plan
+// around it: the running item, and a `n/total` counter so the rest is still accounted for. The recap card
+// is hidden while it shows; NULL/empty clears it and restores the card.
+//
+// It used to draw every item into a 4-row scroller with a permanent scrollbar. A plan is regularly a few
+// dozen items long, and what that produced on a 466px face was a wall of text sliding under a bar — the
+// one line that mattered somewhere inside it. The list is not lost: it is on the desktop, in full, where
+// there is room to read it. What the panel is for is the glance.
+//
+// WHEN NOTHING IS RUNNING, THE FIRST PENDING ITEM STANDS IN, and that is not a nicety. There are real
+// moments with no running item — the plan just written, the beat between one item finishing and the next
+// starting, everything done — and drawing nothing through them would make the box vanish and come back on
+// every transition. A checklist that blinks out each time the agent moves on is worse to watch than the
+// wall it replaced. Standing in reads correctly too: it is the thing about to be worked on. Only when
+// nothing is left to do does this draw nothing, and by then the turn is ending anyway.
 //
 // ⚠️ A TODO'S `status` IS ITS OWN THREE-VALUE VOCABULARY — pending · running · done — and it is NOT a
 // step's four. **An unrecognised todo status is drawn as `pending`, never as done**, which is the exact
@@ -4722,17 +4737,36 @@ void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
     if (p->todo) { lv_obj_delete(p->todo); p->todo = NULL; p->todo_active = NULL; }
 
     int n = (todos && cJSON_IsArray(todos)) ? cJSON_GetArraySize(todos) : 0;
-    if (n <= 0) {                                   // no list → bring the event card back, but only if the
-        // turn isn't still processing (p->busy). During processing we keep the card hidden so ONLY the
-        // "Working… (elapsed · tokens)" row shows; clear_busy un-hides it when the turn ends.
+
+    // WHICH ITEMS, decided before a single object is built. Running ones win; the first unfinished item
+    // stands in when none is running; nothing at all means the plan is done.
+    //
+    // "not done" rather than "pending" for the stand-in, on purpose: this file's rule is that an
+    // unrecognised todo status settles to pending, never to done (see the note above the function), and
+    // asking the question this way keeps that true for a value from a newer app instead of quietly
+    // skipping it.
+    int show[TODO_VISIBLE_ROWS];
+    int shown = 0, standin = -1;
+    for (int k = 0; k < n; k++) {
+        const cJSON *it = cJSON_GetArrayItem(todos, k);
+        const cJSON *sj = it ? cJSON_GetObjectItemCaseSensitive(it, "status") : NULL;
+        const char *st = cJSON_IsString(sj) ? sj->valuestring : "";
+        if (strcmp(st, "running") == 0) {
+            if (shown < TODO_VISIBLE_ROWS) show[shown++] = k;
+        } else if (standin < 0 && strcmp(st, "done") != 0) {
+            standin = k;
+        }
+    }
+    if (shown == 0 && standin >= 0) show[shown++] = standin;
+
+    if (shown == 0) {                               // no plan, or every item finished → bring the event
+        // card back, but only if the turn isn't still processing (p->busy). During processing we keep the
+        // card hidden so ONLY the "Working… (elapsed · tokens)" row shows; clear_busy un-hides it when the
+        // turn ends.
         if (p->list && !p->busy) lv_obj_clear_flag(p->list, LV_OBJ_FLAG_HIDDEN);
         display_unlock();
         return;
     }
-
-    // Show ALL items (no windowing) inside a scrollable box; remember the in_progress row so we can
-    // auto-scroll it into view after building.
-    int start = 0, end = n;
 
     if (p->list) lv_obj_add_flag(p->list, LV_OBJ_FLAG_HIDDEN);   // hide event card while the list shows
     if (p->tool_line) lv_obj_add_flag(p->tool_line, LV_OBJ_FLAG_HIDDEN);   // todos own the space now
@@ -4740,31 +4774,26 @@ void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
     p->todo = lv_obj_create(p->body);
     lv_obj_remove_style_all(p->todo);
     lv_obj_set_width(p->todo, SAFE_CONTENT_W);
-    lv_obj_set_height(p->todo, LV_SIZE_CONTENT);   // measured after building; capped below if too tall
+    lv_obj_set_height(p->todo, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(p->todo, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(p->todo, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);  // rows centered horizontally
+    lv_obj_set_flex_align(p->todo, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(p->todo, 7, 0);
-    // CLICKABLE so a press lands ON the box (not through it to the tileview) → LVGL scrolls THIS box
-    // vertically instead of letting the tileview eat the drag. SCROLL_CHAIN off so a vertical drag never
-    // bubbles up to the horizontal tileview.
-    lv_obj_add_flag(p->todo, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);   // vertical scroll through all items
-    lv_obj_clear_flag(p->todo, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-    lv_obj_set_scroll_dir(p->todo, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(p->todo, LV_SCROLLBAR_MODE_ON);   // always visible → confirms the scroll region
+    // A PLAIN COLUMN NOW. At most TODO_VISIBLE_ROWS rows are ever built, so they always fit: the scroll
+    // region, the permanent scrollbar, the CLICKABLE flag that kept the drag off the tileview, the chain
+    // guard, the measure-and-pin-to-N-rows pass and the scroll-the-running-row-into-view call all existed
+    // to manage a list that no longer exists here.
+    lv_obj_clear_flag(p->todo, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_move_to_index(p->todo, 0);               // top of the body, above the (hidden) card + working row
 
-    lv_obj_t *active_row = NULL;
     static char clean[64];
-    for (int k = start; k < end; k++) {
+    for (int r = 0; r < shown; r++) {
+        int k = show[r];
         const cJSON *it = cJSON_GetArrayItem(todos, k);
         const cJSON *cj = it ? cJSON_GetObjectItemCaseSensitive(it, "text") : NULL;
         const cJSON *sj = it ? cJSON_GetObjectItemCaseSensitive(it, "status") : NULL;
         const char *ct = cJSON_IsString(cj) ? cj->valuestring : "";
         const char *st = cJSON_IsString(sj) ? sj->valuestring : "";
-        // Only the two words that are recognised do anything. Everything else — a missing status, a value
-        // from a newer app — falls through to PENDING.
-        bool run  = strcmp(st, "running") == 0;
-        bool done = strcmp(st, "done") == 0;
+        bool run = strcmp(st, "running") == 0;
 
         lv_obj_t *row = lv_obj_create(p->todo);
         lv_obj_remove_style_all(row);
@@ -4775,18 +4804,16 @@ void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(row, 8, 0);
 
-        // Glyph: green dot = done, orange (pulsed) = running, grey ring = pending.
+        // Orange (pulsed) = running, grey ring = waiting. There is no green branch any more: a row only
+        // gets drawn because it is running or standing in for one, and a finished item is never either.
         lv_obj_t *g = lv_obj_create(row);
         lv_obj_remove_style_all(g);
         lv_obj_clear_flag(g, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_size(g, 12, 12);
         lv_obj_set_style_radius(g, LV_RADIUS_CIRCLE, 0);
-        if (done) {
-            lv_obj_set_style_bg_color(g, COL_GREEN, 0); lv_obj_set_style_bg_opa(g, LV_OPA_COVER, 0);
-        } else if (run) {
+        if (run) {
             lv_obj_set_style_bg_color(g, COL_ORANGE, 0); lv_obj_set_style_bg_opa(g, LV_OPA_COVER, 0);
-            p->todo_active = g;
-            active_row = row;
+            p->todo_active = g;                   // busy_dots_tick pulses this one
         } else {
             lv_obj_set_style_bg_opa(g, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(g, 2, 0); lv_obj_set_style_border_color(g, COL_MUTED, 0);
@@ -4795,25 +4822,28 @@ void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
         utf8_filter(ct, clean, sizeof(clean));
         lv_obj_t *lbl = lv_label_create(row);
         // Content-width so the glyph+text sizes to the item and the whole row can be centered as a unit;
-        // bounded by max_width with a trailing "…" for long items. One line.
+        // bounded by max_width with a trailing "…" for long items. One line. The bound leaves room for the
+        // counter, which would otherwise be pushed off the row by a long item.
         lv_obj_set_width(lbl, LV_SIZE_CONTENT);
-        lv_obj_set_style_max_width(lbl, SAFE_CONTENT_W - 40, 0);
+        lv_obj_set_style_max_width(lbl, SAFE_CONTENT_W - 40 - TODO_COUNT_W, 0);
         lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_font(lbl, &geist_reg_25, 0);
-        lv_obj_set_style_text_color(lbl, run ? COL_ORANGE : done ? COL_MUTED : COL_FG, 0);
+        lv_obj_set_style_text_color(lbl, run ? COL_ORANGE : COL_FG, 0);
         lv_label_set_text(lbl, clean);
+
+        // "3/12" — what the one row costs, bought back in a label. Without it a plan of thirty and a plan
+        // of three look identical from a foot away, and the item on screen says nothing about how much of
+        // the work is behind it. Skipped for a one-item plan, where it would only ever read "1/1".
+        if (n > 1) {
+            lv_obj_t *cnt = lv_label_create(row);
+            lv_obj_set_style_text_font(cnt, &geist_reg_20, 0);
+            lv_obj_set_style_text_color(cnt, COL_MUTED, 0);
+            char c[16];
+            snprintf(c, sizeof c, "%d/%d", k + 1, n);
+            lv_label_set_text(cnt, c);
+        }
     }
-    // Show at most 3 rows; the rest scroll inside the box. Measure a row's real height (each is one
-    // line) and pin the box to exactly 3 rows so the Working status + time/tokens stay on screen below.
-    lv_obj_update_layout(p->todo);
-    if (lv_obj_get_child_count(p->todo) > TODO_VISIBLE_ROWS) {
-        lv_coord_t rowh = lv_obj_get_height(lv_obj_get_child(p->todo, 0));
-        lv_obj_set_height(p->todo, rowh * TODO_VISIBLE_ROWS + 7 * (TODO_VISIBLE_ROWS - 1) + 2);
-    }
-    // Keep the in_progress item visible when the list scrolls (the user can still scroll freely; the
-    // next update re-centers on the active task).
-    if (active_row) lv_obj_scroll_to_view(active_row, LV_ANIM_OFF);
     display_unlock();
 }
 

@@ -238,6 +238,18 @@ arrived, so it can render a live clock off a payload that is standing still.
 story. Each entry is `{text, status}`. Absent means the agent has no plan, which is different from an
 empty plan and is drawn as nothing at all.
 
+**The whole plan is sent; the panel draws the work in hand.** Since 2026-08-21 it shows the `running`
+item — the first unfinished one standing in when nothing is running — plus an `n/total` counter, and at
+most two rows in the case of an agent that runs two items at once. It used to draw every item into a
+scroller, which on a 466px face is a wall of text sliding under a bar with the one line that matters
+somewhere inside it; a plan is regularly a few dozen items long. The full list is on the desktop, where
+there is room to read it.
+
+The sender is not asked to filter, and that is deliberate: which items are worth a glance is a question
+about a screen, and the screen is the panel's. It does mean a long plan crosses the cable in full on
+every `turn.parts` — the one part of this the app could improve, by trimming the way `parts[]` already
+trims to `kPanelTurnPartLimit`.
+
 > ⚠️ **A todo's `status` is its own three-value vocabulary, NOT a step's**, and the default runs the
 > other way:
 >
