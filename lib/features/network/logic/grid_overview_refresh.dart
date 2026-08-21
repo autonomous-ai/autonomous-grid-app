@@ -9,16 +9,44 @@ import 'grid_overview_provider.dart';
 /// How often the selected grid's overview is refetched while only the summary
 /// pill is on screen.
 ///
-/// The pill carries two slow-moving numbers (online machines, models), so it
-/// doesn't earn a fast poll: a minute is quick enough that a machine dropping
-/// off doesn't sit wrong for long, and slow enough that a fat overview isn't
-/// pulled twice a minute on every tab just to keep a two-count chip current.
-/// The faster cadence is reserved for when its live detail is actually on screen
-/// ([gridOverviewActiveRefreshIntervalProvider]). Overridable in tests so they
-/// don't wait on a real clock.
+/// A minute, while the pill carried two slow-moving counts: nothing on it moved
+/// fast enough to earn a fat payload twice a minute. It carries two live ones
+/// now — the rate the grid is working at, which drives the bars beside it, and
+/// the share of memory in use, which drives the ring. Both are readings of
+/// *this moment*, so a minute-old one is a minute-old claim about a grid the
+/// user is deciding whether to send work to.
+///
+/// Twenty seconds is the shortest interval that still leaves the fetch idle most
+/// of the time. The faster cadence is still reserved for when the panel's live
+/// detail is actually open ([gridOverviewActiveRefreshIntervalProvider]).
+/// Overridable in tests so they don't wait on a real clock.
 final gridOverviewRefreshIntervalProvider = Provider<Duration>(
-  (ref) => const Duration(seconds: 60),
+  (ref) => const Duration(seconds: 20),
 );
+
+/// How often the selected grid's overview is refetched for the first
+/// [kOverviewWarmupSamples] rounds after the pill mounts or the grid changes.
+///
+/// Only one thing still needs more than a single reading: when the relay reports
+/// no `throughput_tok_s`, `GridActivity` falls back to the step between two
+/// consecutive rollups, and a step needs a second poll before it exists. At the
+/// calm cadence that is twenty seconds of a grid that is plainly working
+/// showing `idle`. Five seconds gets the second reading before anyone has
+/// finished reading the screen they just opened.
+///
+/// The burst is the cost of *starting* a measurement, not of keeping one — so
+/// it is two rounds, not a filling animation.
+final gridOverviewWarmupRefreshIntervalProvider = Provider<Duration>(
+  (ref) => const Duration(seconds: 5),
+);
+
+/// How many quick rounds the warm-up runs for.
+///
+/// Two: one to set the baseline, one to make a step out of it. It was eight
+/// while the bar drew a trend line and every extra point was a visible
+/// improvement to the shape; a rate needs exactly two, and the other six were a
+/// fat payload each, bought for nothing.
+const kOverviewWarmupSamples = 2;
 
 /// How often the overview is refetched while the hover panel is open.
 ///
@@ -49,6 +77,15 @@ class GridOverviewRefresher {
   final Ref _ref;
   Timer? _timer;
   int _watchers = 0;
+
+  /// Rounds served since the current series started. Below
+  /// [kOverviewWarmupSamples] the burst cadence is in effect.
+  int _warmupTicks = 0;
+
+  /// The grid the warm-up counter belongs to. A different one means a different
+  /// series — the history resets on grid switch, so the burst that fills it has
+  /// to run again.
+  String? _warmupGridId;
 
   /// Whether the fast (panel-open) cadence is in effect — see [setActive].
   bool _active = false;
@@ -108,17 +145,43 @@ class GridOverviewRefresher {
     _ref.invalidate(gridOverviewForProvider(grid.networkId));
   }
 
-  /// The cadence for the current state — fast while the panel is open, calm
-  /// otherwise.
-  Duration get _interval => _ref.read(
-    _active
-        ? gridOverviewActiveRefreshIntervalProvider
-        : gridOverviewRefreshIntervalProvider,
-  );
+  /// The cadence for the current state — fast while the panel is open, faster
+  /// still until the first rate can be measured, calm otherwise.
+  Duration get _interval {
+    if (_active) return _ref.read(gridOverviewActiveRefreshIntervalProvider);
+    if (_warmupTicks < kOverviewWarmupSamples) {
+      return _ref.read(gridOverviewWarmupRefreshIntervalProvider);
+    }
+    return _ref.read(gridOverviewRefreshIntervalProvider);
+  }
 
+  /// Start the warm-up over when the selection moved. Checked here rather than
+  /// watched: the refresher is not a widget and holds no subscription of its
+  /// own, and every scheduling decision passes through this point anyway.
+  void _noteGrid() {
+    final id = _ref.read(selectedNetworkProvider)?.networkId;
+    if (id == _warmupGridId) return;
+    _warmupGridId = id;
+    _warmupTicks = 0;
+  }
+
+  /// A chain of one-shot timers rather than [Timer.periodic]: the cadence
+  /// changes *while it runs* — the warm-up hands over to the calm interval after
+  /// two rounds — and a periodic timer is fixed at the period it was created
+  /// with.
   void _start() {
     if (_timer != null) return;
-    _timer = Timer.periodic(_interval, (_) => refreshNow());
+    _schedule();
+  }
+
+  void _schedule() {
+    _noteGrid();
+    _timer = Timer(_interval, () {
+      _timer = null;
+      if (_warmupTicks < kOverviewWarmupSamples) _warmupTicks++;
+      refreshNow();
+      if (_watchers > 0) _schedule();
+    });
   }
 
   /// Re-time a running timer onto the current [_interval] — a plain restart, so

@@ -13,6 +13,7 @@ import '../../../features/code/logic/code_projects_controller.dart';
 import '../../../features/code/logic/code_side_panel.dart';
 import '../../../features/code/logic/project_status_controller.dart';
 import '../../../features/code/presentation/widgets/project_header.dart';
+import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_spinner.dart';
@@ -105,13 +106,22 @@ class AppTopBar extends ConsumerWidget {
                 // they may want to act on.
                 const WorkingNowPill(),
                 const _ModelDownloadPill(),
-                // Immediately before the grid pill, because the grid is what an
-                // invite is *to*: the faces, then the name of the place they
-                // are on, reads as one sentence. Behind the download pill so a
-                // transfer in progress — which is temporary and time-sensitive
-                // — still lands nearest the eye's entry point.
-                const InvitePill(),
+                // The grid, then the people on it, then the window's own
+                // controls — three groups, in the order they belong to: what
+                // this place is, who is in it, what you can open.
+                //
+                // The faces used to come first, on the reading that "the faces,
+                // then the name of the place they are on" is one sentence. It
+                // reads the other way round just as well, and putting the
+                // capsule first buys something the other order could not: the
+                // one opaque, saturated surface on the bar (the Invite button)
+                // stops sitting in the middle of the glass ones, where it was
+                // the first thing the eye landed on and the last thing that
+                // deserved to be.
                 const GridPowerPill(),
+                const _GridInviteDivider(),
+                const InvitePill(),
+                const _ControlsDivider(),
                 const _ProjectRailToggle(),
                 const _BottomPanelToggle(),
                 const _SidePanelToggle(),
@@ -121,6 +131,79 @@ class AppTopBar extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// The rule between two groups on the bar.
+///
+/// The groups are otherwise separated by whitespace alone, and whitespace is
+/// not enough here: every pill already carries its own inner padding, so the
+/// gap between two capsules looks the same as the gap inside one. A hairline
+/// says the two things either side of it answer different questions.
+///
+/// [AppPalette.guide] rather than [AppPalette.divider]: this stands on the page
+/// (the bar has no fill of its own), where the divider weight reads as a smudge
+/// rather than as a line — the same reason the sidebar's tree guide has its own
+/// token.
+class _BarDivider extends StatelessWidget {
+  const _BarDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: SizedBox(
+        width: 1,
+        height: 18,
+        child: ColoredBox(color: AppPalette.guide),
+      ),
+    );
+  }
+}
+
+/// The rule between the grid capsule and the people on that grid.
+///
+/// Drawn only when there is something on *both* sides. Every pill here unmounts
+/// when it has nothing to say, so a rule that always drew would end up floating
+/// against the toggles on a grid with no capsule — a line with one side is a
+/// mark, not a separator.
+class _GridInviteDivider extends ConsumerWidget {
+  const _GridInviteDivider();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final grid = ref.watch(selectedNetworkProvider);
+    if (grid == null) return const SizedBox.shrink();
+    // What [GridPowerPill] itself draws on: a grid with nothing online falls
+    // back to its "Run a model here" offer, and shows nothing at all to someone
+    // who may not host.
+    final hasCapsule =
+        !ref.watch(gridPowerProvider).isEmpty || grid.canManageProvider;
+    if (!hasCapsule) return const SizedBox.shrink();
+    return const _BarDivider();
+  }
+}
+
+/// The rule between the grid's own surfaces and the window's panel toggles.
+///
+/// Same both-sides rule as [_GridInviteDivider]. The toggles are conditional in
+/// their own right — a chat with no grid has no panel to open, a project with no
+/// repository has nothing to browse — so this asks the same questions they do.
+class _ControlsDivider extends ConsumerWidget {
+  const _ControlsDivider();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(selectedNetworkProvider) == null) {
+      return const SizedBox.shrink();
+    }
+    final hasToggle =
+        _chatWithGrid(ref) ||
+        (ref.watch(codeProjectIsOpenProvider) &&
+            ref.watch(openProjectHasCodeProvider));
+    if (!hasToggle) return const SizedBox.shrink();
+    return const _BarDivider();
   }
 }
 

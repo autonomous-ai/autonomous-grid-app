@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -6,9 +8,12 @@ import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_overview_refresh.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/network/logic/member_providers.dart';
+import '../../../features/network/logic/grid_activity.dart';
 import '../../../features/network/logic/node_metrics.dart'
     show answeredWindowLabel, formatCount;
 import '../../theme/app_theme.dart';
+import '../../widgets/activity_bars.dart';
+import '../../widgets/ring_gauge.dart';
 import '../../widgets/status_dot.dart';
 import '../shell_state.dart';
 import 'grid_models_panel.dart';
@@ -60,11 +65,32 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
   /// One anchor per figure, so a stat panel hangs under the number it explains
   /// rather than under the capsule as a whole. A [LayerLink] can only be
   /// attached to one target, hence one per figure.
+  /// The two stretches that open the hardware panel — the grid's name at the
+  /// left end of the capsule, the memory ring at the right. Each anchors the
+  /// panel under itself: one link for the whole capsule opens the panel under
+  /// whichever end it was pinned to, ~400px from the other.
+  final _nameAnchor = _newFigureAnchor();
+  final _memoryAnchor = _newFigureAnchor();
+
   final _memberAnchor = _newFigureAnchor();
   final _nodeAnchor = _newFigureAnchor();
   final _modelAnchor = _newFigureAnchor();
   final _tokenAnchor = _newFigureAnchor();
   final _controller = OverlayPortalController();
+
+  /// Which end of the capsule the hardware panel hangs from — set as the
+  /// pointer enters one of them, so the panel follows the pointer between the
+  /// two rather than staying where it first opened.
+  _FigureAnchor? _powerAnchor;
+
+  void _powerFrom(_FigureAnchor anchor) {
+    if (identical(_powerAnchor, anchor)) return;
+    _powerAnchor = anchor;
+    // [_onEnter] returns early when the open panel is already this kind, so
+    // moving name → ring would otherwise leave the panel behind. Repainted only
+    // while the panel is actually open on it.
+    if (_controller.isShowing && _panel == _PanelKind.power) setState(() {});
+  }
 
   /// Ties the pill and its panel into one tap region, so a click inside either
   /// isn't the "click outside" that dismisses a pinned panel.
@@ -166,6 +192,10 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
     // The people on the grid, beside the hardware behind it. Null while the
     // roster loads or when it can't be read — see [selectedGridMemberCountProvider].
     final members = ref.watch(selectedGridMemberCountProvider);
+    // Whether the grid is working, and for how long it hasn't been. Watched
+    // here rather than inside the row so the idle clock keeps running for as
+    // long as the pill is mounted.
+    final activity = ref.watch(gridActivityProvider);
     if (grid == null) return const SizedBox.shrink();
 
     // The refresher wraps the *empty* case too. Gating it behind `isEmpty`
@@ -196,7 +226,12 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
                     overlayChildBuilder: (context) =>
                         _panelFor(_panel, grid.name, grid.canManageProvider),
                     child: Semantics(
-                      label: _semanticsLabel(grid.name, power, members),
+                      label: _semanticsLabel(
+                        grid.name,
+                        power,
+                        members,
+                        activity,
+                      ),
                       button: true,
                       container: true,
                       child: GestureDetector(
@@ -207,6 +242,10 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
                             name: grid.name,
                             power: power,
                             members: members,
+                            activity: activity,
+                            nameAnchor: _nameAnchor,
+                            memoryAnchor: _memoryAnchor,
+                            onPowerFrom: _powerFrom,
                             memberAnchor: _memberAnchor,
                             nodeAnchor: _nodeAnchor,
                             modelAnchor: _modelAnchor,
@@ -231,7 +270,8 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
     bool canHost,
   ) => switch (kind) {
     _PanelKind.power => GridPowerPanel(
-      link: _link,
+      link: (_powerAnchor ?? _nameAnchor).link,
+      anchorKey: (_powerAnchor ?? _nameAnchor).key,
       gridName: gridName,
       tapGroupId: _tapGroup,
       canHost: canHost,
@@ -304,7 +344,12 @@ String _windowSuffix(int seconds) {
 
 /// A spoken summary for screen readers — the panel is pointer-driven, so
 /// everything it says has to be reachable from the pill itself.
-String _semanticsLabel(String name, GridPower power, int? members) {
+String _semanticsLabel(
+  String name,
+  GridPower power,
+  int? members,
+  GridActivity activity,
+) {
   final parts = <String>[
     name,
     if (members != null)
@@ -320,9 +365,26 @@ String _semanticsLabel(String name, GridPower power, int? members) {
           '${answered.tokensCached} from cache, '
           '${answered.tokensOut} out'
           '${answeredWindowLabel(answered.windowSeconds).isEmpty ? '' : ' in the last ${answeredWindowLabel(answered.windowSeconds)}'}',
-    if (power.vramGb != null) '${formatVram(power.vramGb!)} of graphics memory',
+    // Spoken as a share when the relay reports one, because that is what the
+    // ring beside the figure draws — a reader who cannot see the ring would
+    // otherwise get the pool total and none of what the sighted user is told.
+    if (power.vramGb case final total?)
+      power.vramUsedGb == null
+          ? '${formatVram(total)} of graphics memory'
+          : '${formatVram(power.vramUsedGb!)} of ${formatVram(total)} '
+                'graphics memory in use',
+    if (power.vramUsedGb == null && power.gpuUtilPct != null)
+      '${power.gpuUtilPct!.round()}% GPU load',
     if (power.parallel != null)
       '${power.parallel} ${plural(power.parallel!, 'task')} at once',
+    // What the bars and their figure say, in words: the glyph is the one part
+    // of the capsule with no text of its own.
+    if (activity.isBusy)
+      'working at about ${activity.rateTokS!.round()} tokens a second'
+    else if (activity.idleFor(DateTime.now()) case final since?)
+      'idle for ${since.inMinutes} ${plural(since.inMinutes, 'minute')}'
+    else
+      'idle',
   ];
   return parts.join(', ');
 }
@@ -375,11 +437,30 @@ class _StartHostingPill extends StatelessWidget {
   }
 }
 
+/// The capsule's contents: who this grid is, whether it is working, and how
+/// much of its memory is spoken for.
+///
+/// It used to print five figures in a row — members, nodes, models, input,
+/// memory — each the same size and weight as the next. Five equal numbers have
+/// no headline: the eye had to read all of them to find out none of them was the
+/// answer, and the capsule ran ~555px doing it.
+///
+/// What replaced them is picked to match how fast each thing actually moves.
+/// Memory is a share, so it is a ring — "2.1 TB" alone has no scale to be read
+/// against. Work is a level, so it is three bars and a rate, not a chart: the
+/// relay answers once a minute and the 24h total it reports moves about 0.05% in
+/// that time, so any line drawn from it is flat by construction. And the three
+/// counts kept their place but not their words: a glyph and a figure each,
+/// which is what [_CountFigure] draws.
 class _PillRow extends StatelessWidget {
   const _PillRow({
     required this.name,
     required this.power,
     required this.members,
+    required this.activity,
+    required this.nameAnchor,
+    required this.memoryAnchor,
+    required this.onPowerFrom,
     required this.memberAnchor,
     required this.nodeAnchor,
     required this.modelAnchor,
@@ -395,6 +476,18 @@ class _PillRow extends StatelessWidget {
   /// is then omitted rather than guessed at.
   final int? members;
 
+  /// Whether the grid is working, how hard, and how long it has been quiet —
+  /// see [gridActivityProvider].
+  final GridActivity activity;
+
+  /// The two stretches that open the hardware panel, each anchoring it under
+  /// itself — see [_GridPowerPillState._powerAnchor].
+  final _FigureAnchor nameAnchor;
+  final _FigureAnchor memoryAnchor;
+
+  /// Tells the pill which of those two the pointer just entered.
+  final void Function(_FigureAnchor) onPowerFrom;
+
   final _FigureAnchor memberAnchor;
   final _FigureAnchor nodeAnchor;
   final _FigureAnchor modelAnchor;
@@ -403,9 +496,34 @@ class _PillRow extends StatelessWidget {
   final void Function(_PanelKind) onEnter;
   final void Function(_PanelKind) onExit;
 
+  /// Where a rate sits on the glyph's 0–1 scale.
+  ///
+  /// Logarithmic, against a ceiling of 2000 tok/s. A grid's throughput spans
+  /// three orders of magnitude — one laptop answering slowly, a room of GPUs at
+  /// full tilt — and on a linear scale everything short of the biggest grid
+  /// would pin the bars to the floor. The ceiling is a reading of "flat out",
+  /// not a limit: past it the bars simply stay at full.
+  static double _intensity(double tokS) {
+    if (tokS <= 0) return 0;
+    return (math.log(1 + tokS) / math.log(2001)).clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final vram = power.vramGb;
+    final used = power.vramUsedGb;
+    final util = power.gpuUtilPct;
+    // What the ring is a share of, in the order the data allows. Memory in use
+    // is the honest first choice — it is the figure printed right beside it, so
+    // the ring and the text are the same claim. Failing that, mean GPU load,
+    // which is labelled as its own percentage rather than left to be mistaken
+    // for the memory figure. Failing both, no ring: an empty circle beside a
+    // total would imply a measurement of zero.
+    final share = (vram != null && used != null)
+        ? used / vram
+        : (util != null ? util / 100 : null);
+    final ringIsMemory = vram != null && used != null;
     // Every part of the row sits in a hover region, and the regions touch: the
     // gaps between figures are each figure's own padding rather than a spacer
     // between them. A bare SizedBox is dead ground — the pointer crossing it
@@ -414,11 +532,15 @@ class _PillRow extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // The grid name (with the live dot and the rule after it) belongs to the
-        // grid as a whole, so it keeps the hardware panel.
+        // The grid name (with the live dot after it) belongs to the grid as a
+        // whole, so it keeps the hardware panel.
         _HoverTarget(
           kind: _PanelKind.power,
-          onEnter: onEnter,
+          anchor: nameAnchor,
+          onEnter: (kind) {
+            onPowerFrom(nameAnchor);
+            onEnter(kind);
+          },
           onExit: onExit,
           padding: const EdgeInsets.only(right: _HoverTarget._gap),
           child: Row(
@@ -427,7 +549,7 @@ class _PillRow extends StatelessWidget {
               StatusDot(color: AppPalette.online, size: 6, pulsing: true),
               const SizedBox(width: 8),
               // The grid name is the anchor; it gets the only full-strength text
-              // in the pill so the numbers read as its supporting detail.
+              // in the pill so everything else reads as its supporting detail.
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 132),
                 child: Text(
@@ -441,94 +563,247 @@ class _PillRow extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              const _Divider(),
-              const SizedBox(width: 5),
             ],
           ),
         ),
-        // People first, then the machines: the pill reads "who is on this grid,
-        // and what is standing behind it" — and the count nearest the name is
-        // the one that belongs to the grid rather than to its hardware.
-        if (members case final count?)
-          _HoverTarget(
-            kind: _PanelKind.members,
-            anchor: memberAnchor,
-            onEnter: onEnter,
-            onExit: onExit,
-            child: _Stat(value: '$count', unit: plural(count, 'member')),
-          ),
+        // WORK — the glyph, what the grid is doing, and the total it has done,
+        // in one hover target: they are one statement, and splitting them would
+        // open two different panels from either half of the same sentence.
         _HoverTarget(
-          kind: _PanelKind.nodes,
-          anchor: nodeAnchor,
+          kind: _PanelKind.tokens,
+          anchor: tokenAnchor,
           onEnter: onEnter,
           onExit: onExit,
-          child: _Stat(
-            value: '${power.onlineNodes}',
-            unit: plural(power.onlineNodes, 'node'),
-          ),
-        ),
-        _HoverTarget(
-          kind: _PanelKind.models,
-          anchor: modelAnchor,
-          onEnter: onEnter,
-          onExit: onExit,
-          child: _Stat(
-            value: '${power.models}',
-            unit: plural(power.models, 'model'),
-          ),
-        ),
-        // Memory and the work done are the grid's own headline figures, not
-        // lists of anything — they keep the hardware panel, where the bar breaks
-        // memory down by machine.
-        // Before the memory figure: memory is what the grid *could* do, this is
-        // what it actually did. Its own hover target, so asking about the work
-        // opens the four token figures rather than the whole hardware panel —
-        // and absent, not zero, when no node reported a rollup.
-        //
-        // Input alone on the pill, at the repo owner's call. It is the bigger of
-        // the two figures and the one that moves first when a grid gets busy —
-        // work arrives before it is answered. The trade-off is worth knowing:
-        // output is the half where a machine's *time* goes, so a grid reading a
-        // great deal and generating little now reads as busier on this bar than
-        // it is working. The panel behind the hover carries all four figures, so
-        // nothing is lost, only reordered.
-        //
-        // `freshInputTokens`, never `tokensIn`: the panel this expands into
-        // prints cache hits on their own row, and a pill totalling both would
-        // not add up to the rows it opens.
-        if (power.answered case final answered?)
-          _HoverTarget(
-            kind: _PanelKind.tokens,
-            anchor: tokenAnchor,
-            onEnter: onEnter,
-            onExit: onExit,
-            child: _Stat(
-              value: formatCount(answered.freshInputTokens),
-              unit: 'input${_windowSuffix(answered.windowSeconds)}',
-            ),
-          ),
-        _HoverTarget(
-          kind: _PanelKind.power,
-          onEnter: onEnter,
-          onExit: onExit,
-          padding: const EdgeInsets.only(left: _HoverTarget._gap),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (power.vramGb != null) ...[
-                _Stat(value: formatVram(power.vramGb!), unit: null),
+              const _Divider(),
+              const SizedBox(width: 9),
+              ActivityBars(
+                active: activity.isBusy,
+                intensity: _intensity(activity.rateTokS ?? 0),
+                color: AppPalette.accentOnSurface,
+                restColor: AppPalette.textFaint,
+              ),
+              const SizedBox(width: 7),
+              if (activity.rateTokS case final rate? when activity.isBusy)
+                _Stat(value: formatRate(rate), unit: 'tok/s')
+              else
+                // The one figure only a resting grid can give. It replaces the
+                // rate rather than sitting beside a "0 tok/s", which is a
+                // number nobody reads as a state.
+                Text(
+                  switch (activity.idleFor(DateTime.now())) {
+                    final since? => idleLabel(since),
+                    null => 'idle',
+                  },
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    // Not [AppPalette.textFaint], which the flattened bars
+                    // beside it use: faint on the pill's fill measures 3.18:1
+                    // dark / 3.33:1 light — fine for a 2px graphic, under the
+                    // 4.5:1 a line of text has to clear.
+                    color: AppPalette.textSecondary,
+                    fontFeatures: AppFont.tabularFigures,
+                  ),
+                ),
+              // The window total, one step quieter: it is the context for the
+              // rate, not a figure of its own — and at 24 hours it is the same
+              // number all afternoon.
+              if (power.answered case final answered?) ...[
                 const SizedBox(width: 6),
+                _Stat(
+                  value: formatCount(answered.freshInputTokens),
+                  unit: _windowSuffix(answered.windowSeconds).trim(),
+                  muted: true,
+                  leading: '· ',
+                ),
+              ],
+            ],
+          ),
+        ),
+        // MEMORY — the ring and its figure. Back on the whole-grid panel: this
+        // is the hardware, which is what that panel is.
+        if (vram != null)
+          _HoverTarget(
+            kind: _PanelKind.power,
+            onEnter: onEnter,
+            onExit: onExit,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _Divider(),
+                const SizedBox(width: 9),
+                if (share != null) ...[
+                  RingGauge(
+                    value: share,
+                    // Amber from the point where a grid's memory stops being
+                    // headroom and starts being a constraint on the next model
+                    // someone loads.
+                    color: share >= 0.85 ? AppPalette.warn : AppPalette.online,
+                    trackColor: AppPalette.guide,
+                    size: 15,
+                    strokeWidth: 2.2,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                _Stat(
+                  value: ringIsMemory
+                      ? formatVramShare(used, vram)
+                      : formatVram(vram),
+                  // The percentage is named only when it is *not* the memory
+                  // figure — otherwise the ring and the "1.3 / 2.1 TB" beside it
+                  // already say the same thing twice.
+                  unit: ringIsMemory || util == null
+                      ? null
+                      : '· ${util.round()}% busy',
+                ),
+              ],
+            ),
+          ),
+        // WHAT THE GRID IS MADE OF — people, machines, models. Three glyphs and
+        // three figures, each its own hover target over its own list.
+        _CountFigure(
+          kind: _PanelKind.members,
+          anchor: memberAnchor,
+          icon: LucideIcons.users300,
+          // Absent, not zero: the roster is a separate request and may still be
+          // in flight or unreadable, and "0 people" is a claim about the grid
+          // rather than about what we know of it.
+          value: members == null ? null : '$members',
+          semanticLabel: 'people on this grid',
+          leading: true,
+          onEnter: onEnter,
+          onExit: onExit,
+        ),
+        _CountFigure(
+          kind: _PanelKind.nodes,
+          anchor: nodeAnchor,
+          icon: LucideIcons.server300,
+          value: '${power.onlineNodes}',
+          semanticLabel: 'computers hosting',
+          leading: members == null,
+          onEnter: onEnter,
+          onExit: onExit,
+        ),
+        _CountFigure(
+          kind: _PanelKind.models,
+          anchor: modelAnchor,
+          icon: LucideIcons.boxes,
+          value: '${power.models}',
+          semanticLabel: 'models available',
+          onEnter: onEnter,
+          onExit: onExit,
+        ),
+        _HoverTarget(
+          kind: _PanelKind.power,
+          anchor: memoryAnchor,
+          onEnter: (kind) {
+            onPowerFrom(memoryAnchor);
+            onEnter(kind);
+          },
+          onExit: onExit,
+          padding: const EdgeInsets.only(left: _HoverTarget._gap),
+          child: Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 14,
+            color: AppPalette.textFaint,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One of the grid's three counts: a glyph, a figure, and the list behind them.
+///
+/// Owns its own hover rather than taking the row's. [_HoverTarget] tracks the
+/// pointer to decide which *panel* to open; it never tells its child that the
+/// pointer arrived, and a glyph that stays faint under the cursor reads as
+/// decoration — the §hover rule the menus already follow. Both marks lift
+/// together: a figure that brightens while its icon stays grey looks
+/// half-disabled.
+///
+/// Renders nothing when [value] is null, so a count nobody has read yet leaves
+/// no gap where a number should be.
+class _CountFigure extends StatefulWidget {
+  const _CountFigure({
+    required this.kind,
+    required this.anchor,
+    required this.icon,
+    required this.value,
+    required this.semanticLabel,
+    required this.onEnter,
+    required this.onExit,
+    this.leading = false,
+  });
+
+  final _PanelKind kind;
+  final _FigureAnchor anchor;
+  final IconData icon;
+  final String? value;
+
+  /// What the figure counts, for a screen reader — the word the glyph replaced.
+  final String semanticLabel;
+
+  /// Whether this is the first count on the row, and so carries the rule that
+  /// separates the three of them from the telemetry before them.
+  final bool leading;
+
+  final void Function(_PanelKind) onEnter;
+  final void Function(_PanelKind) onExit;
+
+  @override
+  State<_CountFigure> createState() => _CountFigureState();
+}
+
+class _CountFigureState extends State<_CountFigure> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final value = widget.value;
+    if (value == null) return const SizedBox.shrink();
+    return _HoverTarget(
+      kind: widget.kind,
+      anchor: widget.anchor,
+      onEnter: widget.onEnter,
+      onExit: widget.onExit,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Semantics(
+          label: '$value ${widget.semanticLabel}',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.leading) ...[
+                const _Divider(),
+                const SizedBox(width: 9),
               ],
               Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 14,
-                color: AppPalette.textFaint,
+                widget.icon,
+                size: 12.5,
+                color: _hovered ? AppPalette.textPrimary : AppPalette.textFaint,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: AppFont.medium,
+                  color: _hovered
+                      ? AppPalette.textPrimary
+                      : AppPalette.textSecondary,
+                  fontFeatures: AppFont.tabularFigures,
+                ),
               ),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -597,23 +872,50 @@ class _Divider extends StatelessWidget {
 /// One figure in the pill. Numbers are tabular so the pill keeps its width when
 /// a value ticks over — otherwise the whole capsule jitters on every refresh.
 class _Stat extends StatelessWidget {
-  const _Stat({required this.value, required this.unit});
+  const _Stat({
+    required this.value,
+    required this.unit,
+    this.muted = false,
+    this.leading,
+  });
 
   final String value;
   final String? unit;
 
+  /// A figure that is context for the one before it rather than a reading of
+  /// its own — a step quieter, so the row still has exactly one thing to land
+  /// on.
+  final bool muted;
+
+  /// Printed before the value, in the unit's colour. Carries the separator that
+  /// ties this figure to the one it qualifies, without a [SizedBox] of dead
+  /// ground between the two — every gap in this row belongs to a hover target.
+  final String? leading;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final unitColor = muted
+        ? AppPalette.textFaint.withValues(alpha: 0.85)
+        : AppPalette.textFaint;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (leading != null)
+          Text(
+            leading!,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: unitColor,
+            ),
+          ),
         Text(
           value,
           style: TextStyle(
             fontSize: 12.5,
             fontWeight: AppFont.medium,
-            color: AppPalette.textSecondary,
+            color: muted ? AppPalette.textFaint : AppPalette.textSecondary,
             fontFeatures: AppFont.tabularFigures,
           ),
         ),
@@ -624,7 +926,7 @@ class _Stat extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w500,
-              color: AppPalette.textFaint,
+              color: unitColor,
             ),
           ),
         ],
