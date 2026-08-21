@@ -38,6 +38,21 @@ void main() {
     }
   });
 
+  test('and nothing the registry withheld from it — a card about a spawner '
+      'Hermes has no equivalent of is advice it could only follow by '
+      'inventing one', () async {
+    await installHermes();
+
+    final withheld = kBuiltinGridSkills.where(
+      (skill) => !skill.appliesTo(AgentTool.hermes),
+    );
+
+    expect(withheld, isNotEmpty, reason: 'this guard needs a scoped skill');
+    for (final skill in withheld) {
+      expect(skillMd(skill.name).existsSync(), isFalse, reason: skill.name);
+    }
+  });
+
   test('the agent gets its own copy, not a pointer at the library — and the '
       'copy names its own scripts, not the library\'s', () async {
     await installHermes();
@@ -220,17 +235,6 @@ void main() {
         File('${codexSkills.path}/${skill.name}/SKILL.md').existsSync(),
         isTrue,
         reason: '${skill.name} is registered for Codex',
-      );
-    }
-    // And nothing the registry withheld: a card naming a flag Codex's runtime
-    // does not have would be advice it can only follow by inventing one.
-    for (final skill in kBuiltinGridSkills.where(
-      (s) => !s.appliesTo(AgentTool.codex),
-    )) {
-      expect(
-        File('${codexSkills.path}/${skill.name}/SKILL.md').existsSync(),
-        isFalse,
-        reason: '${skill.name} is not registered for Codex',
       );
     }
     // Nothing was written for an agent that wasn't asked for.

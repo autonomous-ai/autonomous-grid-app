@@ -107,14 +107,15 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridAskSkillFiles,
   ),
-  // Claude Code alone, because it is the only agent here that can spawn one —
-  // and it spawns them in the background by default, into a process the app
-  // closes at the end of the reply. Same family as the schedulers the app
-  // refuses outright, but delegation is worth keeping, so this teaches the one
-  // flag that makes it land inside the turn instead of after it.
+  // The two agents that can spawn one, and they fail in opposite directions:
+  // Claude Code launches into the background by default and is told a
+  // notification will come, while Codex will not spawn at all until a skill
+  // says it may — so for Codex this card is the permission as well as the
+  // rules. Hermes has no spawner and is left out; a card about a flag its
+  // runtime lacks is advice it could only follow by inventing one.
   BuiltinGridSkill(
     name: kGridDelegateSkillName,
-    agents: const {AgentTool.claude},
+    agents: const {AgentTool.claude, AgentTool.codex},
     build: gridDelegateSkillFiles,
   ),
   // Every agent reaches for its own timer when asked to repeat something, and
