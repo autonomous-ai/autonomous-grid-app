@@ -103,52 +103,41 @@ class _InvitePillState extends ConsumerState<InvitePill> {
     final showFaces = ranked.isNotEmpty && width >= InvitePill._facesFrom;
     final showLabel = width >= InvitePill._labelFrom;
 
-    // The gap goes on the *right*, and outside the gesture detector.
-    //
-    // Every other pill on this bar pads its own right edge by 8, so a pill's
-    // left gap is its neighbour's padding. Padding on the left instead — which
-    // is what this did — put 16px before the cluster and **nothing** after it:
-    // the button's solid edge ended up flush against the grid capsule, with
-    // only that capsule's inner padding keeping its status dot off the label.
-    //
-    // 12 rather than the bar's 8 because this is the one opaque surface in a
-    // row of translucent ones, and a saturated block sitting 8px off a glass
-    // capsule still reads as attached to it.
-    //
-    // Outside the detector so the gap is page, not target: inside, a click 10px
-    // to the left of the grid pill would open the invite dialog.
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Semantics(
-        button: true,
-        label: members == null
+    // No padding of its own any more: both of this cluster's edges are now a
+    // [_BarDivider], and those carry the gap (10 either side). The pill used to
+    // pay 12 on its right, on the reading that a saturated block needs more air
+    // off a glass capsule than the bar's usual 8 — true while it sat *between*
+    // two capsules, and the reason it is no longer needed is that it doesn't.
+    // Keeping it would make the cluster's two gaps 10 and 22.
+    return Semantics(
+      button: true,
+      label: members == null
+          ? 'Invite people to ${grid.name}'
+          : 'Invite people to ${grid.name}, '
+                '${members.length} '
+                '${plural(members.length, 'person', 'people')} on it',
+      child: Tooltip(
+        message: members == null
             ? 'Invite people to ${grid.name}'
-            : 'Invite people to ${grid.name}, '
-                  '${members.length} '
-                  '${plural(members.length, 'person', 'people')} on it',
-        child: Tooltip(
-          message: members == null
-              ? 'Invite people to ${grid.name}'
-              : '${members.length} '
-                    '${plural(members.length, 'person', 'people')} '
-                    'on ${grid.name}',
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            onEnter: (_) => setState(() => _hovered = true),
-            onExit: (_) => setState(() => _hovered = false),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => ShareGridDialog.show(context, grid),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (showFaces) ...[
-                    _FaceStack(members: ranked),
-                    const SizedBox(width: 9),
-                  ],
-                  _InviteButton(hovered: _hovered, showLabel: showLabel),
+            : '${members.length} '
+                  '${plural(members.length, 'person', 'people')} '
+                  'on ${grid.name}',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => ShareGridDialog.show(context, grid),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showFaces) ...[
+                  _FaceStack(members: ranked),
+                  const SizedBox(width: 9),
                 ],
-              ),
+                _InviteButton(hovered: _hovered, showLabel: showLabel),
+              ],
             ),
           ),
         ),

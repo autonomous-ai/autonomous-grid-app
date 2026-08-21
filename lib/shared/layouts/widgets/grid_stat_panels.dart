@@ -98,7 +98,7 @@ class GridStatPanel extends StatelessWidget {
           onExit: (_) => onExit(),
           child: TapRegion(
             groupId: tapGroupId,
-            child: PillPanelSurface(child: child),
+            child: _Entrance(child: PillPanelSurface(child: child)),
           ),
         ),
       ),
@@ -120,6 +120,47 @@ class GridStatPanel extends StatelessWidget {
     final left = box.localToGlobal(Offset.zero).dx - _inset;
     final limit = windowWidth - panelWidth - _edgeMargin;
     return left.clamp(_edgeMargin, math.max(_edgeMargin, limit)) - left;
+  }
+}
+
+/// The panel arriving: a short fade while it settles the last few pixels down
+/// from the capsule it hangs off.
+///
+/// Six pixels and 160ms, which is under the threshold at which a movement reads
+/// as *travel* — the panel should look like it was already there and is coming
+/// into focus, not like it flew in. These open on hover, so whatever this costs
+/// is paid every time the pointer crosses the pill.
+///
+/// Only on the way in. There is no exit animation because there is nothing to
+/// animate: [OverlayPortal] takes the panel out of the tree the moment it hides,
+/// and holding it there to fade would keep a dead popover over the transcript.
+///
+/// Runs once per mount, so swapping figures under an open panel — members to
+/// nodes, name to memory — replaces the contents in place without re-playing
+/// this. That swap is a different motion and belongs to whatever is inside.
+class _Entrance extends StatelessWidget {
+  const _Entrance({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // Reduce Motion means no motion, not less of it — the fade goes too, since
+    // an opacity ramp is the part that reads as movement on a surface this size.
+    final instant = MediaQuery.of(context).disableAnimations;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: instant ? Duration.zero : AppMotion.swap,
+      curve: AppMotion.curve,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * -6),
+          child: child,
+        ),
+      ),
+      child: child,
+    );
   }
 }
 
