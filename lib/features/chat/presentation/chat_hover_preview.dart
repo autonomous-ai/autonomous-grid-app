@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/popover_surface.dart';
 import '../../../shared/widgets/scroll_reveal_text.dart';
-import '../logic/chat_age_label.dart';
+import '../../../core/age_label.dart';
 
 /// The card's width. Fixed rather than sized to its title: the reveal only
 /// means anything against a stable edge, and cards of different widths popping
@@ -77,7 +77,7 @@ class _ChatHoverPreviewState extends State<ChatHoverPreview> {
     _timer = Timer(_hoverDelay, () {
       if (!mounted || _portal.isShowing) return;
       setState(() {
-        _age = chatAgeLabel(widget.updatedAt, DateTime.now());
+        _age = ageLabel(widget.updatedAt, DateTime.now());
         _portal.show();
       });
     });

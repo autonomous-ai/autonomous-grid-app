@@ -9,6 +9,7 @@ import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/presentation/chat_history_list.dart';
 import '../../../features/code/presentation/code_rail.dart';
 import '../../../features/command_palette/presentation/command_palette.dart';
+import '../../../features/network/presentation/invitations_button.dart';
 import '../../../features/provider_node/logic/serving_engines_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_icon_button.dart';
@@ -268,6 +269,10 @@ class _Brand extends StatelessWidget {
               icon: const Icon(LucideIcons.search300),
               onPressed: onSearch,
             ),
+            // Draws nothing when there is no invitation, so the header keeps its
+            // two icons on the ordinary day and the bell reads as news when it
+            // does appear.
+            const InvitationsButton(),
             const SizedBox(width: 2),
             AppIconButton(
               icon: LucideIcons.panelLeft300,

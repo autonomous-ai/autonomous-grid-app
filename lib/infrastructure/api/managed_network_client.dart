@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'models/grid_invitation.dart';
 import 'models/managed_network.dart';
 import 'models/managed_network_member.dart';
 
@@ -242,6 +243,95 @@ class ManagedNetworkClient {
       return (null, "Couldn't reach the Grid control plane: ${e.message}");
     } on Object catch (e) {
       return (null, "Couldn't read your account: $e");
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Invitations the signed-in account has not acknowledged, via
+  /// `GET /v1/grid/me/memberships`.
+  ///
+  /// Polled, so its timeouts are short: a slow answer here is worth abandoning
+  /// and retrying on the next tick rather than holding a socket open across it.
+  static Future<(List<GridInvitation>?, String?)> listInvitations({
+    required String apiUrl,
+    required String sessionToken,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.getUrl(invitationsEndpoint(apiUrl));
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
+      final response = await request.close().timeout(
+        const Duration(seconds: 20),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (null, _errorFor(response.statusCode, body));
+      }
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final rows = json['memberships'];
+      // An older control plane has no such route and answers something else
+      // entirely; an empty list is the honest reading of "it told us nothing".
+      if (rows is! List) return (const <GridInvitation>[], null);
+      return (
+        [
+          for (final row in rows)
+            if (row is Map<String, dynamic>) GridInvitation.fromJson(row),
+        ],
+        null,
+      );
+    } on TimeoutException {
+      return (null, "The server didn't respond in time.");
+    } on SocketException catch (e) {
+      return (null, "Couldn't reach the Grid control plane: ${e.message}");
+    } on Object catch (e) {
+      return (null, "Couldn't read your invitations: $e");
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Acknowledges [networkIds] via `POST /v1/grid/me/memberships/seen`. Returns
+  /// how many were unread until this call.
+  ///
+  /// Always a list, including for "mark all as read" — the server has no
+  /// "everything" flag on purpose, so that a request can only ever acknowledge
+  /// what was on screen when the person tapped. An invitation that lands between
+  /// the poll and the tap stays unread instead of being dismissed unseen.
+  static Future<(int?, String?)> markInvitationsSeen({
+    required String apiUrl,
+    required String sessionToken,
+    required List<String> networkIds,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.postUrl(invitationsSeenEndpoint(apiUrl));
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
+      request.add(utf8.encode(jsonEncode({'network_ids': networkIds})));
+      final response = await request.close().timeout(
+        const Duration(seconds: 20),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (null, _errorFor(response.statusCode, body));
+      }
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      return ((json['seen'] as num?)?.toInt() ?? 0, null);
+    } on TimeoutException {
+      return (null, "The server didn't respond in time.");
+    } on SocketException catch (e) {
+      return (null, "Couldn't reach the Grid control plane: ${e.message}");
+    } on Object catch (e) {
+      return (null, "Couldn't mark your invitations as read: $e");
     } finally {
       client.close(force: true);
     }
@@ -491,6 +581,14 @@ class ManagedNetworkClient {
     final base = apiUrl.endsWith('/') ? apiUrl : '$apiUrl/';
     return Uri.parse('$base$path');
   }
+
+  /// Where invitations are listed. Public so callers can log the URL they hit.
+  static Uri invitationsEndpoint(String apiUrl) =>
+      _url(apiUrl, 'v1/grid/me/memberships');
+
+  /// Where invitations are acknowledged.
+  static Uri invitationsSeenEndpoint(String apiUrl) =>
+      _url(apiUrl, 'v1/grid/me/memberships/seen');
 
   /// The single-network URL for [networkId] (GET/DELETE). Public so callers can
   /// log the same URL the request hits.
