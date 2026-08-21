@@ -28,12 +28,13 @@ enum ManagedNetworkType {
   public(
     'permissionless',
     'Public',
-    'Whitelist providers only — consumers can join freely.',
+    'Anyone signed in to Grid can use this grid. Only people you invite can '
+        'share a computer with it.',
   ),
   private(
     'permissioned-public',
     'Private',
-    'Whitelist both providers and consumers.',
+    'Only people you invite can use this grid, or share a computer with it.',
   );
 
   const ManagedNetworkType(this.wire, this.label, this.description);
@@ -44,7 +45,18 @@ enum ManagedNetworkType {
   /// Human-readable name shown in the picker.
   final String label;
 
-  /// One-line explanation shown under the picker.
+  /// The plain-language explanation under the picker — who gets to *use* the
+  /// grid, and who gets to *supply* it.
+  ///
+  /// It read "Whitelist providers only — consumers can join freely", which is
+  /// the wire contract written out: three words a user has never met (§5), for
+  /// the one choice on this form they cannot undo by clicking around.
+  ///
+  /// The two sentences are deliberately parallel and differ only where the
+  /// types differ, so a person comparing them sees the actual decision rather
+  /// than two paragraphs to read. The words are `_accessSummary`'s, in
+  /// `share_grid_dialog.dart`, because that screen already tells a user who can
+  /// reach their grid — one concept, one set of words, or the two drift.
   final String description;
 
   /// The API default when `network_type` is omitted.

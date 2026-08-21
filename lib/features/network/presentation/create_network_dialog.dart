@@ -100,7 +100,12 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
               ),
             ),
             const SizedBox(height: 14),
-            const FieldLabel('Type'),
+            // "Who can join", not "Type": the same question the first-run
+            // screen asks, in the same words (§5). They already share the
+            // picker; a label of their own is exactly how two screens start
+            // asking one question two ways. "Type" also named nothing — the
+            // answer to "type of what?" was only in the line underneath.
+            const FieldLabel('Who can join'),
             GridTypePicker(
               value: _type,
               enabled: !submitting,
