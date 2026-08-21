@@ -20,29 +20,20 @@ const String kGridLoopSkillName = 'grid-loop';
 GridSkillFiles gridLoopSkillFiles(Directory skillDir) =>
     const GridSkillFiles(card: kGridLoopSkillMd);
 
-/// The card. The front-matter names the moment rather than the fence: the agent
-/// meets this while answering a task it is being asked to repeat, and "how long
-/// until I should look again" is the question it has, not "what is a
-/// `grid-loop` block".
-///
-/// It names that moment by *intent*, never by example phrases. A card that
-/// listed "keep checking" and "mỗi sáng 8h" covered exactly the two languages
-/// somebody happened to type, and every user writing in a third one fell
-/// through — the same failure as the phrase-matching this replaced, moved one
-/// layer up. The model reads meaning; describe the meaning and let it.
+/// The card. The front-matter names the fence outright, and here that is right:
+/// the message this answers literally asks for a `grid-loop` block, so the
+/// trigger is a string the agent can see rather than an intent it has to read.
+/// Reading intent is [kGridAskSkillMd]'s job, and it was carved out of this one
+/// on 2026-08-21 — a card called `grid-loop` never opened for a goal.
 const String kGridLoopSkillMd = '''
 ---
 name: grid-loop
 description: >-
-  Repeating, continuing and scheduled work in Grid's chat. Use whenever the
-  user asks you to keep doing something, to carry on until some condition is
-  true, to run at a clock time or on a repeating schedule, or to stop or drop
-  one of those — in whatever language they wrote it in, however indirectly they
-  put it, and whether or not they name a command. It is the intent that
-  decides, never a list of trigger words. Grid owns those jobs; this says how
-  to ask it for one, in the same reply you answer them in. Also use when the
-  message you are answering asks for a `grid-loop` block, to pace a loop that
-  is already running.
+  Pacing a repeating task Grid is already running. Use when the message you are
+  answering asks you to end your reply with a `grid-loop` block: this says how
+  to choose the gap before the next run, how to mark a run that found nothing
+  new, and how to end the job. Asking Grid to *start* repeating, continuing or
+  scheduled work is a different card — `grid-ask`.
 ---
 
 # Pacing a repeating task
@@ -100,69 +91,8 @@ A `grid-loop` fence holding one JSON object. Three things it can say:
   again, not a reason to end. Stop only when the thing being watched has
   actually finished.
 
-## When the user asks for something the app owns
 
-Grid runs a command the user **typed** with a slash — `/loop 30m …`, `/goal …`,
-`/schedule …`. It does not try to read one out of an ordinary sentence: no list
-of phrases covers every way a person asks in one language, let alone in all of
-them, and the list that lived here read "redo the header for me" as a request
-to loop.
-
-So that reading is yours. You have the sentence in front of you; when it is
-asking for one of these, **say so with a `grid-ask` block** and Grid runs it:
-
-```grid-ask
-{"run": "/loop 45m look for new sources, report the ones worth adding"}
-```
-
-Three commands can be asked for this way, and nothing else — starting
-something, and ending it:
-
-| The user is asking for | Write |
-|---|---|
-| this done again and again while Grid is open, with no finish line named | `/loop <gap> <what to repeat>` |
-| you to keep at it **until some condition holds** — and then be done | `/goal <what has to be true>` |
-| work at a clock time, or on a cadence that must outlive Grid being closed | `/schedule <when> <what>` |
-| a repeat that is running to **stop** | `/loop stop` |
-| a goal that is set to be **dropped** | `/goal clear` |
-
-The left column is the shape of the request, not its wording. Match on what
-they want to happen; the words that carry it differ in every language, and in
-every person.
-
-Rules, and they are what make this worth trusting rather than a way to keep
-yourself running:
-
-- **Answer them *and* write the block.** These are not alternatives. On
-  2026-08-21 "mục tiêu của mày là làm performance cho repo này" got twenty-five
-  minutes of real work and no block, so the goal was never set and the work
-  stopped when the turn did — which is the opposite of what a goal is for. Do
-  the work, then relay the ask at the end of the same reply.
-- **Only when the user asked for it.** Deciding by yourself that a job deserves
-  repeating is not that, and it spends someone's tokens all night.
-- **Read the sentence, not the words in it.** Someone *describing* a job that
-  runs till morning is not asking you to run till morning; someone *asking* you
-  to keep going till then is. Someone asking **how** to stop a loop wants an
-  answer, not a stop. Every language carries both readings with the same words,
-  so what settles it is who is being asked to do what — never which words
-  turned up.
-- **Any language, any script.** People write here in Vietnamese, English,
-  Chinese, or a mix inside one sentence, and none of that changes what you are
-  reading for. You translate the intent: the command line you put in the block
-  is always the app's own English one, while the prompt inside it stays in
-  their words and their language, because that is what gets re-run.
-- **Stopping is the one to be quick about.** A repeat the user has asked to end
-  keeps costing them until the block lands, so put it in the reply that answers
-  them, not the one after.
-- **Their words, not yours.** The prompt you write is what gets re-run or
-  scheduled, so it has to say what *they* asked for.
-- **Name the gap and the time.** `/loop` with no gap paces itself, which is
-  fine; `/schedule` with no hour fires at one nobody chose, which is not.
-- **One block, at the end, and nothing else claimed.** Don't also write "I've
-  set a grid-loop to re-run every hour" — either the block, or tell them to
-  type the command themselves. A reply that claims a repeat without the block
-  gets a note under it saying nothing is repeating.
-
-Grid tells you what it did: a loop gets a bar in the chat, a goal gets its own,
-a scheduled task gets a row in **Scheduled**. All three the user can stop.
+When the user asks Grid to *start* one of these — repeating work, work that
+runs until something is true, work at a set time — that is a different block
+and a different card: `grid-ask`.
 ''';

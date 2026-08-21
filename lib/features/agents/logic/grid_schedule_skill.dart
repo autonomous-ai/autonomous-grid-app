@@ -59,6 +59,13 @@ answer is delivered back into the app.
 The command is `hermes`. If the shell cannot find it, use
 `~/.grid/bin/hermes` — Grid installs it there.
 
+**Creating one because the user just asked you to?** Relay it instead — a
+`grid-ask` block holding `/schedule <when> <what>`, described in the `grid-ask`
+card. Grid then files the job with this chat as the destination and you as the
+runner, which the command below leaves for you to get right. Everything here is
+for the rest: managing tasks that already exist, and creating one when there is
+no chat to answer into.
+
 ## Create a job
 
 ```

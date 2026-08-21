@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import 'agent_catalog.dart';
+import 'grid_ask_skill.dart';
 import 'grid_chart_skill.dart';
 import 'grid_host_skill.dart';
 import 'grid_loop_skill.dart';
@@ -95,6 +96,15 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     name: kGridLoopSkillName,
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridLoopSkillFiles,
+  ),
+  // The three jobs the app owns — repeat, goal, schedule — and how to ask for
+  // one. Its own card rather than a section of `grid-loop`: a skill is fetched
+  // on its name, and `grid-loop` stayed shut for a goal that read exactly like
+  // the loop beside it.
+  BuiltinGridSkill(
+    name: kGridAskSkillName,
+    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    build: gridAskSkillFiles,
   ),
   // Every agent reaches for its own timer when asked to repeat something, and
   // every one of those dies with the turn that created it — a job reported as
