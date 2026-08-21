@@ -193,6 +193,109 @@ class ManagedNetworkClient {
     }
   }
 
+  /// The email domain this account may gate a grid by, from `GET /v1/grid/me` —
+  /// or null when it may not.
+  ///
+  /// Asked of the server rather than worked out from the address here: the list
+  /// of public providers that cannot gate a grid is a control-plane env var, and
+  /// a copy of it in the app is one that drifts — the app would keep offering
+  /// "my domain" to a domain the API has started refusing, or hide it from one
+  /// it has started allowing.
+  ///
+  /// The DOMAIN rather than a yes/no, because the label has to name it: "Only
+  /// acme.dev" is the rule, while "My domain" is a pronoun the owner has to
+  /// resolve themselves — and on the grid where it matters they are choosing
+  /// exactly which domain gets in.
+  ///
+  /// Returns `(null, error)` on failure, and the caller treats that as "don't
+  /// offer it": the create form must not present a choice the API may reject.
+  static Future<(String?, String?)> canRestrictToDomain({
+    required String apiUrl,
+    required String sessionToken,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.getUrl(_url(apiUrl, 'v1/grid/me'));
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
+      final response = await request.close().timeout(
+        const Duration(seconds: 20),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (null, 'HTTP ${response.statusCode}');
+      }
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final user = json['user'];
+      if (user is! Map) return (null, null);
+      // Absent on a control plane too old to answer — read as "no", so an old
+      // server hides the option instead of offering one it will refuse.
+      if (user['can_restrict_to_domain'] != true) return (null, null);
+      final domain = user['email_domain'];
+      return (domain is String && domain.isNotEmpty ? domain : null, null);
+    } on TimeoutException {
+      return (null, "The server didn't respond in time.");
+    } on SocketException catch (e) {
+      return (null, "Couldn't reach the Grid control plane: ${e.message}");
+    } on Object catch (e) {
+      return (null, "Couldn't read your account: $e");
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Changes who can reach [networkId] via
+  /// `POST /v1/grid/managed-networks/{network_id}/network-type`. Owner only.
+  ///
+  /// Slow on purpose: the control plane restarts the grid's server onto the new
+  /// rule, so the grid is briefly unreachable and every access token in
+  /// circulation is invalidated. The timeout is generous for that reason —
+  /// giving up early would leave the app unsure whether the change landed.
+  static Future<(bool, String?)> setNetworkType({
+    required String apiUrl,
+    required String sessionToken,
+    required String networkId,
+    required ManagedNetworkType type,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final request = await client.postUrl(
+        networkTypeEndpoint(apiUrl, networkId),
+      );
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $sessionToken',
+      );
+      request.add(utf8.encode(jsonEncode(networkTypeBody(type))));
+
+      final response = await request.close().timeout(
+        const Duration(seconds: 120),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return (false, _networkTypeErrorFor(response.statusCode, body));
+      }
+      return (true, null);
+    } on TimeoutException {
+      return (
+        false,
+        "The server didn't answer in time. The grid may still be restarting — "
+            'check its access rule again in a moment.',
+      );
+    } on SocketException catch (e) {
+      return (false, "Couldn't reach the Grid control plane: ${e.message}");
+    } on Object catch (e) {
+      return (false, "Couldn't change who can reach this grid: $e");
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   /// Removes [email] from [networkId] via
   /// `DELETE /v1/grid/managed-networks/{network_id}/members/{email}`. Returns
   /// `(true, null)` on success.
@@ -367,6 +470,14 @@ class ManagedNetworkClient {
   static Map<String, dynamic> addMemberBody(String email, List<String> roles) =>
       {'email': email, 'roles': roles};
 
+  static Map<String, dynamic> networkTypeBody(ManagedNetworkType type) => {
+    'network_type': type.wire,
+  };
+
+  /// The change-access-rule URL for [networkId].
+  static Uri networkTypeEndpoint(String apiUrl, String networkId) =>
+      _url(apiUrl, '$_path/$networkId/network-type');
+
   static Map<String, dynamic> renameBody(String name) => {'name': name};
 
   /// The rename (PATCH) URL for [networkId]. Public so callers can log the same
@@ -454,6 +565,23 @@ class ManagedNetworkClient {
       422 => detail ?? 'Invalid email or role.',
       502 => detail ?? 'The grid service is busy right now. Try again.',
       503 => detail ?? 'Member management is unavailable right now.',
+      _ => detail ?? 'Error $status.',
+    };
+  }
+
+  static String _networkTypeErrorFor(int status, String body) {
+    final detail = _detailOf(body);
+    return switch (status) {
+      400 => detail ?? "This grid can't use that rule.",
+      401 => 'Your session has expired. Sign in again.',
+      403 => detail ?? 'Only the grid owner can change who can reach it.',
+      404 => detail ?? 'This grid is no longer available.',
+      422 => detail ?? 'That access rule is not available.',
+      // The one failure a person must react to differently: the grid is either
+      // back the way it was, or it is stopped and needs starting. `_detailOf`
+      // already returns the server's sentence, which says which.
+      502 => detail ?? 'The change failed. Check whether the grid is running.',
+      503 => detail ?? 'Grid management is unavailable right now.',
       _ => detail ?? 'Error $status.',
     };
   }

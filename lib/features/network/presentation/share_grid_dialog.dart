@@ -8,9 +8,14 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../../infrastructure/api/models/managed_network.dart';
+import '../logic/change_grid_type_controller.dart';
 import '../logic/grid_access.dart';
+import '../logic/grid_access_types.dart';
 import '../logic/invite_email.dart';
 import '../logic/member_providers.dart';
+import 'grid_type_picker.dart';
+import 'invite_role_picker.dart';
 import 'share_grid_people.dart';
 
 /// Everything about who can reach a grid, in one modal — invite someone, see
@@ -47,6 +52,24 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
   bool _inviting = false;
   String? _error;
 
+  /// What the invited person will be able to do. Defaults to the widest grant —
+  /// see [ManagedMemberRole.fallback].
+  ManagedMemberRole _role = ManagedMemberRole.fallback;
+
+  /// The roles this viewer may hand out. Never offer a grant they do not hold:
+  /// the control plane refuses it (403 `role_above_caller`), and a choice that
+  /// 403s after the fact reads as a bug rather than as a rule.
+  List<ManagedMemberRole> get _grantable =>
+      invitableRolesFor(widget.network.roles);
+
+  /// [_role], clamped to what this viewer may actually grant.
+  ///
+  /// A getter rather than a correction written into [_role] during `build`:
+  /// mutating state there is a side effect in a method that may run twice, and
+  /// the clamp has to hold for the send too — one place, read by both.
+  ManagedMemberRole get _effectiveRole =>
+      _grantable.contains(_role) ? _role : _grantable.first;
+
   String get _networkId => widget.network.networkId;
 
   @override
@@ -68,15 +91,10 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
       _error = null;
     });
 
-    // Always `both` while the role picker is hidden: it is the choice the
-    // picker defaulted to, and the widest one — a person invited to use the
-    // grid and to share a machine with it can do either or neither, whereas
-    // guessing narrower would silently withhold something the inviter meant to
-    // give. Restore the picker and this reads `_role.wire` again.
     final error = await ref.read(addMemberActionProvider)(
       networkId: _networkId,
       email: email,
-      roles: [ManagedMemberRole.both.wire],
+      roles: [_effectiveRole.wire],
     );
 
     if (!mounted) return;
@@ -164,6 +182,37 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
                   ),
                 ),
                 const SizedBox(width: 10),
+                // Beside the address, the way Drive puts it: the role belongs to
+                // the person being typed in, and a picker further down would read
+                // as a setting for the grid instead. Fixed width so the field
+                // does not resize as the label changes length.
+                SizedBox(
+                  // Sized to the longest label ("Can use & share") plus the
+                  // caret. The email field is Expanded, so it yields the space.
+                  width: 196,
+                  child: InviteRolePicker(
+                    value: _effectiveRole,
+                    roles: _grantable,
+                    enabled: !_inviting,
+                    onChanged: (value) => setState(() => _role = value),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _effectiveRole.description,
+                    style: TextStyle(
+                      color: AppPalette.textSecondary,
+                      fontSize: 12.5,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
                 // Rebuilt on every keystroke, but only this subtree — the
                 // button has to dim while the field is empty (that dimming is
                 // the affordance the prose line was standing in for) and
@@ -241,29 +290,191 @@ class _GeneralAccess extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    return Text(
-      _accessSummary(gridAccessFor(network.networkType)),
-      style: TextStyle(
-        color: AppPalette.textSecondary,
-        fontSize: 12.5,
-        height: 1.4,
+    final current = ManagedNetworkType.fromWire(network.networkType);
+
+    // Not the owner, or a rule this picker doesn't offer
+    // (`permissioned-providers`, `private-domain`): a sentence, not a control.
+    // A picker that cannot save is worse than none — it looks like it worked.
+    if (!network.isOwner || current == null) {
+      return Text(
+        _accessSummary(gridAccessFor(network.networkType)),
+        style: TextStyle(
+          color: AppPalette.textSecondary,
+          fontSize: 12.5,
+          height: 1.4,
+        ),
+      );
+    }
+    return _AccessRulePicker(network: network, current: current);
+  }
+}
+
+/// The owner's control over who can reach the grid.
+class _AccessRulePicker extends ConsumerWidget {
+  const _AccessRulePicker({required this.network, required this.current});
+
+  final NetworkCredential network;
+  final ManagedNetworkType current;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(changeGridTypeControllerProvider);
+    final applying = state is ChangeGridTypeApplying;
+    final domain = ref.watch(gridDomainProvider).value;
+    // The field shows what was PICKED, not what is saved — a select that snaps
+    // back to the old value the moment you choose reads as the click not having
+    // registered. The confirmation below is what says it has not taken effect
+    // yet, and Cancel puts the field back.
+    final shown = switch (state) {
+      ChangeGridTypeConfirming(:final target) => target,
+      ChangeGridTypeApplying(:final target) => target,
+      _ => current,
+    };
+    // The rule this grid is already on stays listed even when the account can
+    // no longer choose it — an owner whose address moved to a public provider
+    // would otherwise find their current setting missing, and no way off it.
+    final types = {
+      ...accessTypesFor(canRestrictToDomain: domain != null),
+      current,
+    }.toList()..sort((a, b) => a.index.compareTo(b.index));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GridTypePicker(
+          label: '',
+          fill: AppCard.inset,
+          domain: domain,
+          value: shown,
+          types: types,
+          enabled: !applying,
+          onChanged: (next) => ref
+              .read(changeGridTypeControllerProvider.notifier)
+              .select(target: next, current: current),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          accessDescriptionFor(shown, domain: domain),
+          style: TextStyle(
+            color: AppPalette.textSecondary,
+            fontSize: 12.5,
+            height: 1.4,
+          ),
+        ),
+        if (state is ChangeGridTypeConfirming)
+          _ConfirmChange(
+            network: network,
+            target: state.target,
+            domain: domain,
+          ),
+        if (applying) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Changing to “${accessLabelFor(state.target, domain: domain)}”… '
+            'the grid restarts, so it is unavailable for a few seconds.',
+            style: TextStyle(
+              color: AppPalette.textSecondary,
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
+        ],
+        if (state is ChangeGridTypeFailed) ...[
+          const SizedBox(height: 10),
+          ErrorBox(message: state.message, maxHeight: 96),
+        ],
+      ],
+    );
+  }
+}
+
+/// What the owner is about to give up, and the button that does it.
+class _ConfirmChange extends ConsumerWidget {
+  const _ConfirmChange({
+    required this.network,
+    required this.target,
+    required this.domain,
+  });
+
+  final NetworkCredential network;
+  final ManagedNetworkType target;
+  final String? domain;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Change to “${accessLabelFor(target, domain: domain)}”?',
+            style: TextStyle(
+              color: AppPalette.textPrimary,
+              fontSize: 13,
+              fontWeight: AppFont.medium,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${accessDescriptionFor(target, domain: domain)} '
+            '${_costOf(target)}',
+            style: TextStyle(
+              color: AppPalette.textSecondary,
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => ref
+                    .read(changeGridTypeControllerProvider.notifier)
+                    .cancel(),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: () => _apply(context, ref),
+                child: const Text('Change'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _apply(BuildContext context, WidgetRef ref) async {
+    final failure = await ref
+        .read(changeGridTypeControllerProvider.notifier)
+        .apply(networkId: network.networkId, target: target);
+    if (!context.mounted || failure != null) return;
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message:
+            'This grid is now “${accessLabelFor(target, domain: domain)}”.',
+        severity: ToastSeverity.success,
       ),
     );
   }
 }
 
-/// What the mode permits, in one line.
+/// What the rule permits, in one line — the read-only view, for a member who
+/// cannot change it and for the two rules this picker does not offer.
 ///
 /// [GridAccess.domain] says the same as [GridAccess.restricted] on purpose. It
 /// used to claim "anyone with an @autonomous.ai email can use this grid", which
-/// was **wrong** — an invention read off the wire value's name rather than off
-/// anything the product does. A `private-domain` grid is the organisation's own
-/// grid; the domain names *whose* grid it is, not who may walk into it.
-/// Membership is still the list above, exactly as for a private grid, which is
-/// also why `NetworkCredential.isPublic` has always resolved it to Private.
+/// was **wrong** for `private-domain` — an invention read off the wire value's
+/// name. That grid is the organisation's own; the domain names *whose* grid it
+/// is. (`domain-restricted`, the rule an owner picks, really is gated by domain
+/// — but that one resolves to a [ManagedNetworkType] and never reaches here.)
 ///
 /// Deliberately short, but not shortened past the truth: `permissionless` opens
-/// *using* the grid to anyone while still gating who may share a computer to
+/// *using* the grid to anyone while still gating who may run a model for
 /// it, so that one keeps its second clause. Collapsing it
 /// to "anyone can use this grid" would read as "anyone can put a machine on
 /// it", which is a different and much larger promise.
@@ -272,7 +483,26 @@ String _accessSummary(GridAccess access) => switch (access) {
   GridAccess.domain => 'Only the people listed above can use this grid.',
   GridAccess.anyone =>
     'Anyone signed in to Grid can use this grid. Only the people listed '
-        'above can share a computer with it.',
+        'above can run a model for it.',
+};
+
+/// The part of a switch that nobody expects — what it TAKES rather than gives.
+///
+/// Every one of the three costs something: two cut people off mid-session, and
+/// the open one stops the grid billing for usage, which is a money change no
+/// one would guess from the word "anyone".
+String _costOf(ManagedNetworkType target) => switch (target) {
+  ManagedNetworkType.restricted =>
+    'Anyone using it who is not on the list above loses access, and any model '
+        'they run for it stops serving. The grid restarts, so everyone '
+        'reconnects once.',
+  ManagedNetworkType.domain =>
+    'People on any other email domain lose access immediately, even though '
+        'they stay on the list, and any model they run for it stops serving. '
+        'The grid restarts, so everyone reconnects once.',
+  ManagedNetworkType.anyone =>
+    'Usage on this grid stops being billed, and you can no longer block an '
+        'individual person. The grid restarts, so everyone reconnects once.',
 };
 
 /// A section title inside the dialog.

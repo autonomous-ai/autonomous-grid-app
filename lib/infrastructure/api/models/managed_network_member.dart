@@ -1,16 +1,59 @@
-/// The role a member can be granted on a managed (hosted) grid. Mirrors the
-/// `roles` enum the control plane accepts in `ManagedMemberRequest` — `admin`
-/// is intentionally absent because the API rejects it (the owner is the only
-/// admin, and is a member implicitly).
+/// What an invited person may do on a managed (hosted) grid.
+///
+/// Exactly the two the control plane accepts from an app (`_MANAGED_MEMBER_ROLES`).
+/// The other two of its four roles are absent for different reasons, and both
+/// would be a 400 here:
+///
+/// - `admin` — the owner is the only admin, and is a member implicitly.
+/// - `provider` — retired. It could host a machine but not CALL the grid, which
+///   on an open grid left such a member WORSE OFF than a stranger: the allowlist
+///   row pinned them to provider scopes while any signed-in non-member was
+///   handed a consumer's. Use [both].
+///
+/// They nest — [both] is [use] plus hosting — so the picker is a short list, not
+/// a tree, and the wider one is the default.
 enum ManagedMemberRole {
-  consumer('consumer'),
-  provider('provider'),
-  both('both');
+  use('consumer', 'Can use', 'Use the grid\u2019s models.'),
+  both(
+    'both',
+    'Can use and share',
+    'Use the models, and run one of their own '
+        'machines for the grid.',
+  );
 
-  const ManagedMemberRole(this.wire);
+  const ManagedMemberRole(this.wire, this.label, this.description);
 
   /// Value sent in the `roles` array of the add-member request body.
   final String wire;
+
+  /// Short name for the picker beside the email field.
+  final String label;
+
+  /// One line under the picker saying what the person will be able to do.
+  final String description;
+
+  /// The widest grant, and what every invite used to send before there was a
+  /// picker. Guessing narrower would silently withhold something the inviter
+  /// meant to give; they can always narrow it deliberately.
+  static const ManagedMemberRole fallback = ManagedMemberRole.both;
+}
+
+/// The roles [viewerRoles] may hand out — never more than the inviter holds.
+///
+/// The control plane enforces this too (403 `role_above_caller`); the app filters
+/// so the choice is never offered rather than refused after the fact. A member
+/// who can only USE the grid must not be able to invite someone who can HOST on
+/// it — a capability the inviter never had.
+///
+/// `admin` and `both` both carry hosting, so either may grant either role;
+/// anything else may grant [ManagedMemberRole.use] alone. An unreadable role set
+/// falls to the narrowest, which is the safe direction.
+List<ManagedMemberRole> invitableRolesFor(List<String> viewerRoles) {
+  final roles = viewerRoles.map((r) => r.toLowerCase()).toSet();
+  if (roles.contains('admin') || roles.contains('both')) {
+    return ManagedMemberRole.values;
+  }
+  return const [ManagedMemberRole.use];
 }
 
 /// One member of a managed grid, as returned by
