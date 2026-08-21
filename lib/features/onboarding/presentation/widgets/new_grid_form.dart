@@ -8,6 +8,7 @@ import '../../../../shared/widgets/error_box.dart';
 import '../../../../shared/widgets/labeled_field.dart';
 import '../../../auth/logic/session_controller.dart';
 import '../../../network/logic/create_network_controller.dart';
+import '../../../network/logic/grid_access_types.dart';
 import '../../../network/logic/grid_choice.dart';
 import '../../../network/logic/grid_name.dart';
 import '../../../network/presentation/grid_type_picker.dart';
@@ -55,11 +56,11 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
     super.dispose();
   }
 
-  void _submit() {
+  void _submit(ManagedNetworkType type) {
     setState(() => _warning = null);
     ref
         .read(createNetworkControllerProvider.notifier)
-        .submit(name: _name.text, type: _type);
+        .submit(name: _name.text, type: type);
   }
 
   /// Take the freshly created grid as the user's choice — the whole point of
@@ -90,6 +91,16 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
     final submitting = state is CreateNetworkSubmitting;
     final error = state is CreateNetworkFailed ? state.message : _warning;
 
+    // The domain rule is only offered when the server says this account can use
+    // it; while that answer is loading, or if it fails, the option is absent.
+    final domain = ref.watch(gridDomainProvider).value;
+    final types = accessTypesFor(canRestrictToDomain: domain != null);
+    // A rule that stopped being offered must not stay selected — the picker
+    // would show nothing chosen while `_type` still sent `domain-restricted`.
+    final selected = types.contains(_type)
+        ? _type
+        : ManagedNetworkType.fallback;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(15, 0, 14, 14),
       child: Column(
@@ -102,7 +113,7 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
             enabled: !submitting,
             maxLength: gridNameMaxLength,
             textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
+            onSubmitted: (_) => _submit(selected),
             style: kFieldTextStyle,
             decoration: const InputDecoration(
               hintText: 'my-team-grid',
@@ -110,15 +121,17 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
             ),
           ),
           const SizedBox(height: 14),
-          const FieldLabel('Who can join'),
           GridTypePicker(
-            value: _type,
+            label: 'Who can join',
+            value: selected,
+            types: types,
+            domain: domain,
             enabled: !submitting,
             onChanged: (value) => setState(() => _type = value),
           ),
           const SizedBox(height: 8),
           Text(
-            _type.description,
+            accessDescriptionFor(selected, domain: domain),
             style: TextStyle(
               color: AppPalette.textSecondary,
               fontSize: 12,
@@ -133,7 +146,7 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
           Align(
             alignment: Alignment.centerLeft,
             child: FilledButton(
-              onPressed: submitting ? null : _submit,
+              onPressed: submitting ? null : () => _submit(selected),
               child: submitting
                   ? const AppSpinner.onAccent()
                   : const Text('Create grid'),

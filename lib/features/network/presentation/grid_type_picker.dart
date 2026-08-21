@@ -1,103 +1,84 @@
 import 'package:flutter/material.dart';
 
 import '../../../infrastructure/api/models/managed_network.dart';
-import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_select_field.dart';
+import '../logic/grid_access_types.dart';
 
-/// The grid's visibility, as a two-way segmented control.
+/// Who can reach the grid, as the app's select field.
 ///
-/// It was a dropdown, which is the wrong instrument for two options: it costs a
-/// click, a menu, a read and a second click to flip what is really a switch —
-/// and until that first click it *hides* the other choice, so you couldn't tell
-/// a private grid was even possible. Laid out flat, both options are readable
-/// before you touch anything, and picking one is a single click.
+/// It was a two-cell segmented control, and that was right while the question
+/// had two answers: laid out flat, both were readable before you touched
+/// anything. A third answer broke it — three glyph-less cells in a dialog-width
+/// row squeeze every label to a word and still read as a toolbar rather than a
+/// setting, and the option that matters most is often the one hidden entirely
+/// (see [types]).
 ///
-/// It also stopped a dropdown from wearing [InputDecoration], the recipe for a
-/// box you *type* in. That's why it read as a disabled text field: same fill,
-/// same rim, no affordance saying it opens.
+/// So it is [AppSelectField], the control the rest of the app already uses for
+/// "pick one of these" — not a second menu built here. Closed it shows the
+/// chosen rule; open it shows each rule with the sentence explaining it.
 ///
-/// A recessed groove with the picked cell lifted in accent — the app's segmented
-/// control, built here rather than shared: the two places that ask this question
-/// (the create dialog, the first-run grid screen) are wide rows with two
-/// glyph-less cells, which is nothing like the narrow, glyph-stacked cells the
-/// pattern came from. Shared between those two so the same question can't grow
-/// two sets of words (§5).
+/// [types] is passed in rather than read from `ManagedNetworkType.values`: the
+/// domain rule is only offered to accounts that can actually use it (see
+/// `accessTypesFor`), and a picker that decided that for itself would need its
+/// own copy of a rule the server owns.
 class GridTypePicker extends StatelessWidget {
   const GridTypePicker({
     super.key,
     required this.value,
+    required this.types,
     required this.enabled,
     required this.onChanged,
+    this.label = 'Type',
+    this.fill,
+    this.domain,
   });
 
   final ManagedNetworkType value;
+
+  /// The rules to show, in order. See `accessTypesFor`.
+  final List<ManagedNetworkType> types;
+
   final bool enabled;
   final ValueChanged<ManagedNetworkType> onChanged;
+
+  /// Field label. The share sheet already has "General access" above it, so it
+  /// passes an empty string rather than saying the same thing twice.
+  final String label;
+
+  /// Surface override for a field on a raised row — see [AppSelectField.fill].
+  final Color? fill;
+
+  /// The email domain the domain rule would admit, when there is one. Named in
+  /// the option rather than left as "My domain": this is the one control whose
+  /// whole question is *which* domain gets in.
+  final String? domain;
 
   @override
   Widget build(BuildContext context) {
     return Opacity(
       opacity: enabled ? 1 : 0.5,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppSurface.recess,
-          borderRadius: BorderRadius.circular(AppControl.radius + 2),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(3),
-          child: Row(
-            children: [
-              for (final type in ManagedNetworkType.values)
-                Expanded(
-                  child: _TypeSegment(
-                    label: type.label,
-                    selected: type == value,
-                    onTap: enabled ? () => onChanged(type) : null,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One cell of [GridTypePicker].
-class _TypeSegment extends StatelessWidget {
-  const _TypeSegment({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = selected ? Colors.white : AppPalette.textSecondary;
-    return Material(
-      color: selected ? AppPalette.accent : Colors.transparent,
-      borderRadius: BorderRadius.circular(AppControl.radius),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppControl.radius),
-        onTap: onTap,
-        child: SizedBox(
-          height: AppControl.height,
-          child: Center(
-            child: Text(
-              label,
-              maxLines: 1,
-              style: TextStyle(
-                fontFamily: AppFont.sans,
-                fontFamilyFallback: AppFont.sansFallback,
-                fontSize: AppControl.fontSize,
-                fontWeight: FontWeight.w600,
-                color: foreground,
+      child: IgnorePointer(
+        ignoring: !enabled,
+        child: AppSelectField<ManagedNetworkType>(
+          label: label,
+          showLabel: label.isNotEmpty,
+          value: value,
+          // The detail is a SENTENCE, and the closed field is only as wide as
+          // the control — it would arrive clipped mid-clause and read as a
+          // rendering bug. The open menu shows it whole, which is where it is
+          // needed: while choosing, not after. Callers print it under the field
+          // for the rule already picked.
+          showDetailInField: false,
+          fill: fill,
+          options: [
+            for (final type in types)
+              AppSelectOption(
+                value: type,
+                label: accessLabelFor(type, domain: domain),
+                detail: accessDescriptionFor(type, domain: domain),
               ),
-            ),
-          ),
+          ],
+          onChanged: onChanged,
         ),
       ),
     );
