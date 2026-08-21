@@ -10,6 +10,7 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../auth/logic/session_controller.dart';
 import '../logic/change_grid_type_controller.dart';
 import '../logic/grid_access_types.dart';
 import '../logic/invite_email.dart';
@@ -355,7 +356,17 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
           width: _sheetWidth - _sheetInset * 2,
           child: _Footer(
             change: change,
-            current: ManagedNetworkType.fromWire(widget.network.networkType),
+            // Live, for the reason [GeneralAccessRow] reads it live: this is
+            // the sentence "this grid is still X", and after ONE change lands
+            // the snapshot is a rule the grid left. Change to "My domain", save
+            // it, then pick "Anyone" — the footer would swear the grid was
+            // still "Invite only". The one line whose whole job is to be true
+            // about right now cannot read from a value fixed when the sheet
+            // opened.
+            current: ManagedNetworkType.fromWire(
+              (ref.watch(sessionProvider).byName(_networkId) ?? widget.network)
+                  .networkType,
+            ),
             domain: domain,
             onApply: _applyAccessChange,
           ),
