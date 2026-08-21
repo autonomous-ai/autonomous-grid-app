@@ -279,16 +279,22 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
       onExit: () => _onExit(_PanelKind.power),
       onDismiss: _hide,
     ),
-    // Wider than the default: the line under the list carries four figures on
-    // one row ("12 requests · 600K input tokens · 400K from cache · 150K output
-    // tokens"), and at the list width it ellipsized away the two that matter
-    // most — the ones at the end. Grown with the type it holds (340 → 368 when
-    // the panel's text went up a point): the line was already exactly full.
+    // Wider than the default, but no longer by much — and no longer for the
+    // list. 368 was set when the line under it carried all four figures on one
+    // row; that line is two rows now (`memberUsageLines`) and the rows print
+    // the name in front of the `@` rather than the whole address, which took
+    // 128pt out of the widest one. Measured at the sizes actually drawn, the
+    // widest thing in here is the *invite button* at 246 — the list's own rows
+    // reach 199 — so at 368 a quarter of the panel was empty.
+    //
+    // 320 (content 294) is that measurement plus the headroom the two variable
+    // strings need: a grid name longer than `autonomous.ai` before the button
+    // ellipsizes, and a member whose figures all round to their widest shape.
     _PanelKind.members => _statPanel(
       kind,
       _memberAnchor,
       GridMembersList(onDismiss: _hide),
-      width: 368,
+      width: 320,
     ),
     // Wider: a node's rows carry a spec line and a live line under the name,
     // and at the list width those ellipsize to nothing worth reading.
