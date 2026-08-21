@@ -1,12 +1,12 @@
 part of 'job_detail.dart';
 
-class _Facts extends StatelessWidget {
+class _Facts extends ConsumerWidget {
   const _Facts({required this.job});
 
   final ScheduledJob job;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final status = jobStatusOf(job);
     return _SoftPanel(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -17,7 +17,7 @@ class _Facts extends StatelessWidget {
           _FactRow(label: 'State', value: _state(status)),
           _FactRow(label: 'Next run', value: _when(job.nextRunAt, status)),
           _FactRow(label: 'Last run', value: _lastRun(job)),
-          if (job.failed) _errorRow(job.lastError!),
+          if (job.failed) _errorRow(ref, job.lastError!),
         ],
       ),
     );
@@ -41,8 +41,24 @@ class _Facts extends StatelessWidget {
     JobStatus.paused => 'Paused',
   };
 
-  static Widget _errorRow(String raw) {
-    final error = describeCronRunError(raw);
+  /// The last failure in plain words — and, where the failure is about a grid
+  /// rather than about the task, *which* grid.
+  ///
+  /// The task runs out of Hermes's config, not out of this screen, so the grid
+  /// it reaches is read from there ([hermesPointedGridProvider]) instead of
+  /// assumed to be the one on screen. Shown by name when this machine knows the
+  /// grid, else by id — an id the user can still match against the grid list
+  /// beats a sentence that quietly drops which grid it means.
+  static Widget _errorRow(WidgetRef ref, String raw) {
+    final pointed = ref.watch(hermesPointedGridProvider).asData?.value;
+    final known = pointed == null
+        ? null
+        : ref.watch(sessionProvider).byName(pointed)?.name ?? pointed;
+    final error = describeCronRunError(
+      raw,
+      taskGrid: known,
+      currentGrid: ref.watch(selectedNetworkProvider)?.name,
+    );
     return _FactRow(
       label: 'Last error',
       value: error.summary,

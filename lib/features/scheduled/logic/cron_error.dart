@@ -1,3 +1,5 @@
+import '../../../shared/copy/setup_hints.dart';
+
 /// A scheduler run failure, translated for a person to read.
 ///
 /// Hermes reports a failed run as a raw engineering string — a `RuntimeError`,
@@ -18,9 +20,21 @@ class CronRunError {
 
 /// Translate Hermes's raw last-run error into something a person can act on.
 ///
+/// [taskGrid] is the grid the task actually runs on — the one Hermes's own
+/// config names ([HermesGridLink.configuredGrid]) — and [currentGrid] the one
+/// the window is showing. They are only used where the answer depends on them:
+/// a relay with nobody behind it is a fact about a *grid*, and the error names
+/// only the model, which is how two daily tasks spent two days looking like a
+/// model problem. Both optional, so a caller that can't name them still gets
+/// the plain sentence.
+///
 /// Pure and side-effect free so it can be unit-tested and reused by both the
 /// task detail's "Last error" row and the "Run now" feedback.
-CronRunError describeCronRunError(String raw) {
+CronRunError describeCronRunError(
+  String raw, {
+  String? taskGrid,
+  String? currentGrid,
+}) {
   final text = raw.trim();
   if (isModelDriftSkip(text)) {
     return const CronRunError(
@@ -40,6 +54,23 @@ CronRunError describeCronRunError(String raw) {
       hint:
           'Delete this task and create it again — the app sets up a model for '
           'it when you do (pick a grid in Chat first if you have not).',
+    );
+  }
+  if (isNoProviderOnGrid(text)) {
+    final elsewhere =
+        taskGrid != null && currentGrid != null && taskGrid != currentGrid;
+    return CronRunError(
+      summary: taskGrid == null
+          ? 'Nobody on the grid this task runs on was sharing AI when it '
+                'fired, so there was nothing to answer it.'
+          : 'Nobody on "$taskGrid" — the grid this task runs on — was sharing '
+                'AI when it fired, so there was nothing to answer it.',
+      hint: elsewhere
+          ? 'That is not the grid you have open ("$currentGrid"). Switching '
+                'grids with the app open moves your tasks over; then choose '
+                'Run now.'
+          : 'Share a model on this computer ($kModelEnginesPlace), or switch '
+                'to a grid that has one — your tasks follow the grid you pick.',
     );
   }
   if (isCronIdleTimeout(text)) {
@@ -105,6 +136,18 @@ bool isCronIdleTimeout(String text) {
       (lower.contains('timeouterror') || lower.contains('cron job'));
 }
 
+/// The relay took the call and had nobody to hand it to: no machine on the grid
+/// the task runs on is serving what it asked for. A `503` from the relay, not
+/// from Hermes.
+///
+/// It names the model, so it reads like a model problem — and on a task already
+/// running on `auto` there is no other model to blame. The grid is the variable:
+/// on 2026-08-21 the grid Hermes was pointed at listed only the router's own
+/// pseudo-models and not one machine behind them, while the grid on screen had
+/// seven. Which is why [describeCronRunError] takes the two grid names.
+bool isNoProviderOnGrid(String text) =>
+    text.toLowerCase().contains('no providers available');
+
 /// Whether a failed run blames the **model** the task is pinned to, rather than
 /// the task itself.
 ///
@@ -117,7 +160,7 @@ bool isCronIdleTimeout(String text) {
 /// word theirs differently and both carry the model id in the middle.
 bool isModelRunFailure(String text) {
   final lower = text.toLowerCase();
-  return lower.contains('no providers available') ||
+  return isNoProviderOnGrid(lower) ||
       lower.contains('model not found') ||
       lower.contains('unknown model') ||
       lower.contains('is not serving') ||

@@ -30,11 +30,11 @@ import 'package:grid_app/shared/copy/setup_hints.dart';
 const String kNewJobId = 'new-job';
 
 /// A grid the app has selected, with the models it serves stubbed per-test.
-NetworkCredential _network(String id) => NetworkCredential(
+NetworkCredential _network(String id, {String? url}) => NetworkCredential(
   networkId: id,
   name: 'Test grid',
   networkType: 'permissioned',
-  lanSignalingUrl: 'http://127.0.0.1:8090',
+  lanSignalingUrl: url ?? 'http://127.0.0.1:8090',
   accessToken: 'tok-$id',
   refreshToken: '',
   email: 'dev@x.com',
@@ -48,6 +48,14 @@ NetworkCredential _network(String id) => NetworkCredential(
 );
 
 final _grid = _network('grid-foo');
+
+/// The same grid reached over the hosted relay, where the id lives in the URL
+/// path (`…/grid-bar/relay/v1`). A LAN grid's URL carries no id at all, so only
+/// this shape can show that what Hermes's config names is read back correctly.
+final _hostedGrid = _network(
+  'grid-bar',
+  url: 'https://grid.autonomous.ai/grid-bar',
+);
 
 /// A [SelectedNetwork] pinned to a fixed grid, so the controller resolves one
 /// without the session/prefs wiring the real notifier reads from disk.
@@ -304,10 +312,11 @@ void main() {
     String? failWith,
     bool agentInstalled = true,
     bool gridSelected = true,
+    NetworkCredential? on,
     List<String> models = const ['maker/m1'],
   }) {
     final cron = _FakeCron(jobsJson: jobsJson, failWith: failWith);
-    final grid = gridSelected ? _grid : null;
+    final grid = gridSelected ? (on ?? _grid) : null;
     final container = ProviderContainer(
       overrides: [
         hermesCronServiceProvider.overrideWithValue(
@@ -397,6 +406,36 @@ void main() {
 
     expect(h.container.read(scheduledJobsProvider).value, same(before));
   });
+
+  test(
+    'the grid a task will run on is read back out of Hermes\'s own config, '
+    'so a screen can say which one an unattended run actually reaches',
+    () async {
+      final h = harness(on: _hostedGrid);
+      await h.container.read(scheduledJobsProvider.future);
+
+      // Nothing pointed yet: the config names no grid, and claiming one would be
+      // worse than saying nothing.
+      expect(
+        await h.container.read(hermesGridLinkProvider).configuredGrid(),
+        isNull,
+      );
+
+      await h.container
+          .read(scheduledJobsProvider.notifier)
+          .create(
+            model: 'maker/m1',
+            name: 'Weekly review',
+            prompt: 'Summarise the week',
+            schedule: const JobSchedule(cadence: JobCadence.everyDay, hour: 8),
+          );
+
+      expect(
+        await h.container.read(hermesGridLinkProvider).configuredGrid(),
+        'grid-bar',
+      );
+    },
+  );
 
   test('creating a task hands Hermes a cron expression and the Projects '
       'folder — so the task can actually read the user\'s files', () async {
