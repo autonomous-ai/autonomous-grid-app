@@ -8,9 +8,11 @@ import '../../../infrastructure/api/models/media_event.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/cli/command_log.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'chat_message.dart';
+import 'image_budget.dart';
 import 'media_outputs.dart';
 import 'media_transport.dart';
 import 'message_media.dart';
@@ -316,7 +318,7 @@ class DefaultChatSender implements ChatSender {
     required String model,
     required List<ChatMessage> history,
   }) async* {
-    final messages = _messagesFor(history);
+    final messages = _messagesFor(history, _budgetedImageUri(history));
     final log = _ref.read(commandLogProvider.notifier);
     final id = log.begin(
       CliCallKind.http,
@@ -368,7 +370,7 @@ class DefaultChatSender implements ChatSender {
     required List<ChatMessage> history,
   }) async* {
     const instructions = 'You are a helpful assistant.';
-    final input = buildResponsesInput(history, _imageDataUri);
+    final input = buildResponsesInput(history, _budgetedImageUri(history));
     final log = _ref.read(commandLogProvider.notifier);
     final id = log.begin(
       CliCallKind.http,
@@ -489,7 +491,10 @@ class DefaultChatSender implements ChatSender {
   /// `content`; a user turn with attached images becomes a vision `content`
   /// array (text part + each image as a base64 data URI). Empty turns are
   /// skipped.
-  static List<Map<String, dynamic>> _messagesFor(List<ChatMessage> history) {
+  static List<Map<String, dynamic>> _messagesFor(
+    List<ChatMessage> history,
+    String? Function(String path) imageDataUri,
+  ) {
     final messages = <Map<String, dynamic>>[
       {'role': 'system', 'content': 'You are a helpful assistant.'},
     ];
@@ -514,7 +519,7 @@ class DefaultChatSender implements ChatSender {
       final content = <Map<String, dynamic>>[
         if (text.isNotEmpty) {'type': 'text', 'text': text},
         for (final img in images)
-          if (_imageDataUri(img.path) case final uri?)
+          if (imageDataUri(img.path) case final uri?)
             {
               'type': 'image_url',
               'image_url': {'url': uri},
@@ -524,6 +529,38 @@ class DefaultChatSender implements ChatSender {
       messages.add({'role': role, 'content': content});
     }
     return messages;
+  }
+
+  /// The picture encoder for one request, stopped at [kImagePayloadBudget].
+  ///
+  /// The whole conversation goes out again every turn, so a chat that has
+  /// collected screenshots over an afternoon eventually builds a body the relay
+  /// refuses outright — and refuses it for the *new* question, which may carry
+  /// no picture at all. The newest pictures are kept and the oldest left out;
+  /// what was dropped goes to the log, so a thin request is never mistaken for
+  /// a complete one.
+  String? Function(String path) _budgetedImageUri(List<ChatMessage> history) {
+    final (:keep, :dropped) = imagesWithinBudget(history, sizeOf: _imageBytes);
+    if (dropped > 0) {
+      _ref
+          .read(appLogProvider)
+          .warn(
+            'api',
+            'chat: left $dropped older picture(s) out of the request — a body '
+                'holds ${kImagePayloadBudget ~/ 1000000} MB of pictures.',
+          );
+    }
+    return (path) => keep.contains(path) ? _imageDataUri(path) : null;
+  }
+
+  /// The bytes an attached picture takes on disk, or -1 when it is gone — the
+  /// budget must not spend anything on a file the encoder will drop anyway.
+  static int _imageBytes(String path) {
+    try {
+      return File(path).lengthSync();
+    } on Object {
+      return -1;
+    }
   }
 
   /// A `data:` URI for an on-disk image, or null when the file can't be read
@@ -571,6 +608,11 @@ class DefaultChatSender implements ChatSender {
       return "You're out of credit on this grid — top up your balance, then "
           'try again.';
     }
+    if (_looksTooLarge(error)) {
+      return 'That message is too big to send — the pictures and files on it '
+          'are over the limit. Remove one, or start a new chat and ask again '
+          'there.';
+    }
     if (hadImages && _looksLikeNoVision(error)) {
       return "This model can't read images. Remove the picture and ask in "
           'text, or pick a model that can see images, then send again.';
@@ -580,6 +622,20 @@ class DefaultChatSender implements ChatSender {
           'then try again.';
     }
     return "Couldn't get a reply: $detail";
+  }
+
+  /// Whether the request was refused for its **size** rather than its content.
+  ///
+  /// The relay answers a body over its ceiling with `Request body exceeds
+  /// 20000000 bytes`; a proxy in front of one answers 413. Either way the user
+  /// needs to hear about what they attached, not about the model — and pictures
+  /// are shrunk on the way into the composer precisely so this stays rare.
+  static bool _looksTooLarge(ChatTransportError error) {
+    if (error.statusCode == 413) return true;
+    final lower = error.message.toLowerCase();
+    return lower.contains('request body exceeds') ||
+        lower.contains('payload too large') ||
+        lower.contains('request entity too large');
   }
 
   /// Whether a failed image turn failed *because the model can't take images*.

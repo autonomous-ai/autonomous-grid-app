@@ -4,6 +4,8 @@ import 'package:file_selector/file_selector.dart';
 
 import '../../../infrastructure/platform/native_documents.dart';
 import '../../playground/logic/chat_file.dart';
+import '../../playground/logic/image_budget.dart';
+import '../../playground/logic/image_shrink.dart';
 import '../../playground/logic/playground_request.dart';
 import 'document_text.dart';
 
@@ -28,6 +30,7 @@ class ComposerAttachments {
     this.files = const [],
     this.paths = const [],
     this.overflow = const [],
+    this.oversized = const [],
   });
 
   /// Pictures, for a model that can see.
@@ -45,6 +48,11 @@ class ComposerAttachments {
   /// apart from [paths]: the user asked for a file, not for its path in their
   /// sentence, so the composer says what happened instead.
   final List<String> overflow;
+
+  /// Pictures too large to send even after the app shrank them. Their own list
+  /// because the reason — and so the way out of it — is not the message's
+  /// limit but the picture's own size.
+  final List<String> oversized;
 }
 
 /// Turns dropped, pasted or picked [paths] into what the composer holds:
@@ -61,6 +69,7 @@ Future<ComposerAttachments> readAttachments(
   final files = <ChatFile>[];
   final mentioned = <String>[];
   final overflow = <String>[];
+  final oversized = <String>[];
 
   for (final path in paths) {
     final trimmed = path.trim();
@@ -75,14 +84,18 @@ Future<ComposerAttachments> readAttachments(
         overflow.add(fileNameOf(trimmed));
         continue;
       }
-      final image = await _readImage(trimmed);
-      // Unreadable (a sandbox denial, a file that moved between the drop and
-      // the read): the path is still real, so point at it rather than lose it.
-      if (image == null) {
-        mentioned.add(trimmed);
+      final (:image, :tooBig) = await _readImage(trimmed);
+      if (image != null) {
+        images.add(image);
         continue;
       }
-      images.add(image);
+      if (tooBig) {
+        oversized.add(fileNameOf(trimmed));
+        continue;
+      }
+      // Unreadable (a sandbox denial, a file that moved between the drop and
+      // the read): the path is still real, so point at it rather than lose it.
+      mentioned.add(trimmed);
       continue;
     }
 
@@ -103,6 +116,7 @@ Future<ComposerAttachments> readAttachments(
     files: files,
     paths: mentioned,
     overflow: overflow,
+    oversized: oversized,
   );
 }
 
@@ -181,15 +195,26 @@ Future<DocumentText?> _extract(File file, String name, int size) async {
   }
 }
 
-Future<MediaAttachment?> _readImage(String path) async {
+/// Reads the picture at [path], shrunk to what one message may carry.
+///
+/// `tooBig` separates the two ways this comes back empty-handed: a picture the
+/// app can't get under the wire's limit (say so — the user can crop it) and a
+/// file it couldn't read at all (mention the path instead).
+Future<({MediaAttachment? image, bool tooBig})> _readImage(String path) async {
   final file = File(path);
   try {
-    if (await file.length() > kMaxReadableFileBytes) return null;
-    return MediaAttachment(
+    // Never read a huge file into memory just to find out it can't be sent:
+    // the resize would have to decode it first, and the window would stop.
+    if (await file.length() > kMaxImageFileBytes) {
+      return (image: null, tooBig: true);
+    }
+    final read = MediaAttachment(
       filename: fileNameOf(path),
       bytes: await file.readAsBytes(),
     );
+    final fitted = await fitImageToBudget(read);
+    return (image: fitted, tooBig: fitted == null);
   } on FileSystemException {
-    return null;
+    return (image: null, tooBig: false);
   }
 }
