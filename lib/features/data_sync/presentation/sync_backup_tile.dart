@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../chat/logic/chat_age_label.dart';
+import '../../../core/age_label.dart';
 import '../logic/sync_client.dart';
 
 /// One backup in the list: when it was made, from which computer, and what's in
@@ -87,7 +87,7 @@ String _summary(SyncVersion version) {
   return [
     '$chats ${chats == 1 ? 'chat' : 'chats'}',
     if (media > 0) '$media ${media == 1 ? 'file' : 'files'}',
-    '${chatAgeLabel(version.createdAt, DateTime.now())} ago',
+    '${ageLabel(version.createdAt, DateTime.now())} ago',
     _size(version.sizeBytes),
   ].join(' · ');
 }
