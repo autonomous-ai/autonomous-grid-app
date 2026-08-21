@@ -13,10 +13,10 @@
 /// They nest — [both] is [use] plus hosting — so the picker is a short list, not
 /// a tree, and the wider one is the default.
 enum ManagedMemberRole {
-  use('consumer', 'Can use', 'Use the grid\u2019s models.'),
+  use('consumer', 'Use models', 'Use the grid\u2019s models.'),
   both(
     'both',
-    'Can use and share',
+    'Use + run models',
     'Use the models, and run one of their own '
         'machines for the grid.',
   );
@@ -27,6 +27,18 @@ enum ManagedMemberRole {
   final String wire;
 
   /// Short name for the picker beside the email field.
+  ///
+  /// **Not "share".** [both] read "Can use and share", inside a dialog titled
+  /// *Share* whose top half hands out access — so the one word had to mean two
+  /// opposite things on one screen, and the reading a person lands on is the
+  /// wrong one: that this grants them the right to invite others. "Run" is the
+  /// app's own verb for putting a machine on a grid (the grid-power pill, and
+  /// every [ManagedNetworkType] sentence), and it cannot be confused with
+  /// handing out access.
+  ///
+  /// Kept SHORTER than the string it replaced (16 chars vs 17): the picker's
+  /// width was measured against the old longest label, and the menu opens at
+  /// the field's width, so a longer one would ellipsize in both.
   final String label;
 
   /// One line under the picker saying what the person will be able to do.

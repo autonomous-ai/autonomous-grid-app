@@ -187,8 +187,11 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
                 // as a setting for the grid instead. Fixed width so the field
                 // does not resize as the label changes length.
                 SizedBox(
-                  // Sized to the longest label ("Can use & share") plus the
+                  // Sized to the longest label ("Use + run models") plus the
                   // caret. The email field is Expanded, so it yields the space.
+                  // Measured against "Can use and share", one character wider
+                  // than today's longest — so this still has room, and a new
+                  // label longer than that one needs the width re-measured.
                   width: 196,
                   child: InviteRolePicker(
                     value: _effectiveRole,

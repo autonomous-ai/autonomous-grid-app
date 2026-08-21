@@ -84,12 +84,18 @@ class NetworkCredential {
   }
 
   /// Plain-language label for [role] (badge text) — describes what you do on the
-  /// grid: a "provider" shares a model, a "consumer" uses one. Deliberately
+  /// grid: a "provider" runs a model, a "consumer" uses one. Deliberately
   /// avoids the words Public/Private, which are reserved for grid *visibility*
   /// ([visibilityLabel]) — reusing them for roles read as a settings collision.
+  ///
+  /// **"Sharing" became "Running"** for the reason `ManagedMemberRole.label`
+  /// records: on a screen where sharing a grid means inviting people to it,
+  /// a badge saying "Sharing" reads as "this person can invite others" rather
+  /// than "this person is running a model here". Same verb as the picker, so a
+  /// badge and the control that sets it cannot describe one grant two ways.
   String get roleLabel => switch (role) {
     NetworkRole.admin => 'Owner',
-    NetworkRole.provider => 'Sharing',
+    NetworkRole.provider => 'Running',
     NetworkRole.consumer => 'Using',
     NetworkRole.member => 'Member',
   };
