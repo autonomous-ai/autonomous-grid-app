@@ -63,7 +63,8 @@ class _DeadSession implements HermesAcpSession {
   set approvalMode(AgentApprovalMode mode) {}
 
   @override
-  HermesAcpRun prompt(String text) => throw UnimplementedError();
+  HermesAcpRun prompt(String text, {List<HermesAcpImage> images = const []}) =>
+      throw UnimplementedError();
 
   @override
   Future<String?> steer(String text) async => 'no turn is running';

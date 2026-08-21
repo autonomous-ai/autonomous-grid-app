@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart' show Drag;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/app_environment.dart';
 import '../../../core/composer_text.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
@@ -18,6 +19,7 @@ import '../../../shared/widgets/typing_dots.dart';
 import '../../agents/logic/agent_chat_scope.dart';
 import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
+import '../../agents/logic/hermes_vision_controller.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
@@ -1020,10 +1022,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // (text-only) agent — so the in-flight bubble must show the media progress
     // bar, not "the agent is working".
     final agentInstalled = ref.watch(anyAgentInstalledProvider);
+    // Whether the assistant answering this chat can read the picture itself, so
+    // the turn need not be handed to the chat model that can't. See
+    // [agentReadsImagesForChat] — Hermes only, and only once it has been given a
+    // model for images.
+    final agentReadsImages = agentReadsImagesForChat(
+      agent: ref.watch(activeChatAgentProvider),
+      hermesVisionModel: ref.watch(hermesVisionModelProvider).asData?.value,
+      developerMode: AppEnvironment.isDeveloperMode,
+    );
     final agentMode = agentAnswersTurn(
       modality: modality,
       hasAttachments: _attachments.isNotEmpty,
       agentInstalled: agentInstalled,
+      agentReadsImages: agentReadsImages,
     );
     final needsImage = modality == PlaygroundModality.video;
     // An image pasted into a chat whose model can't read images. Locked until
@@ -1035,7 +1047,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
         !noModel &&
         modality == PlaygroundModality.text &&
         _attachments.isNotEmpty &&
-        (selectedModel == null || !selectedModel.vision);
+        (selectedModel == null || !selectedModel.vision) &&
+        // Unless the assistant reads it instead of the chat model. The lock is
+        // about who receives the picture, not about who is named in the pill.
+        !agentReadsImages;
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
     final messages = active?.messages ?? const <ChatMessage>[];

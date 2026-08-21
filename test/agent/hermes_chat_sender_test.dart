@@ -101,6 +101,10 @@ class _FakeAcpSession implements HermesAcpSession {
   final List<List<HermesAcpEvent>> _turns;
   final prompts = <String>[];
 
+  /// The pictures each turn carried, so a test can prove an attachment reached
+  /// Hermes rather than being dropped on the way.
+  final sentImages = <HermesAcpImage>[];
+
   /// What was handed to a turn already running, in order.
   final steers = <String>[];
   int _turn = 0;
@@ -119,8 +123,9 @@ class _FakeAcpSession implements HermesAcpSession {
   bool get isClosed => _closed;
 
   @override
-  HermesAcpRun prompt(String text) {
+  HermesAcpRun prompt(String text, {List<HermesAcpImage> images = const []}) {
     prompts.add(text);
+    sentImages.addAll(images);
     final events = _turn < _turns.length
         ? _turns[_turn]
         : const <HermesAcpEvent>[];
@@ -178,7 +183,7 @@ class _LiveAcpSession implements HermesAcpSession {
   bool get isClosed => false;
 
   @override
-  HermesAcpRun prompt(String text) =>
+  HermesAcpRun prompt(String text, {List<HermesAcpImage> images = const []}) =>
       HermesAcpRun(events: events.stream, done: _done.future, kill: _end);
 
   @override

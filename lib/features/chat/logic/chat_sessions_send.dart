@@ -5,6 +5,30 @@ part of 'chat_sessions_controller.dart';
 /// Keyed by conversation throughout, so several chats can be answering at once
 /// and a reply never lands in the transcript the user has since switched to.
 mixin _ChatSend on _ChatSessions {
+  /// Whether the assistant answering can read a picture itself, so a turn
+  /// carrying one need not go to the chat model that can't.
+  ///
+  /// Read here rather than passed in from the composer: the same send is reached
+  /// from Retry and from a queued follow-up, and a value carried from a screen
+  /// would be missing on both.
+  ///
+  /// Asked only of a turn that actually carries a picture. Not an optimisation:
+  /// this runs inside the chat controller, and a question about the open chat's
+  /// agent asked the obvious way — `activeChatAgentProvider` — is a provider
+  /// that reads *this* controller back. Riverpod calls that a circular
+  /// dependency and throws, which killed every send before it began. The
+  /// project's own agent provider takes the id as an argument and depends on
+  /// nothing here, so it is safe to ask; the early return keeps the ordinary
+  /// text turn from asking at all.
+  bool _agentReadsImages(String? projectId, {required bool hasImages}) {
+    if (!hasImages) return false;
+    return agentReadsImagesForChat(
+      agent: ref.read(chatAgentForProjectProvider(projectId)),
+      hermesVisionModel: ref.read(hermesVisionModelProvider).value,
+      developerMode: AppEnvironment.isDeveloperMode,
+    );
+  }
+
   /// Send [message] in the open chat — or, when [into] names one, in that chat
   /// without bringing it to the front (how a queued follow-up goes out).
   ///
@@ -84,14 +108,26 @@ mixin _ChatSend on _ChatSessions {
         : model;
 
     // Plain text goes through the agent (it can use tools and keeps the
-    // conversation's context); pictures — generating one, or a turn that carries
-    // attachments — go straight to the grid's chat API, which is the only one
-    // that can see or make them. Decided here, before anything is committed,
-    // because it also decides whether the turn is worth routing at all.
+    // conversation's context); making a picture goes straight to the grid's
+    // chat API, which is the only one that can. A turn *carrying* a picture goes
+    // to whichever of the two can read it — see [agentReadsImagesForChat].
+    // Decided here, before anything is committed, because it also decides
+    // whether the turn is worth routing at all.
+    //
+    // **This is the decision that routes the send.** The composer computes the
+    // same answer to know whether to unlock, but what it computes only draws a
+    // button; a change made there alone leaves the picture going to the API
+    // exactly as before, and the failure arrives from the engine, three layers
+    // down, as "this model can't read images".
     final viaAgent = agentAnswersTurn(
       modality: modality,
       hasAttachments: attachments.isNotEmpty,
       agentInstalled: ref.read(anyAgentInstalledProvider),
+      agentReadsImages: _agentReadsImages(
+        (into == null ? state.active : _find(into))?.projectId ??
+            state.draftProjectId,
+        hasImages: attachments.isNotEmpty,
+      ),
     );
 
     // What this chat lets the agent do — its own choice when it has one, else
@@ -224,6 +260,10 @@ mixin _ChatSend on _ChatSessions {
       modality: modality,
       hasAttachments: retryable.attachments.isNotEmpty,
       agentInstalled: ref.read(anyAgentInstalledProvider),
+      agentReadsImages: _agentReadsImages(
+        conversation.projectId,
+        hasImages: retryable.attachments.isNotEmpty,
+      ),
     );
     final approval = approvalFor(
       conversation,

@@ -17,6 +17,7 @@ import '../../../playground/logic/playground_request.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/state/model_context_store.dart';
+import '../acp_images.dart';
 import '../agent_changes.dart';
 import '../agent_server_error.dart';
 import '../agent_permissions.dart';
@@ -222,6 +223,7 @@ class HermesChatSender implements ChatSender {
       planFirst: planFirst,
       live: live,
       chat: chat,
+      attachments: attachments,
     );
   }
 
@@ -308,6 +310,7 @@ class HermesChatSender implements ChatSender {
     required bool planFirst,
     required _LiveSession live,
     required String chat,
+    required List<MediaAttachment> attachments,
   }) {
     // The feed was reset up front in [send], before the session setup — see
     // [AgentRuns.reset]; here we only take the notifiers to append to.
@@ -322,7 +325,7 @@ class HermesChatSender implements ChatSender {
       detail: CommandDetail(requestBody: text),
     );
 
-    final run = session.prompt(text);
+    final run = session.prompt(text, images: acpImages(attachments));
     // Anything typed in this chat while the turn runs goes into the turn itself
     // (the adapter's `/steer`), not into a queue behind it, and is recorded in
     // the turn's timeline where it happened (see [AgentSteeringController]).

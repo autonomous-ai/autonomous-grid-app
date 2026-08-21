@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'turn_model_usage.dart';
+import '../../../core/app_environment.dart';
 import '../../../core/text_preview.dart';
 import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
@@ -17,6 +18,7 @@ import '../../agents/logic/agent_changes.dart';
 import '../../agents/logic/agent_questions.dart';
 import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/agent_routing.dart';
+import '../../agents/logic/hermes_vision_controller.dart';
 import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
