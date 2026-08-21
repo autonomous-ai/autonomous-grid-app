@@ -28,8 +28,10 @@ name: grid-chart
 description: >-
   Draw a chart in the Grid chat instead of listing numbers. Use whenever the
   answer compares quantities across categories or shows a value changing over
-  time — a chart, graph, plot, trend, breakdown, or "how has X changed". Grid
-  renders the block below as a real chart in the reply.
+  time — a chart, graph, plot, trend or breakdown, asked for in any language,
+  and also when the question itself is about how something changed even though
+  no chart was named. Grid renders the block below as a real chart in the
+  reply.
 ---
 
 # Showing numbers as a chart

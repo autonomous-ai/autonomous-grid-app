@@ -23,20 +23,23 @@ const String kGridScheduleSkillName = 'grid-schedule';
 GridSkillFiles gridScheduleSkillFiles(Directory skillDir) =>
     const GridSkillFiles(card: kGridScheduleSkillMd);
 
-/// The card. The front-matter names what the user asks for ("every morning",
-/// "keep checking") rather than the CLI, because the agent meets this while
-/// being asked for a repeating task — it does not yet know a `hermes cron`
-/// exists, which is the whole reason it needs the card.
+/// The card. The front-matter names what the user is *asking for* rather than
+/// the CLI, because the agent meets this while being asked for a repeating task
+/// — it does not yet know a `hermes cron` exists, which is the whole reason it
+/// needs the card. It names that by intent and not by example phrases: a list
+/// of them only ever covers the language it was written in, and the people
+/// using this write in several.
 const String kGridScheduleSkillMd = '''
 ---
 name: grid-schedule
 description: >-
-  Set up work that runs later or over and over — every morning, every 30
-  minutes, once tonight, a watcher that keeps checking something. Use whenever
-  the user asks for a scheduled, recurring or automatic task, says "every N
-  minutes", "each morning", "remind me at", or wants something to keep running
-  after this conversation ends. Also use to list, pause, run now, or delete
-  tasks that are already scheduled.
+  Set up work that runs later, or over and over: at a clock time, on a cadence,
+  once tonight, or a watcher that keeps checking something. Use whenever the
+  user asks for a scheduled, recurring or automatic task, asks to be reminded
+  at some point, or wants something to keep running after this conversation
+  ends — in whatever language they wrote it in, and however they phrased the
+  timing. It is the intent that decides, never a list of trigger words. Also
+  use to list, pause, run now, or delete tasks that are already scheduled.
 ---
 
 # Scheduling work on this computer
