@@ -278,9 +278,10 @@ class ClaudeStreamParser {
   }
 
   /// A `user` message in this stream is Claude reporting back to itself: the
-  /// results of the tools it just called. [parent] is carried for symmetry with
-  /// the call side; the row is found by its own id, which is unique across the
-  /// turn whoever ran it.
+  /// results of the tools it just called. The row is found by its own id, which
+  /// is unique across the turn whoever ran it; [parent] decides only whose
+  /// context the pictures in it land in — a sub-agent's are its own
+  /// conversation's, exactly as its `usage` is (see [_readBlocks]).
   List<ClaudeExecEvent> _readUserBlock(
     Map<String, dynamic> block,
     String? parent,
@@ -323,6 +324,11 @@ class ClaudeStreamParser {
     final path = _writes.remove(id);
     // A write that failed changed nothing, so there is nothing to offer to open.
     if (path != null && !failed) events.add(ClaudeFileWriteFinished(path));
+
+    // What a picture just cost the session, which the reported figure does not
+    // say — see [claudeMediaTokens].
+    final media = parent == null ? claudeMediaTokens(block['content']) : 0;
+    if (media > 0) events.add(ClaudeMediaUsed(media));
     return events;
   }
 
@@ -370,23 +376,6 @@ class ClaudeStreamParser {
   String _settled() => stripControlTokens(_completed.join('\n\n'));
 }
 
-/// How full the model's context was for one request, from that request's
-/// `usage` — or null when the shape carries no usable figure.
-///
-/// Every request sends the whole conversation, so one request's input **is** the
-/// context size. All three input halves count: fresh tokens, and both cache
-/// figures — a cached token is still occupying the window, it was merely
-/// cheaper to send. Counting only `input_tokens` is the trap here; on a
-/// cache-heavy agentic turn that reads a few thousand while the real occupancy
-/// is two hundred thousand.
-///
-/// `output_tokens` counts too, because the reply joins the conversation the
-/// moment it lands and this figure is read to size the *next* turn. It is the
-/// same sum Claude Code's own compaction trigger uses.
-///
-/// Null rather than zero when nothing parses, so a line from a build that words
-/// it differently leaves the last known figure standing instead of resetting it
-/// and calling a full session empty.
 /// The condition and reason inside one `Stop hook feedback:` message, or null
 /// when [text] is not one.
 ///
@@ -422,6 +411,26 @@ class ClaudeStreamParser {
   return (condition: condition, reason: reason);
 }
 
+/// How full the model's context was for one request, from that request's
+/// `usage` — or null when the shape carries no usable figure.
+///
+/// Every request sends the whole conversation, so one request's input **is** the
+/// context size. All three input halves count: fresh tokens, and both cache
+/// figures — a cached token is still occupying the window, it was merely
+/// cheaper to send. Counting only `input_tokens` is the trap here; on a
+/// cache-heavy agentic turn that reads a few thousand while the real occupancy
+/// is two hundred thousand.
+///
+/// `output_tokens` counts too, because the reply joins the conversation the
+/// moment it lands and this figure is read to size the *next* turn. It is the
+/// same sum Claude Code's own compaction trigger uses.
+///
+/// **It is not the whole occupancy, and on a chat with pictures it is nowhere
+/// near it** — see [claudeMediaTokens], which is what the app adds on top.
+///
+/// Null rather than zero when nothing parses, so a line from a build that words
+/// it differently leaves the last known figure standing instead of resetting it
+/// and calling a full session empty.
 int? claudeContextTokens(Object? usage) {
   if (usage is! Map) return null;
   int field(String name) => (usage[name] as num?)?.toInt() ?? 0;
@@ -431,6 +440,46 @@ int? claudeContextTokens(Object? usage) {
       field('cache_creation_input_tokens') +
       field('output_tokens');
   return total > 0 ? total : null;
+}
+
+/// Roughly 32 base64 characters to a token — see [claudeMediaTokens].
+const int _base64CharsPerToken = 32;
+
+/// What the pictures in one tool result cost the context, estimated from the
+/// payload itself, because the reported figure does not count them.
+///
+/// Measured 2026-08-21 on the office grid (session `b3959598`, the turn that
+/// drew autonomous-grid-app#47's successor): a turn read 31 screenshots and
+/// [claudeContextTokens] reported 35978 tokens on its first request and 40593 on
+/// its last — it went *down*, from 39525 to 37506, across the ten image reads in
+/// the middle. The engine then refused the next request saying the prompt held
+/// at least 236545. That gap is ~196000 tokens of pictures that nothing on the
+/// wire ever mentioned, and **both** compaction paths read only the figure that
+/// missed them: Claude Code's own auto-compact (threshold 167000 on that
+/// config) and this app's `needsCompaction` (ceiling 204800). Neither could
+/// fire, and the conversation died of a context both believed was 40k.
+///
+/// So the app counts what it can see go past: the base64 in the `tool_result`,
+/// at [_base64CharsPerToken]. Those 31 images carried 7146216 characters over
+/// ~196000 tokens — nearer 36 to a token — so the divisor here deliberately
+/// reads **high**, and the two ways to be wrong are not symmetric: too high
+/// summarizes a conversation sooner than it had to, too low loses the turn, the
+/// session and the work in it (the same reasoning as `kAssumedContextWindow`).
+///
+/// **`TODO(BE)`: this is a guess standing in for a number the relay has.** An
+/// engine that counts image tokens and reports them makes every line of this
+/// unnecessary; until then no caller can know what a chat with pictures in it
+/// really holds.
+int claudeMediaTokens(Object? content) {
+  if (content is! List) return 0;
+  var total = 0;
+  for (final block in content) {
+    if (block is! Map || block['type'] != 'image') continue;
+    final source = block['source'];
+    final data = source is Map ? source['data'] : null;
+    if (data is String) total += data.length ~/ _base64CharsPerToken;
+  }
+  return total;
 }
 
 /// The `mcp_servers` array of an `init` line, read as name → status.

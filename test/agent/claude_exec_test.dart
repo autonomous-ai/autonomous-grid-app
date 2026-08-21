@@ -643,6 +643,102 @@ void main() {
     });
   });
 
+  group('pictures cost context that nothing on the wire reports', () {
+    Map<String, dynamic> read(String data, {String? parent}) => {
+      'type': 'user',
+      'parent_tool_use_id': ?parent,
+      'message': {
+        'content': [
+          {
+            'type': 'tool_result',
+            'tool_use_id': 't1',
+            'content': [
+              {
+                'type': 'image',
+                'source': {
+                  'type': 'base64',
+                  'media_type': 'image/jpeg',
+                  'data': data,
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    test('a picture is counted from its own payload, because the reported '
+        'figure went *down* over ten of them while the engine counted '
+        '196000 tokens more', () {
+      expect(claudeMediaTokens(null), 0);
+      expect(
+        claudeMediaTokens([
+          {
+            'type': 'image',
+            'source': {'type': 'base64', 'data': 'x' * 3200},
+          },
+        ]),
+        100,
+      );
+    });
+
+    test('a bigger picture costs more, so an estimate tracks what a chat is '
+        'actually carrying rather than counting screenshots', () {
+      int tokensFor(int chars) => claudeMediaTokens([
+        {
+          'type': 'image',
+          'source': {'type': 'base64', 'data': 'x' * chars},
+        },
+      ]);
+      expect(tokensFor(6400), greaterThan(tokensFor(3200)));
+    });
+
+    test('text costs nothing here: the reported usage already counts it, and '
+        'counting it twice would summarize a chat that had room', () {
+      expect(
+        claudeMediaTokens([
+          {'type': 'text', 'text': 'a' * 3200},
+        ]),
+        0,
+      );
+    });
+
+    test('a shape this build has never seen costs nothing rather than '
+        'throwing — the parser stays tolerant', () {
+      expect(claudeMediaTokens('nonsense'), 0);
+      expect(
+        claudeMediaTokens([
+          {'type': 'image'},
+        ]),
+        0,
+      );
+      expect(
+        claudeMediaTokens([
+          {
+            'type': 'image',
+            'source': {'type': 'url', 'url': 'https://example.com/a.png'},
+          },
+        ]),
+        0,
+      );
+    });
+
+    test('the stream hands the estimate over as its own event, so the sender '
+        'can add it to the figure rather than replace it', () {
+      final events = _read(ClaudeStreamParser(), read('x' * 3200));
+      expect(events.whereType<ClaudeMediaUsed>().single.tokens, 100);
+    });
+
+    test("a sub-agent's pictures land in its own conversation, not this "
+        "session's — the same rule its usage follows", () {
+      final events = _read(
+        ClaudeStreamParser(),
+        read('x' * 3200, parent: 'sub-1'),
+      );
+      expect(events.whereType<ClaudeMediaUsed>(), isEmpty);
+    });
+  });
+
   group('the permission channel — asking is what the flags buy', () {
     test('a turn carries the two-way stdin and the tool that asks on it', () {
       final args = claudeExecArgs(model: 'm');

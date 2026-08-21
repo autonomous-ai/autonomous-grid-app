@@ -312,12 +312,18 @@ class ClaudeChatSender implements ChatSender {
     //
     // The same ceiling already rides in [environment] for Claude Code's own
     // auto-compact to honour, and on a grid model it measurably doesn't — see
-    // [needsCompaction]. So the app asks the question itself, from the figure
-    // the last turn reported ([ClaudeContextUsed]), and asks for the summary
-    // itself when the answer is yes.
+    // [needsCompaction]. So the app asks the question itself, from where the
+    // session stands ([AgentSessionSlot.contextTokens]), and asks for the
+    // summary itself when the answer is yes.
+    _logContextStanding(
+      model: model,
+      window: window,
+      slot: turn.slot,
+      resuming: turn.resumeSessionId != null,
+    );
     if (turn.resumeSessionId case final session?
         when needsCompaction(
-          usedTokens: turn.slot.usedTokens,
+          usedTokens: turn.slot.contextTokens,
           engineWindow: window,
         )) {
       await _compact(
@@ -454,8 +460,10 @@ class ClaudeChatSender implements ChatSender {
     if (failure == null) {
       // Zero, not a guess at the summary's size: the next turn reports its own
       // figure, and leaving the old one standing would compact again on the
-      // turn after this — every turn, forever.
+      // turn after this — every turn, forever. The pictures go with it: what
+      // the session now holds in their place is the summary's words.
       slot.usedTokens = 0;
+      slot.mediaTokens = 0;
       log.info('agent', 'summarized the session before the next turn');
     } else {
       log.failure('agent', "couldn't summarize the session: $failure");
@@ -670,6 +678,11 @@ class ClaudeChatSender implements ChatSender {
           // many times and the last call is where the session actually stands.
           case ClaudeContextUsed(:final tokens):
             slot.usedTokens = tokens;
+          // Added, not replaced — this one is a running total of what those
+          // reports leave out, and it only ever grows until a summary clears
+          // both. See [ClaudeMediaUsed].
+          case ClaudeMediaUsed(:final tokens):
+            slot.mediaTokens += tokens;
           case ClaudeMessageEvent(:final text, settled: final blocks):
             answer
               ..clear()
@@ -804,6 +817,45 @@ class ClaudeChatSender implements ChatSender {
           '$model holds $window tokens; later turns compact at '
               '${agentContextCeiling(window)}',
         );
+  }
+
+  /// Where the session stands going into a turn, and how far that is from the
+  /// ceiling the app measures it against.
+  ///
+  /// One line per turn, and it exists because the log had none: when a chat died
+  /// of a full context on 2026-08-21 the only record was the engine's refusal
+  /// *after* the fact, so "why didn't it summarize?" could be answered only from
+  /// Claude Code's own transcript files. Both answers live here now, because
+  /// either can be the reason: a session under the ceiling, or no session at all
+  /// — a turn replaying the chat has nothing to summarize into, so the check
+  /// this line precedes cannot run for it whatever the numbers say.
+  void _logContextStanding({
+    required String model,
+    required int window,
+    required AgentSessionSlot slot,
+    required bool resuming,
+  }) {
+    final log = _ref.read(appLogProvider);
+    if (!resuming) {
+      log.info(
+        'agent',
+        '$model: replaying this chat into a new session, so there is nothing '
+            'to summarize first',
+      );
+      return;
+    }
+    // Both halves, whenever the estimate has anything in it: one is the
+    // engine's report and one is this app's guess at what it left out, and a
+    // single total would hide which of them moved.
+    final pictures = slot.mediaTokens > 0
+        ? ' (${slot.usedTokens} reported, ~${slot.mediaTokens} estimated for '
+              'pictures it leaves out)'
+        : '';
+    log.info(
+      'agent',
+      '$model: session at ~${slot.contextTokens} of $window tokens$pictures; '
+          'summarizes at ${agentContextCeiling(window)}',
+    );
   }
 
   /// Keep Claude's own words for the log while the chat shows the friendly line.
