@@ -135,6 +135,12 @@ bool ui_voice_is_active(void);
 bool ui_action_row_hit(uint16_t x, uint16_t y);
 // A plain tap (touch.c, when not recording): on the detail reader → back to projects; else no-op.
 void ui_tap(void);
+// Is the agent switcher's picker up? touch.c stands its screen-wide gestures down while it is — the
+// carousel is right underneath it, and a swipe meant for the list must not also move what is behind it.
+bool ui_switch_is_open(void);
+// Open the agent switcher — the pull-down from the top of a tile (touch.c). A no-op while recording, while
+// asleep, or from a screen that names no agent.
+void ui_switch_open(void);
 // Notification centre (touch.c drives open/close).
 void ui_notif_open(void);
 void ui_notif_close(void);

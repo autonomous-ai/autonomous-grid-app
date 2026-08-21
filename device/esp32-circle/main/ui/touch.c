@@ -79,7 +79,9 @@ static bool double_tap(bool pressed, uint16_t x, uint16_t y)
 // belongs to the tile underneath it, so a non-empty id IS "there is an agent here to speak to".
 static bool voice_gesture_here(void)
 {
-    return ui_active_tile_id()[0] != '\0';
+    // Not while the agent picker is up: it covers the carousel, and a double-tap aimed at one of its rows
+    // must pick that agent rather than start talking to the one behind it.
+    return !ui_switch_is_open() && ui_active_tile_id()[0] != '\0';
 }
 
 bool touch_take_longpress(void)
@@ -286,27 +288,40 @@ static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
     bool dbl = double_tap(gesture_pressed, x, y);     // call every read to keep edge tracking valid
     longpress_track(gesture_pressed, x, y);           // detect a deliberate hold (portal trigger in standby)
 
-    // The notification zone OWNS its gestures — like the brightness catcher — so a pull-down or a list
-    // scroll can never leak into the voice/detail layer. Capture the whole gesture from press-down when
-    // the drawer is already OPEN, or when a press starts in the top pull-zone (ui_notif_pull_zone_px() —
-    // narrow on agent tiles so the Mode/Model chips still get taps, full band on Overview/Settings/Machines).
-    // While captured:
-    // feed LVGL only if the drawer is open (so the list scrolls + rows/background tap); otherwise swallow
-    // (a top-zone pull must not drive the projects UI underneath). On release, decide open/close.
+    // The top band OWNS its gestures — like the brightness catcher — so a pull-down or a list scroll can
+    // never leak into the voice/detail layer. Capture the whole gesture from press-down when the drawer is
+    // already OPEN, or when a press starts in the top pull-zone (ui_notif_pull_zone_px() — narrow on agent
+    // tiles so the Mode/Model chips still get taps, full band on Overview/Settings/Machines).
+    //
+    // ⚠️ A PULL DOWN HERE OPENS THE AGENT SWITCHER, not the notification drawer. The drawer is a tap on the
+    // bell now. The swap is the point: reaching another agent is something you do all day, and it was a
+    // swipe through every tile in between; reading a finished turn is something you do occasionally, and it
+    // had the best gesture on the face.
+    //
+    // While captured: feed LVGL only if the drawer is open (so the list scrolls + rows/background tap);
+    // otherwise swallow (a top-zone pull must not drive the projects UI underneath). On release, decide.
     {
         static bool ndrag, nprev; static int ndy0, ndyl;
         bool ncap = false;
         if (pressed && !nprev) {
             // Not on the reader: notifications aren't openable there, and swallowing the top band would break
             // scrolling from the top of the text. The reader owns its whole surface for vertical scroll.
-            ndrag = !display_is_asleep() && !ui_reader_is_open() && (ui_notif_is_open() || y < ui_notif_pull_zone_px());
+            // ...and NOT for a press the tile's own controls claimed. The agent-switcher mark sits above
+            // the chip row, which puts it inside this very band: without this the drawer would swallow
+            // every press on it and the mark would look broken. The band is still pullable everywhere
+            // else along it — the mark is 36px of a full-width zone.
+            // Not under the switcher either: it covers the whole face, and its top rows are inside this
+            // band — captured, they would be untappable in exactly the list you opened to tap.
+            ndrag = !display_is_asleep() && !ui_reader_is_open() && !action_capture &&
+                    !ui_switch_is_open() &&
+                    (ui_notif_is_open() || y < ui_notif_pull_zone_px());
             ndy0 = ndyl = y; ncap = ndrag;
         } else if (pressed && ndrag) {
             ndyl = y; ncap = true;
         } else if (!pressed && nprev && ndrag) {          // release of a captured gesture
             int d = ndyl - ndy0;
             if (ui_notif_is_open()) { if (d < -SWIPE_MIN_PX) ui_notif_swipe_up(); }  // up → close (only if list at top)
-            else if (d > SWIPE_MIN_PX) ui_notif_open();                              // pull down from top → open
+            else if (d > SWIPE_MIN_PX) ui_switch_open();                             // pull down from top → switcher
             ndrag = false; ncap = true;
         }
         nprev = pressed;
@@ -319,7 +334,11 @@ static void touch_read(lv_indev_t *indev, lv_indev_data_t *data)
 
     // Swipes + tap-to-stop-voice. Skip while swallowing a consumed gesture (the tap that woke the screen)
     // so the release of that gesture isn't misread as a fresh tap.
-    if (!display_is_asleep() && !s_swallow_until_release) swipe_track(gesture_pressed, x, y);
+    // ...and not under the agent picker, whose rows are LVGL's to dispatch: swipe_track would read a row
+    // tap as the tap that opens the detail reader, and a scroll of the list as a carousel swipe, both
+    // happening to the tile UNDERNEATH the overlay.
+    if (!display_is_asleep() && !s_swallow_until_release && !ui_switch_is_open())
+        swipe_track(gesture_pressed, x, y);
 
     // Resolve a deferred single tap. Anchored to the PRESS and only fires once the double-tap window has
     // passed — so a double-tap always cancels it first. Extra guard: skip if a turn just started (voice).
