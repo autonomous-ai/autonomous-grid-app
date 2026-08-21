@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../../infrastructure/api/models/managed_network_member.dart';
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_select_field.dart';
+import 'access_menu.dart';
 
-/// What the person being invited will be able to do, beside the address field.
+/// What the person being invited will be able to do, under the address field.
 ///
-/// [AppSelectField] rather than a control built here, for the reason the whole
-/// app has one: two places asking the same question must share the widget, or
-/// they grow two sets of words. This is the same instrument the access-rule
-/// picker uses one section below — one dialog, one kind of "pick one".
+/// The same trigger the rest of the sheet uses ([AccessMenuButton]) rather than
+/// a form field: Google Drive shows the role for an invite the same way it
+/// shows one for a person already on the document, and one instrument for one
+/// question is what stops two sets of words growing.
 ///
 /// [roles] is passed in, never read from `ManagedMemberRole.values`: a member
 /// may only hand out a role they hold themselves, and that rule belongs to
 /// `invitableRolesFor`, not to a widget.
 ///
-/// With one role it renders as a field showing that role rather than vanishing.
+/// With one role it renders as a plain label rather than vanishing.
 /// Disappearing would leave the inviter unable to see WHAT they are granting —
 /// the fact that it is not a choice does not make it not worth knowing.
 class InviteRolePicker extends StatelessWidget {
@@ -35,31 +34,32 @@ class InviteRolePicker extends StatelessWidget {
   final bool enabled;
   final ValueChanged<ManagedMemberRole> onChanged;
 
+  static const double _menuWidth = 274;
+
   @override
   Widget build(BuildContext context) {
-    final interactive = enabled && roles.length > 1;
-    return Opacity(
-      opacity: enabled ? 1 : 0.5,
-      child: IgnorePointer(
-        ignoring: !interactive,
-        child: AppSelectField<ManagedMemberRole>(
-          label: '',
-          showLabel: false,
-          value: value,
-          // No detail in EITHER place. The menu opens at the field's width
-          // (AppSelectField's LayoutBuilder), and this field sits beside an
-          // email box — so a sentence ellipsizes in the menu just as it does in
-          // the closed field: "Use the models, a…". The caller prints it whole
-          // under the row, at dialog width, where it fits.
-          showDetailInField: false,
-          fill: AppCard.inset,
-          options: [
-            for (final role in roles)
-              AppSelectOption(value: role, label: role.label),
-          ],
-          onChanged: onChanged,
-        ),
+    return AccessMenuButton(
+      label: value.label,
+      strong: true,
+      enabled: enabled && roles.length > 1,
+      tooltip: 'What they can do',
+      menuSize: accessMenuSize(
+        width: _menuWidth,
+        rows: 0,
+        detailRows: roles.length,
       ),
+      itemsBuilder: (menu) => [
+        for (final role in roles)
+          AccessMenuRow(
+            label: role.label,
+            detail: role.detail,
+            selected: role == value,
+            onTap: () {
+              menu.close();
+              onChanged(role);
+            },
+          ),
+      ],
     );
   }
 }

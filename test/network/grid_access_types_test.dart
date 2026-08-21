@@ -35,9 +35,15 @@ void main() {
     test('the domain rule names the domain — it IS the rule', () {
       // "My domain" is a pronoun the owner has to resolve themselves, and this
       // is the one control whose entire question is *which* domain gets in.
+      //
+      // The `@` and the plural are load-bearing: an account whose email domain
+      // is autonomous.ai also has a **grid** named autonomous.ai, so the bare
+      // "Only autonomous.ai" read as the name of that other grid rather than as
+      // a rule about addresses. Reported from the running app on a grid called
+      // Test-Grid.
       expect(
         accessLabelFor(ManagedNetworkType.domain, domain: 'clc.fitus.edu.vn'),
-        'Only clc.fitus.edu.vn',
+        '@clc.fitus.edu.vn emails',
       );
       expect(
         accessDescriptionFor(

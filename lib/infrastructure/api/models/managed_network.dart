@@ -48,7 +48,7 @@ enum ManagedNetworkType {
   ),
   anyone(
     'permissionless',
-    'Anyone',
+    'Anyone signed in to Grid',
     'Anyone signed in to Grid can use this grid, or run a model for it.',
   );
 
@@ -57,7 +57,13 @@ enum ManagedNetworkType {
   /// Value sent as `network_type`.
   final String wire;
 
-  /// Short name for the segmented picker.
+  /// Short name for the picker, and for the share sheet's access row.
+  ///
+  /// "Anyone" alone left out the condition — there IS one, you have to be
+  /// signed in to Grid — and in a sheet modelled on Google Drive it reads
+  /// against "anyone with the link", which promises something Grid has no way
+  /// to give. The label carries the condition now, the way Drive's own labels
+  /// do.
   final String label;
 
   /// The plain-language explanation under the picker — who gets to *use* the

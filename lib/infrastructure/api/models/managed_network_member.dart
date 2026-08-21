@@ -13,36 +13,75 @@
 /// They nest — [both] is [use] plus hosting — so the picker is a short list, not
 /// a tree, and the wider one is the default.
 enum ManagedMemberRole {
-  use('consumer', 'Use models', 'Use the grid\u2019s models.'),
+  use(
+    'consumer',
+    'Use models',
+    'They can use every model on this grid, but not run one for it.',
+    'Send work to the models on this grid.',
+  ),
   both(
     'both',
-    'Use + run models',
-    'Use the models, and run one of their own '
-        'machines for the grid.',
+    'Share a computer',
+    'They can use every model on this grid, and run one of their own '
+        'computers for it.',
+    'That, plus run a model on their own computer for this grid.',
   );
 
-  const ManagedMemberRole(this.wire, this.label, this.description);
+  const ManagedMemberRole(this.wire, this.label, this.description, this.detail);
 
   /// Value sent in the `roles` array of the add-member request body.
   final String wire;
 
-  /// Short name for the picker beside the email field.
+  /// What to call this grant, in the words for what it lets someone DO.
   ///
-  /// **Not "share".** [both] read "Can use and share", inside a dialog titled
-  /// *Share* whose top half hands out access — so the one word had to mean two
-  /// opposite things on one screen, and the reading a person lands on is the
-  /// wrong one: that this grants them the right to invite others. "Run" is the
-  /// app's own verb for putting a machine on a grid (the grid-power pill, and
-  /// every [ManagedNetworkType] sentence), and it cannot be confused with
-  /// handing out access.
+  /// Google Docs can get away with one-word nouns because everyone already
+  /// knows what a viewer and an editor are. Grid's two roles are not folk
+  /// knowledge — "User" and "Host" both passed for a while and neither said
+  /// which one could put a machine on the grid — so the label names the action
+  /// instead, and "a computer" is what makes the second one land: it is a
+  /// *machine* being shared, not access being handed out.
   ///
-  /// Kept SHORTER than the string it replaced (16 chars vs 17): the picker's
-  /// width was measured against the old longest label, and the menu opens at
-  /// the field's width, so a longer one would ellipsize in both.
+  /// "Share" here does not collide with the dialog's own title: sharing a
+  /// **computer** cannot be misread as sharing the grid, and it is the phrase
+  /// the app already uses everywhere else for this ("Sharing this computer on
+  /// your grid", "Share a model from this computer").
+  ///
+  /// The two labels are **parallel verbs, not a sum**. "Use + share a computer"
+  /// spelled the nesting out in the label and read as a formula: no label
+  /// anywhere else in the app uses `+` for "and" (the only ones that carry it
+  /// are a count, "+3 more", and a shortcut, "⌘1"). The nesting moves to
+  /// [detail], where "That, plus…" says it in words, under the row it refers
+  /// to.
+  ///
+  /// **This overrides "Use + run models"**, which reached main first (ed226253)
+  /// on the argument that *share* cannot appear in a dialog titled Share
+  /// without being read as "may invite others". The argument is right about the
+  /// bare verb and wrong about this phrase: what is shared here is **a
+  /// computer**, which is not a thing anyone can be invited to, and it is the
+  /// object the app already attaches the verb to everywhere else ("Sharing this
+  /// computer on your grid"). Chosen by the product owner with both labels on
+  /// screen, and the `+` in the alternative was the half he rejected outright.
   final String label;
 
-  /// One line under the picker saying what the person will be able to do.
+  /// One line under the invite row saying what the person will be able to do.
+  ///
+  /// Written about *them*, not about the reader, because it is read while
+  /// inviting someone else: "They can use every model on this grid…".
   final String description;
+
+  /// The line under this role **inside the menu**, where the row is narrow and
+  /// the reader is mid-decision.
+  ///
+  /// Shorter than [description] and phrased as the action rather than as a
+  /// sentence about a person, because in the menu the two roles are read
+  /// against each other — [both]'s "That, plus…" only makes sense stacked under
+  /// [use]'s line, which is exactly how the menu shows them.
+  ///
+  /// A menu row that carries an explanation is a deliberate exception to the
+  /// label-only rule the access menu otherwise follows (see [AccessMenuRow]):
+  /// "Invite only" needs no gloss, "Share a computer" does — on its own it
+  /// does not say that the person may use the grid's models too.
+  final String detail;
 
   /// The widest grant, and what every invite used to send before there was a
   /// picker. Guessing narrower would silently withhold something the inviter
@@ -102,6 +141,25 @@ class ManagedNetworkMember {
   /// hides the remove button. Derived from the member itself, never from who is
   /// currently viewing the list.
   bool get isOwner => roles.contains('admin');
+
+  /// The grant this member holds, or null when the control plane names one the
+  /// app doesn't offer — the owner's `admin`, or the retired `provider`.
+  ///
+  /// The people list prints this in every row: the roster already carries it,
+  /// and a share sheet that can't say who may run a model for the grid is
+  /// hiding the one fact the invite picker made a decision about.
+  ///
+  /// `both` wins over `consumer` when a row somehow carries both: it is the
+  /// wider grant, and reporting the narrower one would understate what the
+  /// person can do.
+  ManagedMemberRole? get grantedRole {
+    final held = roles.map((role) => role.toLowerCase()).toSet();
+    if (held.contains(ManagedMemberRole.both.wire)) {
+      return ManagedMemberRole.both;
+    }
+    if (held.contains(ManagedMemberRole.use.wire)) return ManagedMemberRole.use;
+    return null;
+  }
 
   /// Whether this person is on the grid because their email is on its domain,
   /// rather than because anyone added them. Removing such a member takes nothing

@@ -40,3 +40,24 @@ GridAccess gridAccessFor(String networkType) {
   if (kPublicNetworkTypes.contains(type)) return GridAccess.anyone;
   return GridAccess.restricted;
 }
+
+/// The email domain a grid admits by domain alone, when the app can name it
+/// exactly — otherwise null.
+///
+/// Only one of the two domain types can be answered from what the app holds.
+/// The control plane keeps the gate in a different place per type
+/// (`domain_gate_for`, `grid_networks/store.py`):
+///
+/// - `private-domain` → the grid's **name** IS the domain. It is system-named
+///   and guarded by a unique index, so the name is the gate, and
+///   `credentials.toml` already carries it.
+/// - `domain-restricted` → `access_domain`, a column the app never receives:
+///   it is on `GET /managed-networks/{id}`, which the app does not call, and
+///   absent from `credentials.toml`. Null here rather than guessed — naming
+///   the *viewer's* domain on a grid gated to someone else's would be a
+///   confident lie about who can get in.
+String? gatedDomainFor({required String networkType, required String name}) {
+  if (!networkType.toLowerCase().contains('private-domain')) return null;
+  final domain = name.trim().toLowerCase();
+  return domain.isEmpty ? null : domain;
+}

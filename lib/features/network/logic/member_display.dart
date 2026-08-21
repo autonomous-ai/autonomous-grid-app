@@ -9,6 +9,8 @@
 /// while the eye lands on the part that differs.
 library;
 
+import '../../../infrastructure/api/models/managed_network_member.dart';
+
 /// The letter for a member's circle: the first character of the name in front
 /// of the `@`, upper-cased.
 ///
@@ -132,4 +134,32 @@ List<int> memberAvatarSlots(List<String> emails, int slots) {
     if (recent.length >= slots) recent.removeAt(0);
   }
   return assigned;
+}
+
+/// The second line of a person's row in the share sheet, or null when there is
+/// nothing true to put there.
+///
+/// Google Docs gives every row two lines — name, then email. Grid has only the
+/// email (the control plane returns no name), so the line below it is used for
+/// the one thing the roster does know and the sheet used to dump raw: whether
+/// this person is actually ON the grid yet.
+///
+/// **Being here by email domain is not one of those things.** It read
+/// "On this grid by email domain" under every single row of a domain grid —
+/// where, by definition, that is true of everybody — so it said nothing about
+/// the person it sat under. The fact belongs to the grid, and General access
+/// states it once: "Only people with an @autonomous.ai email can use this
+/// grid, or run a model for it."
+///
+/// Unknown states are printed as they arrive rather than guessed at. `status`
+/// is loosely typed server-side, and relabelling an unrecognised value as
+/// "Invited" would be inventing a fact about someone's access.
+String? memberStatusLine(ManagedNetworkMember member) {
+  final status = (member.status ?? '').trim();
+  if (status.isEmpty || status.toLowerCase() == 'active') return null;
+  return switch (status.toLowerCase()) {
+    'pending' || 'invited' => 'Invited — hasn’t joined yet',
+    'inactive' => 'No longer active on this grid',
+    _ => status,
+  };
 }
