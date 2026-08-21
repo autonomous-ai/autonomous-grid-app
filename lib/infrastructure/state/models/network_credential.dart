@@ -84,18 +84,24 @@ class NetworkCredential {
   }
 
   /// Plain-language label for [role] (badge text) — describes what you do on the
-  /// grid: a "provider" runs a model, a "consumer" uses one. Deliberately
+  /// grid: a "provider" shares a model, a "consumer" uses one. Deliberately
   /// avoids the words Public/Private, which are reserved for grid *visibility*
   /// ([visibilityLabel]) — reusing them for roles read as a settings collision.
   ///
-  /// **"Sharing" became "Running"** for the reason `ManagedMemberRole.label`
-  /// records: on a screen where sharing a grid means inviting people to it,
-  /// a badge saying "Sharing" reads as "this person can invite others" rather
-  /// than "this person is running a model here". Same verb as the picker, so a
-  /// badge and the control that sets it cannot describe one grant two ways.
+  /// **"Sharing", not "Running".** It was briefly "Running" (ed226253), to keep
+  /// the verb *share* off a screen where sharing a grid means inviting people
+  /// to it. The share sheet settled that question the other way — the grant is
+  /// "Share a computer", because what is shared is a **machine**, which nobody
+  /// can be invited to — and this badge follows it, so a grant and the control
+  /// that sets it describe one thing one way.
+  ///
+  /// It is also the word the rest of the app already uses for this and only
+  /// this: "Sharing this computer on your grid…", "Sharing 3 models with
+  /// team". One badge saying "Running" made those four strings the exception
+  /// rather than the rule.
   String get roleLabel => switch (role) {
     NetworkRole.admin => 'Owner',
-    NetworkRole.provider => 'Running',
+    NetworkRole.provider => 'Sharing',
     NetworkRole.consumer => 'Using',
     NetworkRole.member => 'Member',
   };
