@@ -18,10 +18,17 @@ void main() {
   Future<void> installHermes() =>
       AgentSkillInstaller(home: home.path).install(AgentTool.hermes);
 
+  // Not the whole registry: a card can be written for one agent — `grid-delegate`
+  // teaches a flag only Claude Code's spawner has — and installing for Hermes
+  // is not supposed to write it anywhere.
+  final hermesSkills = kBuiltinGridSkills.where(
+    (skill) => skill.appliesTo(AgentTool.hermes),
+  );
+
   test('installs every skill in the registry, card and scripts', () async {
     await installHermes();
 
-    for (final skill in kBuiltinGridSkills) {
+    for (final skill in hermesSkills) {
       expect(
         skillMd(skill.name).existsSync(),
         isTrue,
@@ -196,7 +203,7 @@ void main() {
     await installHermes();
     await installHermes();
 
-    for (final skill in kBuiltinGridSkills) {
+    for (final skill in hermesSkills) {
       expect(skillMd(skill.name).existsSync(), isTrue, reason: skill.name);
     }
   });
@@ -213,6 +220,17 @@ void main() {
         File('${codexSkills.path}/${skill.name}/SKILL.md').existsSync(),
         isTrue,
         reason: '${skill.name} is registered for Codex',
+      );
+    }
+    // And nothing the registry withheld: a card naming a flag Codex's runtime
+    // does not have would be advice it can only follow by inventing one.
+    for (final skill in kBuiltinGridSkills.where(
+      (s) => !s.appliesTo(AgentTool.codex),
+    )) {
+      expect(
+        File('${codexSkills.path}/${skill.name}/SKILL.md').existsSync(),
+        isFalse,
+        reason: '${skill.name} is not registered for Codex',
       );
     }
     // Nothing was written for an agent that wasn't asked for.

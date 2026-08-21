@@ -7,6 +7,7 @@ import '../../../shared/skills/agent_skill_home.dart';
 import 'agent_catalog.dart';
 import 'grid_ask_skill.dart';
 import 'grid_chart_skill.dart';
+import 'grid_delegate_skill.dart';
 import 'grid_host_skill.dart';
 import 'grid_loop_skill.dart';
 import 'grid_research_skill.dart';
@@ -105,6 +106,16 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     name: kGridAskSkillName,
     agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
     build: gridAskSkillFiles,
+  ),
+  // Claude Code alone, because it is the only agent here that can spawn one —
+  // and it spawns them in the background by default, into a process the app
+  // closes at the end of the reply. Same family as the schedulers the app
+  // refuses outright, but delegation is worth keeping, so this teaches the one
+  // flag that makes it land inside the turn instead of after it.
+  BuiltinGridSkill(
+    name: kGridDelegateSkillName,
+    agents: const {AgentTool.claude},
+    build: gridDelegateSkillFiles,
   ),
   // Every agent reaches for its own timer when asked to repeat something, and
   // every one of those dies with the turn that created it — a job reported as
