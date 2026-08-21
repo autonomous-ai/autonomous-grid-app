@@ -129,12 +129,13 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     if (_attachments.isNotEmpty) setState(_attachments.clear);
   }
 
-  /// How many pictures this mode takes: one to animate, three to edit, and a
-  /// vision chat's own limit for a plain message.
-  int _imageLimit(PlaygroundModality modality) => switch (modality) {
+  /// How many pictures this mode takes: one to animate, three to edit — and no
+  /// number at all for a plain message, where what runs out is the room in the
+  /// request body rather than a count (see [imageBudgetLeft]).
+  int? _imageLimit(PlaygroundModality modality) => switch (modality) {
     PlaygroundModality.video => 1,
     PlaygroundModality.image => 3,
-    PlaygroundModality.text => maxChatImages,
+    PlaygroundModality.text => null,
   };
 
   /// ⌘V / Ctrl+V: a screenshot becomes an attachment, copied images become
@@ -195,8 +196,17 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     MediaAttachment image,
     PlaygroundModality modality,
   ) async {
-    if (_attachments.length >= _imageLimit(modality)) return;
-    final fitted = await fitImageToBudget(image);
+    final limit = _imageLimit(modality);
+    if (limit != null && _attachments.length >= limit) return;
+    final left = imageBudgetLeft(_attachments);
+    if (left <= 0) {
+      _say(pictureBudgetFullMessage(image.filename));
+      return;
+    }
+    final fitted = await fitImageToBudget(
+      image,
+      budgetBytes: imageBudgetForNext(left),
+    );
     if (!mounted) return;
     if (fitted == null) {
       _sayOversized(image.filename);
@@ -208,11 +218,13 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   void _sayOversized(String filename) {
     final message = oversizedAttachmentMessage([filename]);
     if (message == null) return;
-    ToastScope.show(
-      context,
-      ToastSpec(message: message, severity: ToastSeverity.warning),
-    );
+    _say(message);
   }
+
+  void _say(String message) => ToastScope.show(
+    context,
+    ToastSpec(message: message, severity: ToastSeverity.warning),
+  );
 
   /// Drops pasted text in at the cursor, exactly where the field would have.
   void _insertText(String insert) {

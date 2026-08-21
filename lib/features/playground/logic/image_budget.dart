@@ -19,10 +19,32 @@ const int kImagePayloadBudget = 10 * 1000 * 1000;
 
 /// The raw-byte ceiling for one attached picture.
 ///
-/// A whole message's worth of them has to fit [kImagePayloadBudget] together,
-/// so the cap is that budget split [maxChatImages] ways: even four pictures at
-/// the limit make a request the relay accepts.
-const int kMaxAttachmentBytes = kImagePayloadBudget ~/ maxChatImages;
+/// A message carries as many pictures as fit [kImagePayloadBudget], not a fixed
+/// number of them — so this is what stops one 5K screenshot spending the whole
+/// budget on its own. A quarter of it: four pictures at the ceiling still make
+/// a request the relay accepts, and ordinary screenshots go nowhere near it.
+const int kMaxAttachmentBytes = kImagePayloadBudget ~/ 4;
+
+/// The picture bytes [attached] has already spent of [kImagePayloadBudget].
+int attachedImageBytes(Iterable<MediaAttachment> attached) =>
+    attached.fold(0, (sum, image) => sum + image.bytes.length);
+
+/// What is left of one message's picture budget once [attached] is on it.
+///
+/// The wire is what runs out, never a count: a row of small screenshots costs
+/// less than a single phone photo, and a limit written in pictures refused the
+/// fifth of five thumbnails while accepting one photo forty times its size.
+int imageBudgetLeft(Iterable<MediaAttachment> attached) =>
+    kImagePayloadBudget - attachedImageBytes(attached);
+
+/// The byte ceiling the next picture is shrunk towards, on a message with
+/// [left] of its budget free.
+///
+/// A full-size picture's worth while there is room for one, and whatever is
+/// left when there isn't — so the last picture that fits does so by being
+/// shrunk a little further rather than by being turned away.
+int imageBudgetForNext(int left) =>
+    left < kMaxAttachmentBytes ? left : kMaxAttachmentBytes;
 
 /// The largest picture file the app will read into memory to shrink.
 ///
@@ -116,6 +138,15 @@ String pngFilename(String name) {
   }
   return (keep: keep, dropped: dropped);
 }
+
+/// What to tell the user when [filename] had no room left on the message.
+///
+/// Not [oversizedAttachmentMessage]: the picture is fine and shrinking it would
+/// change nothing — the message is full, and the way on is to send it.
+String pictureBudgetFullMessage(String filename) =>
+    '“$filename” didn’t fit — this message already holds its '
+    '${kImagePayloadBudget ~/ 1000000} MB of pictures. Send it, then attach '
+    'the rest.';
 
 /// What to tell the user when [oversized] pictures were too big to send.
 ///

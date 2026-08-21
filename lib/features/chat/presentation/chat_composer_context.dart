@@ -117,6 +117,13 @@ class _ContextRow extends StatelessWidget {
   /// as a picture with some chips stuck to it.
   static const _thumbSize = 44.0;
 
+  /// How tall this row may grow before it scrolls: three runs of thumbnails.
+  ///
+  /// A message carries as many pictures as the wire holds rather than four, so
+  /// a folder of screenshots dropped at once would otherwise push the box you
+  /// type in off the bottom of the window.
+  static const _maxHeight = _thumbSize * 3 + 8 * 2;
+
   @override
   Widget build(BuildContext context) {
     if (attachments.isEmpty &&
@@ -125,39 +132,44 @@ class _ContextRow extends StatelessWidget {
         terminals.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      // Centred across, not baseline-aligned: a thumbnail is taller than a chip,
-      // and mixed heights hung from a common top edge read as something having
-      // gone wrong rather than as two kinds of thing side by side.
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        for (var i = 0; i < attachments.length; i++)
-          AttachmentThumb(
-            attachment: attachments[i],
-            size: _thumbSize,
-            onRemove: () => onRemoveAt(i),
-          ),
-        // Each file its own child of *this* wrap rather than a [FileChips] block
-        // inside it: nested, a run of eight documents would wrap as one lump and
-        // leave a hole beside the thumbnails.
-        for (var i = 0; i < files.length; i++)
-          FileChip(file: files[i], onRemove: () => onRemoveFileAt(i)),
-        if (snippets.isNotEmpty)
-          SnippetChip(snippets: snippets, onRemove: onRemoveSnippets),
-        for (final terminal in terminals)
-          ContextChip(
-            label: terminal.label,
-            // Says what will be sent, because that is what decides whether the
-            // chip is worth leaving on: the whole screen, not just the last
-            // command, and only the end of it on a long build.
-            tooltip:
-                'What this terminal is showing goes with your message — its '
-                'last $kTerminalCaptureLines lines at most.',
-            onRemove: () => onRemoveTerminal(terminal.tabId),
-          ),
-      ],
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: _maxHeight),
+      child: SingleChildScrollView(
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          // Centred across, not baseline-aligned: a thumbnail is taller than a chip,
+          // and mixed heights hung from a common top edge read as something having
+          // gone wrong rather than as two kinds of thing side by side.
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (var i = 0; i < attachments.length; i++)
+              AttachmentThumb(
+                attachment: attachments[i],
+                size: _thumbSize,
+                onRemove: () => onRemoveAt(i),
+              ),
+            // Each file its own child of *this* wrap rather than a [FileChips] block
+            // inside it: nested, a run of eight documents would wrap as one lump and
+            // leave a hole beside the thumbnails.
+            for (var i = 0; i < files.length; i++)
+              FileChip(file: files[i], onRemove: () => onRemoveFileAt(i)),
+            if (snippets.isNotEmpty)
+              SnippetChip(snippets: snippets, onRemove: onRemoveSnippets),
+            for (final terminal in terminals)
+              ContextChip(
+                label: terminal.label,
+                // Says what will be sent, because that is what decides whether the
+                // chip is worth leaving on: the whole screen, not just the last
+                // command, and only the end of it on a long build.
+                tooltip:
+                    'What this terminal is showing goes with your message — its '
+                    'last $kTerminalCaptureLines lines at most.',
+                onRemove: () => onRemoveTerminal(terminal.tabId),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

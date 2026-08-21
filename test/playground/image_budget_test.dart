@@ -1,8 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/image_budget.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
 import 'package:grid_app/features/playground/logic/playground_request.dart';
+
+MediaAttachment _picture(int bytes) =>
+    MediaAttachment(filename: 'shot.png', bytes: Uint8List(bytes));
 
 ChatMessage _withPictures(List<String> paths) => ChatMessage(
   role: ChatRole.user,
@@ -12,9 +17,14 @@ ChatMessage _withPictures(List<String> paths) => ChatMessage(
 
 void main() {
   group('how much picture one request may carry', () {
-    test('a full message of pictures at the cap still fits the relay body', () {
-      final onTheWire = maxChatImages * base64Size(kMaxAttachmentBytes);
-      expect(onTheWire, lessThan(kMaxRequestBytes));
+    test('a message filled to its picture budget still fits the relay '
+        'body', () {
+      expect(base64Size(kImagePayloadBudget), lessThan(kMaxRequestBytes));
+    });
+
+    test('no single picture may spend the whole budget, so a message can '
+        'always hold more than one', () {
+      expect(kMaxAttachmentBytes, lessThan(kImagePayloadBudget));
     });
 
     test('base64 is measured, not guessed — it costs a third on top', () {
@@ -22,6 +32,31 @@ void main() {
       // Padded up to the next group of four, exactly as the encoder does.
       expect(base64Size(4), 8);
       expect(base64Size(1000000), 1333336);
+    });
+  });
+
+  group('room for the next picture', () {
+    test('what a message can still take is measured in bytes, so a row of '
+        'small screenshots is never turned away for being many', () {
+      final twenty = [for (var i = 0; i < 20; i++) _picture(100 * 1000)];
+
+      expect(imageBudgetLeft(twenty), greaterThan(0));
+    });
+
+    test('a message full of pictures has nothing left, whatever the count', () {
+      final four = [for (var i = 0; i < 4; i++) _picture(kMaxAttachmentBytes)];
+
+      expect(imageBudgetLeft(four), 0);
+    });
+
+    test('the next picture is shrunk to what is left, not refused, once the '
+        'budget is nearly spent', () {
+      expect(imageBudgetForNext(300 * 1000), 300 * 1000);
+    });
+
+    test('an empty message shrinks a picture to the per-picture ceiling, so '
+        'one photo cannot crowd out the rest', () {
+      expect(imageBudgetForNext(kImagePayloadBudget), kMaxAttachmentBytes);
     });
   });
 

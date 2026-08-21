@@ -513,16 +513,23 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final oversized = <String>[];
 
     for (final picture in pictures) {
-      if (_attachments.length >= maxChatImages) {
+      final left = imageBudgetLeft(_attachments);
+      if (left <= 0) {
         overflow.add(picture.filename);
         continue;
       }
+      final room = imageBudgetForNext(left);
       final fitted = await fitImageToBudget(
         MediaAttachment(filename: picture.filename, bytes: picture.bytes),
+        budgetBytes: room,
       );
       if (!mounted) return;
       if (fitted == null) {
-        oversized.add(picture.filename);
+        // Too big for what is left of this message is the message being full,
+        // not the picture being wrong — see [readAttachments].
+        (room < kMaxAttachmentBytes ? overflow : oversized).add(
+          picture.filename,
+        );
         continue;
       }
       setState(() => _attachments.add(fitted));
@@ -538,7 +545,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   Future<void> _attachPaths(Iterable<String> paths) async {
     final added = await readAttachments(
       paths,
-      imageBudget: maxChatImages - _attachments.length,
+      imageBytesBudget: imageBudgetLeft(_attachments),
       fileBudget: maxChatFiles - _files.length,
     );
     if (!mounted) return;

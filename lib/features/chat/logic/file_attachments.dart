@@ -59,12 +59,14 @@ class ComposerAttachments {
 /// pictures as attachments, documents as [ChatFile]s with their text read out,
 /// and anything that fits neither as a path to mention.
 ///
-/// [imageBudget] and [fileBudget] are the slots still free on this message.
+/// [imageBytesBudget] is the picture budget still free on this message (see
+/// [imageBudgetLeft]) and [fileBudget] the document slots left.
 Future<ComposerAttachments> readAttachments(
   Iterable<String> paths, {
-  required int imageBudget,
+  required int imageBytesBudget,
   required int fileBudget,
 }) async {
+  var imageBytesLeft = imageBytesBudget;
   final images = <MediaAttachment>[];
   final files = <ChatFile>[];
   final mentioned = <String>[];
@@ -80,17 +82,26 @@ Future<ComposerAttachments> readAttachments(
     }
 
     if (isImageFilename(trimmed)) {
-      if (images.length >= imageBudget) {
+      // Pictures are bounded by what the wire holds, not by how many there are:
+      // a message takes as many as fit, and only runs out of room on bytes.
+      if (imageBytesLeft <= 0) {
         overflow.add(fileNameOf(trimmed));
         continue;
       }
-      final (:image, :tooBig) = await _readImage(trimmed);
+      final room = imageBudgetForNext(imageBytesLeft);
+      final (:image, :tooBig) = await _readImage(trimmed, budgetBytes: room);
       if (image != null) {
         images.add(image);
+        imageBytesLeft -= image.bytes.length;
         continue;
       }
       if (tooBig) {
-        oversized.add(fileNameOf(trimmed));
+        // A picture that would have fitted an empty message but not what is
+        // left of this one didn't do anything wrong — that is overflow, and
+        // telling the user to crop a perfectly ordinary screenshot would send
+        // them off to fix the wrong thing.
+        final crowdedOut = room < kMaxAttachmentBytes;
+        (crowdedOut ? overflow : oversized).add(fileNameOf(trimmed));
         continue;
       }
       // Unreadable (a sandbox denial, a file that moved between the drop and
@@ -130,8 +141,9 @@ String? attachmentOverflowMessage(List<String> overflow) {
   final what = rest == 0
       ? '“${overflow.first}” wasn’t added'
       : '“${overflow.first}” and $rest more weren’t added';
-  return '$what — a message holds up to $maxChatImages images '
-      'and $maxChatFiles files.';
+  return '$what — a message holds up to '
+      '${kImagePayloadBudget ~/ 1000000} MB of pictures and $maxChatFiles '
+      'files.';
 }
 
 /// Opens the system picker for everything a message can carry — pictures and
@@ -195,12 +207,15 @@ Future<DocumentText?> _extract(File file, String name, int size) async {
   }
 }
 
-/// Reads the picture at [path], shrunk to what one message may carry.
+/// Reads the picture at [path], shrunk to fit [budgetBytes].
 ///
 /// `tooBig` separates the two ways this comes back empty-handed: a picture the
 /// app can't get under the wire's limit (say so — the user can crop it) and a
 /// file it couldn't read at all (mention the path instead).
-Future<({MediaAttachment? image, bool tooBig})> _readImage(String path) async {
+Future<({MediaAttachment? image, bool tooBig})> _readImage(
+  String path, {
+  required int budgetBytes,
+}) async {
   final file = File(path);
   try {
     // Never read a huge file into memory just to find out it can't be sent:
@@ -212,7 +227,7 @@ Future<({MediaAttachment? image, bool tooBig})> _readImage(String path) async {
       filename: fileNameOf(path),
       bytes: await file.readAsBytes(),
     );
-    final fitted = await fitImageToBudget(read);
+    final fitted = await fitImageToBudget(read, budgetBytes: budgetBytes);
     return (image: fitted, tooBig: fitted == null);
   } on FileSystemException {
     return (image: null, tooBig: false);

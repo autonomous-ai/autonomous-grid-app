@@ -55,9 +55,6 @@ bool isImageFilename(String name) {
       kImageExtensions.contains(name.substring(dot + 1).toLowerCase());
 }
 
-/// How many pictures one message may carry to a vision model.
-const int maxChatImages = 4;
-
 /// An image the user attached for an edit / image-to-video request. Held in
 /// memory as raw bytes until it's encoded into a request payload.
 class MediaAttachment {
