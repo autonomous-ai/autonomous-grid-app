@@ -448,28 +448,40 @@ const int _base64CharsPerToken = 32;
 /// What the pictures in one tool result cost the context, estimated from the
 /// payload itself, because the reported figure does not count them.
 ///
-/// Measured 2026-08-21 on the office grid (session `b3959598`, the turn that
-/// drew autonomous-grid-app#47's successor): a turn read 31 screenshots and
-/// [claudeContextTokens] reported 35978 tokens on its first request and 40593 on
-/// its last — it went *down*, from 39525 to 37506, across the ten image reads in
-/// the middle. The engine then refused the next request saying the prompt held
-/// at least 236545. That gap is ~196000 tokens of pictures that nothing on the
-/// wire ever mentioned, and **both** compaction paths read only the figure that
-/// missed them: Claude Code's own auto-compact (threshold 167000 on that
-/// config) and this app's `needsCompaction` (ceiling 204800). Neither could
-/// fire, and the conversation died of a context both believed was 40k.
+/// **Measured against the relay itself, 2026-08-21**, three `POST /v1/messages`
+/// on `Qwen/Qwen3.8-27B-FP8-Workshop`, reading `usage.input_tokens` back:
+///
+/// | request | reported |
+/// |---|---|
+/// | `hi` | 2 |
+/// | `hi` + a 176 KB JPEG (2838×1030) | **2** |
+/// | ~7000 tokens of prose | 6944 |
+///
+/// Text is counted exactly. A picture is counted as **nothing at all** — the
+/// same request either side of one moved the figure by zero tokens. That is why
+/// this is added to [claudeContextTokens] rather than replacing it: the reported
+/// number is true about the half it covers.
+///
+/// What it costs: the chat that died the same day (session `b3959598`) read 31
+/// screenshots, and the engine refused the next request saying the prompt held
+/// at least 236545 while the last report was 40593 — ~196000 tokens of pictures
+/// nothing on the wire mentioned, ~6300 a picture. **Both** compaction paths read
+/// only the figure that missed them, Claude Code's own auto-compact (threshold
+/// 167000 on that config) and this app's `needsCompaction` (ceiling 204800), so
+/// neither could fire and the conversation died of a context both believed was
+/// 40k.
 ///
 /// So the app counts what it can see go past: the base64 in the `tool_result`,
 /// at [_base64CharsPerToken]. Those 31 images carried 7146216 characters over
-/// ~196000 tokens — nearer 36 to a token — so the divisor here deliberately
-/// reads **high**, and the two ways to be wrong are not symmetric: too high
-/// summarizes a conversation sooner than it had to, too low loses the turn, the
-/// session and the work in it (the same reasoning as `kAssumedContextWindow`).
+/// that ~196000 — nearer 36 to a token — so the divisor here deliberately reads
+/// **high**, and the two ways to be wrong are not symmetric: too high summarizes
+/// a conversation sooner than it had to, too low loses the turn, the session and
+/// the work in it (the same reasoning as `kAssumedContextWindow`).
 ///
-/// **`TODO(BE)`: this is a guess standing in for a number the relay has.** An
-/// engine that counts image tokens and reports them makes every line of this
-/// unnecessary; until then no caller can know what a chat with pictures in it
-/// really holds.
+/// **`TODO(BE)`: this is a guess standing in for a number the engine already
+/// counts.** A relay that reports image tokens in `usage` makes every line of
+/// this unnecessary; until then no caller can know what a chat with pictures in
+/// it really holds.
 int claudeMediaTokens(Object? content) {
   if (content is! List) return 0;
   var total = 0;
