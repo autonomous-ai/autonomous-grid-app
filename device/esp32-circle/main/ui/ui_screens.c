@@ -355,6 +355,24 @@ static void open_reader_text(const char *full); // swipe-up → open the full-te
 static void open_agent_detail(const char *proj_id); // notification tap → focus that agent AND open its detail
 static void reader_close(lv_event_t *e); // swipe-down at top → back to projects (defined below)
 static void voice_overlay_set(bool on);  // voice: dark overlay + free/restore tile content (RAM headroom)
+static void notif_pill_tap(lv_event_t *e);       // the bell → open the drawer (defined below)
+static void switch_close(void);                  // close the picker without picking (defined below)
+
+// ---- agent switcher ----
+// A picker over the MOST RECENT agents, opened by PULLING DOWN from the top of an agent tile. Swiping the
+// carousel is the only other way across, and it is one tile at a time: with a few dozen chats, reaching the
+// one you want means passing every one you don't. The list is the app's own order — see switch_rebuild.
+//
+// It took the pull-down from the notification drawer, and the drawer moved to a tap on the bell. The two
+// had been fighting for the same 44px band at the top of the face: whichever control sat there was inside
+// the drawer's gesture, and a bell that only needs a tap has no business owning a whole edge of a round
+// screen while the thing you reach for constantly needs a button.
+#define SWITCH_LIST_MAX 10
+static lv_obj_t *s_switch_screen;               // full-screen overlay on the top layer, hidden by default
+static lv_obj_t *s_switch_list;                 // the scrollable column of rows inside it
+// The ids currently drawn, indexed by the row's user_data. Fixed storage rather than a strdup per row:
+// the array's life IS the picker's, and rows are rebuilt on every open.
+static char s_switch_ids[SWITCH_LIST_MAX][ID_MAX];
 
 typedef struct {
     char id[48];
@@ -1504,16 +1522,22 @@ void ui_init(void)
     // Notification pill (top-mid): a "🔔 N" unread badge on the projects screen. Pure indicator (open the
     // drawer by pulling down from the top edge — see touch.c). Created before s_dim so the dim overlay
     // still darkens it.
+    // THE BELL IS A BUTTON NOW. It used to be a read-only badge and the drawer opened by pulling down from
+    // the top; the pull-down became the agent switcher, which is reached far more often than a list of
+    // finished turns, so the drawer moved onto the badge that was already announcing it.
     s_notif_pill = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_notif_pill);
-    lv_obj_clear_flag(s_notif_pill, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(s_notif_pill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_notif_pill, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_notif_pill, notif_pill_tap, LV_EVENT_CLICKED, NULL);
     lv_obj_set_size(s_notif_pill, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(s_notif_pill, lv_color_hex(0x006fff), 0);   // Figma blue 🔔 badge
     lv_obj_set_style_bg_opa(s_notif_pill, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_notif_pill, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_pad_hor(s_notif_pill, 13, 0);
     lv_obj_set_style_pad_ver(s_notif_pill, 4, 0);
-    lv_obj_align(s_notif_pill, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_align(s_notif_pill, LV_ALIGN_TOP_MID, 0, 22);   // where the switcher's mark briefly sat
+    lv_obj_set_style_bg_opa(s_notif_pill, LV_OPA_80, LV_STATE_PRESSED);   // it presses now, so it says so
     lv_obj_set_flex_flow(s_notif_pill, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_notif_pill, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(s_notif_pill, 6, 0);
@@ -1603,7 +1627,7 @@ void ui_init(void)
     lv_obj_remove_flag(s_dim, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_dim, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Voice-mode overlay (Figma "Gọi voice, có lớp overlay"): a dark full-screen layer shown while
+    // Voice-mode overlay (the Figma frame with the dimmed voice call): a dark full-screen layer shown while
     // recording/uploading, sitting BEHIND the mic/dots/pulse voice indicator. voice_overlay_set() shows it
     // AND frees all tile content while it's up, so the PCM capture keeps its internal-RAM headroom.
     s_voice_overlay = lv_obj_create(lv_layer_top());
@@ -2702,6 +2726,14 @@ bool ui_action_row_hit(uint16_t x, uint16_t y)
         for (uint32_t i = 0; i < n; i++)
             if (lv_obj_hit_test(lv_obj_get_child(s_agent_acts, i), &p)) return true;
     }
+    // The notification bell. Claiming it here is not an optimisation — it is the ONLY reason it can be
+    // tapped at all: it sits at the very top of the face, inside the band touch.c reads as a pull-down,
+    // and a captured press goes to the control instead of to the gesture. Without this the bell would be
+    // a button you cannot press, standing in the middle of the swipe that opens the switcher.
+    //
+    // Not while the drawer is already open, when everything on the screen belongs to it.
+    if (!s_notif_open && s_notif_pill && !lv_obj_has_flag(s_notif_pill, LV_OBJ_FLAG_HIDDEN) &&
+        lv_obj_hit_test(s_notif_pill, &p)) return true;
     return false;
 }
 
@@ -2834,6 +2866,7 @@ static inline int32_t ctl_row_y(void)
 // Total vertical band the floating chip row occupies above the name.
 static inline int32_t ctl_band_h(void) { return ctl_pill_h() + CTL_NAME_GAP; }
 
+
 // Is the row actually on screen for this agent? It is hidden on local machines and when the feature is off,
 // and the working layout has to reserve its band only when it is really there.
 static inline bool ctl_row_shown(tile_t *p)
@@ -2850,6 +2883,10 @@ static inline bool ctl_row_shown(tile_t *p)
 // to pass its own hit test.
 static void header_ext_draw_cb(lv_event_t *e)
 {
+    // This number is the reach of everything hanging above the header, and anything further out than it is
+    // clipped away — drawn nowhere and tappable nowhere, with no warning. A switcher mark briefly lived a
+    // band higher and was invisible for exactly this reason. Add a line above the header and this has to
+    // grow with it.
     lv_event_set_ext_draw_size(e, ctl_band_h());
 }
 
@@ -3192,6 +3229,7 @@ static void build_shell(tile_t *p)
     model_chip_paint(p);
     effort_chip_paint(p);
     p->ctl_row = ctl;
+
     // ALWAYS SHOWN. The reference gated this row on the machine being a REMOTE (adapter) one, because that
     // is where its runtime model/effort profile applied. There is one machine here and no profile, and
     // `agent` + `model` come with every project (docs/panel-protocol.md, the project shape), so the gate
@@ -3760,7 +3798,8 @@ bool ui_reader_is_open(void)
 int ui_notif_pull_zone_px(void)
 {
     // 44 on a project tile so the chip row above it still gets taps; the wider 90 everywhere else,
-    // including Settings, whose top holds nothing to protect.
+    // including Settings, whose top holds nothing to protect. The bell sits inside this band on every one
+    // of them and is exempt by ui_action_row_hit — a press that starts on it is a tap, not a pull.
     return on_project_page() ? 44 : 90;
 }
 
@@ -3795,6 +3834,155 @@ void ui_focus_tile(const char *chat_id)
         rebuild_page_dots();
     }
     display_unlock();
+}
+
+// ---- the agent switcher's picker ----
+
+bool ui_switch_is_open(void)
+{
+    return s_switch_screen && !lv_obj_has_flag(s_switch_screen, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void switch_close(void)
+{
+    if (s_switch_screen) lv_obj_add_flag(s_switch_screen, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void switch_bg_tap(lv_event_t *e) { (void)e; switch_close(); }
+
+// Picking is the same move a swipe makes, and it has to stay that way: ui_focus_tile centres the tile, and
+// apply_active_from_col is what STAGES the focus message so the window follows. Skipping the second would
+// leave the panel looking at one chat and the desktop at another — the two screens are one desk.
+static void switch_row_tap(lv_event_t *e)
+{
+    // current_target, not target: the row is what carries the index, and a click that landed on one of its
+    // labels bubbles up with target still pointing at the label.
+    int idx = (int)(intptr_t)lv_obj_get_user_data(lv_event_get_current_target(e));
+    if (idx < 0 || idx >= SWITCH_LIST_MAX) return;
+    char id[ID_MAX];
+    snprintf(id, sizeof id, "%s", s_switch_ids[idx]);   // copy: closing rebuilds nothing, but a pick might
+    switch_close();
+    if (!id[0]) return;
+    ui_focus_tile(id);
+    display_lock();
+    apply_active_from_col();
+    display_unlock();
+}
+
+// Fill the picker from the FIRST tiles in the list.
+//
+// That is already "the agents you touched most recently" and not an approximation of it: the tile order is
+// grid-app's own chat order, pushed whole whenever it moves — pinned first, then most recently spoken in.
+// Sorting here would invent a second opinion about recency out of data this device does not have, and it
+// would disagree with the sidebar the moment a chat was pinned. Caller holds the lock.
+static void switch_rebuild(void)
+{
+    if (!s_switch_list) return;
+    lv_obj_clean(s_switch_list);
+    memset(s_switch_ids, 0, sizeof(s_switch_ids));
+    int n = s_tile_count < SWITCH_LIST_MAX ? s_tile_count : SWITCH_LIST_MAX;
+    for (int i = 0; i < n; i++) {
+        tile_t *t = &s_tiles[i];
+        snprintf(s_switch_ids[i], ID_MAX, "%s", t->id);
+        // ...and nothing is "here" when the page behind the picker is the Overview or Settings, which name
+        // no agent. Marking one anyway would point at whichever tile was last centred.
+        bool here = (i == s_active_idx) && !s_overview_active && !s_settings_active;
+
+        lv_obj_t *row = lv_button_create(s_switch_list);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_color(row, COL_CARD, 0);
+        lv_obj_set_style_bg_opa(row, here ? LV_OPA_COVER : LV_OPA_60, 0);
+        lv_obj_set_style_radius(row, 16, 0);
+        lv_obj_set_style_border_width(row, here ? 1 : 0, 0);
+        lv_obj_set_style_border_color(row, COL_ACCENT, 0);
+        lv_obj_set_style_shadow_width(row, 0, 0);
+        lv_obj_set_style_pad_hor(row, 16, 0);
+        lv_obj_set_style_pad_ver(row, 10, 0);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(row, 2, 0);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_user_data(row, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(row, switch_row_tap, LV_EVENT_CLICKED, NULL);
+
+        // The chat's own name, then the project under it — the same two lines the tile leads with, so the
+        // list reads as the tiles it is a shortcut through. A working agent says so in green.
+        // A size up on both lines, and centred. 24 -> med 28 for the name: 29 is what "+5" asks for and no
+        // such face is built, so it takes the nearest one — which is also the weight every other title on
+        // this panel wears (the tile's own name is med 38, the reader's med 32). The subtitle lands on
+        // reg 25 exactly.
+        lv_obj_t *nm = lv_label_create(row);
+        lv_obj_set_style_text_font(nm, &geist_med_28, 0);
+        lv_obj_set_style_text_color(nm, t->busy_model ? COL_VOICE : COL_FG, 0);
+        lv_obj_set_width(nm, lv_pct(100));
+        lv_obj_set_style_text_align(nm, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
+        lv_label_set_text(nm, t->name[0] ? t->name : "Untitled");
+        if (t->project[0]) {
+            lv_obj_t *pr = lv_label_create(row);
+            lv_obj_set_style_text_font(pr, &geist_reg_25, 0);
+            lv_obj_set_style_text_color(pr, COL_MUTED, 0);
+            lv_obj_set_width(pr, lv_pct(100));
+            lv_obj_set_style_text_align(pr, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_long_mode(pr, LV_LABEL_LONG_DOT);
+            lv_label_set_text(pr, t->project);
+        }
+    }
+    if (n == 0) make_label(s_switch_list, "No agents yet", COL_MUTED, &geist_med_28);
+}
+
+static void switch_build(void)
+{
+    if (s_switch_screen) return;
+    s_switch_screen = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_switch_screen);
+    lv_obj_set_size(s_switch_screen, lv_pct(100), lv_pct(100));
+    lv_obj_set_pos(s_switch_screen, 0, 0);
+    lv_obj_set_style_bg_color(s_switch_screen, COL_BG, 0);
+    lv_obj_set_style_bg_opa(s_switch_screen, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_switch_screen, LV_OBJ_FLAG_CLICKABLE);     // empty-area tap closes it
+    lv_obj_add_event_cb(s_switch_screen, switch_bg_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(s_switch_screen, LV_OBJ_FLAG_HIDDEN);
+
+    // NO CLOSE BUTTON. A tap on the empty area closes it, and on this face there is always empty area to
+    // tap: the list is SAFE_CONTENT_W wide inside a 466px circle, so ~40px of backdrop runs down each side
+    // however many rows there are, plus whatever is left above and below.
+    //
+    // The rows live in a column that is CENTRED rather than pinned to the top, which is only possible now
+    // that nothing sits above them. Height is content-driven with a ceiling, so a short list sits in the
+    // middle of the face instead of hanging from a fixed box, and a full one clamps and scrolls.
+    s_switch_list = lv_obj_create(s_switch_screen);
+    lv_obj_remove_style_all(s_switch_list);
+    lv_obj_set_width(s_switch_list, SAFE_CONTENT_W);
+    lv_obj_set_height(s_switch_list, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(s_switch_list, 360, 0);   // 360 keeps the end rows inside the round face
+    lv_obj_center(s_switch_list);
+    lv_obj_set_flex_flow(s_switch_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_switch_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(s_switch_list, 8, 0);
+    lv_obj_set_scroll_dir(s_switch_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_switch_list, LV_SCROLLBAR_MODE_OFF);
+}
+
+// The bell's tap. A plain wrapper so the pill can stay a bare object rather than growing a second
+// meaning: everything about WHEN the drawer may open already lives in ui_notif_open.
+static void notif_pill_tap(lv_event_t *e) { (void)e; ui_notif_open(); }
+
+void ui_switch_open(void)
+{
+    // From ANY carousel page, not only an agent tile: the gesture it inherited opened the drawer on the
+    // Overview and on Settings too, and a list of recent agents is if anything more useful from the home
+    // page than from one of the agents themselves.
+    if (voice_active() || display_is_asleep() || lv_screen_active() != scr_projects) return;
+    display_lock();
+    switch_build();
+    switch_rebuild();
+    lv_obj_clear_flag(s_switch_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_switch_screen);
+    lv_obj_scroll_to_y(s_switch_list, 0, LV_ANIM_OFF);
+    display_unlock();
+    ESP_LOGI(TAG, "agent switcher: %d recent", s_tile_count < SWITCH_LIST_MAX ? s_tile_count : SWITCH_LIST_MAX);
 }
 
 // "Home" gesture (bottom-edge swipe-up, from touch.c): jump to the Overview tile (ring 0) from ANY screen.
@@ -3905,7 +4093,7 @@ static void notif_badge_apply(void)
     if (!s_notif_pill) return;
     int n = notif_count();
     bool show = n > 0 && !display_is_asleep() && lv_screen_active() == scr_projects
-                && !s_notif_open;   // shown on the Overview home too
+                && !s_notif_open && !ui_switch_is_open();   // shown on the Overview home too
     set_hidden(s_notif_pill, !show);
     if (show && s_notif_pill_lbl) { char b[8]; snprintf(b, sizeof b, "%d", n); lv_label_set_text(s_notif_pill_lbl, b); }
 }
@@ -4137,7 +4325,7 @@ static bool cp_in_font(uint32_t cp)
 {
     if (cp == '\n' || cp == '\t') return true;
     if (cp >= 0x20 && cp <= 0x7E) return true;        // ASCII
-    if (cp >= 0xA0 && cp <= 0x24F) return true;       // Latin-1 + Extended-A/B (đ ơ ư …)
+    if (cp >= 0xA0 && cp <= 0x24F) return true;       // Latin-1 + Extended-A/B
     if (cp >= 0x1E00 && cp <= 0x1EFF) return true;    // Latin Extended Additional (Vietnamese)
     if (cp >= 0x2013 && cp <= 0x2026) return true;    // – — ' ' " " …
     if (cp == 0x203A || cp == 0x2713 || cp == 0x2717) return true; // › ✓ ✗
@@ -5299,6 +5487,11 @@ static void voice_start_impl(voice_cmd_t cmd)
     // the transcript itself and ask. An empty string would be a project id, one that matches nothing.
     voice_start(route ? NULL : pid, cmd);
 }
+
+// Double-tap on an agent tile / its reader (touch.c). The Overview and the tiles' own action rows call
+// voice_start_impl directly with the command they mean; this is the gesture's way in, and it means the
+// plain kind — a Goal or a Loop is a deliberate thing you pick, not something a gesture should guess.
+void ui_voice_start(void) { voice_start_impl(VOICE_CMD_NONE); }
 
 void ui_voice_stop(void)
 {

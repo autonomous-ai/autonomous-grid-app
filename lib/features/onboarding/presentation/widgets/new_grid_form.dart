@@ -122,7 +122,6 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
           ),
           const SizedBox(height: 14),
           GridTypePicker(
-            label: 'Who can join',
             value: selected,
             types: types,
             domain: domain,

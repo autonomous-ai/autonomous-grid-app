@@ -38,19 +38,18 @@ enum ManagedNetworkType {
   restricted(
     'permissioned-public',
     'Invite only',
-    'Only people you add can use this grid.',
+    'Only people you invite can use this grid, or run a model for it.',
   ),
   domain(
     'domain-restricted',
     'My domain',
-    'Only people with an email on your domain can use this grid — including '
-        'anyone added earlier on a different one.',
+    'Only people with an email on your domain can use this grid, or run a '
+        'model for it — including anyone invited earlier on a different one.',
   ),
   anyone(
     'permissionless',
     'Anyone',
-    'Anyone signed in to Grid can use this grid, and run a model on their own '
-        'computer for it.',
+    'Anyone signed in to Grid can use this grid, or run a model for it.',
   );
 
   const ManagedNetworkType(this.wire, this.label, this.description);
@@ -61,7 +60,22 @@ enum ManagedNetworkType {
   /// Short name for the segmented picker.
   final String label;
 
-  /// One line under the picker saying what the rule permits.
+  /// The plain-language explanation under the picker — who gets to *use* the
+  /// grid, and who gets to *supply* it.
+  ///
+  /// It read "Whitelist providers only — consumers can join freely", which is
+  /// the wire contract written out: three words a user has never met (§5), for
+  /// the one choice on this form they cannot undo by clicking around.
+  ///
+  /// The sentences are deliberately parallel and differ only where the rules
+  /// differ, so a person comparing them sees the actual decision rather than
+  /// three paragraphs to read.
+  ///
+  /// **"Share a computer" became "run a model for it"** after a user read the
+  /// first one as inviting people — which, inside a dialog titled *Share* whose
+  /// top half does exactly that, is the obvious reading. "Run a model" is the
+  /// app's own phrase from the grid-power pill, and it cannot be confused with
+  /// handing out access.
   final String description;
 
   /// The API default when `network_type` is omitted, and the safe pick for a

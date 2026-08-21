@@ -28,7 +28,7 @@ class GridTypePicker extends StatelessWidget {
     required this.types,
     required this.enabled,
     required this.onChanged,
-    this.label = 'Type',
+    this.label = 'Who can join',
     this.fill,
     this.domain,
   });
@@ -41,8 +41,13 @@ class GridTypePicker extends StatelessWidget {
   final bool enabled;
   final ValueChanged<ManagedNetworkType> onChanged;
 
-  /// Field label. The share sheet already has "General access" above it, so it
-  /// passes an empty string rather than saying the same thing twice.
+  /// Field label, defaulted so both create screens ask in the same words (§5).
+  ///
+  /// It was "Type", which named nothing — the answer to "type of what?" lived
+  /// only in the line underneath — while the first-run screen asked the same
+  /// question differently. They already share this widget; sharing the words is
+  /// the rest of it. The share sheet passes an empty string: it has "General
+  /// access" as a heading already, and saying it twice is not saying it better.
   final String label;
 
   /// Surface override for a field on a raised row — see [AppSelectField.fill].
