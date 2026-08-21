@@ -449,15 +449,20 @@ class PanelController {
   /// Said out loud rather than trimmed quietly: a panel showing eleven of
   /// thirteen chats looks exactly like a panel showing all of them, so the two
   /// are only ever told apart here.
+  /// The last trim reported, so a steady state is said once instead of every
+  /// mirror. The mirror runs on every tile change — 1,351 identical warnings in
+  /// one afternoon (2026-08-21) was a quarter of the log file, and a log that
+  /// repeats itself that hard is one nobody reads the rest of.
+  String? _trimSaid;
+
   List<PanelChat> _tilesThatFit(List<PanelChat> tiles) {
     final kept = panelTilesThatFit(tiles);
-    if (kept.length != tiles.length) {
-      _log.warn(
-        'panel',
-        'Tiles trimmed to fit one frame: sent ${kept.length} of '
-            '${tiles.length}',
-      );
-    }
+    final said = kept.length == tiles.length
+        ? null
+        : 'Tiles trimmed to fit one frame: sent ${kept.length} of '
+              '${tiles.length}';
+    if (said != null && said != _trimSaid) _log.warn('panel', said);
+    _trimSaid = said;
     return kept;
   }
 
