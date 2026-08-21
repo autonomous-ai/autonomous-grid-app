@@ -11,6 +11,7 @@ import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../../shared/widgets/modality_mark.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
@@ -18,6 +19,8 @@ import '../logic/chat_controller.dart';
 import '../logic/chat_message.dart';
 import '../logic/local_test_state.dart';
 import '../logic/playground_models.dart';
+import '../logic/image_budget.dart';
+import '../logic/image_shrink.dart';
 import '../logic/playground_request.dart';
 import 'attachment_bar.dart';
 import 'chat_bubble.dart';
@@ -143,7 +146,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     final modality = _modalityFor(ref.read(playgroundModelsProvider));
     switch (paste) {
       case PastedImage(:final bytes, :final filename):
-        _attachImage(
+        await _attachImage(
           MediaAttachment(filename: filename, bytes: bytes),
           modality,
         );
@@ -166,18 +169,49 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   ) async {
     for (final path in paths) {
       if (!isImageFilename(path)) continue;
-      final bytes = await File(path).readAsBytes();
+      final file = File(path);
+      // Refused unopened past the cap: shrinking decodes the picture first, and
+      // reading a 200 MB file to find that out would stop the window.
+      if (await file.length() > kMaxImageFileBytes) {
+        if (!mounted) return;
+        _sayOversized(fileNameOf(path));
+        continue;
+      }
+      final bytes = await file.readAsBytes();
       if (!mounted) return;
-      _attachImage(
+      await _attachImage(
         MediaAttachment(filename: fileNameOf(path), bytes: bytes),
         modality,
       );
     }
   }
 
-  void _attachImage(MediaAttachment image, PlaygroundModality modality) {
+  /// Attaches one picture, shrunk to what a request may carry.
+  ///
+  /// The same ceiling the Chat tab attaches under: a picture rides in the
+  /// request body as base64 text, and one 5K screenshot is bigger on its own
+  /// than the whole body the relay accepts.
+  Future<void> _attachImage(
+    MediaAttachment image,
+    PlaygroundModality modality,
+  ) async {
     if (_attachments.length >= _imageLimit(modality)) return;
-    setState(() => _attachments.add(image));
+    final fitted = await fitImageToBudget(image);
+    if (!mounted) return;
+    if (fitted == null) {
+      _sayOversized(image.filename);
+      return;
+    }
+    setState(() => _attachments.add(fitted));
+  }
+
+  void _sayOversized(String filename) {
+    final message = oversizedAttachmentMessage([filename]);
+    if (message == null) return;
+    ToastScope.show(
+      context,
+      ToastSpec(message: message, severity: ToastSeverity.warning),
+    );
   }
 
   /// Drops pasted text in at the cursor, exactly where the field would have.

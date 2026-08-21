@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -28,6 +29,8 @@ import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_file.dart';
+import '../../playground/logic/image_budget.dart';
+import '../../playground/logic/image_shrink.dart';
 import '../../../infrastructure/panel/panel_message.dart' show PanelScrollPhase;
 import '../../panel/logic/panel_scroll.dart';
 import '../../playground/logic/playground_models.dart';
@@ -462,15 +465,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     if (!mounted) return;
     switch (paste) {
       case PastedImage(:final bytes, :final filename):
-        if (_attachments.length >= maxChatImages) {
-          _sayOverflow([filename]);
-          return;
-        }
-        setState(
-          () => _attachments.add(
-            MediaAttachment(filename: filename, bytes: bytes),
-          ),
-        );
+        await _attachImageBytes([(filename: filename, bytes: bytes)]);
       case PastedFiles(:final paths):
         await _attachPaths(paths);
       case PastedText(:final text):
@@ -493,18 +488,47 @@ class _ChatViewState extends ConsumerState<ChatView> {
     ];
     if (onDisk.isNotEmpty) await _attachPaths(onDisk);
 
+    final fromWeb = <({String filename, Uint8List bytes})>[];
     for (final item in items) {
       if (item.path.trim().isNotEmpty) continue;
       if (!isImageFilename(item.name)) continue;
-      if (_attachments.length >= maxChatImages) continue;
-      final bytes = await item.readAsBytes();
-      if (!mounted) return;
-      setState(
-        () => _attachments.add(
-          MediaAttachment(filename: item.name, bytes: bytes),
-        ),
-      );
+      fromWeb.add((filename: item.name, bytes: await item.readAsBytes()));
     }
+    if (!mounted) return;
+    await _attachImageBytes(fromWeb);
+  }
+
+  /// Attaches [pictures] that arrived as bytes rather than as files on disk — a
+  /// pasted screenshot, images dragged out of a web page.
+  ///
+  /// Each is shrunk to what one message may carry: a 5K screenshot is on its
+  /// own bigger than the whole request body the relay accepts, and the refusal
+  /// that came back for it ("Request body exceeds 20000000 bytes") was not
+  /// something anybody could act on. What still didn't fit is said once at the
+  /// end, not once per picture.
+  Future<void> _attachImageBytes(
+    List<({String filename, Uint8List bytes})> pictures,
+  ) async {
+    final overflow = <String>[];
+    final oversized = <String>[];
+
+    for (final picture in pictures) {
+      if (_attachments.length >= maxChatImages) {
+        overflow.add(picture.filename);
+        continue;
+      }
+      final fitted = await fitImageToBudget(
+        MediaAttachment(filename: picture.filename, bytes: picture.bytes),
+      );
+      if (!mounted) return;
+      if (fitted == null) {
+        oversized.add(picture.filename);
+        continue;
+      }
+      setState(() => _attachments.add(fitted));
+    }
+    _sayOverflow(overflow);
+    _sayOversized(oversized);
   }
 
   /// Sort [paths] into what the message can carry: pictures as thumbnails,
@@ -528,6 +552,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _insertIntoMessage(pathsForMessage(added.paths));
     }
     _sayOverflow(added.overflow);
+    _sayOversized(added.oversized);
   }
 
   /// Put [paths] on the message because somebody asked for them by name.
@@ -592,6 +617,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// nothing look like a bug in the app.
   void _sayOverflow(List<String> overflow) {
     final message = attachmentOverflowMessage(overflow);
+    if (message == null) return;
+    ToastScope.show(
+      context,
+      ToastSpec(message: message, severity: ToastSeverity.warning),
+    );
+  }
+
+  void _sayOversized(List<String> oversized) {
+    final message = oversizedAttachmentMessage(oversized);
     if (message == null) return;
     ToastScope.show(
       context,
