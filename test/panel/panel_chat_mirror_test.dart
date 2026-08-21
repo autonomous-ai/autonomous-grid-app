@@ -1,11 +1,16 @@
+import 'package:grid_app/infrastructure/panel/panel_frame.dart';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/panel/logic/panel_chat_mirror.dart';
 import 'package:grid_app/infrastructure/panel/panel_message.dart';
 
-PanelChat _tile(String id, {String recap = ''}) =>
-    PanelChat(id: id, name: id.toUpperCase(), project: 'grid-app', recap: recap);
+PanelChat _tile(String id, {String recap = ''}) => PanelChat(
+  id: id,
+  name: id.toUpperCase(),
+  project: 'grid-app',
+  recap: recap,
+);
 
 Map<String, Object?> _decode(String raw) =>
     jsonDecode(raw) as Map<String, Object?>;
@@ -16,6 +21,7 @@ List<String> _idsOf(String raw) => [
 ];
 
 void main() {
+  _fitTests();
   group('what the panel is told when the chat list moves', () {
     test('a reorder is sent as the whole list, because there is no message '
         'for "the third one is now the first"', () {
@@ -78,6 +84,42 @@ void main() {
       // Not through onChange: `chats.list` is a panel saying it has nothing on
       // screen, and "you already know" would leave it blank.
       expect(_idsOf(mirror.all([_tile('a'), _tile('b')])), ['a', 'b']);
+    });
+  });
+}
+
+void _fitTests() {
+  group('a list that has to fit one frame', () {
+    PanelChat tile(int i, String name) =>
+        PanelChat(id: 'c-$i', name: name, project: 'dự án');
+
+    test('goes out whole when it fits, because trimming a list that fits '
+        'would hide chats for nothing', () {
+      final tiles = [for (var i = 0; i < 5; i++) tile(i, 'chat $i')];
+
+      expect(panelTilesThatFit(tiles), hasLength(5));
+    });
+
+    test('is cut from the end until it fits — the frame throws over 8192 '
+        'bytes, and a mirror that throws stops the panel dead', () {
+      // Vietnamese titles at three bytes a character, which is what actually
+      // overran the budget: 11724 bytes of tiles on 2026-08-21.
+      final long = 'Mục tiêu của mày là làm performance cho repo này' * 3;
+      final tiles = [for (var i = 0; i < 80; i++) tile(i, long)];
+
+      final kept = panelTilesThatFit(tiles);
+
+      expect(kept.length, lessThan(80));
+      expect(kept, isNotEmpty);
+      expect(
+        utf8.encode(PanelOutbound.chats(kept)).length,
+        lessThanOrEqualTo(kPanelMaxPayload),
+      );
+      expect(
+        kept.first.id,
+        'c-0',
+        reason: 'what falls off is what the sidebar draws last',
+      );
     });
   });
 }

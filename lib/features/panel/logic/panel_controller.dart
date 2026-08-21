@@ -32,6 +32,7 @@ import 'panel_summary_writer.dart';
 import 'panel_turn_mirror.dart';
 import 'panel_voice.dart';
 import 'panel_voice_router.dart';
+import '../../chat/logic/chat_title.dart';
 
 /// The app's side of the conversation with a Grid Panel.
 ///
@@ -443,13 +444,32 @@ class PanelController {
 
   Timer? _chatsPending;
 
+  /// The tiles that fit one frame, and a line in the log naming what did not.
+  ///
+  /// Said out loud rather than trimmed quietly: a panel showing eleven of
+  /// thirteen chats looks exactly like a panel showing all of them, so the two
+  /// are only ever told apart here.
+  List<PanelChat> _tilesThatFit(List<PanelChat> tiles) {
+    final kept = panelTilesThatFit(tiles);
+    if (kept.length != tiles.length) {
+      _log.warn(
+        'panel',
+        'Tiles trimmed to fit one frame: sent ${kept.length} of '
+            '${tiles.length}',
+      );
+    }
+    return kept;
+  }
+
   /// Tell the panel whatever has changed about the tiles themselves.
   void mirrorChats() {
-    final tiles = panelChatsFor(
-      projects: _ref.read(sortedProjectsProvider),
-      chats: _ref.read(chatSessionsProvider),
-      history: _ref.read(panelRecapsProvider),
-      defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
+    final tiles = _tilesThatFit(
+      panelChatsFor(
+        projects: _ref.read(sortedProjectsProvider),
+        chats: _ref.read(chatSessionsProvider),
+        history: _ref.read(panelRecapsProvider),
+        defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
+      ),
     );
     final messages = _tiles.onChange(tiles);
     if (messages.isNotEmpty) {
@@ -620,11 +640,13 @@ class PanelController {
   /// Send the tiles: every chat, in the order the app's own sidebar draws them,
   /// so the panel and the rail never disagree about what comes first.
   void _sendChats() {
-    final tiles = panelChatsFor(
-      projects: _ref.read(sortedProjectsProvider),
-      chats: _ref.read(chatSessionsProvider),
-      history: _ref.read(panelRecapsProvider),
-      defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
+    final tiles = _tilesThatFit(
+      panelChatsFor(
+        projects: _ref.read(sortedProjectsProvider),
+        chats: _ref.read(chatSessionsProvider),
+        history: _ref.read(panelRecapsProvider),
+        defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
+      ),
     );
     _ref.read(panelLinkProvider).send(_tiles.all(tiles));
   }
@@ -1288,8 +1310,14 @@ PanelChat panelChatFor(
   String? defaultAgent,
 ]) => PanelChat(
   id: conversation.id,
-  name: conversation.title,
-  project: project.name,
+  // Clipped, unlike everywhere else a title is drawn. The panel is 466px of
+  // glass on the other end of a cable with an 8192-byte frame budget, and
+  // titles stopped being clipped in the store on 2026-08-20 so a rename could
+  // offer the whole name back. Thirty-odd tiles' worth of full sentences went
+  // straight past the budget the same day — `over the 8192-byte frame limit:
+  // 11724`, thrown out of the mirror where nothing was catching it.
+  name: clipChatTitle(conversation.title),
+  project: clipChatTitle(project.name),
   // WHO WILL ANSWER THE NEXT TURN, which is not always who answered the last
   // one. The pick the user made — on the project, or the app's standing choice
   // — wins, because a tile is a thing you speak into from the panel and the
