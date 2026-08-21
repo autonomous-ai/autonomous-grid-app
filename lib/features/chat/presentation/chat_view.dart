@@ -1308,32 +1308,22 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 error: error,
                                 // Retry reuses the committed turn, including
                                 // its picture, after the user picks a model
-                                // that can answer it. Agent failures keep their
-                                // one-click handover beside that universal exit.
+                                // that can answer it.
                                 errorAction: error == null
                                     ? null
-                                    : Wrap(
-                                        spacing: 4,
-                                        runSpacing: 4,
-                                        children: [
-                                          TextButton(
-                                            onPressed: () => unawaited(
-                                              ref
-                                                  .read(
-                                                    chatSessionsProvider
-                                                        .notifier,
-                                                  )
-                                                  .retry(
-                                                    network: widget.network,
-                                                    model: _model.text.trim(),
-                                                    modality: modality,
-                                                  ),
-                                            ),
-                                            child: const Text('Retry'),
-                                          ),
-                                          if (agentMode)
-                                            const SwitchAgentButton(),
-                                        ],
+                                    : TextButton(
+                                        onPressed: () => unawaited(
+                                          ref
+                                              .read(
+                                                chatSessionsProvider.notifier,
+                                              )
+                                              .retry(
+                                                network: widget.network,
+                                                model: _model.text.trim(),
+                                                modality: modality,
+                                              ),
+                                        ),
+                                        child: const Text('Retry'),
                                       ),
                                 // Only the agent can touch this computer — a
                                 // picture is made by the grid, so there'd be
