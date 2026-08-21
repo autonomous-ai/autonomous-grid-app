@@ -496,10 +496,14 @@ String _costOf(ManagedNetworkType target) => switch (target) {
     'Anyone using it who is not on the list above loses access, and any model '
         'they run for it stops serving. The grid restarts, so everyone '
         'reconnects once.',
+  // This used to warn that everyone off the domain lost access "even though
+  // they stay on the list". They do not any more — the domain admits, and the
+  // list keeps working beside it — so the cost is only for someone who is on
+  // neither, which is who a switch away from “Anyone” takes it from.
   ManagedNetworkType.domain =>
-    'People on any other email domain lose access immediately, even though '
-        'they stay on the list, and any model they run for it stops serving. '
-        'The grid restarts, so everyone reconnects once.',
+    'Anyone using it who is neither on that domain nor on the list above '
+        'loses access, and any model they run for it stops serving. The grid '
+        'restarts, so everyone reconnects once.',
   ManagedNetworkType.anyone =>
     'Usage on this grid stops being billed, and you can no longer block an '
         'individual person. The grid restarts, so everyone reconnects once.',

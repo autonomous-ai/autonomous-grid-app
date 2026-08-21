@@ -43,8 +43,8 @@ enum ManagedNetworkType {
   domain(
     'domain-restricted',
     'My domain',
-    'Only people with an email on your domain can use this grid, or run a '
-        'model for it — including anyone invited earlier on a different one.',
+    'Anyone with an email on your domain can use this grid, or run a model '
+        'for it — as well as the people you invite.',
   ),
   anyone(
     'permissionless',
@@ -76,6 +76,16 @@ enum ManagedNetworkType {
   /// top half does exactly that, is the obvious reading. "Run a model" is the
   /// app's own phrase from the grid-power pill, and it cannot be confused with
   /// handing out access.
+  ///
+  /// **[domain] gained a clause and lost a meaning on 2026-08-21.** It read
+  /// "including anyone invited earlier on a different one", because the server
+  /// checked the domain BEFORE the invite list and switching to this rule cut
+  /// invited outsiders off. That was the wrong reading of what an owner asks
+  /// for: they are choosing how colleagues get in without an invite each, not
+  /// revoking the people they invited on purpose. The domain now ADMITS rather
+  /// than excludes, so the clause says "as well as" — the opposite of what the
+  /// same sentence used to warn about. Removing someone from the list is still
+  /// what takes their access away.
   final String description;
 
   /// The API default when `network_type` is omitted, and the safe pick for a

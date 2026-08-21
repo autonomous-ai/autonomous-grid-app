@@ -70,6 +70,6 @@ String accessDescriptionFor(ManagedNetworkType type, {String? domain}) {
   if (type != ManagedNetworkType.domain) return type.description;
   final named = (domain ?? '').trim();
   if (named.isEmpty) return type.description;
-  return 'Only people with an @$named email can use this grid — including '
-      'anyone added earlier on a different domain.';
+  return 'Anyone with an @$named email can use this grid, or run a model for '
+      'it — as well as the people you invite.';
 }
