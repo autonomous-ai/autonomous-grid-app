@@ -252,7 +252,25 @@ class PanelPort implements PanelTransport {
     // translates CR/LF and acts on control characters — and a PCM chunk is full
     // of bytes that look like control characters. The corruption is silent: the
     // frames still arrive, they just fail their CRC.
-    final raw = await Process.run('stty', ['-f', port, 'raw', '-echo']);
+    //
+    // BY ABSOLUTE PATH, and wrapped, for the same reason `ioreg` is one function
+    // up: a GUI app launched from Finder gets launchd's PATH, not a shell's, and
+    // a bare name is a bet on what that contains. `ioreg` lost that bet on a
+    // freshly set-up Mac (2026-08-20) and, being uncaught, took `_attach` down
+    // with it — the retry was never armed, so the panel was never looked for
+    // again for the life of the process. `stty` sits one line further along the
+    // same path and was left holding the same bet; a machine missing /usr/sbin
+    // is a fair candidate for missing /bin.
+    //
+    // The signature is what makes this worth pre-empting: no port, no log line,
+    // and a panel spinning on its boot screen forever with the cable plugged in.
+    final ProcessResult raw;
+    try {
+      raw = await Process.run('/bin/stty', ['-f', port, 'raw', '-echo']);
+    } on ProcessException catch (e) {
+      _log('could not run stty for $port: ${e.message}');
+      return _retryLater();
+    }
     if (raw.exitCode != 0) {
       _log('stty failed on $port: ${raw.stderr}');
       return _retryLater();
