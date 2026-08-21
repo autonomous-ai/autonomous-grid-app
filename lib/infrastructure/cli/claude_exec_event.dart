@@ -62,6 +62,21 @@ class ClaudeContextUsed extends ClaudeExecEvent {
   final int tokens;
 }
 
+/// What a picture just added to the context that [ClaudeContextUsed] does not
+/// count, estimated by the app — see `claudeMediaTokens`.
+///
+/// Its own event, and **added** to the reported figure rather than replacing it:
+/// one is a measurement the engine sent and the other is this app's guess at
+/// what that measurement left out. Folding them into one number would lose which
+/// half is which the first time a relay starts counting pictures properly.
+///
+/// A delta, not a total: emitted per tool result, so the sender accumulates it
+/// over the session the same way the pictures accumulate in the context.
+class ClaudeMediaUsed extends ClaudeExecEvent {
+  const ClaudeMediaUsed(this.tokens);
+  final int tokens;
+}
+
 /// One round of a `/goal` the CLI is driving: its evaluator has read the
 /// conversation, decided the condition does **not** hold yet, and refused to let
 /// the turn stop.

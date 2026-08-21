@@ -32,6 +32,23 @@ class AgentSessionSlot {
   /// Here it resets by construction: a new conversation is a new slot, and a new
   /// slot starts at zero.
   int usedTokens = 0;
+
+  /// What the pictures this session has been shown cost on top of [usedTokens],
+  /// estimated by the app because [usedTokens] leaves them out — see
+  /// `claudeMediaTokens` for the measurement behind that.
+  ///
+  /// Accumulated across the session's turns, because that is how pictures
+  /// accumulate in a context, and reset wherever [usedTokens] is: a summary
+  /// replaces them with words, and a new session never saw them.
+  int mediaTokens = 0;
+
+  /// What this session is really carrying: what the last turn reported, plus
+  /// what the app estimates that report left out.
+  ///
+  /// The one figure to compare against a ceiling. Reading [usedTokens] alone is
+  /// how a chat walked into a 400 at 236545 tokens while every check in the app
+  /// believed it held 40593.
+  int get contextTokens => usedTokens + mediaTokens;
 }
 
 /// What one turn should send, and how.
