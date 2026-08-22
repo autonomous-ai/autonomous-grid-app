@@ -13,10 +13,19 @@ name: release
 # **On this repo, and published, not drafted** — both are consequences of the source
 # repo going public (2026-08-21). It used to cross-publish drafts to a separate public
 # `-downloads` repo, because a private repo's release assets 404 for anyone without
-# access, Sparkle included; with this repo public that whole detour is gone, and so is
-# the GRID_DOWNLOADS_TOKEN it needed. Publishing directly also means **a tag now ships
-# to every user the moment CI finishes** — `releases/latest` is the Sparkle feed, and
-# only a published release resolves there. Tag deliberately.
+# access, Sparkle included; with this repo public that whole detour is gone. Publishing
+# directly also means **a tag now ships to every user the moment CI finishes** —
+# `releases/latest` is the Sparkle feed, and only a published release resolves there.
+# Tag deliberately.
+#
+# ONE PIECE OF THE OLD PATH STAYS, on purpose. Every app already installed has the
+# downloads-repo feed URL baked into it and polls that and nothing else, so moving the
+# feed here would leave those users on the last build they ever installed — silently,
+# with nothing on screen to say so. The publish job therefore also pushes **the appcast
+# and only the appcast** to BRIDGE_REPO, with its enclosure pointing at the DMG here.
+# An old install reads the old URL, downloads from this repo, and the build it lands on
+# has the new feed baked in — so it crosses over once and never reads the bridge again.
+# No DMG is copied there; the binaries live in exactly one place.
 #
 # The release is cut by a separate `publish` job that waits for every build, so the
 # three artifacts land in one release at once. Publishing from inside the matrix would
@@ -63,6 +72,15 @@ permissions:
 env:
   CLI_VERSION: latest
   CLI_REPO: autonomous-ai/autonomous-grid
+  # Where the OLD Sparkle feed lives — the repo this workflow used to publish
+  # everything to. It now receives the appcast alone, purely so installs that
+  # predate 2026-08-21 can find their way onto a build that points here.
+  #
+  # SUNSET: this is dead weight the moment nothing polls it, and nothing here can
+  # measure that. Review it on 2026-11-21 (three months): if the release before
+  # that shows no downloads on the bridge's assets, delete this env, the bridge
+  # step, and the GRID_DOWNLOADS_TOKEN secret in one change.
+  BRIDGE_REPO: autonomous-ai/autonomous-grid-app-downloads
 
 jobs:
   build:
@@ -454,6 +472,9 @@ jobs:
           # while it is experimental; the two that ship may not.
           ls dist/*macOS-Apple-Silicon.dmg >/dev/null 2>&1 || {
             echo "no Apple Silicon DMG — refusing to publish" >&2; exit 1; }
+          ls dist/appcast*.xml >/dev/null 2>&1 \
+            && echo "- bridging the old feed to ${BRIDGE_REPO}" >> "$GITHUB_STEP_SUMMARY" \
+            || echo "NO APPCAST: existing installs get no update from this release" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish the release
         uses: softprops/action-gh-release@v3
@@ -468,3 +489,24 @@ jobs:
           make_latest: true
           fail_on_unmatched_files: true
           files: dist/*
+
+      # The feed every pre-2026-08-21 install still polls. Appcast only: its
+      # enclosure URL already points at the DMG published above, so this hands an
+      # old app a working download without a second copy of a 200MB binary
+      # existing anywhere. Published + latest, because `releases/latest/download/`
+      # is the shape of the URL baked into those apps.
+      #
+      # Guarded on the files existing: no SPARKLE_ED_PRIVATE_KEY means the appcast
+      # step was skipped upstream, and there is nothing to bridge.
+      - name: Bridge the old Sparkle feed
+        if: hashFiles('dist/appcast*.xml') != ''
+        uses: softprops/action-gh-release@v3
+        with:
+          repository: ${{ env.BRIDGE_REPO }}
+          token: ${{ secrets.GRID_DOWNLOADS_TOKEN }}
+          name: Grid ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: dist/appcast*.xml
