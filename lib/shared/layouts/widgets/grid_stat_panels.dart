@@ -329,13 +329,13 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
 /// One member: a coloured circle with their initial, their address, their 24h
 /// input figure, and the full split on hover.
 ///
-/// **The whole address, weighted.** The column used to print `@dev` and stop —
-/// short, but it withheld the one string a person copies, searches for and
-/// checks a spelling of, and the leading `@` made every row start with the same
-/// character. Now the row prints `dev@autonomous.ai`: the name in the row's own
-/// ink, the domain behind it in the faint one. The width the shortening was
-/// protecting is still protected, because the ellipsis now falls on the domain
-/// — the half of the line every row agrees on.
+/// **The name, not the address.** It has been all three: `@dev` (short, but it
+/// started every row with the same character), then the whole
+/// `dev@autonomous.ai` with the domain trailing in the faint ink, and now just
+/// `dev`. On a work grid the domain is the same on nearly every row, so a
+/// column of them was a column of one repeated word — and it was what pushed
+/// the names towards the ellipsis in a panel this narrow. The address is still
+/// what the row *is* (see [email]); it is just not what the row prints.
 ///
 /// Input leads because reading is what a grid is asked to do — output follows
 /// from it, and requests count turns rather than work. The other three are a
@@ -386,10 +386,13 @@ class _MemberRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final row = _PanelRow(
-      // The whole address, cut in two so the name leads: `dev` in the row's own
-      // ink, `@autonomous.ai` behind it in the faint one.
+      // The name in front of the `@` and nothing else. The domain used to
+      // follow it in the faint ink; on a work grid every row repeats it, so a
+      // column of them was a column of one word — and the panel is narrow
+      // enough that the repeated half was what pushed the names towards the
+      // ellipsis. The address is still what the row *is* — see [email] — it is
+      // just not what the row prints.
       label: memberLocalPart(email),
-      labelSuffix: memberDomainPart(email),
       leading: MemberAvatar(email: email, slot: slot, size: 22, fontSize: 11.5),
       strong: true,
       badge: isOwner ? 'owner' : null,
@@ -1301,7 +1304,6 @@ class _PanelBody extends StatelessWidget {
 class _PanelRow extends StatelessWidget {
   const _PanelRow({
     required this.label,
-    this.labelSuffix,
     this.leading,
     this.trailing,
     this.badge,
@@ -1309,16 +1311,6 @@ class _PanelRow extends StatelessWidget {
   });
 
   final String label;
-
-  /// Carried straight on from [label], in the faint ink — a member's row prints
-  /// `dev` and then `@autonomous.ai`, which reads as one address with the half
-  /// that differs in front.
-  ///
-  /// One text span rather than two widgets, so the ellipsis falls at the end of
-  /// the pair: a row too narrow for the whole address loses the tail of the
-  /// domain, which every row on a work grid repeats, instead of the name, which
-  /// is the only thing the row is read for.
-  final String? labelSuffix;
 
   /// A mark in front of the label — the members list's initial tile. Null on
   /// every other panel: a node's row is already four lines and a model id is a
@@ -1359,24 +1351,8 @@ class _PanelRow extends StatelessWidget {
         children: [
           if (leading case final mark?) ...[mark, const SizedBox(width: 9)],
           Expanded(
-            child: Text.rich(
-              TextSpan(
-                text: label,
-                children: [
-                  if (labelSuffix case final suffix?)
-                    TextSpan(
-                      text: suffix,
-                      // Regular weight as well as the faint ink: the domain is
-                      // the part every row agrees on, and repeating the label's
-                      // medium down the column would make the thing to skip as
-                      // heavy as the thing to read.
-                      style: TextStyle(
-                        fontWeight: FontWeight.w400,
-                        color: AppPalette.textFaint,
-                      ),
-                    ),
-                ],
-              ),
+            child: Text(
+              label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
