@@ -4,10 +4,25 @@ name: release
 #
 # Pushing a tag like `v0.1.2` builds the app on each target, bundles the `grid`
 # CLI sidecar (Nuitka standalone/onedir, compiled from the grid CLI source by grid-app's
-# own scripts/cli/build_sidecar.{sh,ps1}), and publishes a DRAFT GitHub Release:
+# own scripts/cli/build_sidecar.{sh,ps1}), and publishes ONE GitHub Release on this repo:
 #
 #   Grid-<ver>-macOS-Apple-Silicon.dmg   (signed + notarized; arm64 grid sidecar)
 #   Grid-<ver>-macOS-Intel.dmg           (signed + notarized; x86_64 grid sidecar, built under Rosetta 2)
+#   Grid-<ver>-Linux-x64.tar.gz          (unpack and run; x86_64 grid sidecar, no signing)
+#
+# **On this repo, and published, not drafted** — both are consequences of the source
+# repo going public (2026-08-21). It used to cross-publish drafts to a separate public
+# `-downloads` repo, because a private repo's release assets 404 for anyone without
+# access, Sparkle included; with this repo public that whole detour is gone, and so is
+# the GRID_DOWNLOADS_TOKEN it needed. Publishing directly also means **a tag now ships
+# to every user the moment CI finishes** — `releases/latest` is the Sparkle feed, and
+# only a published release resolves there. Tag deliberately.
+#
+# The release is cut by a separate `publish` job that waits for every build, so the
+# three artifacts land in one release at once. Publishing from inside the matrix would
+# race: the first job to finish would create the release, Sparkle would read a feed
+# whose DMG had not been uploaded yet, and the arch that lost the race would offer an
+# update it could not download.
 #
 # Both DMGs carry the same Flutter app — a Release build is universal (arm64 + x86_64),
 # so it launches on either Mac. They differ only in the bundled `grid` sidecar's arch:
@@ -48,12 +63,6 @@ permissions:
 env:
   CLI_VERSION: latest
   CLI_REPO: autonomous-ai/autonomous-grid
-  # PUBLIC repo that hosts client-facing release binaries (.dmg) + the Sparkle
-  # appcast. Kept separate from this private source repo so the auto-update feed
-  # is reachable without auth (a private repo's release assets 404 for anyone
-  # without repo access — including the client's Sparkle). Must be a public repo
-  # with at least one commit; CI cross-publishes to it with GRID_DOWNLOADS_TOKEN.
-  DOWNLOADS_REPO: autonomous-ai/autonomous-grid-app-downloads
 
 jobs:
   build:
@@ -69,6 +78,19 @@ jobs:
             arch: x64                   # the same arm64 runner — GitHub retired the free
             label: macOS-Intel          # macos-13 Intel image, so this avoids a paid runner.
             appcast_file: appcast-x86_64.xml   # Sparkle feed this arch's app polls
+          - platform: ubuntu-latest     # Linux x86_64, native app + sidecar
+            arch: x64
+            label: Linux-x64
+            # NEW on 2026-08-21 and unproven on a real tag. `continue-on-error`
+            # keeps a Linux failure from blocking the two platforms that already
+            # ship — the publish job runs on whatever slices exist, and its step
+            # summary names the ones that are missing rather than leaving the
+            # gap silent. Drop this line once a tagged Linux build has passed.
+            experimental: true
+            # No appcast: Sparkle is macOS-only and AppUpdaterService.isSupported
+            # is `Platform.isMacOS`, so a Linux build has no feed to poll and says
+            # so with UpdateUnsupported rather than pretending.
+            appcast_file: ""
           # Windows x64, native build — DISABLED, see the header. Uncomment this
           # entry together with the "Windows" steps below to build it again; the
           # steps are guarded by `runner.os == 'Windows'`, so they only wake up
@@ -78,6 +100,7 @@ jobs:
           #   label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
+    continue-on-error: ${{ matrix.experimental || false }}
     # The Nuitka sidecar build is slow (~45m, and 1.5-2x that for the Intel slice
     # compiling under Rosetta), with the notarization wait on top. 120m is safe —
     # it was raised from 60m, which timed a sidecar out mid-compile.
@@ -211,10 +234,11 @@ jobs:
           # SAME `{arch}` template — the app resolves it to appcast-arm64.xml or
           # appcast-x86_64.xml from the live CPU (resolveAppcastArch), keeping an
           # Intel Mac off the arm64 DMG (whose sidecar can't run there) and vice
-          # versa. Stable public URL on the downloads repo: GitHub always serves
-          # the newest *published* (non-draft) release's asset by this name.
+          # versa. Stable public URL: GitHub always serves the newest *published*
+          # release's asset by this name, which is why the publish job below does
+          # not draft.
           flutter build macos --release \
-            --dart-define=GRID_APPCAST_URL="https://github.com/${{ env.DOWNLOADS_REPO }}/releases/latest/download/appcast-{arch}.xml"
+            --dart-define=GRID_APPCAST_URL="https://github.com/${{ github.repository }}/releases/latest/download/appcast-{arch}.xml"
           APP="$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' | head -n1)"
           [ -n "$APP" ] || { echo "built .app not found" >&2; exit 1; }
           # onedir sidecar: inject the whole standalone folder (entry at Resources/grid/grid)
@@ -304,7 +328,7 @@ jobs:
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
           DMG: ${{ github.workspace }}/grid-app/dist/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
-          DOWNLOAD_URL: https://github.com/${{ env.DOWNLOADS_REPO }}/releases/download/${{ github.ref_name }}/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
+          DOWNLOAD_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Grid-${{ env.VERSION }}-${{ matrix.label }}.dmg
           SHORT_VERSION: ${{ env.VERSION }}
           BUNDLE_VERSION: ${{ env.BUILD }}
           APPCAST_OUT: ${{ github.workspace }}/grid-app/dist/${{ matrix.appcast_file }}
@@ -322,6 +346,51 @@ jobs:
         run: |
           src="dist/${{ matrix.appcast_file }}"
           [ -f "$src" ] && cp "$src" dist/appcast.xml || echo "no appcast to alias (key unset)"
+
+      # ───────────────────────── Linux ─────────────────────────
+      # What a bare runner is missing. `libmpv-dev` is media_kit's and
+      # `libayatana-appindicator3-dev` is tray_manager's (the vendored fork in
+      # packages/ carries a linux/ implementation like upstream) — both fail at
+      # CMake time rather than at runtime, which is the good kind of missing.
+      # No libstdc++-NN-dev pin: the version tracks the runner image, and the
+      # default g++ already provides it.
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libmpv-dev mpv \
+            libayatana-appindicator3-dev
+
+      - name: Build grid sidecar (Linux)
+        if: runner.os == 'Linux'
+        working-directory: grid-app
+        # Same driver as macOS and no Rosetta branch: the runner is x86_64 and
+        # Nuitka follows the build python, so the sidecar is x86_64 by
+        # construction. build_sidecar.sh already knows this OS (OS_SUFFIX=linux).
+        env:
+          GRID_BUILD_PYTHON: ${{ steps.setup_python.outputs.python-path }}
+        run: bash scripts/cli/build_sidecar.sh "$GITHUB_WORKSPACE/autonomous-grid"
+
+      - name: Build Linux app + package tar.gz
+        if: runner.os == 'Linux'
+        working-directory: grid-app
+        env:
+          SIDECAR: ${{ github.workspace }}/autonomous-grid/dist/grid.dist
+        run: |
+          set -euxo pipefail
+          flutter config --enable-linux-desktop
+          # No GRID_APPCAST_URL here on purpose: Sparkle is macOS-only, so
+          # kAppcastFeedUrl stays empty, AppUpdaterService.isEnabled stays false,
+          # and the app says UpdateUnsupported instead of pointing a Linux build
+          # at a feed serving .dmg files.
+          flutter build linux --release
+          mkdir -p dist
+          scripts/package_linux.sh \
+            build/linux/x64/release/bundle \
+            "dist/Grid-${VERSION}-${{ matrix.label }}.tar.gz"
 
       # ──────────────────── Windows (DISABLED) ────────────────────
       # Kept verbatim, not deleted: nothing here is broken — the release just
@@ -344,22 +413,58 @@ jobs:
       #       -Sidecar ..\autonomous-grid\dist\grid.exe `
       #       -OutZip  "${{ github.workspace }}\grid-app\dist\Grid-${{ env.VERSION }}-Windows-x64.zip"
 
-      # ───────────────────────── Publish ─────────────────────────
-      # Cross-publish to the PUBLIC downloads repo (not this private one) so the
-      # appcast + dmg are fetchable without auth. Needs GRID_DOWNLOADS_TOKEN — a
-      # PAT with contents:write on DOWNLOADS_REPO (GITHUB_TOKEN only scopes to the
-      # current repo). Draft: a human un-drafts to release it, which is also what
-      # makes `releases/latest` (the feed URL) resolve to it.
-      - name: Publish to downloads repo (draft)
+      # ──────────────────── Hand off to publish ────────────────────
+      # This job does not publish: it hands its slice to `publish` below, which
+      # cuts one release out of all of them. Strict on empty — a build that
+      # produced nothing is a failure here, not a quiet gap in the release.
+      - name: Upload this platform's artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.label }}
+          path: grid-app/dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ───────────────────────── Publish ─────────────────────────
+  # One release, cut once every build has finished. Runs even if a slice failed
+  # (`always()`), because Linux is marked experimental and a new platform must
+  # not be able to stop macOS shipping — but it says which slices it got, so a
+  # missing one is on the release page and in the log rather than nowhere.
+  publish:
+    needs: build
+    if: always() && needs.build.result != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect every build's artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Say what is being released
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -1 dist | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          for want in macOS-Apple-Silicon.dmg macOS-Intel.dmg Linux-x64.tar.gz; do
+            ls dist/*"$want" >/dev/null 2>&1 \
+              || echo "MISSING: no $want — that build failed" >> "$GITHUB_STEP_SUMMARY"
+          done
+          # A release with no macOS DMG is not a release. Linux may be absent
+          # while it is experimental; the two that ship may not.
+          ls dist/*macOS-Apple-Silicon.dmg >/dev/null 2>&1 || {
+            echo "no Apple Silicon DMG — refusing to publish" >&2; exit 1; }
+
+      - name: Publish the release
         uses: softprops/action-gh-release@v3
         with:
-          repository: ${{ env.DOWNLOADS_REPO }}
-          token: ${{ secrets.GRID_DOWNLOADS_TOKEN }}
-          draft: true
           name: Grid ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          # Whatever this runner's dist/ holds — the .dmg plus the appcast.xml
-          # (Sparkle feed) beside it. Strict: an empty dist/ fails the job rather
-          # than publishing a draft with a slice missing.
+          # Published and marked latest, not drafted: every shipped app polls
+          # `releases/latest/download/appcast-<arch>.xml`, and a draft resolves to
+          # nothing there — which is exactly how a green release run once left
+          # users with no download at all.
+          draft: false
+          make_latest: true
           fail_on_unmatched_files: true
-          files: grid-app/dist/*
+          files: dist/*
