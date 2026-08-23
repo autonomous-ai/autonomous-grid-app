@@ -61,8 +61,15 @@ class GridMcpServer {
     _chatByToken.clear();
   }
 
-  /// A bearer token that speaks for [chatId] until [revoke].
+  /// A bearer token that speaks for [chatId] until the chat's next turn.
+  ///
+  /// Minting **replaces** whatever token this chat already had. A chat has one
+  /// turn in flight at a time, so the previous turn's token has nothing left to
+  /// do — and hanging the lifetime on the next mint means no sender has to
+  /// remember a `revoke` in a `finally` it does not have. [revoke] is still
+  /// there for a turn that ends knowing it was the last.
   String mintTurnToken(String chatId) {
+    _chatByToken.removeWhere((_, chat) => chat == chatId);
     final token = List.generate(
       32,
       (_) => _alphabet[_random.nextInt(_alphabet.length)],

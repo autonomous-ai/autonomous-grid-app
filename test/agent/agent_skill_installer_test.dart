@@ -39,19 +39,35 @@ void main() {
     }
   });
 
-  test('and nothing the registry withheld from it — a card about a spawner '
-      'Hermes has no equivalent of is advice it could only follow by '
-      'inventing one', () async {
-    await installHermes();
+  test('and nothing the registry withheld from it — the cards Claude Code and '
+      'Codex now read as MCP tools must stop being written into the folders '
+      'their own terminal sessions read', () async {
+    await AgentSkillInstaller(home: home.path).install(AgentTool.claude);
 
     final withheld = kBuiltinGridSkills.where(
-      (skill) => !skill.appliesTo(AgentTool.hermes),
+      (skill) => !skill.appliesTo(AgentTool.claude),
     );
+    final claudeSkills = Directory('${home.path}/.claude/skills');
 
     expect(withheld, isNotEmpty, reason: 'this guard needs a scoped skill');
     for (final skill in withheld) {
-      expect(skillMd(skill.name).existsSync(), isFalse, reason: skill.name);
+      expect(
+        File('${claudeSkills.path}/${skill.name}/SKILL.md').existsSync(),
+        isFalse,
+        reason: skill.name,
+      );
     }
+  });
+
+  test('and sweeps the ones it used to write there — a card left beside the '
+      'tool teaches a format the app no longer parses', () async {
+    final stale = File('${home.path}/.claude/skills/grid-delegate/SKILL.md');
+    await stale.parent.create(recursive: true);
+    await stale.writeAsString('---\nname: grid-delegate\n---\nold\n');
+
+    await AgentSkillInstaller(home: home.path).install(AgentTool.claude);
+
+    expect(stale.existsSync(), isFalse);
   });
 
   test('the agent gets its own copy, not a pointer at the library — and the '

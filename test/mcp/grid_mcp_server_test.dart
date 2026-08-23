@@ -204,5 +204,28 @@ void main() {
       expect(reply['status'], HttpStatus.accepted);
       expect(reply['result'], isNull);
     });
+    test('a chat\'s next turn retires the last one\'s token, so a chat never '
+        'has two live keys to itself', () async {
+      final first = server.mintTurnToken('chat-1');
+      final second = server.mintTurnToken('chat-1');
+
+      expect(second, isNot(first));
+      expect(
+        (await send(first, {
+          'jsonrpc': '2.0',
+          'id': 7,
+          'method': 'tools/list',
+        }))['status'],
+        HttpStatus.unauthorized,
+      );
+      expect(
+        (await send(second, {
+          'jsonrpc': '2.0',
+          'id': 8,
+          'method': 'tools/list',
+        }))['result'],
+        isNotNull,
+      );
+    });
   });
 }
