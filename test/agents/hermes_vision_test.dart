@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -70,7 +71,7 @@ void main() {
     });
     tearDown(() => home.delete(recursive: true));
 
-    File config() => File('${home.path}/.hermes/config.yaml');
+    File config() => File('${AgentHomes.hermesProfile(home.path)}/config.yaml');
 
     test('a config that has never mentioned auxiliary models still gets the '
         'whole block — every fresh install is that config', () async {

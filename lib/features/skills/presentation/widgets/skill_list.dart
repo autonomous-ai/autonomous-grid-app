@@ -439,7 +439,7 @@ class _Empty extends StatelessWidget {
   /// Named home-relative, the way the user would type it.
   static String _folder(SkillSource source) => switch (source) {
     SkillSource.store => '~/.grid/skills',
-    SkillSource.hermes => '~/.hermes/skills',
+    SkillSource.hermes => '~/.hermes/profiles/grid/skills',
     SkillSource.codex => '~/.codex/skills',
     SkillSource.claude => '~/.claude/skills',
   };

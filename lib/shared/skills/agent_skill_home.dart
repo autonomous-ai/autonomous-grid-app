@@ -1,3 +1,4 @@
+import '../../core/agent_homes.dart';
 import 'dart:io';
 
 import '../../core/grid_paths.dart';
@@ -43,7 +44,7 @@ enum SkillSource {
 
   Directory root(String home) => switch (this) {
     SkillSource.store => Directory(gridSkillsStore(home)),
-    SkillSource.hermes => Directory('$home/.hermes/skills'),
+    SkillSource.hermes => Directory('${AgentHomes.hermesProfile(home)}/skills'),
     SkillSource.codex => Directory('$home/.codex/skills'),
     SkillSource.claude => Directory('$home/.claude/skills'),
   };

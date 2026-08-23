@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -314,7 +315,10 @@ void main() {
     expect(steps, hasLength(1));
     expect(steps.single.status, AgentActivityStatus.done);
     // Pointed Hermes at the grid.
-    expect(File('${tmp.path}/.hermes/config.yaml').existsSync(), isTrue);
+    expect(
+      File('${AgentHomes.hermesProfile(tmp.path)}/config.yaml').existsSync(),
+      isTrue,
+    );
   });
 
   test(

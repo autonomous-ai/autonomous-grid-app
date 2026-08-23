@@ -1,3 +1,4 @@
+import '../../../core/agent_homes.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -46,12 +47,23 @@ class ClientAppConfigurator {
 
   final String _home;
 
+  /// Points a client app at a grid.
+  ///
+  /// [gridsOwnHermes] says **whose** Hermes is being written, and it is not a
+  /// detail: this class serves two callers that want opposite things. The Apps
+  /// guide is a user asking Grid to configure *their* Hermes, so it writes
+  /// `~/.hermes` — that is the whole point of the button. `HermesGridLink` is
+  /// Grid repointing the agent **it** runs, which since 2026-08-21 lives in its
+  /// own profile ([AgentHomes.hermesProfile]); writing that one to the root
+  /// would repin the model and toolsets of every `hermes` the user starts
+  /// themselves, which is the leak the profile exists to close.
   Future<ApplyResult> apply(
     ClientApp app,
     String base,
     String key,
-    List<String> models,
-  ) {
+    List<String> models, {
+    bool gridsOwnHermes = false,
+  }) {
     // Never write a pair that can't work. A key minted for one grid and the URL
     // of another is accepted by every config file involved and only refused at
     // the far end — `401 Invalid Grid token: Audience doesn't match`, minutes
@@ -74,7 +86,7 @@ class ClientAppConfigurator {
         return _applyOpenClaw(base, key, ids);
       case ClientApp.hermes:
         // Hermes carries one default and discovers the rest from the endpoint.
-        return _applyHermes(base, key, ids.first);
+        return _applyHermes(base, key, ids.first, gridsOwnHermes);
       case ClientApp.codex:
         // Codex names a single model in its config; the key goes to its dotenv.
         return _applyCodex(base, key, ids.first);
@@ -184,8 +196,18 @@ class ClientAppConfigurator {
   /// file is: two [ClientAppConfigurator] instances still share `~/.hermes`.
   static Future<void> _hermesWrites = Future<void>.value();
 
-  Future<ApplyResult> _applyHermes(String base, String key, String model) {
-    final queued = _hermesWrites.then((_) => _writeHermes(base, key, model));
+  Future<ApplyResult> _applyHermes(
+    String base,
+    String key,
+    String model,
+    bool gridsOwnHermes,
+  ) {
+    final hermesHome = gridsOwnHermes
+        ? AgentHomes.hermesProfile(_home)
+        : AgentHomes.hermesRoot(_home);
+    final queued = _hermesWrites.then(
+      (_) => _writeHermes(base, key, model, hermesHome),
+    );
     // The queue must survive a failed write, or one error deadlocks every later
     // point-at-a-grid; the result still reaches the caller through `queued`.
     _hermesWrites = queued.then((_) {}, onError: (_) {});
@@ -196,9 +218,10 @@ class ClientAppConfigurator {
     String base,
     String key,
     String model,
+    String hermesHome,
   ) async {
-    final config = File('$_home/.hermes/config.yaml');
-    final env = File('$_home/.hermes/.env');
+    final config = File('$hermesHome/config.yaml');
+    final env = File('$hermesHome/.env');
     try {
       final text = (await config.exists()) ? await config.readAsString() : '';
 

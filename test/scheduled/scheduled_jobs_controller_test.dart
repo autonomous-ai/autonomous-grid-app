@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -705,7 +706,9 @@ void main() {
         );
 
     // Hermes's own config now says what the screen said it would.
-    final config = File('${workspace.path}/.hermes/config.yaml');
+    final config = File(
+      '${AgentHomes.hermesProfile(workspace.path)}/config.yaml',
+    );
     expect(config.existsSync(), isTrue);
     expect(config.readAsStringSync(), contains('cron_mode: approve'));
     expect(
@@ -912,7 +915,7 @@ void main() {
     expect(cronTools, isNot(contains('terminal')));
     expect(cronTools, contains('file'), reason: 'it still reads your project');
     final config = File(
-      '${workspace.path}/.hermes/config.yaml',
+      '${AgentHomes.hermesProfile(workspace.path)}/config.yaml',
     ).readAsStringSync();
     expect(config, contains('cron_mode: deny'));
   });

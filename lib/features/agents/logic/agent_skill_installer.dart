@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_config_file.dart';
+import '../../../core/agent_homes.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import 'agent_catalog.dart';
 import 'grid_ask_skill.dart';
@@ -272,6 +273,25 @@ class AgentSkillInstaller {
       '.hermes/skills/creative/grid-video-gen',
     ]) {
       final dir = Directory('$home/$superseded');
+      if (await dir.exists()) await dir.delete(recursive: true);
+    }
+    await _removeRootHermesCopies(home);
+  }
+
+  /// The cards Grid wrote into the user's **own** Hermes root before it had a
+  /// profile (2026-08-21), swept wherever they are still found.
+  ///
+  /// Named, never wholesale: only what [kBuiltinGridSkills] and
+  /// [kRetiredGridSkills] say Grid has ever installed. `~/.hermes/skills` is the
+  /// user's folder and holds their own work; deleting a directory there because
+  /// the app happened to stop using it is how you take someone's afternoon.
+  Future<void> _removeRootHermesCopies(String home) async {
+    final root = '${AgentHomes.hermesRoot(home)}/skills';
+    for (final name in [
+      for (final skill in kBuiltinGridSkills) skill.name,
+      ...kRetiredGridSkills,
+    ]) {
+      final dir = Directory('$root/$name');
       if (await dir.exists()) await dir.delete(recursive: true);
     }
   }

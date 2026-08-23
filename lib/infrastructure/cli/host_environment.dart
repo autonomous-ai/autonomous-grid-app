@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import '../../core/agent_homes.dart';
 import '../../core/grid_paths.dart';
 
 /// The `PATH` (and spawn environment) a Finder/`open`-launched GUI app must use
@@ -43,7 +44,14 @@ class HostEnvironment {
   /// directory the app actually wrote fixes it. Set on every platform (on POSIX
   /// it equals Hermes's own default, so it's a harmless no-op) so the two
   /// locations can never drift again.
-  static String get hermesHome => '${GridPaths.userHome}/.hermes';
+  ///
+  /// **Grid's own profile, not the user's root** (2026-08-21). Hermes reads
+  /// everything profile-scoped from this path — `config.yaml`, `skills/`,
+  /// provider config — and the app rewrites all three. Pointed at `~/.hermes`
+  /// that meant installing Grid silently repinned the model, narrowed
+  /// `toolsets:` to an allowlist and changed `approvals.mode` for every
+  /// `hermes` the user ran themselves. See [AgentHomes] for what stays shared.
+  static String get hermesHome => AgentHomes.hermesProfile(GridPaths.userHome);
 
   /// The spawn environment for a Hermes process: the augmented [path],
   /// [hermesHome] and — on Windows — [gitBash], merged over the inherited

@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -58,7 +59,9 @@ void main() {
     await installHermes();
 
     for (final skill in const ['grid-web', 'grid-serve']) {
-      final copy = Directory('${home.path}/.hermes/skills/$skill');
+      final copy = Directory(
+        '${AgentHomes.hermesProfile(home.path)}/skills/$skill',
+      );
       expect(
         File('${copy.path}/SKILL.md').existsSync(),
         isTrue,
@@ -77,7 +80,9 @@ void main() {
   test('an unchanged skill is not written again — the "Last updated" the '
       'screen sorts by must mean the user, not the last launch', () async {
     await installHermes();
-    final card = File('${home.path}/.hermes/skills/grid-web/SKILL.md');
+    final card = File(
+      '${AgentHomes.hermesProfile(home.path)}/skills/grid-web/SKILL.md',
+    );
     // Stamped into the past rather than compared against the clock: two
     // installs in one test can land in the same millisecond, and a test that
     // passes because the write was fast proves nothing.
@@ -96,7 +101,9 @@ void main() {
     // skill list it shows the model — and no later build could have replaced
     // them, because the installer only asked whether the folder existed.
     await installHermes();
-    final card = File('${home.path}/.hermes/skills/grid-web/SKILL.md');
+    final card = File(
+      '${AgentHomes.hermesProfile(home.path)}/skills/grid-web/SKILL.md',
+    );
     await card.writeAsString('---\nname: grid-web\ndescription: mine\n---\n');
 
     await installHermes();
@@ -109,7 +116,7 @@ void main() {
       'runs is three builds old', () async {
     await installHermes();
     final script = File(
-      '${home.path}/.hermes/skills/grid-serve/scripts/serve.py',
+      '${AgentHomes.hermesProfile(home.path)}/skills/grid-serve/scripts/serve.py',
     );
     await script.writeAsString('print("old")\n');
 
@@ -122,7 +129,9 @@ void main() {
       'folder — two of one skill and the agent reads the stale one', () async {
     // Where these skills lived before the store: a folder of its own under
     // `skills/grid/`. Nothing rewrites that copy any more.
-    final proto = Directory('${home.path}/.hermes/skills/grid/grid-web');
+    final proto = Directory(
+      '${AgentHomes.hermesRoot(home.path)}/skills/grid/grid-web',
+    );
     await Directory('${proto.path}/scripts').create(recursive: true);
     await File(
       '${proto.path}/scripts/search.py',
@@ -131,7 +140,7 @@ void main() {
     await installHermes();
 
     expect(
-      Directory('${home.path}/.hermes/skills/grid').existsSync(),
+      Directory('${AgentHomes.hermesRoot(home.path)}/skills/grid').existsSync(),
       isFalse,
       reason: 'the superseded copy must not shadow the store',
     );
@@ -140,7 +149,7 @@ void main() {
   test('takes the library back out of Hermes\'s config — a skill reaches an '
       'agent as a copy it was given, not because the whole store is on its '
       'path', () async {
-    final config = File('${home.path}/.hermes/config.yaml');
+    final config = File('${AgentHomes.hermesProfile(home.path)}/config.yaml');
     await config.parent.create(recursive: true);
     // What an older build wrote, and what this one has to undo wherever it
     // lands: with it in place Hermes read every skill in the library, given to
@@ -159,7 +168,7 @@ void main() {
   test('removes the leaked prototypes under creative/, which baked a live key '
       'into their scripts', () async {
     final dir = Directory(
-      '${home.path}/.hermes/skills/creative/grid-image-gen/scripts',
+      '${AgentHomes.hermesRoot(home.path)}/skills/creative/grid-image-gen/scripts',
     );
     await dir.create(recursive: true);
     await File('${dir.path}/generate.py').writeAsString('API_KEY = "eyJleak"');
@@ -168,7 +177,7 @@ void main() {
 
     expect(
       Directory(
-        '${home.path}/.hermes/skills/creative/grid-image-gen',
+        '${AgentHomes.hermesRoot(home.path)}/skills/creative/grid-image-gen',
       ).existsSync(),
       isFalse,
       reason: 'the superseded creative/ copy must be gone',

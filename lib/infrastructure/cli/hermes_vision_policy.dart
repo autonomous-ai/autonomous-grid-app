@@ -51,13 +51,16 @@ class HermesVisionPolicy {
   /// never mentioned auxiliary models — every fresh install — is two short.
   Future<void> write({required String model, required String provider}) =>
       _config.edit((editor) {
-        final auxiliary = editor
-            .parseAt(['auxiliary'], orElse: () => wrapAsYamlNode(null))
-            .value;
+        final auxiliary = editor.parseAt([
+          'auxiliary',
+        ], orElse: () => wrapAsYamlNode(null)).value;
         if (auxiliary is! Map) {
-          editor.update(['auxiliary'], {
-            'vision': {'provider': provider, 'model': model},
-          });
+          editor.update(
+            ['auxiliary'],
+            {
+              'vision': {'provider': provider, 'model': model},
+            },
+          );
           return;
         }
         HermesConfigFile.upsert(editor, _provider, provider);

@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -207,7 +208,7 @@ void main() {
           .detachLibrary();
     }
 
-    File config() => File('${home.path}/.hermes/config.yaml');
+    File config() => File('${AgentHomes.hermesProfile(home.path)}/config.yaml');
 
     test('a config that never had the entry is left alone — the app does not '
         'create one just to say nothing', () async {

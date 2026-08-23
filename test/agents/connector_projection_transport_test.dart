@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -20,7 +21,9 @@ void main() {
     home = await Directory.systemTemp.createTemp('projection-transport');
     // Hermes takes its *hermes home*; the other two take a user home. The
     // asymmetry is real and has already cost one wrong measurement.
-    await Directory('${home.path}/.hermes').create(recursive: true);
+    await Directory(
+      AgentHomes.hermesProfile(home.path),
+    ).create(recursive: true);
     await Directory('${home.path}/.codex').create(recursive: true);
   });
 
@@ -59,7 +62,7 @@ void main() {
       final tokens = [withHeader()];
 
       await HermesConnectorServers(
-        home: '${home.path}/.hermes',
+        home: AgentHomes.hermesProfile(home.path),
         bridgeEndpointFor: bridge,
       ).project(tokens);
       await CodexConnectorServers(
@@ -72,7 +75,7 @@ void main() {
       ).project(tokens);
 
       final hermes = await File(
-        '${home.path}/.hermes/config.yaml',
+        '${AgentHomes.hermesProfile(home.path)}/config.yaml',
       ).readAsString();
       final codex = await File(
         '${home.path}/.codex/config.toml',

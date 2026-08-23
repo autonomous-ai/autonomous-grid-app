@@ -114,8 +114,7 @@ class _Picker extends ConsumerWidget {
           label: 'Let Hermes choose',
           detail: 'Its own default provider',
         ),
-        for (final model in models)
-          AppSelectOption(value: model, label: model),
+        for (final model in models) AppSelectOption(value: model, label: model),
       ],
       onChanged: (value) => _pick(context, ref, value),
     );

@@ -1,3 +1,4 @@
+import '../../../core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,7 +47,7 @@ TaskRunner taskRunnerFor(AgentTool agent) => switch (agent) {
 /// Where Hermes keeps the scripts a task may run. Its own folder, and the only
 /// place `--script` will look.
 Directory get taskScriptsDir =>
-    Directory('${GridPaths.userHome}/.hermes/scripts');
+    Directory('${AgentHomes.hermesProfile(GridPaths.userHome)}/scripts');
 
 /// The script file name for a task called [name] that runs [prompt].
 ///
