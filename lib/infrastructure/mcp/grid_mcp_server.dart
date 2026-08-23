@@ -7,8 +7,13 @@ import '../../features/agents/logic/grid_chart_skill.dart';
 import '../../features/agents/logic/grid_delegate_skill.dart';
 import '../../features/agents/logic/grid_host_skill.dart';
 import '../../features/agents/logic/grid_loop_skill.dart';
+import '../../features/agents/logic/grid_research_skill.dart';
+import '../../features/agents/logic/grid_schedule_skill.dart';
+import '../../features/agents/logic/grid_serve_skill.dart';
+import '../../features/agents/logic/grid_web_skill.dart';
 import '../../features/chat/logic/commands/chat_command.dart';
 import '../../shared/skills/agent_skill_home.dart';
+import 'grid_agent_scripts.dart';
 import 'grid_mcp_tools.dart';
 
 /// Grid's own MCP server, running inside the app on loopback.
@@ -216,11 +221,39 @@ const String kMcpProtocolVersion = '2025-06-18';
 /// The card bodies, reused verbatim rather than rewritten — they are the same
 /// words that were being installed into the user's home, and having them in one
 /// place is what stops the tool and the card from drifting while both exist.
-final Map<String, String> kGridGuides = {
+Map<String, String> get kGridGuides => {
   'delegate': skillCardBody(kGridDelegateSkillMd),
   'loop': skillCardBody(kGridLoopSkillMd),
   'host': skillCardBody(gridHostSkillMd(uvPath: gridSkillUvPath())),
   'chart': skillCardBody(kGridChartSkillMd),
+  'schedule': skillCardBody(kGridScheduleSkillMd),
+  // The three that name scripts. Same bodies the cards carried, built against
+  // Grid's own folder instead of a skill folder inside the agent's home — see
+  // [gridAgentScriptsDir]. A getter rather than a const because those paths are
+  // resolved from `~/.grid` at call time, and a test that moves GRID_HOME has to
+  // move these with it.
+  'web': skillCardBody(
+    gridWebSkillMd(
+      uvPath: gridWebUvPath(),
+      searchScriptPath: gridAgentScriptPath('search.py'),
+      readScriptPath: gridAgentScriptPath('read.py'),
+      browseScriptPath: gridAgentScriptPath('browse.py'),
+    ),
+  ),
+  'research': skillCardBody(
+    gridResearchSkillMd(
+      uvPath: gridWebUvPath(),
+      searchScriptPath: gridAgentScriptPath('search.py'),
+      readScriptPath: gridAgentScriptPath('read.py'),
+    ),
+  ),
+  'serve': skillCardBody(
+    gridServeSkillMd(
+      uvPath: gridSkillUvPath(),
+      serveScriptPath: gridAgentScriptPath('serve.py'),
+      stateDir: gridServeStateDir().path,
+    ),
+  ),
 };
 
 /// A skill card without its YAML front-matter.

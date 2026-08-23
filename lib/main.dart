@@ -10,6 +10,7 @@ import 'app/notification_scope.dart';
 import 'app/panel_scope.dart';
 import 'app/single_instance.dart';
 import 'core/agent_homes.dart';
+import 'infrastructure/mcp/grid_agent_scripts.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
 import 'features/agents/presentation/chrome_connect_scope.dart';
@@ -41,6 +42,11 @@ Future<void> main() async {
     GridPaths.userHome,
     log: (message) => appLog.warn('agent', message),
   );
+
+  // The scripts Grid's guides name. In `~/.grid`, not in an agent's home —
+  // they were the last thing keeping this app inside `~/.claude/skills` and
+  // `~/.codex/skills` once the cards became MCP guides.
+  await ensureGridAgentScripts(log: (message) => appLog.warn('agent', message));
 
   // Boot the libmpv backend powering inline chat video/audio playback.
   MediaKit.ensureInitialized();

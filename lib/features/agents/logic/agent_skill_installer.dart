@@ -53,7 +53,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // backend.
   BuiltinGridSkill(
     name: kGridWebSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridWebSkillFiles,
   ),
   // What this machine has, and what to use instead of the GNU tools it doesn't:
@@ -61,7 +61,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // rediscovering that `timeout`/`gh`/`rg` aren't here.
   BuiltinGridSkill(
     name: kGridHostSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridHostSkillFiles,
   ),
   // The method behind a researched answer. `grid-web` gave every agent the
@@ -70,7 +70,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // voice.
   BuiltinGridSkill(
     name: kGridResearchSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridResearchSkillFiles,
   ),
   // The chat can draw a chart from a fenced block, and no agent would ever emit
@@ -86,7 +86,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // each needs the supervisor route or it reports a dead server as running.
   BuiltinGridSkill(
     name: kGridServeSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridServeSkillFiles,
   ),
   // A self-paced `/loop` asks the assistant that just ran the check when to run
@@ -113,7 +113,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // real scheduler is, so the answer stops depending on which agent replied.
   BuiltinGridSkill(
     name: kGridScheduleSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridScheduleSkillFiles,
   ),
 ];
@@ -322,6 +322,14 @@ const List<String> kMcpSupersededSkills = [
   'grid-loop',
   'grid-delegate',
   'grid-chart',
+  // The last five, once their scripts moved into `~/.grid` — see
+  // [gridAgentScriptsDir]. With these gone, Claude Code and Codex read nothing
+  // of Grid's from their own folders at all.
+  'grid-web',
+  'grid-research',
+  'grid-serve',
+  'grid-host',
+  'grid-schedule',
 ];
 
 /// Wire through the container so senders get it via `ref.read`, and tests can

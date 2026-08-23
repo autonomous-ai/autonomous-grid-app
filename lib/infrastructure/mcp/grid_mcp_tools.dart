@@ -85,18 +85,31 @@ const GridMcpTool kGridAskTool = GridMcpTool(
 const GridMcpTool kGridGuideTool = GridMcpTool(
   name: 'grid_guide',
   description:
-      'Read how something works on this computer before doing it. Topics: '
-      '"delegate" (sub-agents die with this turn unless you wait for them), '
-      '"loop" (pacing a repeat Grid is already running), "host" (what this '
-      'machine has instead of timeout/gh/rg), "chart" (drawing numbers in the '
-      'chat). '
-      'Cheaper to read one than to find out the hard way.',
+      'Read how something works on this computer before doing it — how to '
+      'search the web and read a page ("web"), how to answer a question that '
+      'needs evidence rather than recall ("research"), how to start something '
+      'that must outlive your turn ("serve"), what this machine has instead of '
+      'timeout/gh/rg ("host"), how to schedule work for later ("schedule"), '
+      'how to delegate without losing the sub-agent when this turn ends '
+      '("delegate"), how to pace a repeat Grid is already running ("loop"), '
+      'and how to draw numbers in the chat ("chart"). Reach for "web" or '
+      '"research" whenever the answer depends on anything current: your own '
+      'search tools are served by your vendor, which a grid is not.',
   schema: {
     'type': 'object',
     'properties': {
       'topic': {
         'type': 'string',
-        'enum': ['delegate', 'loop', 'host', 'chart'],
+        'enum': [
+          'web',
+          'research',
+          'serve',
+          'host',
+          'schedule',
+          'delegate',
+          'loop',
+          'chart',
+        ],
       },
     },
     'required': ['topic'],

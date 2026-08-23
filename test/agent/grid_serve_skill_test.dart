@@ -142,27 +142,25 @@ void main() {
       expect(kGridServeScript, contains('export PATH='));
     });
 
-    test('installing writes it where each agent looks: Codex flat in its own '
-        'folder, Hermes in the store\'s public one', () async {
+    test('installing writes it for Hermes and for nobody else — Codex and '
+        'Claude Code read the same words as an MCP guide, so their own '
+        'folders stay theirs', () async {
       for (final agent in AgentTool.values) {
         await AgentSkillInstaller(home: tmp.path).install(agent);
       }
 
-      final codex = File('${tmp.path}/.codex/skills/grid-serve/SKILL.md');
       final hermes = File(
         '${tmp.path}/.grid/skills/$kPublicSkillsDir/grid-serve/SKILL.md',
       );
-      expect(codex.existsSync(), isTrue);
       expect(hermes.existsSync(), isTrue);
-      expect(
-        File(
-          '${tmp.path}/.codex/skills/grid-serve/scripts/serve.py',
-        ).existsSync(),
-        isTrue,
-      );
-      // Same skill, same words, whichever agent is answering.
-      expect(codex.readAsStringSync(), contains('name: grid-serve'));
       expect(hermes.readAsStringSync(), contains('name: grid-serve'));
+      for (final folder in ['.codex/skills', '.claude/skills']) {
+        expect(
+          Directory('${tmp.path}/$folder/grid-serve').existsSync(),
+          isFalse,
+          reason: folder,
+        );
+      }
     });
 
     test('a successful stop drops the record, so the app stops listing a '

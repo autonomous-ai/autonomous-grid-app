@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_command.dart';
+import 'package:grid_app/infrastructure/mcp/grid_agent_scripts.dart';
 import 'package:grid_app/infrastructure/mcp/grid_mcp_server.dart';
 import 'package:grid_app/infrastructure/mcp/grid_mcp_tools.dart';
 
@@ -226,6 +227,69 @@ void main() {
         }))['result'],
         isNotNull,
       );
+    });
+  });
+
+  group('the guides', () {
+    test('every topic the tool offers has a body, and every body is offered — '
+        'a schema and a map that disagree fail as a tool call the model was '
+        'told it could make', () {
+      final offered =
+          ((kGridGuideTool.schema['properties']! as Map)['topic']!
+                  as Map)['enum']!
+              as List;
+
+      expect(offered.toSet(), kGridGuides.keys.toSet());
+    });
+
+    test('the ones that name scripts point into Grid\'s own folder, never into '
+        'an agent\'s — the scripts moving is what let the cards leave', () {
+      for (final topic in ['web', 'research', 'serve']) {
+        final body = kGridGuides[topic]!;
+        expect(body, contains('/app/agent-scripts/'), reason: topic);
+        expect(body, isNot(contains('.codex/skills')), reason: topic);
+        expect(body, isNot(contains('.claude/skills')), reason: topic);
+      }
+    });
+
+    test('no guide still carries its front-matter, which named a file the '
+        'agent can no longer open', () {
+      for (final entry in kGridGuides.entries) {
+        expect(entry.value, isNot(startsWith('---')), reason: entry.key);
+        expect(
+          entry.value,
+          isNot(contains('\nname: grid-')),
+          reason: entry.key,
+        );
+      }
+    });
+  });
+
+  group('ensureGridAgentScripts', () {
+    late Directory into;
+
+    setUp(() async {
+      into = await Directory.systemTemp.createTemp('grid_agent_scripts');
+    });
+    tearDown(() => into.delete(recursive: true));
+
+    test('writes every script a guide names', () async {
+      await ensureGridAgentScripts(into: into);
+
+      for (final name in gridAgentScripts().keys) {
+        expect(File('${into.path}/$name').existsSync(), isTrue, reason: name);
+      }
+    });
+
+    test('leaves an unchanged script alone, so "when did this change?" stays '
+        'answerable', () async {
+      await ensureGridAgentScripts(into: into);
+      final file = File('${into.path}/serve.py');
+      final before = file.lastModifiedSync();
+
+      await ensureGridAgentScripts(into: into);
+
+      expect(file.lastModifiedSync(), before);
     });
   });
 }
