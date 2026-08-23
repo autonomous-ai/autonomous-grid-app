@@ -101,7 +101,31 @@ Future<String> ensureGridHermesProfile(
     }
     await Link(link).create(target);
   }
+  await _seedConfig(root, profile, log);
   return profile;
+}
+
+/// Copies the root's `config.yaml` into a brand-new profile, once.
+///
+/// Without it, the first launch after this change hands Hermes an empty home:
+/// no provider, no model, no toolsets — and the app only repoints it on the
+/// next chat turn or task creation, so anything that ran before that would fail
+/// with "no model configured" against a machine that had been working for
+/// months. Copying the settings the app itself wrote makes the move invisible,
+/// and from here the app edits the profile and leaves the root alone forever.
+///
+/// **Only when the profile has none.** A second copy would overwrite whatever
+/// the app has since written to the profile with a root file nothing maintains.
+Future<void> _seedConfig(
+  String root,
+  String profile,
+  void Function(String message)? log,
+) async {
+  final source = File('$root/config.yaml');
+  final destination = File('$profile/config.yaml');
+  if (await destination.exists() || !await source.exists()) return;
+  await source.copy(destination.path);
+  log?.call('hermes profile: seeded config.yaml from $root');
 }
 
 Future<bool> _exists(String path) async =>

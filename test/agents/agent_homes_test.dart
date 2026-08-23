@@ -86,4 +86,30 @@ void main() {
       );
     },
   );
+
+  test('a new profile starts from the config the root already had, so the move '
+      'is invisible — an empty home means "no model configured" on a machine '
+      'that worked yesterday', () async {
+    await Directory(root()).create(recursive: true);
+    await File('${root()}/config.yaml').writeAsString('model: m1\n');
+
+    await ensureGridHermesProfile(home.path);
+
+    expect(File('${profile()}/config.yaml').readAsStringSync(), 'model: m1\n');
+  });
+
+  test('and never again — a second copy would undo whatever the app has since '
+      'written to the profile', () async {
+    await Directory(root()).create(recursive: true);
+    await File('${root()}/config.yaml').writeAsString('model: root\n');
+    await ensureGridHermesProfile(home.path);
+    await File('${profile()}/config.yaml').writeAsString('model: mine\n');
+
+    await ensureGridHermesProfile(home.path);
+
+    expect(
+      File('${profile()}/config.yaml').readAsStringSync(),
+      'model: mine\n',
+    );
+  });
 }
