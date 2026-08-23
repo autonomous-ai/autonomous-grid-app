@@ -16,7 +16,6 @@ import '../../../features/network/presentation/share_grid_dialog.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/api/models/member_usage.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/member_avatar.dart';
 import '../../widgets/skeleton.dart';
 import 'pill_panel_shell.dart';
 
@@ -239,13 +238,6 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
               byEmail,
               emailOf: (m) => m.email,
             );
-            // Whether a mark still tells two rows apart is a fact about the
-            // list, not about the person — so the colours are dealt out here,
-            // over the whole roster, rather than inside a row that cannot see
-            // the ones above it.
-            final slots = memberAvatarSlots([
-              for (final m in rows) m.email,
-            ], AppPalette.avatarPalette.length);
             final hovered = memberUsageFor(byEmail, _hovered ?? '');
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -275,7 +267,6 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
                   // spends its width on the figure the list is ordered by.
                   itemBuilder: (context, i) => _MemberRow(
                     email: rows[i].email,
-                    slot: slots[i],
                     isOwner: rows[i].isOwner,
                     usage: memberUsageFor(byEmail, rows[i].email),
                     usageLoading: usageLoading,
@@ -344,7 +335,6 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
 class _MemberRow extends StatelessWidget {
   const _MemberRow({
     required this.email,
-    required this.slot,
     required this.isOwner,
     required this.usage,
     required this.usageLoading,
@@ -355,10 +345,6 @@ class _MemberRow extends StatelessWidget {
   /// The address itself — what this row *is*, and the key everything else about
   /// it is looked up by (the usage map, the hover). Never what it prints.
   final String email;
-
-  /// Which colour this row's circle takes — decided for the roster as a whole
-  /// by `memberAvatarSlots`, not here, so no two visible rows match.
-  final int slot;
 
   final bool isOwner;
 
@@ -386,14 +372,17 @@ class _MemberRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final row = _PanelRow(
-      // The name in front of the `@` and nothing else. The domain used to
-      // follow it in the faint ink; on a work grid every row repeats it, so a
-      // column of them was a column of one word — and the panel is narrow
-      // enough that the repeated half was what pushed the names towards the
-      // ellipsis. The address is still what the row *is* — see [email] — it is
-      // just not what the row prints.
-      label: memberLocalPart(email),
-      leading: MemberAvatar(email: email, slot: slot, size: 22, fontSize: 11.5),
+      // The handle, `@dee`. The domain used to follow the name in faint ink; on
+      // a work grid every row repeats it, so a column of them was a column of
+      // one word — and the panel is narrow enough that the repeated half was
+      // what pushed the names towards the ellipsis. The address is still what
+      // the row *is* — see [email] — it is just not what the row prints.
+      //
+      // And no mark in front of it. A letter in a coloured circle is a stand-in
+      // for a face nobody here has uploaded, so every row carried the same
+      // information its own first character already carried, 22px further left.
+      // The names are what this list is read down; they now start at its edge.
+      label: memberHandle(email),
       strong: true,
       badge: isOwner ? 'owner' : null,
       // The **fresh** input leg, matching the hover's "input tokens" line and the
@@ -527,8 +516,9 @@ class _InviteFooterState extends State<_InviteFooter> {
 /// body that is one line tall and then ten pulls the panel's own edges out from
 /// under that pointer, which closes the thing you were waiting for.
 ///
-/// Five rows, and their metrics are [_MemberRow]'s exactly — a 22px tile in a
-/// row padded by 4 — so nothing shifts sideways or down when the names arrive.
+/// Five rows, and their metrics are [_MemberRow]'s exactly — a bar the height of
+/// the handle in a row padded by 4 — so nothing shifts sideways or down when the
+/// names arrive.
 class _MembersSkeleton extends StatelessWidget {
   const _MembersSkeleton();
 
@@ -567,7 +557,7 @@ class _MembersSkeleton extends StatelessWidget {
   }
 }
 
-/// One placeholder member: the circle, the handle, the figure.
+/// One placeholder member: the handle and the figure.
 class _MemberSkeletonRow extends StatelessWidget {
   const _MemberSkeletonRow();
 
@@ -577,8 +567,6 @@ class _MemberSkeletonRow extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Skeleton(width: 22, height: 22, radius: 11),
-          SizedBox(width: 9),
           // Not full width: a column of bars all reaching the figure would read
           // as a grey slab rather than as a list of names of differing length.
           Expanded(child: SkeletonLine(widthFactor: 0.72, height: 9)),
@@ -1304,7 +1292,6 @@ class _PanelBody extends StatelessWidget {
 class _PanelRow extends StatelessWidget {
   const _PanelRow({
     required this.label,
-    this.leading,
     this.trailing,
     this.badge,
     this.strong = false,
@@ -1312,16 +1299,12 @@ class _PanelRow extends StatelessWidget {
 
   final String label;
 
-  /// A mark in front of the label — the members list's initial tile. Null on
-  /// every other panel: a node's row is already four lines and a model id is a
-  /// string, not a person.
-  final Widget? leading;
-
   /// Whether the label is the row's subject rather than one of its facts.
   ///
-  /// A member's handle is what the whole row is about and carries a coloured
-  /// mark beside it; at regular weight the two read as unrelated. A machine name
-  /// or a model id sits above its own detail lines and needs no such lift.
+  /// A member's handle is what the whole row is about, and with the mark that
+  /// used to sit beside it gone, weight is the only thing left saying so. A
+  /// machine name or a model id sits above its own detail lines and needs no
+  /// such lift.
   final bool strong;
 
   /// The right-hand column: a figure ([_PanelFigure]), or its skeleton while the
@@ -1349,7 +1332,6 @@ class _PanelRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          if (leading case final mark?) ...[mark, const SizedBox(width: 9)],
           Expanded(
             child: Text(
               label,

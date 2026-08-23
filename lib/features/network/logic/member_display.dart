@@ -61,6 +61,21 @@ String memberLocalPart(String email) {
   return at <= 0 ? trimmed : trimmed.substring(0, at);
 }
 
+/// The address as a handle — `@dee` for `dee@autonomous.ai`.
+///
+/// What the members panel prints. The address is still what a row *is*, but a
+/// column of `name@one-company.com` spent most of its width on the half every
+/// row repeated, and reading a work roster as handles is how every other tool
+/// the user has open shows the same people.
+///
+/// Never doubles the sign. [memberLocalPart] is deliberately forgiving and hands
+/// back the whole string when there is nothing in front of the `@`, so a roster
+/// row holding `@autonomous.ai` would otherwise print `@@autonomous.ai`.
+String memberHandle(String email) {
+  final local = memberLocalPart(email);
+  return local.startsWith('@') ? local : '@$local';
+}
+
 /// The colour slot an address hashes to, in `[0, slots)` — the same one every
 /// time, on every machine, for as long as the address is the same.
 ///
