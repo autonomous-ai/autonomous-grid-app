@@ -196,12 +196,17 @@ final chatSenderProvider = Provider<ChatSender>(
 /// attached them, and they stay beside the text rather than inside it so the
 /// bubble shows a chip where the model gets the document (see [messageForModel]).
 /// [contexts] — what was on screen as Send was pressed — ride the same way.
+///
+/// [origin] says who this turn came from. It is the user unless the app is
+/// carrying on an instruction of theirs — the goal's next step, a loop's beat —
+/// and it changes only how the turn is drawn (see [TurnOrigin]).
 Future<ChatMessage> buildUserTurn({
   required String text,
   required List<MediaAttachment> attachments,
   required Directory outputsDir,
   List<ChatFile> files = const [],
   List<ChatContext> contexts = const [],
+  TurnOrigin origin = TurnOrigin.user,
 }) async {
   if (attachments.isEmpty) {
     return ChatMessage(
@@ -209,6 +214,7 @@ Future<ChatMessage> buildUserTurn({
       text: text,
       files: files,
       contexts: contexts,
+      sentBy: origin,
     );
   }
   final media = await saveMediaOutputs([
@@ -220,6 +226,7 @@ Future<ChatMessage> buildUserTurn({
     media: media,
     files: files,
     contexts: contexts,
+    sentBy: origin,
   );
 }
 

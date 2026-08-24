@@ -296,6 +296,11 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     /// of one built from the transcript — see [ChatSender.send]. Separate from
     /// [message], which is what the chat shows.
     String? agentCommand,
+
+    /// Who this turn is from — the person, or the app carrying on an
+    /// instruction of theirs. Decides how the transcript draws it, and nothing
+    /// else (see [TurnOrigin]).
+    TurnOrigin origin,
   });
 
   /// Hold a turn typed while the chat was busy — [_ChatQueue].
