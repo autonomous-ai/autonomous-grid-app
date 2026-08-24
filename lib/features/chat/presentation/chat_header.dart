@@ -466,10 +466,18 @@ class _ChatMenuDivider extends StatelessWidget {
 
 /// The conversation as plain text, for the clipboard — one labelled block per
 /// turn, in the order they were said.
+///
+/// Three labels, not two: a goal's next step and a loop's beat go out under the
+/// user's role but nobody typed them, and a copied transcript that puts "You:"
+/// in front of one is the same lie the bubble used to tell (see [TurnOrigin]).
 String transcriptText(Conversation chat) => [
-  for (final m in chat.messages)
-    '${m.role == ChatRole.user ? 'You' : 'Assistant'}: ${m.text}',
+  for (final m in chat.messages) '${_transcriptSpeaker(m)}: ${m.text}',
 ].join('\n\n');
+
+String _transcriptSpeaker(ChatMessage message) {
+  if (message.role == ChatRole.assistant) return 'Assistant';
+  return message.sentBy.isFromApp ? 'Grid' : 'You';
+}
 
 /// Renames [chat] after asking for the new name. Returns the new title, or null
 /// if the user cancelled or left it blank.

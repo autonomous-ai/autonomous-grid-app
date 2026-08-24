@@ -67,7 +67,9 @@ void main() {
     });
   });
 
-  test('it is a card with nothing to run, and lands for both agents', () async {
+  test('it is a card with nothing to run, and it reaches Hermes as a card and '
+      'the other two as an MCP guide — nothing of Grid\'s is written into '
+      'their own folders any more', () async {
     final files = gridHostSkillFiles(Directory('${tmp.path}/x'), uvPath: '/uv');
     expect(files.files, isEmpty);
 
@@ -76,7 +78,11 @@ void main() {
     }
     expect(
       File('${tmp.path}/.codex/skills/grid-host/SKILL.md').existsSync(),
-      isTrue,
+      isFalse,
+    );
+    expect(
+      File('${tmp.path}/.claude/skills/grid-host/SKILL.md').existsSync(),
+      isFalse,
     );
     expect(
       File(

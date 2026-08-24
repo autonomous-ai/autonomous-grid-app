@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -271,8 +272,9 @@ void main() {
 
   test('reads the runs Hermes actually wrote — oldest first, empty and '
       'unnamed files skipped', () async {
-    final dir = Directory('${tmp.path}/.hermes/cron/output/job-1')
-      ..createSync(recursive: true);
+    final dir = Directory(
+      '${AgentHomes.hermesProfile(tmp.path)}/cron/output/job-1',
+    )..createSync(recursive: true);
     File('${dir.path}/2026-07-15_08-00-00.md').writeAsStringSync('Tuesday\n');
     File('${dir.path}/2026-07-14_08-00-00.md').writeAsStringSync('Monday\n');
     // Neither of these is a run: an empty result, and a file we can't date.

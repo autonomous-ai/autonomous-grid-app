@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/agent_homes.dart';
 import '../../../../core/grid_paths.dart';
 import '../connector_token.dart';
 
@@ -50,7 +51,9 @@ class HermesTokenProjection {
   String get _hermesHome {
     final override = _home ?? Platform.environment['HERMES_HOME'];
     if (override != null && override.isNotEmpty) return override;
-    return '${GridPaths.userHome}/.hermes';
+    // Grid's own profile, not the user's root — the same home every `hermes`
+    // the app spawns is given (see HostEnvironment.hermesEnvironment).
+    return AgentHomes.hermesProfile(GridPaths.userHome);
   }
 
   Directory get tokenDir => Directory('$_hermesHome/mcp-tokens');

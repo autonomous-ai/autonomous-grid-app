@@ -138,6 +138,10 @@ class HermesGridLink {
       network.relayBaseUrl,
       network.relayApiKey,
       [model],
+      // The Hermes *Grid* runs, so this lands in Grid's profile. Without it the
+      // app would repin the model and toolsets of the user's own `hermes` every
+      // time a chat turn or a scheduled task went out.
+      gridsOwnHermes: true,
     );
     if (result is ApplyError) {
       return "Couldn't point Hermes at this grid: ${result.message}";

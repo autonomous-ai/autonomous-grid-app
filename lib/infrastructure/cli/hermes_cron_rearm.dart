@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../../core/agent_homes.dart';
+
 import '../../features/scheduled/logic/cron_error.dart';
 import 'host_environment.dart';
 
@@ -217,8 +219,9 @@ class HermesCronRearm {
       environment: {
         ...HostEnvironment.hermesEnvironment(),
         // Honour the home this was built with, so a test never writes to the
-        // real `~/.hermes`.
-        'HERMES_HOME': '$home/.hermes',
+        // real `~/.hermes` — and the profile within it, so a re-arm edits the
+        // same jobs file the rest of the app talks to.
+        'HERMES_HOME': AgentHomes.hermesProfile(home),
       },
     );
     if (result.exitCode != 0) {

@@ -296,6 +296,11 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     /// of one built from the transcript — see [ChatSender.send]. Separate from
     /// [message], which is what the chat shows.
     String? agentCommand,
+
+    /// Who this turn is from — the person, or the app carrying on an
+    /// instruction of theirs. Decides how the transcript draws it, and nothing
+    /// else (see [TurnOrigin]).
+    TurnOrigin origin,
   });
 
   /// Hold a turn typed while the chat was busy — [_ChatQueue].
@@ -551,6 +556,29 @@ class ChatSessionsController extends _ChatSessions
   /// `/loop` has to *start* will answer with. It defaults to none because the
   /// callers with no composer to read — the status line's Stop buttons — only
   /// ever run commands that act on a chat already open.
+  /// Runs a command an agent asked for over MCP, in the chat its turn belongs
+  /// to, and returns the sentence to hand back as the tool's result.
+  ///
+  /// **Refuses rather than acting on the wrong conversation.** Every command
+  /// here works on the chat that is open ([_startedChat]); a turn answering a
+  /// background chat that asked for a loop would otherwise start one wherever
+  /// the user happens to be standing, in a conversation nobody connected to the
+  /// request. The refusal is written for the agent to repeat, so the user is
+  /// told what to type instead of being told nothing.
+  Future<String> runAgentAsk(String chatId, ChatCommandCall call) async {
+    final chat = _find(chatId);
+    if (chat == null) {
+      return 'That conversation is no longer here, so nothing was started.';
+    }
+    if (state.activeId != chatId) {
+      return 'Grid runs this in the conversation on screen, and this turn is '
+          'answering a different one. Tell the user to type '
+          '"/${call.command.name} ${call.argument}" in this chat.';
+    }
+    final outcome = await runCommand(call, model: chat.model);
+    return outcome?.message ?? 'Grid is running /${call.command.name}.';
+  }
+
   @override
   Future<CommandOutcome?> runCommand(
     ChatCommandCall call, {

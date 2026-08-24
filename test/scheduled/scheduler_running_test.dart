@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,7 +7,7 @@ import 'package:grid_app/infrastructure/cli/hermes_cron_service.dart';
 
 /// The heartbeat Hermes touches every ~10s, as seconds-since-epoch.
 void _beat(Directory home, DateTime at) {
-  final cron = Directory('${home.path}/.hermes/cron')
+  final cron = Directory('${AgentHomes.hermesProfile(home.path)}/cron')
     ..createSync(recursive: true);
   File(
     '${cron.path}/ticker_heartbeat',
