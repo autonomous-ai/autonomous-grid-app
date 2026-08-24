@@ -109,7 +109,7 @@ class TurnModelUsage extends Notifier<Map<String, List<ModelShare>>> {
             apiKey: network.relayApiKey,
             turnId: turnId,
           );
-      return result.models;
+      return result;
     } on Object {
       return null;
     }

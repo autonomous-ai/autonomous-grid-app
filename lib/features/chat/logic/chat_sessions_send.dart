@@ -574,6 +574,7 @@ mixin _ChatSend on _ChatSessions {
               network,
               current,
               stamp(reply),
+              turnId: turnId,
             );
             // The turn can be stopped, or the chat deleted, while that read
             // was in flight: [_attachOrchestrationUsage] only pauses the
@@ -674,6 +675,7 @@ mixin _ChatSend on _ChatSessions {
                 network,
                 current,
                 stamp(kept),
+                turnId: turnId,
               );
               // Same guard as the success branch above, and the same reason
               // — Stop/Delete can land while this read is in flight.
@@ -998,24 +1000,25 @@ mixin _ChatSend on _ChatSessions {
   Future<({ChatMessage message, String? watermark})> _attachOrchestrationUsage(
     NetworkCredential network,
     Conversation conversation,
-    ChatMessage message,
-  ) async {
+    ChatMessage message, {
+    required String turnId,
+  }) async {
     if (conversation.routingGroup == null) {
       return (message: message, watermark: null);
     }
     final sub = _subs[conversation.id];
     sub?.pause();
     try {
-      final usage = await fetchTurnUsage(
-        client: ref.read(relayApiClientProvider),
-        baseUrl: network.relayBaseUrl,
-        apiKey: network.relayApiKey,
-        conversationId: conversation.id,
-        from: conversation.lastRequestWatermark,
-      );
+      final usage = await ref
+          .read(relayApiClientProvider)
+          .usageTurn(
+            baseUrl: network.relayBaseUrl,
+            apiKey: network.relayApiKey,
+            turnId: turnId,
+          );
       return (
-        message: message.copyWith(orchestrationModels: usage.models),
-        watermark: usage.last,
+        message: message.copyWith(orchestrationModels: usage),
+        watermark: null,
       );
     } catch (error) {
       ref
