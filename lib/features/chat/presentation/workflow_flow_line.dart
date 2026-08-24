@@ -1,5 +1,7 @@
-/// Where this view's live status comes from — decided before it was written,
-/// because it decides the whole shape of the widget below.
+/// The orchestration overview — how this chat is being routed and how far its
+/// turn has got — shown as a floating panel that hangs off the top bar's
+/// workflow button (a relative popover, the same family as the grid power /
+/// stat panels), never as an element pushed into the conversation.
 ///
 /// **It reuses [openTurnModelsProvider]** — the poll `TurnModelUsage` already
 /// runs for every open turn (`chat_sessions_send.dart` calls `begin` as the
@@ -7,7 +9,7 @@
 /// A second poll would have to repeat that whole file: a timer per chat, the
 /// `ref.mounted` guards across the wire, the rule that a 404 from a grid whose
 /// master predates `/relay/v1/usage` reads as "no data yet" and never as an
-/// error, and start/stop hooks in the sender. One caption is not worth two of
+/// error, and start/stop hooks in the sender. One panel is not worth two of
 /// those.
 ///
 /// What that buys, and what it does **not**:
@@ -19,189 +21,54 @@
 ///   credited model reads as [NodeStatus.running] while the turn is open and
 ///   [NodeStatus.done] once it has landed, and the panel says as much in words
 ///   rather than implying a precision it hasn't got.
-/// - It cannot see a **round**, so this view never claims "round 2 of 5"; and
+/// - It cannot see a **round**, so this panel never claims "round 2 of 5"; and
 ///   it cannot see a judge's verdict, so [NodeStatus.rejected] is never shown.
 ///   Naming either would be inventing it.
 /// - Mid-turn the reading is time-window correlated, so two turns running at
 ///   once on one grid blend into each other's numbers — the trade-off
-///   `TurnModelUsage` documents and accepts. Once the turn lands this view
+///   `TurnModelUsage` documents and accepts. Once the turn lands this panel
 ///   switches to the *exact* conversation-scoped slice stored on the message
 ///   (`ChatMessage.orchestrationModels`), which has no such blending.
 library;
-
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/layouts/widgets/pill_panel_shell.dart';
-import '../../../shared/layouts/widgets/top_bar_pill.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import '../logic/routing_group.dart';
 import '../logic/turn_model_share.dart';
 import '../logic/turn_model_usage.dart';
-import '../logic/workflow_bubble_open.dart';
 import 'orchestration_node_diagram.dart';
-
-/// The strip above the conversation saying how this chat is being routed and
-/// how far its turn has got — and, on hover or held open by a click, the same
-/// node diagram the routing setup dialog previews, driven by the live turn.
-///
-/// Draws nothing at all for a chat on the grid's ordinary pick: the whole
-/// feature is about a [RoutingGroup], and a bar reporting "no orchestration" on
-/// every other chat would be chrome that never says anything. Nothing either
-/// while the top bar's workflow button is off ([workflowBubbleOpenProvider]) —
-/// that button is how a user puts this strip away, so it has to reach the strip
-/// and not just its own icon.
-class WorkflowFlowLine extends ConsumerStatefulWidget {
-  const WorkflowFlowLine({super.key, required this.conversation});
-
-  /// The open conversation, or null before one is chosen.
-  final Conversation? conversation;
-
-  @override
-  ConsumerState<WorkflowFlowLine> createState() => _WorkflowFlowLineState();
-}
-
-/// How long the pointer must rest on the strip before the diagram opens, and
-/// how long it may be off it before the diagram closes.
-///
-/// The same two beats `GridPowerPill` uses, for the same two reasons: the wait
-/// is so a pointer crossing the top of the chat on its way elsewhere doesn't
-/// flash a panel open behind it, and the grace is so the pointer can cross the
-/// gap between the strip and the panel without it closing underfoot.
-const Duration _kOpenDelay = Duration(milliseconds: 180);
-const Duration _kCloseGrace = Duration(milliseconds: 120);
 
 /// The widest fan-out a Brute Force turn can run, matching the relay's own
 /// `MAX_N`. Only ever applied to a shape read off the usage log — a group that
 /// names its models is drawn exactly as it was saved.
 const int _kMaxNodes = 4;
 
-class _WorkflowFlowLineState extends ConsumerState<WorkflowFlowLine> {
-  final _link = LayerLink();
-  final _controller = OverlayPortalController();
+/// The panel's width cap, so the wide Brute Force fan-out diagram shrinks to
+/// fit rather than spilling past the screen edge.
+const double _kMaxWidth = 620;
 
-  /// Ties the strip and its panel into one tap region, so a click inside either
-  /// isn't the "click outside" that dismisses a pinned panel.
-  final _tapGroup = Object();
-
-  /// Whether the pointer is on the strip or on the panel it opened. Set on
-  /// entry *before* the previous exit's delayed close runs, which is what lets
-  /// the pointer travel from one to the other without the panel blinking.
-  bool _hovered = false;
-
-  /// Held open by a click rather than by the pointer resting on the strip.
-  ///
-  /// Hover alone can't be read from here: the diagram is wide enough to scroll
-  /// sideways, and a panel that shuts the moment the pointer leaves the strip
-  /// can't be scrolled at all.
-  ///
-  /// **Entirely this widget's own**, exactly as `GridPowerPill`'s is. It is
-  /// deliberately not tied to `workflowBubbleOpenProvider`: that flag says
-  /// whether the strip is shown at all, which is a different question from
-  /// whether the strip's node panel is currently held open. Tying the two
-  /// together cost a dead first click — the flag could set this true while the
-  /// open chat had no group to draw, leaving the panel shut but believing
-  /// itself pinned, so the first real click read as "unpin" and did nothing.
-  /// The one thing the flag does reach is *release*: putting the strip away
-  /// lets go of a panel it was holding (see [build]).
-  bool _pinned = false;
+/// The panel content for a routed chat, hosted by the top bar's workflow
+/// popover. Draws nothing for a chat on the grid's ordinary pick (no group) or
+/// with no conversation open.
+class WorkflowFlowPanel extends ConsumerWidget {
+  const WorkflowFlowPanel({super.key});
 
   @override
-  void didUpdateWidget(covariant WorkflowFlowLine oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_routing != null) return;
-    // Switching to a chat on the grid's ordinary pick unmounts the portal, so
-    // let go of what was being held for the chat we just left.
-    _pinned = false;
-    _hovered = false;
-    if (!_controller.isShowing) return;
-    // Not from here, though: this runs inside the frame's build, and hiding
-    // marks the portal dirty. One frame later it is detached, where hiding is
-    // just bookkeeping — and without it a later chat *with* a group would open
-    // already showing.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _routing == null) _shut();
-    });
-  }
-
-  /// This chat's routing group, or null when there is nothing to draw.
-  RoutingGroup? get _routing => widget.conversation?.routingGroup;
-
-  void _open() {
-    if (!_controller.isShowing) _controller.show();
-  }
-
-  void _shut() {
-    if (_controller.isShowing) _controller.hide();
-  }
-
-  /// Let the panel go and forget it was ever held — what a second click and a
-  /// click outside both mean.
-  void _release() {
-    if (!_pinned) {
-      _shut();
-      return;
-    }
-    setState(() => _pinned = false);
-    _shut();
-  }
-
-  void _onEnter() {
-    _hovered = true;
-    if (_controller.isShowing) return;
-    Future<void>.delayed(_kOpenDelay, () {
-      if (mounted && _hovered && _routing != null) _open();
-    });
-  }
-
-  void _onExit() {
-    _hovered = false;
-    Future<void>.delayed(_kCloseGrace, () {
-      if (!mounted || _hovered || _pinned) return;
-      _shut();
-    });
-  }
-
-  /// A click pins the panel open, so it can be read and scrolled without the
-  /// pointer having to stay put; a second click lets it go.
-  void _toggle() {
-    if (_pinned) {
-      _release();
-      return;
-    }
-    setState(() => _pinned = true);
-    _open();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    // Putting the strip away takes its panel with it: unmounting the portal
-    // while the controller still believes it is showing would have the strip
-    // come back already open the next time the button is switched on — the same
-    // trap [didUpdateWidget] guards for a chat switch, arriving here as a
-    // provider change instead of a new widget.
-    ref.listen(workflowBubbleOpenProvider, (_, open) {
-      if (open || !mounted) return;
-      _hovered = false;
-      if (_pinned) setState(() => _pinned = false);
-      _shut();
-    });
-    final conversation = widget.conversation;
-    final group = _routing;
+    final conversation = ref.watch(
+      chatSessionsProvider.select((s) => s.active),
+    );
+    final group = conversation?.routingGroup;
     if (conversation == null || group == null) return const SizedBox.shrink();
-    // Put away from the top bar. Checked after the group, not before: the
-    // button is only offered for a chat that has one, so the two gates are
-    // read in the order the user meets them.
-    if (!ref.watch(workflowBubbleOpenProvider)) return const SizedBox.shrink();
 
-    // Whether *this* chat has a turn in flight, not "the app is busy": a turn
-    // dispatched into another conversation must not set this one's nodes going.
+    // Whether this chat has a turn in flight, not "the app is busy".
     final inFlight = ref.watch(
       chatSessionsProvider.select((s) => s.sendingFor(conversation.id)),
     );
@@ -213,62 +80,12 @@ class _WorkflowFlowLineState extends ConsumerState<WorkflowFlowLine> {
         : _settledShares(conversation);
     final flow = _resolve(group, shares, inFlight: inFlight);
 
-    // Hugging its content and left-aligned: this is a capsule floating over the
-    // top of the conversation, the way the top bar's own pills float over it —
-    // not a bar, which would put a second rule under the one the top bar
-    // already draws below the chat's title.
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onEnter: (_) => _onEnter(),
-          onExit: (_) => _onExit(),
-          child: TapRegion(
-            groupId: _tapGroup,
-            onTapOutside: (_) {
-              if (_pinned) _release();
-            },
-            child: CompositedTransformTarget(
-              link: _link,
-              child: OverlayPortal(
-                controller: _controller,
-                overlayChildBuilder: (context) => _FlowPanel(
-                  link: _link,
-                  tapGroupId: _tapGroup,
-                  flow: flow,
-                  onEnter: _onEnter,
-                  onExit: _onExit,
-                ),
-                child: Semantics(
-                  label: _spoken(flow),
-                  button: true,
-                  container: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _toggle,
-                    child: TopBarPill(child: _CollapsedRow(flow: flow)),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: _kMaxWidth),
+      child: _FlowCard(flow: flow),
     );
   }
 }
-
-/// A spoken summary — the panel is pointer-driven, so what it shows has to be
-/// reachable from the strip itself.
-String _spoken(_Flow flow) => [
-  'Routing: ${flow.group.mode.displayName}',
-  flow.group.isFixed
-      ? 'the same models every message'
-      : 'models re-picked every message',
-  flow.status,
-].join(', ');
 
 /// What the last answered turn was credited with — the exact
 /// conversation-scoped slice when the settle read landed, and the live poll's
@@ -281,8 +98,8 @@ List<ModelShare> _settledShares(Conversation conversation) {
   return const [];
 }
 
-/// One chat's flow as this view can currently describe it: the line the strip
-/// shows collapsed, and the nodes the panel draws expanded.
+/// One chat's flow as this panel can currently describe it: the header's status
+/// line and the nodes it draws expanded.
 ///
 /// [nodes] is null when the reading is too thin to draw a shape from — a
 /// Dynamic group before its first model has answered. A diagram built from no
@@ -301,8 +118,8 @@ typedef _Flow = ({
   bool pinnedShape,
 });
 
-/// Everything the strip and the panel need, derived from [group] and whatever
-/// the grid has credited so far in [shares].
+/// Everything the panel needs, derived from [group] and whatever the grid has
+/// credited so far in [shares].
 _Flow _resolve(
   RoutingGroup group,
   List<ModelShare> shares, {
@@ -417,114 +234,37 @@ NodeStatus _statusOf(String id, Set<String> served, {required bool inFlight}) {
   return inFlight ? NodeStatus.running : NodeStatus.done;
 }
 
-/// The strip itself: how this chat is routed, and how far its turn has got.
-class _CollapsedRow extends StatelessWidget {
-  const _CollapsedRow({required this.flow});
+/// The panel's body: the mode/status header, the node diagram, and the footnote
+/// that says what a lit dot does and does not mean.
+class _FlowCard extends StatelessWidget {
+  const _FlowCard({required this.flow});
 
   final _Flow flow;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(LucideIcons.workflow, size: 13, color: AppPalette.textFaint),
-        const SizedBox(width: 7),
-        Text(
-          flow.group.mode.displayName,
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: AppFont.medium,
-            color: AppPalette.textPrimary,
-          ),
-        ),
-        const SizedBox(width: 7),
-        // Bounded rather than Expanded: the strip hugs its own content — it is
-        // a capsule, not a bar — so a long status has to ellipsize instead of
-        // widening the capsule past the edge of a narrow window.
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 240),
-          child: Text(
-            flow.status,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12.5, color: AppPalette.textFaint),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Icon(
-          Icons.keyboard_arrow_down_rounded,
-          size: 14,
-          color: AppPalette.textFaint,
-        ),
-      ],
-    );
-  }
-}
-
-/// The panel the strip opens: this turn drawn as nodes.
-///
-/// Hung under the strip on the glass surface every hover panel in this app
-/// already uses ([PillPanelSurface]), so a popover opening from the chat's own
-/// chrome reads as one family with the ones opening from the top bar.
-class _FlowPanel extends StatelessWidget {
-  const _FlowPanel({
-    required this.link,
-    required this.tapGroupId,
-    required this.flow,
-    required this.onEnter,
-    required this.onExit,
-  });
-
-  final LayerLink link;
-  final Object tapGroupId;
-  final _Flow flow;
-  final VoidCallback onEnter;
-  final VoidCallback onExit;
-
-  /// Wide enough for the widest shape [OrchestrationNodeDiagram] draws — four
-  /// pills and three connectors, 660px — plus the surface's own padding. The
-  /// diagram scrolls sideways inside itself, so a window too narrow for this
-  /// clamps below and loses nothing.
-  static const double _width = 660 + 26;
-  static const double _edgeMargin = 10;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final windowWidth = MediaQuery.sizeOf(context).width;
-    return Positioned(
-      width: math.min(_width, windowWidth - _edgeMargin * 2),
-      child: CompositedTransformFollower(
-        link: link,
-        targetAnchor: Alignment.bottomLeft,
-        followerAnchor: Alignment.topLeft,
-        offset: const Offset(0, 6),
-        child: MouseRegion(
-          onEnter: (_) => onEnter(),
-          onExit: (_) => onExit(),
-          child: TapRegion(
-            groupId: tapGroupId,
-            child: PillPanelSurface(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _PanelHeader(flow: flow),
-                  if (flow.nodes case final diagram?) ...[
-                    diagram,
-                    const SizedBox(height: 4),
-                    // Said out loud rather than left to the dots to imply:
-                    // the usage log counts requests, so a lit dot cannot mean
-                    // what a reader would take it to mean unaided.
-                    PillPanelMessage(text: _footnote(flow)),
-                  ] else
-                    PillPanelMessage(text: _emptyLine(flow.group)),
-                ],
-              ),
-            ),
-          ),
+    return PillPanelSurface(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PanelHeader(flow: flow),
+            const SizedBox(height: 6),
+            if (flow.nodes case final diagram?) ...[
+              // A wide Brute Force fan-out is ~660px against this panel's ~620px
+              // cap — shrink to fit rather than spill off the screen.
+              FittedBox(fit: BoxFit.scaleDown, child: diagram),
+              const SizedBox(height: 4),
+              // Said out loud rather than left to the dots to imply: the usage
+              // log counts requests, so a lit dot cannot mean what a reader
+              // would take it to mean unaided.
+              PillPanelMessage(text: _footnote(flow)),
+            ] else
+              PillPanelMessage(text: _emptyLine(flow.group)),
+          ],
         ),
       ),
     );
@@ -549,8 +289,8 @@ String _emptyLine(RoutingGroup group) => group.isFixed
     : 'The grid picks the models for each message. They appear here as soon '
           'as the first one answers.';
 
-/// The panel's own first line: the mode, whether its models repeat, and the
-/// same status the strip carries.
+/// The panel's first line: the mode, whether its models repeat, and the same
+/// status the header carries.
 class _PanelHeader extends StatelessWidget {
   const _PanelHeader({required this.flow});
 
@@ -559,32 +299,31 @@ class _PanelHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Row(
-        children: [
-          Text(
-            flow.group.mode.displayName,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: AppFont.medium,
-              color: AppPalette.textPrimary,
-            ),
+    return Row(
+      children: [
+        Icon(LucideIcons.workflow, size: 13, color: AppPalette.textFaint),
+        const SizedBox(width: 7),
+        Text(
+          flow.group.mode.displayName,
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: AppFont.medium,
+            color: AppPalette.textPrimary,
           ),
-          const SizedBox(width: 8),
-          PillPanelBadge(label: flow.group.isFixed ? 'Fixed' : 'Dynamic'),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              flow.status,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 12.5, color: AppPalette.textFaint),
-            ),
+        ),
+        const SizedBox(width: 8),
+        PillPanelBadge(label: flow.group.isFixed ? 'Pinned' : 'Dynamic'),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            flow.status,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: TextStyle(fontSize: 12.5, color: AppPalette.textFaint),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

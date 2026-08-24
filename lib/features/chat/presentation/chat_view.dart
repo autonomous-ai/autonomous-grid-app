@@ -69,7 +69,6 @@ import 'grid_model_picker.dart';
 import 'chat_event_rows.dart';
 import 'out_of_steps_bar.dart';
 import 'plan_approve_bar.dart';
-import 'workflow_flow_line.dart';
 
 /// How many frames [_ChatViewState._snapToBottom] gets to converge on the real
 /// end of a transcript it can only estimate. Six is a tenth of a second, and each
@@ -1128,15 +1127,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Above everything, outside the transcript's scroll view, so it
-                // stays put while the conversation moves under it. The chat's
-                // own title row lives in the top bar now (see
-                // [chatHeaderVisibleProvider] above), which is the row directly
-                // over this one — so the top of this column is as close to
-                // "above the chat header" as the current layout has, and it is
-                // the only place a strip can sit without scrolling away.
-                // Unmounts itself for a chat on the grid's ordinary pick.
-                WorkflowFlowLine(conversation: active),
                 Expanded(
                   child: noModel
                       ? NoModelYet(

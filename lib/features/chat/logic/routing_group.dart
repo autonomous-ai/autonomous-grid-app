@@ -19,13 +19,19 @@ enum RoutingMode {
 /// model is.
 String routingModelId(RoutingMode mode) => 'auto/${mode.wireValue}';
 
-/// The one-line promise each half of the Fixed/Dynamic choice makes.
+/// The one-line promise each half of the Pinned/Dynamic choice makes.
 ///
 /// Shared so the picker's mode menu and the setup dialog's segmented control
 /// can never drift into describing the same choice two different ways — they
 /// are the same question asked at two moments.
-String routingHoldNote({required bool isFixed}) =>
-    isFixed ? 'Same models every message.' : 'Re-picked every message.';
+///
+/// Names "the grid" as the one doing the re-picking — "Re-picked every
+/// message" on its own reads as an instruction to the user (as if they had
+/// to choose again by hand each time), when the whole point of Dynamic is
+/// that nobody has to.
+String routingHoldNote({required bool isFixed}) => isFixed
+    ? 'Same models every message.'
+    : 'The grid picks new models every message.';
 
 /// The routing mode [id] names, or null when it is an ordinary model id.
 RoutingMode? routingModeForModelId(String id) {
@@ -45,21 +51,71 @@ class RoutingGroup {
     this.models,
     this.worker,
     this.judge,
+    this.aggregator,
+    this.maxRounds,
+    this.maxProposers,
+    this.pool,
   });
 
   final RoutingMode mode;
   final bool isFixed;
-  final List<String>? models; // brute force only
-  final String? worker; // judge loop only
-  final String? judge; // judge loop only
+  final List<String>? models; // brute force, Fixed only
+  final String? worker; // judge loop, Fixed only
+  final String? judge; // judge loop, Fixed only
+
+  /// Brute Force only, and always optional — the relay picks the aggregator
+  /// live from its own ranking (`aggregator_model`, CLI side) whenever this
+  /// is null, which is the reasoned default. Only set when the user
+  /// explicitly names one in the setup dialog.
+  final String? aggregator;
+
+  /// Judge Loop only: the max number of worker/judge rounds (1–10). Null sends
+  /// no cap, so the relay uses its own MAX_ROUNDS=5. Applies to BOTH Fixed and
+  /// Dynamic — the user asked for a per-chat round bound regardless of pinning.
+  final int? maxRounds;
+
+  /// Brute Force, Dynamic only: the max number of proposers the grid may fan
+  /// out to. Null leaves it unbounded (the grid uses whatever is free).
+  final int? maxProposers;
+
+  /// Brute Force, Dynamic only: the candidate models the grid may draw its
+  /// proposers from. Null = the whole grid.
+  final List<String>? pool;
 
   /// The exact string sent as the chat request's `model` field.
   String toModelField() {
-    if (!isFixed) return routingModelId(mode);
-    if (mode == RoutingMode.bruteForce) {
-      return jsonEncode({'mode': 'brute_force', 'models': models});
+    switch (mode) {
+      case RoutingMode.bruteForce:
+        if (isFixed) {
+          return jsonEncode({
+            'mode': 'brute_force',
+            'models': models,
+            if (aggregator != null) 'aggregator': aggregator,
+          });
+        }
+        final hasConfig = maxProposers != null || (pool != null && pool!.isNotEmpty);
+        if (!hasConfig) return routingModelId(mode);
+        return jsonEncode({
+          'mode': 'brute_force',
+          'dynamic': true,
+          if (maxProposers != null) 'max_proposers': maxProposers,
+          if (pool != null && pool!.isNotEmpty) 'pool': pool,
+        });
+      case RoutingMode.judgeLoop:
+        final hasPool = pool != null && pool!.isNotEmpty;
+        if (!isFixed && !hasPool && maxRounds == null) return routingModelId(mode);
+        return jsonEncode({
+          'mode': 'judge_loop',
+          if (!isFixed) 'dynamic': true,
+          // The Feedback Loop setup now sends a candidate POOL the grid picks
+          // worker + judge from. The legacy worker/judge pair is kept only for
+          // pinned groups saved by an older build.
+          if (isFixed && worker != null) 'worker': worker,
+          if (isFixed && judge != null) 'judge': judge,
+          if (hasPool) 'pool': pool,
+          if (maxRounds != null) 'max_rounds': maxRounds,
+        });
     }
-    return jsonEncode({'mode': 'judge_loop', 'worker': worker, 'judge': judge});
   }
 
   /// Serializes to a JSON-compatible map.
@@ -69,6 +125,10 @@ class RoutingGroup {
     if (models != null) 'models': models,
     if (worker != null) 'worker': worker,
     if (judge != null) 'judge': judge,
+    if (aggregator != null) 'aggregator': aggregator,
+    if (maxRounds != null) 'maxRounds': maxRounds,
+    if (maxProposers != null) 'maxProposers': maxProposers,
+    if (pool != null) 'pool': pool,
   };
 
   /// Safely deserializes from a JSON map, returning null on invalid input.
@@ -81,12 +141,20 @@ class RoutingGroup {
     final isFixed = json['isFixed'];
     if (isFixed is! bool) return null;
     final rawModels = json['models'];
+    final rawPool = json['pool'];
     return RoutingGroup(
       mode: mode,
       isFixed: isFixed,
       models: rawModels is List ? rawModels.whereType<String>().toList() : null,
       worker: json['worker'] is String ? json['worker'] as String : null,
       judge: json['judge'] is String ? json['judge'] as String : null,
+      aggregator: json['aggregator'] is String
+          ? json['aggregator'] as String
+          : null,
+      maxRounds: json['maxRounds'] is int ? json['maxRounds'] as int : null,
+      maxProposers:
+          json['maxProposers'] is int ? json['maxProposers'] as int : null,
+      pool: rawPool is List ? rawPool.whereType<String>().toList() : null,
     );
   }
 
@@ -97,7 +165,8 @@ class RoutingGroup {
       other.isFixed == isFixed &&
       _listEq(other.models, models) &&
       other.worker == worker &&
-      other.judge == judge;
+      other.judge == judge &&
+      other.aggregator == aggregator;
 
   @override
   int get hashCode => Object.hash(
@@ -106,6 +175,7 @@ class RoutingGroup {
     Object.hashAll(models ?? const []),
     worker,
     judge,
+    aggregator,
   );
 }
 
@@ -118,61 +188,3 @@ bool _listEq(List<String>? a, List<String>? b) {
   return true;
 }
 
-/// Result of parsing the grid's free-text answer to a suggestion probe.
-sealed class SuggestionParseResult {}
-
-/// A successfully parsed routing group suggestion.
-class SuggestionParsed extends SuggestionParseResult {
-  SuggestionParsed(this.group);
-  final RoutingGroup group;
-}
-
-/// A failed parsing attempt with a human-readable reason.
-class SuggestionParseFailed extends SuggestionParseResult {
-  SuggestionParseFailed(this.reason);
-  final String reason;
-}
-
-/// Extracts the suggested [RoutingGroup] from a model's free-text answer to
-/// the suggestion probe (see design spec §3) — tolerant of prose or a
-/// markdown code fence wrapped around the JSON object.
-SuggestionParseResult parseSuggestion(String assistantText, RoutingMode mode) {
-  final match = RegExp(r'\{[\s\S]*\}').firstMatch(assistantText);
-  if (match == null) {
-    return SuggestionParseFailed('No JSON object found in the answer.');
-  }
-  final Object? decoded;
-  try {
-    decoded = jsonDecode(match.group(0)!);
-  } on FormatException catch (e) {
-    return SuggestionParseFailed('Could not parse JSON: ${e.message}');
-  }
-  if (decoded is! Map<String, dynamic>) {
-    return SuggestionParseFailed('Answer was not a JSON object.');
-  }
-  if (mode == RoutingMode.bruteForce) {
-    final rawModels = decoded['models'];
-    if (rawModels is! List || rawModels.length < 2) {
-      return SuggestionParseFailed(
-        'Expected a "models" list with at least 2 entries.',
-      );
-    }
-    final models = rawModels.whereType<String>().toList();
-    if (models.length != rawModels.length) {
-      return SuggestionParseFailed('"models" contained a non-string entry.');
-    }
-    return SuggestionParsed(
-      RoutingGroup(mode: mode, isFixed: true, models: models),
-    );
-  }
-  final worker = decoded['worker'];
-  final judge = decoded['judge'];
-  if (worker is! String || judge is! String) {
-    return SuggestionParseFailed(
-      'Expected string "worker" and "judge" fields.',
-    );
-  }
-  return SuggestionParsed(
-    RoutingGroup(mode: mode, isFixed: true, worker: worker, judge: judge),
-  );
-}

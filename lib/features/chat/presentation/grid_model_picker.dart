@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/composer_trigger.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/modality_mark.dart';
@@ -28,16 +27,14 @@ import 'routing_setup_dialog.dart';
 typedef GridModelSelected =
     void Function(NetworkCredential grid, PlaygroundModelOption option);
 
-/// Called when the user picks one of the orchestrator rows, having said in the
-/// same gesture whether the models should be pinned ([fixed]) or re-picked by
-/// the grid every message.
+/// Called when the user taps one of the orchestrator rows — [mode]'s own
+/// setup dialog decides Fixed vs Dynamic from there.
 typedef _RoutingSelected =
     void Function(
       NetworkCredential grid,
       PlaygroundModelOption option,
-      RoutingMode mode, {
-      required bool fixed,
-    });
+      RoutingMode mode,
+    );
 
 /// The geometry an option row is built from. `_InfoRow` needs to hang its note
 /// under the row's *text*, which means knowing where that text starts — it used
@@ -50,7 +47,7 @@ const _rowIconGap = 9.0;
 final _rowRadius = BorderRadius.circular(AppControl.radius);
 
 /// The panel's fixed width.
-const _menuWidth = 340.0;
+const _menuWidth = 260.0;
 
 /// The panel's own vertical padding — [appMenuStyle]'s `vertical: 5`. Read off
 /// that style rather than guessed: the two drifting apart is what pushes a menu
@@ -99,33 +96,6 @@ const _listPadding = 6.0;
 /// while the catalog is in flight matches the panel that actually draws.
 const _loadingRowCount = 3;
 
-/// What [_EmptyNote] occupies: 22 above and 24 below a single 12.5/1.3 line.
-///
-/// Its own number because it is nothing like an option row. Counted as one
-/// `_optionRowHeight` the estimate came out ~29px short, and a panel placed
-/// 29px low grows down over the pill it hangs off — which is what a grid
-/// serving no models looked like: the "isn't serving a model" panel sitting on
-/// top of the composer instead of above it.
-const _emptyNoteHeight = 63.0;
-
-/// What the menu will measure for a catalog of [rows] options.
-///
-/// Summed from the row's own parts rather than guessed, so
-/// [anchoredMenuPosition] lands the panel on the pill instead of near it — and
-/// so it follows if the row's padding ever changes. Unlike the other menus in
-/// the app this height can't be a constant: the list grows with what the grid
-/// serves, and a stale constant is exactly what floats a menu off its anchor.
-///
-/// Capped by [_maxListHeight] at exactly what the panel can draw, so a grid
-/// serving twenty models places the same as one serving three.
-Size _menuSize(BuildContext context, int rows) {
-  // `rows == 0` is the empty state, which draws one [_EmptyNote] rather than no
-  // rows at all — see [_emptyNoteHeight].
-  final content = rows == 0 ? _emptyNoteHeight : _optionRowHeight * rows;
-  final list = (content + _listPadding * 2).clamp(0.0, _maxListHeight(context));
-  return Size(_menuWidth, _menuPadding * 2 + list);
-}
-
 /// The composer's model control: a compact pill that opens the list of models
 /// the grid you're on is serving.
 ///
@@ -170,47 +140,15 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     // for here, before the panel opens, so the answer lands into an open menu —
     // and without blanking it, see [refreshGridModelCatalog].
     refreshGridModelCatalog(ref);
-    // Positioned, not aligned. `MenuStyle.alignment: topRight` reads as "put the
-    // menu's top-*left* on the pill's top-right", so a 340px panel grew off to
-    // the right and the window-edge clamp parked it against the screen edge —
-    // 270px clear of the pill it belongs to. This is the recipe the app's other
-    // four menus use.
-    controller.open(
-      position: anchoredMenuPosition(
-        context,
-        menuSize: _menuSize(context, _rowCount()),
-        margin: _menuMargin,
-        gap: AppControl.menuGap,
-        alignEnd: true,
-        // The pill lives at the bottom of the window, so the menu opens upward;
-        // `anchoredMenuPosition` drops back below on its own if it won't fit.
-        preferAbove: true,
-        // The same cap the panel and its list are drawn with — three numbers that
-        // must agree, or the panel is placed for a height it never takes.
-        maxHeight: _menuMaxHeight(context),
-      ),
-    );
-  }
-
-  /// How many rows the menu is about to show — what [_menuSize] needs to place
-  /// the panel. Counts what [_ModelMenu] builds: one row per option, one note
-  /// per grid that can't list any, and the empty note when there's nothing.
-  int _rowCount() {
-    final catalog = ref.read(gridModelCatalogProvider);
-    if (catalog.any((g) => g.status == GridModelStatus.loading)) {
-      return _loadingRowCount;
-    }
-    var rows = 0;
-    for (final group in catalog) {
-      if (group.options.isEmpty) {
-        if (group.status != GridModelStatus.ready) rows++;
-        continue;
-      }
-      rows += group.options.length + routingModeOptions(group.options).length;
-    }
-    // Zero is meaningful, not a floor to clamp away: [_menuSize] reads it as the
-    // empty state, whose one note is taller than an option row.
-    return rows;
+    // Native, documented positioning: a plain [MenuController.open] lets
+    // MenuAnchor place the menu itself (below the pill, or auto-clamped above it
+    // when the pill is at the bottom of the window). The custom
+    // `open(position: anchoredMenuPosition(...))` path — which the pill used to
+    // take — was broken by MenuAnchor's opening animation: it assumes the menu
+    // is as tall as the whole overlay while heightFactor is still ~0, so the
+    // "doesn't fit vertically" branch pinned the panel to the top of the window.
+    // This plain call is the same path every other working menu in the app uses.
+    controller.open();
   }
 
   @override
@@ -219,6 +157,12 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     AppTheme.watch(context);
     return MenuAnchor(
       controller: _menu,
+      // Center the panel over the pill horizontally. With `bottomCenter`,
+      // MenuAnchor sits the panel's *left* edge at the pill's center, so it
+      // hangs a half-width off to the right — shift back by half the panel
+      // width to genuinely center it over the pill. Vertical gap comes from the
+      // dy half of the same offset (see above-the-pill branch `y = newY - dy`).
+      alignmentOffset: Offset(-_menuWidth / 2, AppControl.menuGap),
       // The shared surface, not a hand-rolled one. This menu used to carry its
       // own: `AppPalette.cardBg` is picked to be read *on the page*, so as a
       // floating panel over the composer it had no edge of its own, and its
@@ -227,6 +171,10 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(vertical: _menuPadding),
         ),
+        // Center the panel over the pill horizontally (the default start-align
+        // hung it off to one side of its 140px pill). Vertical gap comes from
+        // [MenuAnchor.alignmentOffset] below.
+        alignment: AlignmentDirectional.bottomCenter,
         // The shared 240 cap lifted — see [_menuMaxHeight]. The list inside is
         // held to the same number less this padding, so neither clips the other.
         maximumSize: WidgetStatePropertyAll(
@@ -238,7 +186,8 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         _ModelMenu(
           currentModelId: widget.currentModelId,
           onSelect: _select,
-          onSelectRouting: _selectRouting,
+          onSelectRouting: (grid, option, mode) =>
+              unawaited(_setUpRouting(grid, option, mode)),
           onClose: _menu.close,
           visionBlocked: widget.visionBlocked,
         ),
@@ -297,44 +246,21 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     widget.onSelect(grid, option);
   }
 
-  /// An orchestrator row, with the Fixed/Dynamic answer the row's own little
-  /// menu already collected (see [_ModeChoiceRow]).
+  /// An orchestrator row — opens [mode]'s setup dialog, which carries its own
+  /// Fixed/Dynamic choice (defaulting to Fixed) rather than asking for it
+  /// here first. One tap, one dialog: a row that asked twice — once in a
+  /// little menu of its own, again inside the dialog it opened — was the
+  /// same question asked two different ways.
   ///
-  /// **Dynamic costs nothing and asks nothing.** It has no model list to hold,
-  /// so there is no suggestion to fetch and no dialog to show (design spec §4)
-  /// — the group is written on the spot and the composer moves. This is why
-  /// the choice is made *before* the setup dialog rather than inside it: that
-  /// dialog probes the grid with a real, billed chat completion the moment it
-  /// opens, and a user who wanted Dynamic would have paid for an answer they
-  /// were always going to decline.
-  void _selectRouting(
-    NetworkCredential grid,
-    PlaygroundModelOption option,
-    RoutingMode mode, {
-    required bool fixed,
-  }) {
-    if (!fixed) {
-      ref
-          .read(chatSessionsProvider.notifier)
-          .setRoutingGroup(RoutingGroup(mode: mode, isFixed: false));
-      widget.onSelect(grid, option);
-      return;
-    }
-    unawaited(_setUpFixedRouting(grid, option, mode));
-  }
-
-  /// Ask which models [mode] should pin in this chat, then pin them.
-  ///
-  /// Once per chat per mode: coming back to a mode this chat is already pinned
-  /// to keeps the models the user confirmed, rather than spending another
-  /// request on a suggestion and asking them the same question again. A chat
-  /// on this mode *dynamically* is not already set up — that is the pick
-  /// changing, and it is what the dialog is for.
+  /// Once per chat per mode: coming back to a mode this chat is already
+  /// routed through keeps what the user confirmed last time, rather than
+  /// spending another suggestion request and asking them the same question
+  /// again.
   ///
   /// Run from the pill rather than from inside the menu because the menu is
   /// torn down the moment a row is tapped — the dialog has to hang off
   /// something that is still on screen when it opens.
-  Future<void> _setUpFixedRouting(
+  Future<void> _setUpRouting(
     NetworkCredential grid,
     PlaygroundModelOption option,
     RoutingMode mode,
@@ -342,16 +268,15 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     final chats = ref.read(chatSessionsProvider.notifier);
     final chat = ref.read(chatSessionsProvider).active;
     final pinned = chat?.routingGroup;
-    if (pinned != null && pinned.mode == mode && pinned.isFixed) {
-      widget.onSelect(grid, option);
-      return;
-    }
+    // Same mode already pinned? This is a re-edit, not a first setup — reopen
+    // the dialog pre-filled with what the group already holds, so the user can
+    // change models/aggregator. A fresh or different mode starts a new dialog.
+    final initial =
+        (pinned != null && pinned.mode == mode) ? pinned : null;
     final group = await showRoutingSetupDialog(
       context,
       mode: mode,
-      // What the suggestion is asked to read: an empty list for a chat with
-      // nothing said in it yet, which is the common case for this dialog.
-      conversation: chat?.messages ?? const [],
+      initial: initial,
     );
     // Cancelled — the composer keeps whatever it was on. Falling through to
     // the plain mode string would leave the chat routed a way the user backed
@@ -520,7 +445,7 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         }
         continue;
       }
-      for (final option in group.options) {
+      for (final option in answerableGridOptions(group.options)) {
         rows.add(
           _OptionRow(
             option: option,
@@ -544,22 +469,21 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         );
       }
       // The grid's own models first, then the two ways of putting several of
-      // them on one question. They go last because they are the rarer choice
-      // and because they read as a footnote to the list they draw from — see
-      // [routingModeOptions].
+      // them on one question — Brute Force and Feedback Loop stay below the
+      // plain list, grouped under the grid they draw from.
       for (final option in routingModeOptions(group.options)) {
         final mode = routingModeForModelId(option.id);
         // Unreachable — every row [routingModeOptions] builds is named after a
         // mode — but this is a lookup, not an invariant worth a `!` (§3).
         if (mode == null) continue;
         rows.add(
-          _ModeChoiceRow(
+          _OptionRow(
             option: option,
             selected:
                 group.grid.networkId == currentGridId &&
                 option.id == widget.currentModelId,
-            onPick: (fixed) {
-              widget.onSelectRouting(group.grid, option, mode, fixed: fixed);
+            onTap: () {
+              widget.onSelectRouting(group.grid, option, mode);
               widget.onClose();
             },
           ),
@@ -574,109 +498,6 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
       );
     }
     return rows;
-  }
-}
-
-/// An orchestrator row — it asks *how* before it asks the grid anything.
-///
-/// Fixed and Dynamic are two different promises about the same mode: one pins a
-/// set of models for the whole chat, the other lets the grid re-pick every
-/// message. Only Fixed needs the setup dialog behind it, and that dialog spends
-/// a real, billed chat completion on a suggestion the moment it opens. So the
-/// choice is made here, in a two-item menu off the row, rather than inside the
-/// dialog — a user who wanted Dynamic never pays for an answer they were always
-/// going to decline (design spec §4: Dynamic has no suggestion step).
-///
-/// Draws as an ordinary [_OptionRow] so the list stays one list; the only
-/// difference is that its tap opens a menu instead of closing the picker. A
-/// [MenuAnchor] nested inside the picker's own menu children — the shape
-/// `SubmenuButton` is itself built from, so the outer panel stays open behind
-/// it rather than treating the submenu's tap as a tap outside.
-class _ModeChoiceRow extends StatelessWidget {
-  const _ModeChoiceRow({
-    required this.option,
-    required this.selected,
-    required this.onPick,
-  });
-
-  final PlaygroundModelOption option;
-  final bool selected;
-
-  /// True for Fixed, false for Dynamic.
-  final ValueChanged<bool> onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    // menuChildren draw in a detached overlay, so a parent's rebuild doesn't
-    // reach them — this has to watch theme itself, as the app's other nested
-    // menus do.
-    AppTheme.watch(context);
-    return MenuAnchor(
-      style: appMenuStyle(),
-      menuChildren: [
-        for (final fixed in const [true, false])
-          _ModeItem(
-            label: fixed ? 'Fixed' : 'Dynamic',
-            note: routingHoldNote(isFixed: fixed),
-            onPressed: () => onPick(fixed),
-          ),
-      ],
-      builder: (context, controller, _) => _OptionRow(
-        option: option,
-        selected: selected,
-        onTap: () => controller.isOpen ? controller.close() : controller.open(),
-      ),
-    );
-  }
-}
-
-/// One half of the Fixed/Dynamic choice: the word, and the one line saying what
-/// it actually promises — which is the whole difference between them, and not
-/// something either word carries on its own.
-class _ModeItem extends StatelessWidget {
-  const _ModeItem({
-    required this.label,
-    required this.note,
-    required this.onPressed,
-  });
-
-  final String label;
-  final String note;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads colour tokens; follow theme flips.
-    return MenuItemButton(
-      onPressed: onPressed,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.2,
-                fontWeight: AppFont.medium,
-                color: AppPalette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              note,
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.2,
-                color: AppPalette.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

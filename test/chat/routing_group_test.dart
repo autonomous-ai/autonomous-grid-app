@@ -39,6 +39,19 @@ void main() {
       expect(g.toModelField(), '{"mode":"brute_force","models":["a","b","c"]}');
     });
 
+    test('fixed brute force with a pinned aggregator adds it to the JSON', () {
+      final g = RoutingGroup(
+        mode: RoutingMode.bruteForce,
+        isFixed: true,
+        models: const ['a', 'b', 'c'],
+        aggregator: 'c',
+      );
+      expect(
+        g.toModelField(),
+        '{"mode":"brute_force","models":["a","b","c"],"aggregator":"c"}',
+      );
+    });
+
     test('fixed judge loop is a JSON string naming worker and judge', () {
       final g = RoutingGroup(
         mode: RoutingMode.judgeLoop,
@@ -63,52 +76,19 @@ void main() {
       expect(RoutingGroup.tryFromJson(g.toJson()), g);
     });
 
+    test('toJson/tryFromJson round-trips a pinned aggregator too', () {
+      final g = RoutingGroup(
+        mode: RoutingMode.bruteForce,
+        isFixed: true,
+        models: const ['a', 'b'],
+        aggregator: 'b',
+      );
+      expect(RoutingGroup.tryFromJson(g.toJson()), g);
+    });
+
     test('tryFromJson returns null on malformed input, never throws', () {
       expect(RoutingGroup.tryFromJson(const {'mode': 'nonsense'}), isNull);
       expect(RoutingGroup.tryFromJson(const {}), isNull);
     });
-  });
-
-  group('parseSuggestion', () {
-    test('parses a clean brute-force suggestion', () {
-      final result = parseSuggestion(
-        '{"models":["qwen2.5-72b","llama-3.1-70b","mixtral-8x7b"]}',
-        RoutingMode.bruteForce,
-      );
-      expect(result, isA<SuggestionParsed>());
-      final group = (result as SuggestionParsed).group;
-      expect(group.models, ['qwen2.5-72b', 'llama-3.1-70b', 'mixtral-8x7b']);
-      expect(group.mode, RoutingMode.bruteForce);
-    });
-
-    test('parses a suggestion wrapped in prose and a code fence', () {
-      final result = parseSuggestion(
-        'Sure, here you go:\n```json\n{"worker":"a","judge":"b"}\n```',
-        RoutingMode.judgeLoop,
-      );
-      expect(result, isA<SuggestionParsed>());
-      final group = (result as SuggestionParsed).group;
-      expect(group.worker, 'a');
-      expect(group.judge, 'b');
-    });
-
-    test('reports a clear failure reason on unparseable text', () {
-      final result = parseSuggestion(
-        'I cannot help with that.',
-        RoutingMode.bruteForce,
-      );
-      expect(result, isA<SuggestionParseFailed>());
-    });
-
-    test(
-      'reports failure when brute force suggestion has fewer than 2 models',
-      () {
-        final result = parseSuggestion(
-          '{"models":["a"]}',
-          RoutingMode.bruteForce,
-        );
-        expect(result, isA<SuggestionParseFailed>());
-      },
-    );
   });
 }

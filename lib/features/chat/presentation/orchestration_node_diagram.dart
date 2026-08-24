@@ -30,6 +30,19 @@ const double _kLoopArcHeight = 26;
 const double _kLoopArcGap = 6; // air between the pills and the arc's foot
 const double _kLoopLabelHeight = 16;
 
+/// The tallest a Brute Force diagram gets, stacking [maxProposers] proposer
+/// nodes — what a container framing the diagram should reserve so picking
+/// fewer models never visibly shrinks the card around it.
+double bruteForceDiagramHeight(int maxProposers) =>
+    maxProposers <= 0
+        ? _kNodeHeight
+        : maxProposers * _kNodeHeight + (maxProposers - 1) * _kNodeGap;
+
+/// The Judge Loop diagram's height — fixed, since its shape never varies
+/// with what's pinned.
+const double judgeLoopDiagramHeight =
+    _kNodeHeight + _kLoopArcGap + _kLoopArcHeight + _kLoopLabelHeight;
+
 /// A horizontal node-and-connector diagram: **You → models → Answer**.
 ///
 /// Pure and stateless — every node's data (label, status) comes in through
@@ -50,17 +63,24 @@ class OrchestrationNodeDiagram extends StatelessWidget {
   /// You fans out into [proposers], which fan back into [aggregator], then
   /// flow to [answer]. [proposers] should hold at least one node; an empty
   /// list draws a bare You→Aggregator→Answer line.
+  ///
+  /// [showStatus] hides each node's status dot — the setup dialog's preview
+  /// fixes every node at [NodeStatus.queued] (nothing is actually running
+  /// yet), so a dot that can never read as anything else is a mark with
+  /// nothing to say. The live workflow view leaves it on the default.
   factory OrchestrationNodeDiagram.bruteForce({
     required DiagramNode you,
     required List<DiagramNode> proposers,
     required DiagramNode aggregator,
     required DiagramNode answer,
+    bool showStatus = true,
   }) => OrchestrationNodeDiagram._(
     _BruteForceFlow(
       you: you,
       proposers: proposers,
       aggregator: aggregator,
       answer: answer,
+      showStatus: showStatus,
     ),
   );
 
@@ -68,12 +88,15 @@ class OrchestrationNodeDiagram extends StatelessWidget {
   /// line and a curved [loopLabel] line looping back — then flows to
   /// [answer]. One arc stands for every round; the diagram never repeats the
   /// pair per round.
+  ///
+  /// See [bruteForce] for [showStatus].
   factory OrchestrationNodeDiagram.judgeLoop({
     required DiagramNode you,
     required DiagramNode worker,
     required DiagramNode judge,
     required DiagramNode answer,
     String loopLabel = 'revise',
+    bool showStatus = true,
   }) => OrchestrationNodeDiagram._(
     _JudgeLoopFlow(
       you: you,
@@ -81,6 +104,7 @@ class OrchestrationNodeDiagram extends StatelessWidget {
       judge: judge,
       answer: answer,
       loopLabel: loopLabel,
+      showStatus: showStatus,
     ),
   );
 
@@ -108,12 +132,14 @@ class _BruteForceFlow extends StatelessWidget {
     required this.proposers,
     required this.aggregator,
     required this.answer,
+    required this.showStatus,
   });
 
   final DiagramNode you;
   final List<DiagramNode> proposers;
   final DiagramNode aggregator;
   final DiagramNode answer;
+  final bool showStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -136,7 +162,7 @@ class _BruteForceFlow extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _NodePill(you),
+          _NodePill(you, showStatus: showStatus),
           _DashedConnector(
             size: Size(_kConnectorWidth, totalHeight),
             buildPath: (size) => centers.length <= 1
@@ -148,7 +174,7 @@ class _BruteForceFlow extends StatelessWidget {
             children: [
               for (var i = 0; i < count; i++) ...[
                 if (i > 0) const SizedBox(height: _kNodeGap),
-                _NodePill(proposers[i]),
+                _NodePill(proposers[i], showStatus: showStatus),
               ],
             ],
           ),
@@ -158,12 +184,12 @@ class _BruteForceFlow extends StatelessWidget {
                 ? _straightPath(size)
                 : _fanInPath(size, centers),
           ),
-          _NodePill(aggregator),
+          _NodePill(aggregator, showStatus: showStatus),
           _DashedConnector(
             size: Size(_kConnectorWidth, totalHeight),
             buildPath: _straightPath,
           ),
-          _NodePill(answer),
+          _NodePill(answer, showStatus: showStatus),
         ],
       ),
     );
@@ -178,6 +204,7 @@ class _JudgeLoopFlow extends StatelessWidget {
     required this.judge,
     required this.answer,
     required this.loopLabel,
+    required this.showStatus,
   });
 
   final DiagramNode you;
@@ -185,6 +212,7 @@ class _JudgeLoopFlow extends StatelessWidget {
   final DiagramNode judge;
   final DiagramNode answer;
   final String loopLabel;
+  final bool showStatus;
 
   // The arc spans worker's centre to judge's centre: half a node past the
   // row's start, one node plus one connector wide.
@@ -209,22 +237,22 @@ class _JudgeLoopFlow extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _NodePill(you),
+                _NodePill(you, showStatus: showStatus),
                 _DashedConnector(
                   size: const Size(_kConnectorWidth, _kNodeHeight),
                   buildPath: _straightPath,
                 ),
-                _NodePill(worker),
+                _NodePill(worker, showStatus: showStatus),
                 _DashedConnector(
                   size: const Size(_kConnectorWidth, _kNodeHeight),
                   buildPath: _straightPath,
                 ),
-                _NodePill(judge),
+                _NodePill(judge, showStatus: showStatus),
                 _DashedConnector(
                   size: const Size(_kConnectorWidth, _kNodeHeight),
                   buildPath: _straightPath,
                 ),
-                _NodePill(answer),
+                _NodePill(answer, showStatus: showStatus),
               ],
             ),
           ),
@@ -265,9 +293,10 @@ class _JudgeLoopFlow extends StatelessWidget {
 /// status dot — except for 'You'/'Answer', which are the ends of the flow,
 /// not a step in it.
 class _NodePill extends StatelessWidget {
-  const _NodePill(this.node);
+  const _NodePill(this.node, {this.showStatus = true});
 
   final DiagramNode node;
+  final bool showStatus;
 
   bool get _isEndpoint => node.label == 'You' || node.label == 'Answer';
 
@@ -302,7 +331,7 @@ class _NodePill extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!_isEndpoint) ...[
+              if (!_isEndpoint && showStatus) ...[
                 const SizedBox(width: 6),
                 StatusDot(
                   color: _statusColor(node.status),
@@ -335,26 +364,35 @@ Path _straightPath(Size size) => Path()
 /// A single left-edge point fanning out into [targets] on the right — the
 /// You→proposers spread. One sub-path per target, each its own contour, so
 /// the dash pattern in [_DashPainter] walks and animates every branch alike.
+///
+/// A cubic S-curve, not a quadratic — a quadratic's one control point pulls
+/// the whole bend toward whichever endpoint it shares a height with, so the
+/// path rides flat off the start then bends sharply into the target. Two
+/// control points, one held at the start's height and one at the end's, bow
+/// smoothly away from the straight line for the full width instead.
 Path _fanOutPath(Size size, List<double> targets) {
   final path = Path();
   final startY = size.height / 2;
+  final midX = size.width / 2;
   for (final endY in targets) {
     path
       ..moveTo(0, startY)
-      ..quadraticBezierTo(size.width * 0.55, startY, size.width, endY);
+      ..cubicTo(midX, startY, midX, endY, size.width, endY);
   }
   return path;
 }
 
 /// [sources] on the left converging into a single right-edge point — the
-/// proposers→aggregator merge, the mirror of [_fanOutPath].
+/// proposers→aggregator merge, the mirror of [_fanOutPath]. See it for why
+/// this is a cubic S-curve rather than a quadratic bend.
 Path _fanInPath(Size size, List<double> sources) {
   final path = Path();
   final endY = size.height / 2;
+  final midX = size.width / 2;
   for (final startY in sources) {
     path
       ..moveTo(0, startY)
-      ..quadraticBezierTo(size.width * 0.45, endY, size.width, endY);
+      ..cubicTo(midX, startY, midX, endY, size.width, endY);
   }
   return path;
 }
@@ -383,9 +421,12 @@ class _DashedConnector extends StatefulWidget {
 
 class _DashedConnectorState extends State<_DashedConnector>
     with SingleTickerProviderStateMixin {
+  // One dash+gap period (see `_DashPainter._period`) per cycle, so the wrap
+  // is seamless — but slow enough that the crawl reads as a continuous flow
+  // rather than a fast, noticeable repeat over these short connectors.
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 500),
+    duration: const Duration(milliseconds: 1100),
   );
 
   @override
@@ -461,14 +502,26 @@ class _DashPainter extends CustomPainter {
   /// as upstream-node → downstream-node. That's what makes "the dashes flow
   /// toward the next node" true for every connector in the diagram at once,
   /// without each shape having to reason about screen direction separately.
+  ///
+  /// Starts one whole period *before* distance 0, not at `offset % _period`
+  /// itself — a plain `offset % _period` start leaves everything before it
+  /// undrawn, so the gap at the contour's very start (right where it meets
+  /// the upstream node) grows from nothing up to a full period as the phase
+  /// climbs, then snaps shut the instant the phase wraps. Sat right next to
+  /// the node the eye is already on, that snap reads as the flow lurching
+  /// backward rather than a smooth, endless crawl. Starting a period early
+  /// and clamping into range instead draws that same stretch as a dash
+  /// shrinking smoothly to nothing — never an empty gap that closes with a
+  /// jump.
   static Path _dashed(Path source, double offset) {
     final result = Path();
     for (final metric in source.computeMetrics()) {
-      var distance = offset % _period;
+      var distance = (offset % _period) - _period;
       while (distance < metric.length) {
+        final start = distance.clamp(0.0, metric.length);
         final end = (distance + _dashLength).clamp(0.0, metric.length);
-        if (end > distance) {
-          result.addPath(metric.extractPath(distance, end), Offset.zero);
+        if (end > start) {
+          result.addPath(metric.extractPath(start, end), Offset.zero);
         }
         distance += _period;
       }
