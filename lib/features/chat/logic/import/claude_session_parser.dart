@@ -96,13 +96,13 @@ ParsedSession? parseClaudeSession({
       _settleResults(content, pending);
       final text = _userText(content);
       if (text.isEmpty) continue;
-      drafts.add(TurnDraft(ChatRole.user)..say(text));
+      drafts.add(TurnDraft(ChatRole.user, sentAt: at)..say(text));
       continue;
     }
 
     final turnModel = _stringOrNull(message['model']);
     if (turnModel != null) model = turnModel;
-    final draft = TurnDraft(ChatRole.assistant, model: turnModel);
+    final draft = TurnDraft(ChatRole.assistant, model: turnModel, sentAt: at);
     _fillAssistant(draft, content, pending);
     if (draft.isEmpty) continue;
     toolCalls += draft.items.whereType<StepDraft>().length;

@@ -209,6 +209,7 @@ Future<ChatMessage> buildUserTurn({
       text: text,
       files: files,
       contexts: contexts,
+      sentAt: DateTime.now(),
     );
   }
   final media = await saveMediaOutputs([
@@ -220,6 +221,7 @@ Future<ChatMessage> buildUserTurn({
     media: media,
     files: files,
     contexts: contexts,
+    sentAt: DateTime.now(),
   );
 }
 

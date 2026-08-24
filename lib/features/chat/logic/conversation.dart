@@ -388,6 +388,8 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   if (message.took != null) 'took_ms': message.took!.inMilliseconds,
   if (message.firstToken != null)
     'first_token_ms': message.firstToken!.inMilliseconds,
+  if (message.sentAt != null)
+    'sent_at': message.sentAt!.toUtc().toIso8601String(),
 };
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
@@ -449,6 +451,7 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
     firstToken: json['first_token_ms'] is num
         ? Duration(milliseconds: (json['first_token_ms'] as num).toInt())
         : null,
+    sentAt: _parseNullableDate(json['sent_at']),
   );
 }
 
