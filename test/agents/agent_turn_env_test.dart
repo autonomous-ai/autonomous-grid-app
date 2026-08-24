@@ -13,37 +13,32 @@ void main() {
     });
   });
 
-  group('claudeConversationHeaderEnv', () {
-    test('empty when the chat has no conversation id yet', () {
-      expect(claudeConversationHeaderEnv(null), isEmpty);
-      expect(claudeConversationHeaderEnv(''), isEmpty);
+  group('per-turn X-Request-Id headers', () {
+    test('empty when no turn id is named', () {
+      expect(gridTurnEnv('conv-1', turnId: null), {kGridChatIdEnv: 'conv-1'});
     });
 
-    // The literal wire string, not a decode of whatever we encoded: Claude
-    // Code splits this variable on its first `:` and takes what precedes it as
-    // the header name, so a JSON value names a header `{"X-Grid-Conversation"`
-    // and aborts the run before any request goes out. Only the exact line form
-    // works, and only asserting it catches the day someone "tidies" it back.
-    test('sets ANTHROPIC_CUSTOM_HEADERS to a literal Name: Value line', () {
-      expect(claudeConversationHeaderEnv('conv-1'), {
-        'ANTHROPIC_CUSTOM_HEADERS': 'X-Grid-Conversation: conv-1',
-      });
-    });
-  });
-
-  group('codexConversationHeaderOverrides', () {
-    test('empty when the chat has no conversation id yet', () {
-      expect(codexConversationHeaderOverrides(null), isEmpty);
-      expect(codexConversationHeaderOverrides(''), isEmpty);
-    });
-
-    test('produces one http_headers override naming the conversation', () {
-      final overrides = codexConversationHeaderOverrides('conv-1');
-      expect(overrides, hasLength(1));
+    // Both CLI lanes receive the turn's X-Request-Id as a literal `Name: Value`
+    // header line (Claude Code reads ANTHROPIC_CUSTOM_HEADERS, Codex reads
+    // OPENAI_CUSTOM_HEADERS) so every relay call of this turn is grouped under
+    // one id. Only the exact line form works — each CLI splits on the first
+    // `:` and takes what precedes it as the header name.
+    test('sets both custom-header vars to a literal X-Request-Id: <id> line',
+        () {
       expect(
-        overrides.first,
-        contains('http_headers.X-Grid-Conversation="conv-1"'),
+        gridTurnEnv('conv-1', turnId: 'turn-1'),
+        {
+          'ANTHROPIC_CUSTOM_HEADERS': 'X-Request-Id: turn-1',
+          'OPENAI_CUSTOM_HEADERS': 'X-Request-Id: turn-1',
+          kGridChatIdEnv: 'conv-1',
+        },
       );
+    });
+
+    test('the header value is the raw id, never JSON or quotes', () {
+      final env = gridTurnEnv(null, turnId: 'abc-123');
+      expect(env['ANTHROPIC_CUSTOM_HEADERS'], 'X-Request-Id: abc-123');
+      expect(env['OPENAI_CUSTOM_HEADERS'], 'X-Request-Id: abc-123');
     });
   });
 }
