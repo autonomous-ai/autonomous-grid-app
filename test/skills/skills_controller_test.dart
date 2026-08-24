@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -168,7 +169,7 @@ void main() {
       ).existsSync(),
       isTrue,
     );
-    final config = File('${home.path}/.hermes/config.yaml');
+    final config = File('${AgentHomes.hermesProfile(home.path)}/config.yaml');
     expect(
       config.existsSync() ? config.readAsStringSync() : '',
       isNot(contains('~/.grid/skills')),
@@ -176,7 +177,9 @@ void main() {
 
     // What the agent gets is one copy, in its own folder.
     expect(
-      Directory('${home.path}/.hermes/skills/anything').existsSync(),
+      Directory(
+        '${AgentHomes.hermesProfile(home.path)}/skills/anything',
+      ).existsSync(),
       isTrue,
     );
   });
@@ -207,7 +210,10 @@ void main() {
     test('each pill reads that folder and no other — the screen opens on the '
         'chat assistant\'s own', () async {
       await writeSkill('.grid/skills/$kUserSkillsDir/mine', 'mine');
-      await writeSkill('.hermes/skills/apple/apple-notes', 'apple-notes');
+      await writeSkill(
+        '.hermes/profiles/${AgentHomes.kGridHermesProfile}/skills/apple/apple-notes',
+        'apple-notes',
+      );
       await writeSkill('.codex/skills/review-pr', 'review-pr');
       final c = container();
 
@@ -231,7 +237,10 @@ void main() {
       'a new skill is kept in the store and shown on the folder of the '
       'assistant it was given to — otherwise it looks like it vanished',
       () async {
-        await writeSkill('.hermes/skills/apple/apple-notes', 'apple-notes');
+        await writeSkill(
+          '.hermes/profiles/${AgentHomes.kGridHermesProfile}/skills/apple/apple-notes',
+          'apple-notes',
+        );
         final c = container();
         // Reading the store when the write happens, so the landing has somewhere
         // to move the screen to.

@@ -232,6 +232,9 @@ mixin _ChatGoals on _ChatSessions {
           _sendGoalTurn(
             id,
             goalContinuationPrompt(goal.condition, verdict.reason),
+            // The app's own words, not the user's — drawn as a line saying so
+            // rather than as a message they never typed (see [TurnOrigin]).
+            origin: TurnOrigin.goal,
           ),
         );
     }
@@ -339,10 +342,15 @@ mixin _ChatGoals on _ChatSessions {
   static const _judgeTimeout = Duration(seconds: 45);
 
   /// Send the goal's next turn into chat [id].
+  ///
+  /// [origin] defaults to the user because the turn that *opens* a goal is the
+  /// condition they typed — their own words, drawn as their own message. Only
+  /// the steps the loop sends afterwards are the app's.
   Future<void> _sendGoalTurn(
     String id,
     String message, {
     String? agentCommand,
+    TurnOrigin origin = TurnOrigin.user,
   }) async {
     final chat = _find(id);
     final network = ref.read(selectedNetworkProvider);
@@ -375,6 +383,7 @@ mixin _ChatGoals on _ChatSessions {
       // with one agent rather than being handed between them mid-objective.
       continuing: true,
       agentCommand: agentCommand,
+      origin: origin,
     );
   }
 

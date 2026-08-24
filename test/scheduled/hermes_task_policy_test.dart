@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,7 +11,7 @@ void main() {
 
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('grid_task_policy_test');
-    config = File('${tmp.path}/.hermes/config.yaml');
+    config = File('${AgentHomes.hermesProfile(tmp.path)}/config.yaml');
   });
   tearDown(() => tmp.delete(recursive: true));
 

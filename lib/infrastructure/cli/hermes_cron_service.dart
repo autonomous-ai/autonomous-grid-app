@@ -1,3 +1,4 @@
+import '../../core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -151,7 +152,8 @@ class HermesCronServiceImpl implements HermesCronService {
   /// calling a dead scheduler alive.
   static const _heartbeatMaxAge = Duration(seconds: 60);
 
-  Directory get _cronDir => Directory('$_home/.hermes/cron');
+  Directory get _cronDir =>
+      Directory('${AgentHomes.hermesProfile(_home)}/cron');
 
   @override
   Future<String?> readJobsJson() async {

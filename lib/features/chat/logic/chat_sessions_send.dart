@@ -53,6 +53,7 @@ mixin _ChatSend on _ChatSessions {
     String? into,
     bool continuing = false,
     String? agentCommand,
+    TurnOrigin origin = TurnOrigin.user,
   }) async {
     final text = message.trim();
     if (text.isEmpty) return;
@@ -166,6 +167,7 @@ mixin _ChatSend on _ChatSessions {
       files: files,
       contexts: contexts,
       outputsDir: ref.read(mediaOutputsDirProvider),
+      origin: origin,
     );
     // The chat remembers the model the *user* chose, never the one Auto swapped
     // in: the composer is restored from it, so writing `auto` here would replace

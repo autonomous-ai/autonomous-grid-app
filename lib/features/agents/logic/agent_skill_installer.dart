@@ -3,11 +3,11 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/hermes_config_file.dart';
+import '../../../core/agent_homes.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import 'agent_catalog.dart';
 import 'grid_ask_skill.dart';
 import 'grid_chart_skill.dart';
-import 'grid_delegate_skill.dart';
 import 'grid_host_skill.dart';
 import 'grid_loop_skill.dart';
 import 'grid_research_skill.dart';
@@ -53,7 +53,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // backend.
   BuiltinGridSkill(
     name: kGridWebSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridWebSkillFiles,
   ),
   // What this machine has, and what to use instead of the GNU tools it doesn't:
@@ -61,7 +61,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // rediscovering that `timeout`/`gh`/`rg` aren't here.
   BuiltinGridSkill(
     name: kGridHostSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridHostSkillFiles,
   ),
   // The method behind a researched answer. `grid-web` gave every agent the
@@ -70,7 +70,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // voice.
   BuiltinGridSkill(
     name: kGridResearchSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridResearchSkillFiles,
   ),
   // The chat can draw a chart from a fenced block, and no agent would ever emit
@@ -78,7 +78,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // about is a capability that never fires.
   BuiltinGridSkill(
     name: kGridChartSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridChartSkillFiles,
   ),
   // Starting a dev server is the same job for every agent, and each runs its
@@ -86,7 +86,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // each needs the supervisor route or it reports a dead server as running.
   BuiltinGridSkill(
     name: kGridServeSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridServeSkillFiles,
   ),
   // A self-paced `/loop` asks the assistant that just ran the check when to run
@@ -95,7 +95,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // else tells an agent the block is read.
   BuiltinGridSkill(
     name: kGridLoopSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridLoopSkillFiles,
   ),
   // The three jobs the app owns — repeat, goal, schedule — and how to ask for
@@ -104,19 +104,8 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // the loop beside it.
   BuiltinGridSkill(
     name: kGridAskSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridAskSkillFiles,
-  ),
-  // The two agents that can spawn one, and they fail in opposite directions:
-  // Claude Code launches into the background by default and is told a
-  // notification will come, while Codex will not spawn at all until a skill
-  // says it may — so for Codex this card is the permission as well as the
-  // rules. Hermes has no spawner and is left out; a card about a flag its
-  // runtime lacks is advice it could only follow by inventing one.
-  BuiltinGridSkill(
-    name: kGridDelegateSkillName,
-    agents: const {AgentTool.claude, AgentTool.codex},
-    build: gridDelegateSkillFiles,
   ),
   // Every agent reaches for its own timer when asked to repeat something, and
   // every one of those dies with the turn that created it — a job reported as
@@ -124,7 +113,7 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
   // real scheduler is, so the answer stops depending on which agent replied.
   BuiltinGridSkill(
     name: kGridScheduleSkillName,
-    agents: const {AgentTool.hermes, AgentTool.codex, AgentTool.claude},
+    agents: const {AgentTool.hermes},
     build: gridScheduleSkillFiles,
   ),
 ];
@@ -208,6 +197,10 @@ class AgentSkillInstaller {
     if (agent == AgentTool.hermes) {
       await _removeSupersededCopies(skillHome.home);
     }
+    // Every agent, not just Hermes: the four cards below became MCP tools for
+    // whoever can reach the server, and the copies to take back are in the two
+    // homes this app must stop writing to.
+    await _removeMcpSupersededCards(skillHome.home);
   }
 
   /// Whether what sits at [dir] is already exactly what this build ships.
@@ -274,8 +267,70 @@ class AgentSkillInstaller {
       final dir = Directory('$home/$superseded');
       if (await dir.exists()) await dir.delete(recursive: true);
     }
+    await _removeRootHermesCopies(home);
+  }
+
+  /// The cards Grid wrote into the user's **own** Hermes root before it had a
+  /// profile (2026-08-21), swept wherever they are still found.
+  ///
+  /// Named, never wholesale: only what [kBuiltinGridSkills] and
+  /// [kRetiredGridSkills] say Grid has ever installed. `~/.hermes/skills` is the
+  /// user's folder and holds their own work; deleting a directory there because
+  /// the app happened to stop using it is how you take someone's afternoon.
+  Future<void> _removeRootHermesCopies(String home) async {
+    final root = '${AgentHomes.hermesRoot(home)}/skills';
+    for (final name in [
+      for (final skill in kBuiltinGridSkills) skill.name,
+      ...kRetiredGridSkills,
+    ]) {
+      final dir = Directory('$root/$name');
+      if (await dir.exists()) await dir.delete(recursive: true);
+    }
+  }
+
+  /// The cards Claude Code and Codex now get as MCP tools instead, swept out of
+  /// the folders they used to be written to.
+  ///
+  /// Those two read their cards from `~/.claude/skills` and `~/.codex/skills`,
+  /// which belong to the user and to every terminal session they open. The four
+  /// here are carried by `grid_ask` and `grid_guide` over Grid's own MCP server,
+  /// so nothing is lost by taking the files back — and a card left behind would
+  /// be read *beside* the tool, teaching a format the app no longer parses.
+  ///
+  /// The rest stay for now, and it is worth saying why rather than leaving the
+  /// gap to be discovered: `grid-web` and `grid-serve` ship scripts that other
+  /// things already call by path, `grid-host` names this machine's tools, and
+  /// `grid-schedule` drives `hermes cron` directly. Porting those is a rewrite,
+  /// not a relocation.
+  Future<void> _removeMcpSupersededCards(String home) async {
+    for (final folder in ['.claude/skills', '.codex/skills']) {
+      for (final name in kMcpSupersededSkills) {
+        final dir = Directory('$home/$folder/$name');
+        if (await dir.exists()) await dir.delete(recursive: true);
+      }
+    }
   }
 }
+
+/// The cards that became MCP tools on 2026-08-21, by name.
+///
+/// Kept beside [kRetiredGridSkills] rather than in it: these are not withdrawn,
+/// they still install for Hermes, whose folder is Grid's own profile. This list
+/// is only about the two homes the app must stop writing to.
+const List<String> kMcpSupersededSkills = [
+  'grid-ask',
+  'grid-loop',
+  'grid-delegate',
+  'grid-chart',
+  // The last five, once their scripts moved into `~/.grid` — see
+  // [gridAgentScriptsDir]. With these gone, Claude Code and Codex read nothing
+  // of Grid's from their own folders at all.
+  'grid-web',
+  'grid-research',
+  'grid-serve',
+  'grid-host',
+  'grid-schedule',
+];
 
 /// Wire through the container so senders get it via `ref.read`, and tests can
 /// point it at a temp home.

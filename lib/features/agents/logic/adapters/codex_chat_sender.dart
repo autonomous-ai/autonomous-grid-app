@@ -1,3 +1,4 @@
+import '../../../../infrastructure/mcp/grid_mcp_provider.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -140,6 +141,12 @@ class CodexChatSender implements ChatSender {
     final contextWindow = _ref.read(knownModelContextWindowProvider(model));
 
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
+
+    // Grid's tools for this turn. Started here rather than at launch so a run
+    // that never reaches an agent never opens a socket.
+    final gridMcp = _ref.read(gridMcpServerProvider);
+    await gridMcp.start();
+    final gridMcpUrl = gridMcp.url;
     final turn = _slots.planTurn(
       key: '${network.networkId}|$model|$conversationId|$root',
       conversationId: conversationId,
@@ -165,18 +172,27 @@ class CodexChatSender implements ChatSender {
       // the same failure the Claude lane was already handling. Only sent when a
       // source has actually named a figure; see
       // [knownModelContextWindowProvider].
-      config: codexGridOverrides(
-        base: network.relayBaseUrl,
-        model: model,
-        contextWindow: contextWindow,
-        compactAt: contextWindow == null
-            ? null
-            : agentContextCeiling(contextWindow),
-      ),
+      config: [
+        ...codexGridOverrides(
+          base: network.relayBaseUrl,
+          model: model,
+          contextWindow: contextWindow,
+          compactAt: contextWindow == null
+              ? null
+              : agentContextCeiling(contextWindow),
+        ),
+        // Grid's own tools, as `-c` overrides for this run alone. Codex has no
+        // per-process lever for *skills* — `$CODEX_HOME/skills` is the only
+        // path it reads and moving CODEX_HOME takes the user's login with it —
+        // so this is the whole reason the cards became an MCP server.
+        if (gridMcpUrl != null) ...gridMcpCodexOverrides(url: gridMcpUrl),
+      ],
       approval: mode,
       environment: {
         kCodexAppApiKeyEnv: network.relayApiKey,
         ...gridTurnEnv(conversationId),
+        if (gridMcpUrl != null && conversationId != null)
+          kGridMcpTokenEnv: gridMcp.mintTurnToken(conversationId),
       },
       planFirst: planFirst,
       slot: turn.slot,

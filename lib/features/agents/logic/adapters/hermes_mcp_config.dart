@@ -1,3 +1,4 @@
+import '../../../../core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:yaml_edit/yaml_edit.dart';
@@ -23,7 +24,7 @@ class HermesMcpConfig {
 
   final String _home;
 
-  File get _config => File('$_home/.hermes/config.yaml');
+  File get _config => File('${AgentHomes.hermesProfile(_home)}/config.yaml');
 
   /// The configured servers, or an empty list when the file or the section is
   /// missing. Never throws — a broken config reads as "no servers".

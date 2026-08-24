@@ -1,3 +1,4 @@
+import '../../../../infrastructure/mcp/grid_mcp_provider.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -255,8 +256,26 @@ class ClaudeChatSender implements ChatSender {
     // since the last message has to be in — or out of — this one. Null when the
     // write failed, which launches the turn on `~/.claude.json` rather than on
     // a path `claude` would reject. See [ClaudeTurnMcpConfig.write].
+    // Grid's own tools, on a token that speaks for this chat and this turn.
+    // They ride in `extra` rather than in `~/.claude.json`: the user's file is
+    // theirs, and an entry naming a port this process happens to be holding
+    // would outlive the session that made it true — the same reason the browser
+    // bridge is here. This is also what replaced the `grid-*` cards the app used
+    // to install into `~/.claude/skills`, where every terminal session read them.
+    final grid = _ref.read(gridMcpServerProvider);
+    await grid.start();
+    final gridUrl = grid.url;
     final mcpConfigPath = await ClaudeTurnMcpConfig().write(
-      extra: browser.mcpExtra,
+      extra: {
+        ...browser.mcpExtra,
+        // No chat, no tools: `grid_ask` is answered *into* a conversation, and
+        // a turn that belongs to none has nowhere to start a loop.
+        if (gridUrl != null && conversationId != null)
+          'grid': gridMcpServerEntry(
+            url: gridUrl,
+            token: grid.mintTurnToken(conversationId),
+          ),
+      },
     );
 
     // On the extension lane Claude Code runs against its own sign-in, where the

@@ -1,3 +1,4 @@
+import '../../core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:yaml_edit/yaml_edit.dart';
@@ -17,7 +18,7 @@ class HermesConfigFile {
 
   final String _home;
 
-  File get _file => File('$_home/.hermes/config.yaml');
+  File get _file => File('${AgentHomes.hermesProfile(_home)}/config.yaml');
 
   /// The value at [path], or null when the config says nothing there.
   Future<Object?> valueAt(List<String> path) async {

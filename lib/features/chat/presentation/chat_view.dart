@@ -1154,8 +1154,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 // content key — it never changes in place.
                                 scrollId: messages[i],
                                 cacheId: messages[i],
-                                builder: (_) =>
-                                    ChatBubble(message: messages[i]),
+                                // A turn the app sent to keep a goal or a loop
+                                // going is drawn as a line saying so, not as a
+                                // bubble in the user's voice — see
+                                // [AppSentTurnRow].
+                                builder: (_) => messages[i].sentBy.isFromApp
+                                    ? AppSentTurnRow(message: messages[i])
+                                    : ChatBubble(message: messages[i]),
                               ),
                               // The turn that handed a goal over, marked once
                               // under the user's own message.

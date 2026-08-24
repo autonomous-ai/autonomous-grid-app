@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -124,7 +125,7 @@ Write ten lines.''';
     test('one source at a time — the store never spills the agents\' own '
         'folders into the list', () async {
       await writeSkill(
-        '.hermes/skills/apple/apple-notes',
+        '.hermes/profiles/${AgentHomes.kGridHermesProfile}/skills/apple/apple-notes',
         '---\nname: apple-notes\ndescription: Bundled with the agent.\n---\n',
       );
       await writeSkill(
@@ -151,7 +152,7 @@ Write ten lines.''';
     test("a skill the library has never heard of belongs to the agent whose "
         'folder it sits in', () async {
       await writeSkill(
-        '.hermes/skills/my-skills/hand-written',
+        '.hermes/profiles/${AgentHomes.kGridHermesProfile}/skills/my-skills/hand-written',
         '---\nname: hand-written\ndescription: d\n---\n',
       );
       await writeSkill(

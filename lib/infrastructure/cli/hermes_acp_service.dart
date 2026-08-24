@@ -392,11 +392,7 @@ class _HermesAcpSession implements HermesAcpSession {
           // Hermes reads as `mime_type` (`acp_adapter/server.py`); getting it
           // wrong drops the picture and answers about nothing.
           for (final image in images)
-            {
-              'type': 'image',
-              'data': image.base64,
-              'mimeType': image.mimeType,
-            },
+            {'type': 'image', 'data': image.base64, 'mimeType': image.mimeType},
         ],
       },
     });

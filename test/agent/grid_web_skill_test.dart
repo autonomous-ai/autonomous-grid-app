@@ -114,14 +114,15 @@ void main() {
   });
 
   test(
-    'the installer drops grid-web where Codex auto-discovers skills',
+    'the installer leaves Codex\'s own folder alone — grid-web reaches it as '
+    'an MCP guide, and its scripts live in Grid\'s home',
     () async {
       await AgentSkillInstaller(home: tmp.path).install(AgentTool.codex);
 
-      final skill = Directory('${tmp.path}/.codex/skills/grid-web');
-      expect(File('${skill.path}/SKILL.md').existsSync(), isTrue);
-      expect(File('${skill.path}/scripts/search.py').existsSync(), isTrue);
-      expect(File('${skill.path}/scripts/read.py').existsSync(), isTrue);
+      expect(
+        Directory('${tmp.path}/.codex/skills/grid-web').existsSync(),
+        isFalse,
+      );
     },
   );
 

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -12,7 +10,6 @@ import '../../../features/network/logic/grid_activity.dart';
 import '../../../features/network/logic/node_metrics.dart'
     show answeredWindowLabel, formatCount;
 import '../../theme/app_theme.dart';
-import '../../widgets/activity_bars.dart';
 import '../../widgets/ring_gauge.dart';
 import '../../widgets/status_dot.dart';
 import '../shell_state.dart';
@@ -243,7 +240,6 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
                             name: grid.name,
                             power: power,
                             members: members,
-                            activity: activity,
                             nameAnchor: _nameAnchor,
                             chevronAnchor: _chevronAnchor,
                             onPowerFrom: _powerFrom,
@@ -384,8 +380,11 @@ String _semanticsLabel(
       '${power.gpuUtilPct!.round()}% GPU load',
     if (power.parallel != null)
       '${power.parallel} ${plural(power.parallel!, 'task')} at once',
-    // What the bars and their figure say, in words: the glyph is the one part
-    // of the capsule with no text of its own.
+    // Spoken though the capsule no longer prints it. The rate and the idle
+    // spell were the one thing here that changed minute to minute, and a
+    // reader who cannot see the row is the one reader who cannot glance at it
+    // again to find out — it costs a clause and the pill's own quiet is
+    // unaffected.
     if (activity.isBusy)
       'working at about ${activity.rateTokS!.round()} tokens a second'
     else if (activity.idleFor(DateTime.now()) case final since?)
@@ -454,17 +453,17 @@ class _StartHostingPill extends StatelessWidget {
 ///
 /// What replaced them is picked to match how fast each thing actually moves.
 /// Memory is a share, so it is a ring — "2.1 TB" alone has no scale to be read
-/// against. Work is a level, so it is three bars and a rate, not a chart: the
-/// relay answers once a minute and the 24h total it reports moves about 0.05% in
-/// that time, so any line drawn from it is flat by construction. And the three
-/// counts kept their place but not their words: a glyph and a figure each,
-/// which is what [_CountFigure] draws.
+/// against — and it sits with the grid's name, because it is a fact about this
+/// grid rather than about what is running on it. Work is one figure: the total
+/// for the window, no live rate and no chart. The relay answers once a minute
+/// and the 24h total moves about 0.05% in that time, so any line drawn from it
+/// is flat by construction. And the three counts kept their place but not their
+/// words: a glyph and a figure each, which is what [_CountFigure] draws.
 class _PillRow extends StatelessWidget {
   const _PillRow({
     required this.name,
     required this.power,
     required this.members,
-    required this.activity,
     required this.nameAnchor,
     required this.chevronAnchor,
     required this.onPowerFrom,
@@ -483,10 +482,6 @@ class _PillRow extends StatelessWidget {
   /// is then omitted rather than guessed at.
   final int? members;
 
-  /// Whether the grid is working, how hard, and how long it has been quiet —
-  /// see [gridActivityProvider].
-  final GridActivity activity;
-
   /// The two stretches that open the hardware panel, each anchoring it under
   /// itself — see [_GridPowerPillState._powerAnchor].
   final _FigureAnchor nameAnchor;
@@ -502,18 +497,6 @@ class _PillRow extends StatelessWidget {
 
   final void Function(_PanelKind) onEnter;
   final void Function(_PanelKind) onExit;
-
-  /// Where a rate sits on the glyph's 0–1 scale.
-  ///
-  /// Logarithmic, against a ceiling of 2000 tok/s. A grid's throughput spans
-  /// three orders of magnitude — one laptop answering slowly, a room of GPUs at
-  /// full tilt — and on a linear scale everything short of the biggest grid
-  /// would pin the bars to the floor. The ceiling is a reading of "flat out",
-  /// not a limit: past it the bars simply stay at full.
-  static double _intensity(double tokS) {
-    if (tokS <= 0) return 0;
-    return (math.log(1 + tokS) / math.log(2001)).clamp(0.0, 1.0);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -608,63 +591,39 @@ class _PillRow extends StatelessWidget {
             ],
           ),
         ),
-        // WORK — the glyph, what the grid is doing, and the total it has done,
-        // in one hover target: they are one statement, and splitting them would
-        // open two different panels from either half of the same sentence.
-        _HoverTarget(
-          kind: _PanelKind.tokens,
-          anchor: tokenAnchor,
-          onEnter: onEnter,
-          onExit: onExit,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _Divider(),
-              const SizedBox(width: 9),
-              ActivityBars(
-                active: activity.isBusy,
-                intensity: _intensity(activity.rateTokS ?? 0),
-                color: AppPalette.accentOnSurface,
-                restColor: AppPalette.textFaint,
-              ),
-              const SizedBox(width: 7),
-              if (activity.rateTokS case final rate? when activity.isBusy)
-                _Stat(value: formatRate(rate), unit: 'tok/s')
-              else
-                // The one figure only a resting grid can give. It replaces the
-                // rate rather than sitting beside a "0 tok/s", which is a
-                // number nobody reads as a state.
-                Text(
-                  switch (activity.idleFor(DateTime.now())) {
-                    final since? => idleLabel(since),
-                    null => 'idle',
-                  },
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    // Not [AppPalette.textFaint], which the flattened bars
-                    // beside it use: faint on the pill's fill measures 3.18:1
-                    // dark / 3.33:1 light — fine for a 2px graphic, under the
-                    // 4.5:1 a line of text has to clear.
-                    color: AppPalette.textSecondary,
-                    fontFeatures: AppFont.tabularFigures,
-                  ),
-                ),
-              // The window total, one step quieter: it is the context for the
-              // rate, not a figure of its own — and at 24 hours it is the same
-              // number all afternoon.
-              if (power.answered case final answered?) ...[
-                const SizedBox(width: 6),
+        // WORK — how much this grid has answered in the window, and the panel
+        // that breaks that figure down.
+        //
+        // The live rate used to lead this stretch: three bars and a "~745
+        // tok/s", with the window total trailing behind a "·" as its context,
+        // a step quieter. Both are gone, so the total is the whole statement —
+        // no separator in front of it, and full strength rather than the faint
+        // ink a qualifier could get away with. That quieter step took [_Stat]'s
+        // `muted` and `leading` with it: this was their only caller, and at
+        // 12.5pt `textFaint` on the pill's fill measures 3.18:1 dark / 3.33:1
+        // light, under the 4.5:1 a line of text has to clear.
+        //
+        // Behind the `answered` guard rather than inside it: with no window
+        // reported there is no figure, and the divider alone would be a rule
+        // ruling nothing off.
+        if (power.answered case final answered?)
+          _HoverTarget(
+            kind: _PanelKind.tokens,
+            anchor: tokenAnchor,
+            onEnter: onEnter,
+            onExit: onExit,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _Divider(),
+                const SizedBox(width: 9),
                 _Stat(
                   value: formatCount(answered.freshInputTokens),
                   unit: _windowSuffix(answered.windowSeconds).trim(),
-                  muted: true,
-                  leading: '· ',
                 ),
               ],
-            ],
+            ),
           ),
-        ),
         // WHAT THE GRID IS MADE OF — people, machines, models. Three glyphs and
         // three figures, each its own hover target over its own list.
         _CountFigure(
@@ -875,50 +834,23 @@ class _Divider extends StatelessWidget {
 /// One figure in the pill. Numbers are tabular so the pill keeps its width when
 /// a value ticks over — otherwise the whole capsule jitters on every refresh.
 class _Stat extends StatelessWidget {
-  const _Stat({
-    required this.value,
-    required this.unit,
-    this.muted = false,
-    this.leading,
-  });
+  const _Stat({required this.value, required this.unit});
 
   final String value;
   final String? unit;
 
-  /// A figure that is context for the one before it rather than a reading of
-  /// its own — a step quieter, so the row still has exactly one thing to land
-  /// on.
-  final bool muted;
-
-  /// Printed before the value, in the unit's colour. Carries the separator that
-  /// ties this figure to the one it qualifies, without a [SizedBox] of dead
-  /// ground between the two — every gap in this row belongs to a hover target.
-  final String? leading;
-
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final unitColor = muted
-        ? AppPalette.textFaint.withValues(alpha: 0.85)
-        : AppPalette.textFaint;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (leading != null)
-          Text(
-            leading!,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: unitColor,
-            ),
-          ),
         Text(
           value,
           style: TextStyle(
             fontSize: 12.5,
             fontWeight: AppFont.medium,
-            color: muted ? AppPalette.textFaint : AppPalette.textSecondary,
+            color: AppPalette.textSecondary,
             fontFeatures: AppFont.tabularFigures,
           ),
         ),
@@ -929,7 +861,7 @@ class _Stat extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w500,
-              color: unitColor,
+              color: AppPalette.textFaint,
             ),
           ),
         ],

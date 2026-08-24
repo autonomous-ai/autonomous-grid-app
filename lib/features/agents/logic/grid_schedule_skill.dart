@@ -114,7 +114,7 @@ To keep the work with the assistant the user is talking to, schedule a script
 instead and let it call that assistant:
 
 ```
-~/.hermes/scripts/<name>.sh          # the script (chmod +x)
+\$HERMES_HOME/scripts/<name>.sh      # the script (chmod +x)
 hermes cron create "<schedule>" --script <name>.sh --no-agent \\
   --name "<short name>" --deliver local
 ```
@@ -124,7 +124,8 @@ verbatim — so print the answer and nothing else. Three things the script must
 do itself, each measured on 2026-08-19 rather than assumed:
 
 - **`cd` to where the work is.** In script mode the job starts in
-  `~/.hermes/scripts`, and `--workdir` does not move it.
+  `\$HERMES_HOME/scripts` (Grid runs Hermes under its own profile, so this is
+  not `~/.hermes/scripts`), and `--workdir` does not move it.
 - **Set `PATH` with absolute directories.** The scheduler is a daemon; it has
   none of the login shell's PATH, so `claude` / `codex` / `node` are not found
   unless the script names their folders.

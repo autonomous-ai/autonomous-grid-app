@@ -284,6 +284,9 @@ mixin _ChatLoops on _ChatSessions {
         into: id,
         planFirst: false,
         continuing: true,
+        // Nobody typed this beat — the timer fired. Drawn as a line saying so
+        // rather than as a message the user never wrote (see [TurnOrigin]).
+        origin: TurnOrigin.loop,
       ),
     );
     if (_disposed) return;
