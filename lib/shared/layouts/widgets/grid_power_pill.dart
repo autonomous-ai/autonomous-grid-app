@@ -65,12 +65,13 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
   /// One anchor per figure, so a stat panel hangs under the number it explains
   /// rather than under the capsule as a whole. A [LayerLink] can only be
   /// attached to one target, hence one per figure.
-  /// The two stretches that open the hardware panel — the grid's name at the
-  /// left end of the capsule, the memory ring at the right. Each anchors the
-  /// panel under itself: one link for the whole capsule opens the panel under
-  /// whichever end it was pinned to, ~400px from the other.
+  /// The two stretches that open the hardware panel — the grid's name (with the
+  /// memory ring, which now shares its stretch) at the left end of the capsule,
+  /// the chevron at the right. Each anchors the panel under itself: one link for
+  /// the whole capsule opens the panel under whichever end it was pinned to,
+  /// ~400px from the other.
   final _nameAnchor = _newFigureAnchor();
-  final _memoryAnchor = _newFigureAnchor();
+  final _chevronAnchor = _newFigureAnchor();
 
   final _memberAnchor = _newFigureAnchor();
   final _nodeAnchor = _newFigureAnchor();
@@ -244,7 +245,7 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
                             members: members,
                             activity: activity,
                             nameAnchor: _nameAnchor,
-                            memoryAnchor: _memoryAnchor,
+                            chevronAnchor: _chevronAnchor,
                             onPowerFrom: _powerFrom,
                             memberAnchor: _memberAnchor,
                             nodeAnchor: _nodeAnchor,
@@ -465,7 +466,7 @@ class _PillRow extends StatelessWidget {
     required this.members,
     required this.activity,
     required this.nameAnchor,
-    required this.memoryAnchor,
+    required this.chevronAnchor,
     required this.onPowerFrom,
     required this.memberAnchor,
     required this.nodeAnchor,
@@ -489,7 +490,7 @@ class _PillRow extends StatelessWidget {
   /// The two stretches that open the hardware panel, each anchoring it under
   /// itself — see [_GridPowerPillState._powerAnchor].
   final _FigureAnchor nameAnchor;
-  final _FigureAnchor memoryAnchor;
+  final _FigureAnchor chevronAnchor;
 
   /// Tells the pill which of those two the pointer just entered.
   final void Function(_FigureAnchor) onPowerFrom;
@@ -569,6 +570,41 @@ class _PillRow extends StatelessWidget {
                   ),
                 ),
               ),
+              // MEMORY — the ring and its figure, in the name's own stretch
+              // rather than in a walled-off one further along. It sat between
+              // the work figures and the counts, behind a rule, which put a
+              // fact about *this grid's hardware* among facts about what is
+              // running on it — and gave the whole-grid panel two openings with
+              // three unrelated stretches between them. No divider here on
+              // purpose: the rule is what would say "a separate thing", and
+              // this is the same thing the name is.
+              if (vram != null) ...[
+                const SizedBox(width: 9),
+                if (share != null) ...[
+                  RingGauge(
+                    value: share,
+                    // Amber from the point where a grid's memory stops being
+                    // headroom and starts being a constraint on the next model
+                    // someone loads.
+                    color: share >= 0.85 ? AppPalette.warn : AppPalette.online,
+                    trackColor: AppPalette.guide,
+                    size: 15,
+                    strokeWidth: 2.2,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                _Stat(
+                  value: ringIsMemory
+                      ? formatVramShare(used, vram)
+                      : formatVram(vram),
+                  // The percentage is named only when it is *not* the memory
+                  // figure — otherwise the ring and the "1.3 / 2.1 TB" beside it
+                  // already say the same thing twice.
+                  unit: ringIsMemory || util == null
+                      ? null
+                      : '· ${util.round()}% busy',
+                ),
+              ],
             ],
           ),
         ),
@@ -629,45 +665,6 @@ class _PillRow extends StatelessWidget {
             ],
           ),
         ),
-        // MEMORY — the ring and its figure. Back on the whole-grid panel: this
-        // is the hardware, which is what that panel is.
-        if (vram != null)
-          _HoverTarget(
-            kind: _PanelKind.power,
-            onEnter: onEnter,
-            onExit: onExit,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _Divider(),
-                const SizedBox(width: 9),
-                if (share != null) ...[
-                  RingGauge(
-                    value: share,
-                    // Amber from the point where a grid's memory stops being
-                    // headroom and starts being a constraint on the next model
-                    // someone loads.
-                    color: share >= 0.85 ? AppPalette.warn : AppPalette.online,
-                    trackColor: AppPalette.guide,
-                    size: 15,
-                    strokeWidth: 2.2,
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                _Stat(
-                  value: ringIsMemory
-                      ? formatVramShare(used, vram)
-                      : formatVram(vram),
-                  // The percentage is named only when it is *not* the memory
-                  // figure — otherwise the ring and the "1.3 / 2.1 TB" beside it
-                  // already say the same thing twice.
-                  unit: ringIsMemory || util == null
-                      ? null
-                      : '· ${util.round()}% busy',
-                ),
-              ],
-            ),
-          ),
         // WHAT THE GRID IS MADE OF — people, machines, models. Three glyphs and
         // three figures, each its own hover target over its own list.
         _CountFigure(
@@ -704,9 +701,9 @@ class _PillRow extends StatelessWidget {
         ),
         _HoverTarget(
           kind: _PanelKind.power,
-          anchor: memoryAnchor,
+          anchor: chevronAnchor,
           onEnter: (kind) {
-            onPowerFrom(memoryAnchor);
+            onPowerFrom(chevronAnchor);
             onEnter(kind);
           },
           onExit: onExit,
