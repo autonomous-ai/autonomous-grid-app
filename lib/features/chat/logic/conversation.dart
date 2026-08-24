@@ -1,3 +1,4 @@
+import 'routing_group.dart';
 import 'turn_model_share.dart';
 import '../../../infrastructure/cli/model_control_tokens.dart';
 import '../../../infrastructure/cli/agent_event.dart';
@@ -31,6 +32,8 @@ class Conversation {
     this.compaction,
     this.resume,
     this.documentPath,
+    this.lastRequestWatermark,
+    this.routingGroup,
   });
 
   final String id;
@@ -142,6 +145,18 @@ class Conversation {
   /// longer opened any.
   final String? documentPath;
 
+  /// The cursor the grid returned with this chat's last request, or null
+  /// before any request has gone out.
+  ///
+  /// Opaque to the app — it exists only to be sent back on the next request
+  /// so the grid can resume from where this chat's polling left off, rather
+  /// than replaying answers it already delivered.
+  final String? lastRequestWatermark;
+
+  /// The routing mode and models this chat is pinned to, or null for the
+  /// grid's ordinary pick. See [RoutingGroup].
+  final RoutingGroup? routingGroup;
+
   /// True when this chat is hidden from the sidebar, the tray and ⌘K.
   bool get isArchived => archivedAt != null;
 
@@ -192,6 +207,12 @@ class Conversation {
     // on being that document's chat. There is no gesture that unpairs them —
     // the way to a conversation about something else is a new chat.
     String? documentPath,
+    String? lastRequestWatermark,
+    // Only ever *set*, like [documentPath]: a chat pinned to a routing mode
+    // stays pinned until the picker explicitly asks to go back to the grid's
+    // own choice, which is what [clearRoutingGroup] says.
+    RoutingGroup? routingGroup,
+    bool clearRoutingGroup = false,
   }) => Conversation(
     id: id,
     title: title ?? this.title,
@@ -210,6 +231,10 @@ class Conversation {
     compaction: compaction ?? this.compaction,
     resume: clearResume ? null : (resume ?? this.resume),
     documentPath: documentPath ?? this.documentPath,
+    lastRequestWatermark: lastRequestWatermark ?? this.lastRequestWatermark,
+    routingGroup: clearRoutingGroup
+        ? null
+        : (routingGroup ?? this.routingGroup),
   );
 
   Map<String, dynamic> toJson() => {
@@ -246,6 +271,13 @@ class Conversation {
     // Same rule once more: absent means an ordinary chat, which is what every
     // conversation written before Docs existed is.
     if (documentPath != null) 'documentPath': documentPath,
+    // Same rule again: absent means "no request has gone out yet", which is
+    // what every chat written before polling could resume was.
+    if (lastRequestWatermark != null)
+      'lastRequestWatermark': lastRequestWatermark,
+    // Same rule once more: absent means the grid's own pick, which is what
+    // every chat written before routing modes existed used.
+    if (routingGroup != null) 'routingGroup': routingGroup!.toJson(),
     'messages': [for (final m in messages) _messageToJson(m)],
   };
 
@@ -298,6 +330,21 @@ class Conversation {
           json['documentPath'] is String &&
               (json['documentPath'] as String).isNotEmpty
           ? json['documentPath'] as String
+          : null,
+      // An empty string reads as none, the same reasoning as documentPath: a
+      // blank cursor is not a cursor to resume from.
+      lastRequestWatermark:
+          json['lastRequestWatermark'] is String &&
+              (json['lastRequestWatermark'] as String).isNotEmpty
+          ? json['lastRequestWatermark'] as String
+          : null,
+      // Unparseable (a shape this build no longer understands) reads as
+      // none — the recoverable answer, since it hands the chat back to the
+      // grid's own pick instead of guessing at a mode.
+      routingGroup: json['routingGroup'] is Map<String, dynamic>
+          ? RoutingGroup.tryFromJson(
+              json['routingGroup'] as Map<String, dynamic>,
+            )
           : null,
       messages: [
         if (rawMessages is List)
@@ -383,6 +430,13 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   // — the same reason `node` is written down rather than re-derived.
   if (message.modelShares.isNotEmpty)
     'model_shares': [for (final s in message.modelShares) s.toJson()],
+  // Same reason as model_shares: persisted so a reopened chat still says
+  // exactly which models the grid's own usage log credited with this turn,
+  // not only the live poll's guess.
+  if (message.orchestrationModels != null)
+    'orchestration_models': [
+      for (final s in message.orchestrationModels!) s.toJson(),
+    ],
   // Milliseconds, not a formatted string: the transcript re-renders it in
   // whatever shape the footer wants today, and a saved "8.4s" couldn't.
   if (message.took != null) 'took_ms': message.took!.inMilliseconds,
@@ -443,6 +497,14 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
               ?ModelShare.fromJson(row),
           ]
         : const [],
+    // Absent — every chat saved before this existed, or a read that never
+    // completed — reads as null, never as an empty reading.
+    orchestrationModels: json['orchestration_models'] is List
+        ? [
+            for (final row in json['orchestration_models'] as List)
+              ?ModelShare.fromJson(row),
+          ]
+        : null,
     took: json['took_ms'] is num
         ? Duration(milliseconds: (json['took_ms'] as num).toInt())
         : null,
@@ -489,3 +551,35 @@ AgentApprovalMode approvalFor(
   Conversation? conversation,
   AgentApprovalMode fallback,
 ) => conversation?.approval ?? fallback;
+
+/// The string a turn in [conversation] puts in the request's `model` field,
+/// given the [picked] model id the turn is actually going out on.
+///
+/// A chat pinned to a routing group sends the group instead: the mode's slash
+/// string under Dynamic, the pinned model list under Fixed — see
+/// [RoutingGroup.toModelField]. Everything the app shows about the turn keeps
+/// naming [picked], because the Fixed form is a JSON object and a footer
+/// answering "what answered this?" with one says nothing.
+///
+/// **Only while the chat is still on that mode.** The group alone is not
+/// enough: the composer can be moved off a routing row without anything
+/// clearing it — switch to a grid that serves no router and `_syncModelField`
+/// drops the chat to a plain model, since the mode's row is no longer on the
+/// list. The pill and the reply footer would then say `qwen` while every send
+/// quietly carried the old grid's pinned ids, which is the app lying about
+/// what it sent.
+///
+/// The check reads [Conversation.model] — the row the user is on — and never
+/// [picked], which is what *this turn* goes out as. Under the Auto agent those
+/// two differ on purpose: [picked] becomes the router's own `auto`, and
+/// gating on it would drop Fixed routing for every agent turn that is
+/// legitimately still pinned.
+///
+/// Pure, and here beside [approvalFor] for the same reason: a rule about a
+/// conversation belongs with the conversation, not inside the send it decides.
+String wireModelFor(Conversation conversation, String picked) {
+  final group = conversation.routingGroup;
+  if (group == null) return picked;
+  if (routingModeForModelId(conversation.model) != group.mode) return picked;
+  return group.toModelField();
+}

@@ -31,19 +31,25 @@ abstract interface class RelayApiClient {
     required String apiKey,
   });
 
-  /// `GET {baseUrl}/usage?since=&until=` → which models served this consumer's
-  /// requests in the window, and how many each.
+  /// `GET {baseUrl}/usage` → which models served this consumer's requests in
+  /// the window, and how many each.
+  ///
+  /// Either a `since`/`until` account rollup, or an exact
+  /// `conversation`/`from`/`to` slice.
   ///
   /// The only way to learn what an `auto` turn actually ran on: the agent CLI
   /// makes the relay calls, so the app never sees their responses. Throws
   /// [RelayUnavailable] like the others — including **404 on a grid whose master
   /// predates the endpoint**, which is the common case while the fleet is mid
   /// rollout and must read as "no data", never as an error the user sees.
-  Future<List<ModelShare>> usage({
+  Future<ConversationUsage> usage({
     required String baseUrl,
     required String apiKey,
-    required DateTime since,
+    DateTime? since,
     DateTime? until,
+    String? conversation,
+    String? from,
+    String? to,
   });
 
   /// `GET {baseUrl}/grid/members/usage` → what each person on this grid ran in
@@ -70,6 +76,12 @@ abstract interface class RelayApiClient {
 /// relay, and a heading that said "24h" while the master counted six would be
 /// wrong in the one way a figure must never be.
 typedef MemberUsageReport = ({int windowSeconds, List<MemberUsage> members});
+
+/// One call to `GET /usage` — either a `since`/`until` account rollup, or
+/// an exact `conversation`/`from`/`to` slice. `last` is only populated by
+/// the conversation-scoped form: the newest request id counted, to pass as
+/// `from` on the next call.
+typedef ConversationUsage = ({List<ModelShare> models, String? last});
 
 /// A relay read failed. [statusCode] is the HTTP status when the request
 /// completed with a non-2xx, or null for a transport error (timeout, socket) or
@@ -147,16 +159,23 @@ class HttpRelayApiClient implements RelayApiClient {
   }
 
   @override
-  Future<List<ModelShare>> usage({
+  Future<ConversationUsage> usage({
     required String baseUrl,
     required String apiKey,
-    required DateTime since,
+    DateTime? since,
     DateTime? until,
+    String? conversation,
+    String? from,
+    String? to,
   }) async {
     final query = {
-      'since': '${since.toUtc().millisecondsSinceEpoch ~/ 1000}',
+      if (since != null)
+        'since': '${since.toUtc().millisecondsSinceEpoch ~/ 1000}',
       if (until != null)
         'until': '${until.toUtc().millisecondsSinceEpoch ~/ 1000}',
+      'conversation': ?conversation,
+      'from': ?from,
+      'to': ?to,
     };
     final body = await _get(
       Uri.parse('$baseUrl/usage').replace(queryParameters: query),
@@ -166,10 +185,17 @@ class HttpRelayApiClient implements RelayApiClient {
       deadline: _kUsageDeadline,
     );
     final decoded = jsonDecode(body);
-    if (decoded is! Map || decoded['models'] is! List) return const [];
-    return [
-      for (final row in decoded['models'] as List) ?ModelShare.fromJson(row),
-    ];
+    if (decoded is! Map) {
+      return (models: const <ModelShare>[], last: null);
+    }
+    final models = decoded['models'] is List
+        ? [
+            for (final row in decoded['models'] as List)
+              ?ModelShare.fromJson(row),
+          ]
+        : const <ModelShare>[];
+    final last = decoded['last'];
+    return (models: models, last: last is String ? last : null);
   }
 
   @override

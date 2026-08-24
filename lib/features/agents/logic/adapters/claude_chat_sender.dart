@@ -266,6 +266,9 @@ class ClaudeChatSender implements ChatSender {
       // On both lanes: it says which chat this turn is in, which has nothing to
       // do with who serves the model.
       ...gridTurnEnv(conversationId),
+      // So every relay call this process makes for its lifetime carries this
+      // chat's `X-Grid-Conversation` header — see [claudeConversationHeaderEnv].
+      ...claudeConversationHeaderEnv(conversationId),
       ...onExtension
           ? const <String, String>{}
           : claudeCodeEnv(

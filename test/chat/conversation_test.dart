@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_title.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
+import 'package:grid_app/features/chat/logic/routing_group.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
@@ -474,6 +475,151 @@ void main() {
       final json = _conversation().toJson()..['documentPath'] = '';
 
       expect(Conversation.fromJson(json).documentPath, isNull);
+    });
+  });
+
+  group('the routing mode a chat is pinned to', () {
+    test('lastRequestWatermark survives a restart, so a resumed poll knows '
+        'where it left off', () {
+      final marked = _conversation().copyWith(lastRequestWatermark: 'wm-123');
+
+      final read = Conversation.fromJson(marked.toJson());
+
+      expect(read.lastRequestWatermark, 'wm-123');
+    });
+
+    test('a chat with no watermark writes no field at all, so a file saved '
+        'before this existed stays byte-identical', () {
+      final plain = _conversation();
+      expect(plain.toJson().containsKey('lastRequestWatermark'), isFalse);
+      expect(
+        Conversation.fromJson(plain.toJson()).lastRequestWatermark,
+        isNull,
+      );
+    });
+
+    test('a routing group survives a restart, so a chat pinned to Brute '
+        'Force reopens still pinned to it', () {
+      const group = RoutingGroup(
+        mode: RoutingMode.bruteForce,
+        isFixed: true,
+        models: ['qwen2.5-72b', 'llama-3.1-70b'],
+      );
+      final withGroup = _conversation().copyWith(routingGroup: group);
+
+      final read = Conversation.fromJson(withGroup.toJson());
+
+      expect(read.routingGroup, group);
+    });
+
+    test('an ordinary chat writes no routingGroup field, and one saved '
+        'before routing modes existed reads as ordinary rather than pinned '
+        'to a mode nobody chose', () {
+      final plain = _conversation();
+      expect(plain.toJson().containsKey('routingGroup'), isFalse);
+      expect(Conversation.fromJson(plain.toJson()).routingGroup, isNull);
+    });
+
+    test('clearRoutingGroup removes a previously-set group, the way '
+        'clearArchivedAt un-archives — `?? this` alone could never say null '
+        'on purpose', () {
+      final withGroup = _conversation().copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.judgeLoop,
+          isFixed: true,
+          worker: 'a',
+          judge: 'b',
+        ),
+      );
+
+      final cleared = withGroup.copyWith(clearRoutingGroup: true);
+
+      expect(cleared.routingGroup, isNull);
+      expect(cleared.toJson().containsKey('routingGroup'), isFalse);
+    });
+  });
+
+  group('the model field a turn puts on the wire', () {
+    test('an ordinary chat sends exactly the model the composer shows, so '
+        'nothing about routing changes a chat that was never routed', () {
+      expect(wireModelFor(_conversation(), 'qwen'), 'qwen');
+    });
+
+    test('a Fixed chat sends its pinned models rather than the composer\'s '
+        'id — the whole point of pinning is that the grid stops choosing', () {
+      final pinned = _conversation(model: 'auto/brute_force').copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      expect(
+        wireModelFor(pinned, 'auto/brute_force'),
+        '{"mode":"brute_force","models":["a","b"]}',
+      );
+    });
+
+    test('a Dynamic chat sends the plain mode string every turn, so the grid '
+        'picks afresh each time and no model list is implied', () {
+      final dynamicChat = _conversation(model: 'auto/judge_loop').copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.judgeLoop,
+          isFixed: false,
+        ),
+      );
+
+      expect(wireModelFor(dynamicChat, 'auto/judge_loop'), 'auto/judge_loop');
+    });
+
+    test('a chat whose composer has moved off the mode stops sending the '
+        'group — switching to a grid with no router drops the pill to a plain '
+        'model, and the wire must not go on naming the old grid\'s ids', () {
+      // Exactly what `_syncModelField` leaves behind: the group is still on
+      // the conversation (nothing on that path clears it) but `model` is a
+      // plain id again, because the mode's row is not on the new grid's list.
+      final stranded = _conversation(model: 'qwen').copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      expect(wireModelFor(stranded, 'qwen'), 'qwen');
+    });
+
+    test('a chat on the other mode sends that mode, not the group it still '
+        'carries — the group is only ever read for the mode it belongs to', () {
+      final swapped = _conversation(model: 'auto/judge_loop').copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      expect(wireModelFor(swapped, 'auto/judge_loop'), 'auto/judge_loop');
+    });
+
+    test('the Auto agent\'s swapped-in `auto` does not unpin a Fixed chat — '
+        'the guard reads the row the user is on, never what this one turn '
+        'happens to go out as', () {
+      final pinned = _conversation(model: 'auto/brute_force').copyWith(
+        routingGroup: const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      // `picked` is the router's own id, which is what the Auto agent sends a
+      // turn out on. The chat is still pinned, so the pin still applies.
+      expect(
+        wireModelFor(pinned, 'auto'),
+        '{"mode":"brute_force","models":["a","b"]}',
+      );
     });
   });
 

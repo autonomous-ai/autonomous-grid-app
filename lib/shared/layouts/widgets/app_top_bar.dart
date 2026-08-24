@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -9,6 +11,7 @@ import '../../../features/chat/logic/chat_rail.dart';
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/logic/preview_panel.dart';
 import '../../../features/chat/presentation/chat_header.dart';
+import '../../../features/chat/presentation/workflow_flow_line.dart';
 import '../../../features/code/logic/code_projects_controller.dart';
 import '../../../features/code/logic/code_side_panel.dart';
 import '../../../features/code/logic/project_status_controller.dart';
@@ -105,12 +108,124 @@ class AppTopBar extends ConsumerWidget {
                 const WorkingNowPill(),
                 const _ModelDownloadPill(),
                 const GridPowerPill(),
+                const _WorkflowBubbleToggle(),
                 const _ProjectRailToggle(),
                 const _BottomPanelToggle(),
                 const _SidePanelToggle(),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows and hides the orchestration overview — the strip above the
+/// conversation saying how this chat is routed and how far its turn has got.
+///
+/// Right beside [GridPowerPill] rather than with the panel toggles: it isn't a
+/// panel around the conversation, it's a small indicator of its own, and it
+/// belongs next to the grid summary it reports on.
+///
+/// Only while the open chat is routed, the same way every other toggle in this
+/// row waits for something to move: the strip itself draws nothing for a chat
+/// on the grid's ordinary pick, so on those this button would report the state
+/// of something the user cannot see either way.
+class _WorkflowBubbleToggle extends ConsumerStatefulWidget {
+  const _WorkflowBubbleToggle();
+
+  @override
+  ConsumerState<_WorkflowBubbleToggle> createState() =>
+      _WorkflowBubbleToggleState();
+}
+
+class _WorkflowBubbleToggleState extends ConsumerState<_WorkflowBubbleToggle> {
+  /// Anchors the orchestration popover to the button, so it hangs off the same
+  /// relative (LayerLink + CompositedTransformFollower) machinery the grid
+  /// power/stat popovers use — a floating panel, not an element pushed into
+  /// the conversation.
+  final _link = LayerLink();
+  final _controller = OverlayPortalController();
+  final _tapGroup = Object();
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  void _toggle() {
+    if (_controller.isShowing) {
+      _controller.hide();
+    } else {
+      _controller.show();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    // When the chat stops being routed (or closes), unmount the portal so it
+    // never comes back already-showing. Riverpod requires listens inside build.
+    ref.listen(chatSessionsProvider, (_, next) {
+      if (next.active?.routingGroup == null && _controller.isShowing) {
+        _controller.hide();
+      }
+    });
+    final routed = ref.watch(
+      chatSessionsProvider.select((s) => s.active?.routingGroup != null),
+    );
+    if (!ref.watch(chatIsOpenProvider) || !routed) {
+      return const SizedBox.shrink();
+    }
+    final open = _controller.isShowing;
+    return TapRegion(
+      groupId: _tapGroup,
+      onTapOutside: (_) {
+        if (_controller.isShowing) _controller.hide();
+      },
+      child: CompositedTransformTarget(
+        link: _link,
+        child: OverlayPortal(
+          controller: _controller,
+          overlayChildBuilder: (context) => _WorkflowPopover(
+            link: _link,
+            tapGroupId: _tapGroup,
+          ),
+          child: PanelToggle(
+            icon: LucideIcons.workflow,
+            open: open,
+            label: 'orchestration overview',
+            onPressed: _toggle,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The floating orchestration panel, hung under the workflow button.
+class _WorkflowPopover extends StatelessWidget {
+  const _WorkflowPopover({required this.link, required this.tapGroupId});
+
+  final LayerLink link;
+  final Object tapGroupId;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final windowWidth = MediaQuery.sizeOf(context).width;
+    final width = math.min(620.0, windowWidth - 16);
+    return Positioned(
+      width: width,
+      child: CompositedTransformFollower(
+        link: link,
+        targetAnchor: Alignment.bottomRight,
+        followerAnchor: Alignment.topRight,
+        offset: const Offset(-8, 8),
+        child: TapRegion(
+          groupId: tapGroupId,
+          child: const WorkflowFlowPanel(),
         ),
       ),
     );
