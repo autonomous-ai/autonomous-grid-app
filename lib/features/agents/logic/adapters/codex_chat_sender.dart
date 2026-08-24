@@ -175,11 +175,6 @@ class CodexChatSender implements ChatSender {
               ? null
               : agentContextCeiling(contextWindow),
         ),
-        // So every relay call this thread makes carries this chat's
-        // `X-Grid-Conversation` header — Codex's equivalent of the env var
-        // above, since a `-c` override is the only channel that reaches its
-        // client's default headers.
-        ...codexConversationHeaderOverrides(conversationId),
       ],
       approval: mode,
       environment: {
