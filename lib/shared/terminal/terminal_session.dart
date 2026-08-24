@@ -143,7 +143,10 @@ class TerminalSession {
         // `dumb` terminal turns off colour, the cursor and every full-screen
         // program. Which is to say: the whole agent TUI.
         environment: {
-          ...Platform.environment,
+          // Minus whichever Claude Code session started the app, if one did:
+          // its name and its message pipe are no part of the session opening
+          // here (see [withoutInheritedAgentSession]).
+          ...withoutInheritedAgentSession(Platform.environment),
           ...environment,
           'TERM': 'xterm-256color',
           'TERM_PROGRAM': 'Grid',
