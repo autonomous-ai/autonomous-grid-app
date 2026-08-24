@@ -467,7 +467,7 @@ mixin _ChatSend on _ChatSessions {
     // knows, since the agent makes its own relay calls and only ever knows the
     // name it was handed (`auto`, or a tier alias). Watched from here so the
     // working bubble can show it changing while a long task runs.
-    ref.read(turnModelUsageProvider.notifier).begin(id, network);
+    ref.read(turnModelUsageProvider.notifier).begin(id, network, turnId);
 
     // Who answered, with what, where, and how long it took — the footer's four
     // facts, stamped onto whatever the turn produced (a whole reply, or the
