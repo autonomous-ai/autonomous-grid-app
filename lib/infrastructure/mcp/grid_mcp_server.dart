@@ -90,25 +90,38 @@ class GridMcpServer {
 
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
+    Object? id;
     try {
       if (request.method != 'POST') {
-        response.statusCode = HttpStatus.methodNotAllowed;
+        _writeError(response, id, -32600, 'Use POST for MCP requests.');
         return;
       }
       final chatId = _chatFor(
         request.headers.value(HttpHeaders.authorizationHeader),
       );
       if (chatId == null) {
-        response.statusCode = HttpStatus.unauthorized;
+        _writeError(
+          response,
+          id,
+          -32001,
+          'This Grid turn is no longer active.',
+        );
         return;
       }
       final body = await utf8.decoder.bind(request).join();
-      final decoded = jsonDecode(body);
-      if (decoded is! Map<String, Object?>) {
-        response.statusCode = HttpStatus.badRequest;
+      Object? decoded;
+      try {
+        decoded = jsonDecode(body);
+      } on FormatException {
+        _writeError(response, id, -32700, 'Parse error');
         return;
       }
-      final id = decoded['id'];
+      if (decoded is! Map) {
+        _writeError(response, id, -32600, 'Invalid request');
+        return;
+      }
+      final payload = decoded.cast<String, Object?>();
+      id = payload['id'];
       // A notification carries no id and takes no reply — `initialized` is the
       // one that matters, and answering it is a protocol error.
       if (id == null) {
@@ -117,18 +130,44 @@ class GridMcpServer {
       }
       final reply = await _dispatch(
         chatId,
-        '${decoded['method']}',
-        decoded['params'],
+        '${payload['method']}',
+        payload['params'],
       );
       response.statusCode = HttpStatus.ok;
       response.headers.contentType = ContentType.json;
       response.write(jsonEncode({'jsonrpc': '2.0', 'id': id, ...reply}));
     } on Object catch (error) {
-      response.statusCode = HttpStatus.internalServerError;
-      response.write('$error');
+      _writeError(
+        response,
+        id,
+        -32603,
+        'Grid could not complete the call: $error',
+      );
     } finally {
       await response.close();
     }
+  }
+
+  /// Fail inside JSON-RPC, never at the HTTP transport layer.
+  ///
+  /// Codex and Claude Code may retry or end a long-running turn on HTTP 4xx/5xx.
+  /// A JSON-RPC error reaches the model instead, so it can report the failure
+  /// without replaying a command that may already have taken effect.
+  void _writeError(
+    HttpResponse response,
+    Object? id,
+    int code,
+    String message,
+  ) {
+    response.statusCode = HttpStatus.ok;
+    response.headers.contentType = ContentType.json;
+    response.write(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': id,
+        'error': {'code': code, 'message': message},
+      }),
+    );
   }
 
   String? _chatFor(String? header) {
