@@ -52,8 +52,12 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
   // How many pages of each section the user has opened. Held here rather than
   // in the sections themselves so the rail is one scrollable thing again after
   // a click, and so both counts survive the rebuild every streamed token causes
-  // upstream. They only ever grow: having asked to see more chats, you don't
-  // expect the list to fold back up because one of them finished replying.
+  // upstream: having asked to see more chats, you don't expect the list to fold
+  // back up because one of them finished replying.
+  //
+  // Only [_loosePages] is ever put back, and only by folding the section away
+  // ([_toggleChats]). The project *list* has no fold to reset it, so once it
+  // has grown it stays grown.
   int _projectPages = 1;
   int _loosePages = 1;
 
@@ -61,6 +65,18 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
   // under it, so the one group in the rail that *couldn't* fold read as an
   // oversight — and it's the group most likely to be hundreds of rows long.
   bool _chatsOpen = true;
+
+  /// Fold the loose chats away, or open them again at their first page.
+  ///
+  /// Putting a section away discards how far it had been paged open, exactly as
+  /// a project group does — see [_ProjectGroupState._toggle] for why the two
+  /// have to agree on that.
+  void _toggleChats() {
+    setState(() {
+      _chatsOpen = !_chatsOpen;
+      if (!_chatsOpen) _loosePages = 1;
+    });
+  }
 
   @override
   void dispose() {
@@ -103,7 +119,15 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
     // genuinely hidden — the last page never leaves a button behind that reveals
     // nothing.
     final shownProjects = sidebarPageCount(_projectPages, projects.length);
-    final shownLoose = sidebarPageCount(_loosePages, loose.length);
+    // The loose chats open far wider than the project list above them
+    // ([kSidebarChatsFirstPage] rather than [kSidebarFirstPage]), which is also
+    // what keeps a short history whole: under twenty chats nothing is hidden and
+    // no "Show more" is built at all. Past that it still grows ten at a click.
+    final shownLoose = sidebarPageCount(
+      _loosePages,
+      loose.length,
+      firstPage: kSidebarChatsFirstPage,
+    );
 
     return Scrollbar(
       controller: _scrollController,
@@ -151,48 +175,24 @@ class _ChatHistoryListState extends ConsumerState<ChatHistoryList> {
                 SidebarSectionLabel(
                   label: 'Chats',
                   collapsed: !_chatsOpen,
-                  onToggle: () => setState(() => _chatsOpen = !_chatsOpen),
+                  onToggle: _toggleChats,
                 ),
-                // Nothing yet, and nothing to say about it — the history is
-                // still being read, and "there are none" would be a guess.
-                if (!_chatsOpen || (loose.isEmpty && loading))
-                  const SizedBox.shrink()
-                else if (loose.isEmpty)
-                  const _Hint(
-                    text: 'Chats outside a project show up here.',
-                    indented: true,
-                  ),
               ],
             ),
           ),
-          // The loose chats are the one part of this rail that grows without a
-          // ceiling — a year of chats is a year of rows — so they're built as
-          // they're scrolled to rather than all at once on every change to the
-          // list. Indented like a project's chats so every conversation's title
-          // sits in the same column, whether or not it belongs to a project: the
-          // "Chats" and "Projects" labels stay at the outer edge, their contents
-          // line up one step in.
-          //
-          // The "Show more" row is the last item of the same builder rather than
-          // a sliver of its own: as one more index it stays glued to the bottom
-          // of the chats however many pages are open, and costs nothing on the
-          // common case where the whole section fits.
-          // Folded away, the section builds nothing at all: this is the one list
-          // that can be hundreds of rows, so "collapsed" has to mean gone, not
-          // hidden behind a zero height.
+          // One box rather than a lazy sliver, which is what lets this section
+          // fold like a project instead of blinking — see [_LooseChats] for the
+          // trade that buys it, and for why the page cap above keeps it cheap.
           SliverPadding(
             padding: _railPadding,
-            sliver: SliverList.builder(
-              itemCount: !_chatsOpen
-                  ? 0
-                  : shownLoose + (shownLoose < loose.length ? 1 : 0),
-              itemBuilder: (_, index) => index == shownLoose
-                  ? SidebarShowMore(
-                      remaining: loose.length - shownLoose,
-                      indented: true,
-                      onTap: () => setState(() => _loosePages++),
-                    )
-                  : _ChatRow(chat: loose[index], indented: true),
+            sliver: SliverToBoxAdapter(
+              child: _LooseChats(
+                chats: loose,
+                shown: shownLoose,
+                open: _chatsOpen,
+                loading: loading,
+                onShowMore: () => setState(() => _loosePages++),
+              ),
             ),
           ),
         ],
@@ -246,8 +246,24 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
   bool _open = true;
 
   // How many pages of this project's chats have been opened. Per group, so
-  // paging one busy project open doesn't unfold every other project too.
+  // paging one busy project open doesn't unfold every other project too, and
+  // put back whenever the group is folded away — see [_toggle].
   int _pages = 1;
+
+  /// Fold the group, or open it again at its first page.
+  ///
+  /// Reopening starts over rather than restoring however far the chats had been
+  /// paged: folding a project is how a person gives the rail its room back, and
+  /// a folder that came back twenty rows deep would take that room away again on
+  /// the click that was meant to be a peek. Nobody is holding "how many times I
+  /// pressed Show more last week" in their head either, so there is no state
+  /// here worth preserving against the cost of restoring it.
+  void _toggle() {
+    setState(() {
+      _open = !_open;
+      if (!_open) _pages = 1;
+    });
+  }
 
   void _newChatHere() {
     ref
@@ -298,7 +314,7 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
             tooltip: missing
                 ? "This folder isn't there any more: ${widget.project.path}"
                 : widget.project.path,
-            onTap: () => setState(() => _open = !_open),
+            onTap: _toggle,
             // Two actions here (options menu + new chat), so reserve room for both.
             trailingWidth: 48,
             trailing: Row(
@@ -326,8 +342,12 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
         // glide instead of jumping; each chat inside then fades in and drifts up
         // into place, staggered a hair so they arrive as a wave rather than all
         // at once. Collapsing just shrinks the height (the rows leave with it).
+        //
+        // [_LooseChats] folds on this same duration and curve, from the shared
+        // token rather than from a copy of the number: a rail where two groups
+        // open at almost the same speed reads as one of them lagging.
         AnimatedSize(
-          duration: const Duration(milliseconds: 220),
+          duration: AppMotion.fold,
           curve: Curves.easeOutCubic,
           alignment: Alignment.topCenter,
           child: open
@@ -381,6 +401,94 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
               : const SizedBox(width: double.infinity),
         ),
       ],
+    );
+  }
+}
+
+/// The "Chats" section's body: every conversation that belongs to no project,
+/// then the "Show more" that closes the list while there is more of it.
+///
+/// Folds on the same duration, curve and per-row wave a project group does, and
+/// for the same reason it does: the header above this one is the same gesture,
+/// so a section that blinked open while every project glided was the rail's one
+/// group behaving differently for no reason a user could see.
+///
+/// **This is the one part of the rail built in one piece rather than as it is
+/// scrolled to**, and that is the price of the fold: [AnimatedSize] animates
+/// between two heights it has to measure, and a lazy sliver has no height to
+/// measure until you have already scrolled to the end of it. What keeps the
+/// trade cheap is the page cap this section already had — it mounts
+/// [kSidebarChatsFirstPage] rows and grows by [kSidebarNextPage] only when
+/// someone clicks for more, so the year of chats this list can hold is never
+/// mounted unless a person asked for it ten rows at a time. Collapsed, it builds
+/// nothing at all.
+class _LooseChats extends StatelessWidget {
+  const _LooseChats({
+    required this.chats,
+    required this.shown,
+    required this.open,
+    required this.loading,
+    required this.onShowMore,
+  });
+
+  /// Every loose chat. Only the first [shown] of them are drawn.
+  final List<Conversation> chats;
+  final int shown;
+
+  /// Whether the "Chats" header is unfolded.
+  final bool open;
+
+  /// The saved history is still being read, so an empty list is "not yet" as
+  /// easily as "there are none" — and only the second may be told to the user.
+  final bool loading;
+
+  final VoidCallback onShowMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: AppMotion.fold,
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: !open
+          ? const SizedBox(width: double.infinity)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (chats.isEmpty && !loading)
+                  const _RevealItem(
+                    index: 0,
+                    child: _Hint(
+                      text: 'Chats outside a project show up here.',
+                      indented: true,
+                    ),
+                  ),
+                // Indented like a project's chats, so every conversation's title
+                // sits in the same column whether or not it belongs to a
+                // project: the "Chats" and "Projects" labels stay out at the
+                // rail's edge, their contents line up one step in.
+                for (var i = 0; i < shown; i++)
+                  _RevealItem(
+                    // The wave restarts every [kSidebarNextPage] rows instead of
+                    // running the length of the list. The curve table clamps
+                    // past the eighth row, so one ramp over a twenty-row first
+                    // page would land the last twelve together anyway — two
+                    // short waves read as a list arriving, one long one reads as
+                    // a list stalling.
+                    index: i % kSidebarNextPage,
+                    child: _ChatRow(chat: chats[i], indented: true),
+                  ),
+                // Last, so it stays glued to the bottom of the chats however
+                // many pages are open, and costs nothing in the common case
+                // where the whole section fits.
+                if (shown < chats.length)
+                  SidebarShowMore(
+                    remaining: chats.length - shown,
+                    indented: true,
+                    onTap: onShowMore,
+                  ),
+              ],
+            ),
     );
   }
 }
