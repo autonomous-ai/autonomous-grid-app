@@ -126,9 +126,10 @@ class TerminalSession {
           operatingSystem: Platform.operatingSystem,
         );
     // A pty on Windows is handed a command line rather than an argv, and
-    // `flutter_pty` builds it by joining these two with spaces and quoting
-    // nothing — see [quoteForWindowsPty] for what that costs.
-    final spawn = Platform.isWindows ? quoteForWindowsPty(command) : command;
+    // `flutter_pty` builds it by joining these two with spaces, quoting nothing
+    // and naming the program twice — see [windowsPtyCommand] for what that
+    // costs and why `cmd /c` is what gets past it.
+    final spawn = Platform.isWindows ? windowsPtyCommand(command) : command;
     try {
       final pty = Pty.start(
         spawn.executable,

@@ -119,3 +119,59 @@ String droppedPathsLine(Iterable<String> paths) =>
 /// One path, as [droppedPathsLine] writes it.
 String droppedPath(String path) =>
     path.contains(_needsQuoting) ? '"${path.replaceAll('"', r'\"')}"' : path;
+
+/// What a Windows pty actually has to be handed to run [command].
+///
+/// `flutter_pty` builds the Windows command line as `executable + ' ' + argv`,
+/// and its own Dart side has already put the executable at `argv[0]` — the
+/// POSIX convention, where `argv[0]` is the program's *name* rather than an
+/// argument. Windows has no separate argv: the command line **is** the
+/// arguments, so the program ends up named twice and the second copy reaches
+/// the CLI as its first positional argument. Measured on the running app, from
+/// `Win32_Process`:
+///
+///     claude.exe C:\Users\...\claude.exe --model "" --permission-mode ...
+///
+/// Claude Code reads a positional argument as the prompt to open with, so the
+/// session fired a turn nobody typed — and the grid answered every retry with
+/// `503 No providers available for this model`.
+///
+/// `cmd /c` is the way out, because it ignores the stray copy of its own name
+/// and runs what follows: `cmd.exe cmd.exe /c <command>` runs `<command>`,
+/// measured with `CreateProcessW` directly. Passing an empty executable to move
+/// the whole line into the arguments does **not** work — a command line with a
+/// leading space is rejected outright with `ERROR_INVALID_PARAMETER` (87).
+///
+/// The wrapper costs one process, which [ShellCommand]'s tree-kill already
+/// accounts for, and `cmd /c` exits with the child's own code.
+///
+/// Known limit: `cmd` expands `%NAME%` while reading the line, and a `/c` line
+/// has no way to escape a percent sign. A path holding one arrives changed.
+ShellCommand windowsPtyCommand(
+  ShellCommand command, {
+  String shell = 'cmd.exe',
+}) {
+  final quoted = quoteForWindowsPty(command);
+  final line = [
+    quoted.executable,
+    ...quoted.arguments,
+  ].map(cmdSafeArgument).join(' ');
+  // One pair of quotes around the whole line: with more than two quotes in it,
+  // `cmd` strips the first and the last and runs exactly what was between them
+  // (`cmd /?`, "old behavior"). Without the pair, a line that merely *ends* in a
+  // quoted argument — Codex's `-c approval_policy="on-request"` — has that rule
+  // applied to its own quotes instead, and the argument arrives cut in half.
+  return (executable: shell, arguments: ['/c', '"$line"']);
+}
+
+/// [token], still one token after `cmd` has read the line.
+///
+/// A command line is read twice on this route: once by `cmd`, which acts on
+/// `&`, `|`, `>` and their friends before the program is ever started, and once
+/// by the program itself. Quotes are what turn those back into characters.
+/// Anything [windowsArgument] already quoted needs nothing more.
+String cmdSafeArgument(String token) =>
+    token.startsWith('"') || !token.contains(_cmdMeta) ? token : '"$token"';
+
+/// The characters `cmd` reads as punctuation rather than as text.
+final _cmdMeta = RegExp(r'[&|<>^()!]');
