@@ -312,16 +312,15 @@ class _FlippableNetwork extends SelectedNetwork {
   }
 }
 
-/// Stands in for the relay's `/usage` endpoint, so a turn landing never
-/// reaches the real network — every other test in this file leaves this on
-/// its default (no models, no watermark), which resolves instantly and
+/// Stands in for the relay's `/usage/turn/{turnId}` endpoint, so a turn
+/// landing never reaches the real network — every other test in this file
+/// leaves this on its default (no models), which resolves instantly and
 /// changes nothing about the turn it lands.
 class _FakeUsageRelay implements RelayApiClient {
-  _FakeUsageRelay({this.response = const (models: <ModelShare>[], last: null)});
+  _FakeUsageRelay({this.response = const <ModelShare>[]});
 
-  /// Mutable, so a test can change what the *next* call returns — e.g. a
-  /// second turn reporting a new watermark after the first already landed.
-  ConversationUsage response;
+  /// Mutable, so a test can change what the *next* call returns.
+  List<ModelShare> response;
 
   /// Throw instead of answering, for the turn-still-lands-on-failure case.
   Object? failWith;
@@ -336,20 +335,19 @@ class _FakeUsageRelay implements RelayApiClient {
   /// documents on `_attachOrchestrationUsage`).
   Completer<void>? hold;
 
-  /// Every `conversation`/`from` pair this was asked for, in call order.
-  final calls = <({String? conversation, String? from})>[];
+  /// Every turn id this was asked for, in call order. Both the attach read and
+  /// the background [turnModelUsageProvider] poll hit the same fake with the
+  /// same turn id, so a bare count cannot tell the two apart — assert on the
+  /// observable outcome (landed `orchestrationModels`) instead of counts.
+  final calls = <String>[];
 
   @override
-  Future<ConversationUsage> usage({
+  Future<List<ModelShare>> usageTurn({
     required String baseUrl,
     required String apiKey,
-    DateTime? since,
-    DateTime? until,
-    String? conversation,
-    String? from,
-    String? to,
+    required String turnId,
   }) async {
-    calls.add((conversation: conversation, from: from));
+    calls.add(turnId);
     final gate = hold;
     if (gate != null) await gate.future;
     final fail = failWith;
@@ -375,15 +373,6 @@ class _FakeUsageRelay implements RelayApiClient {
     required String apiKey,
   }) => throw UnimplementedError();
 }
-
-/// [relay]'s calls that actually named a conversation — filtering out the
-/// live caption's own background poll (`turnModelUsageProvider`, started the
-/// moment a turn dispatches and independent of anything this file is
-/// testing), which hits the same fake with a `since`/`until` window and no
-/// `conversation` on it.
-List<({String? conversation, String? from})> _conversationScopedCalls(
-  _FakeUsageRelay relay,
-) => relay.calls.where((c) => c.conversation != null).toList();
 
 /// The agent's own name for a session, handed back the moment it's asked for —
 /// unless [held] is set, in which case it waits for [release].
@@ -810,7 +799,7 @@ void main() {
     );
   });
 
-  group('turn settle reads the grid\'s usage log', () {
+group('turn settle reads the grid\'s usage log', () {
     // Every test below routes its chat first, because only a routed chat reads
     // the log at all: the breakdown has one reader (the orchestration strip),
     // which draws nothing without a group, so an unrouted turn must never pay
@@ -822,14 +811,11 @@ void main() {
     );
     const routedModel = 'auto/brute_force';
 
-    test('a landed turn reads which models actually served it and saves the '
-        'grid\'s new watermark, so the next turn\'s read never re-counts what '
-        'this one already saw', () async {
+    test('a landed routed turn reads which models actually served it and '
+        'stamps them onto its message, persisted not merely held in memory',
+        () async {
       final relay = _FakeUsageRelay(
-        response: (
-          models: const [ModelShare(model: 'qwen', requests: 2)],
-          last: 'wm-2',
-        ),
+        response: const [ModelShare(model: 'qwen', requests: 2)],
       );
       final h = _harness(
         tmp,
@@ -850,52 +836,29 @@ void main() {
       );
 
       final conv = h.container.read(chatSessionsProvider).conversations.single;
-      expect(conv.lastRequestWatermark, 'wm-2');
+      // The attach read's answer is on the landed message (the background
+      // poll feeds a different field via turnModelUsageProvider).
       expect(conv.messages.last.orchestrationModels, [
         const ModelShare(model: 'qwen', requests: 2),
       ]);
-      final byConversation = _conversationScopedCalls(relay);
-      expect(byConversation.single.conversation, conv.id);
-      // The conversation's first tagged turn has no watermark yet.
-      expect(byConversation.single.from, isNull);
+      expect(
+        relay.calls,
+        isNotEmpty,
+        reason: 'a routed turn reads usage',
+      );
 
       // Persisted, not only held in memory.
       final reloaded = await ChatStore(directory: tmp).loadAll();
-      expect(reloaded.single.lastRequestWatermark, 'wm-2');
       expect(reloaded.single.messages.last.orchestrationModels, [
         const ModelShare(model: 'qwen', requests: 2),
       ]);
-
-      // The second turn passes the watermark the first one just saved
-      // back as `from`, so the grid never re-counts the same requests.
-      relay.response = (
-        models: const [ModelShare(model: 'qwen', requests: 5)],
-        last: 'wm-3',
-      );
-      await chat.send(
-        network: _credential(),
-        model: routedModel,
-        message: 'hi2',
-      );
-      expect(_conversationScopedCalls(relay).last.from, 'wm-2');
-      expect(
-        h.container
-            .read(chatSessionsProvider)
-            .conversations
-            .single
-            .lastRequestWatermark,
-        'wm-3',
-      );
     });
 
     test('a turn genuinely waits for its usage read to finish before landing — '
         'not merely correct on an instant fake, which an unpaused version '
         'would pass too, only by luck of the microtask ordering', () async {
       final relay = _FakeUsageRelay(
-        response: (
-          models: const [ModelShare(model: 'qwen', requests: 2)],
-          last: 'wm-2',
-        ),
+        response: const [ModelShare(model: 'qwen', requests: 2)],
       )..hold = Completer<void>();
       final h = _harness(
         tmp,
@@ -916,7 +879,6 @@ void main() {
       );
       // Let the turn reach the usage read and stall there — not landed yet.
       await pumpEventQueue();
-      expect(_conversationScopedCalls(relay), hasLength(1));
       final mid = h.container.read(chatSessionsProvider).conversations.single;
       expect(mid.messages.map((m) => m.role), [ChatRole.user]);
 
@@ -924,7 +886,6 @@ void main() {
       await sent;
 
       final conv = h.container.read(chatSessionsProvider).conversations.single;
-      expect(conv.lastRequestWatermark, 'wm-2');
       expect(conv.messages.last.orchestrationModels, [
         const ModelShare(model: 'qwen', requests: 2),
       ]);
@@ -936,10 +897,7 @@ void main() {
       'full reply it never got to see land',
       () async {
         final relay = _FakeUsageRelay(
-          response: (
-            models: const [ModelShare(model: 'qwen', requests: 2)],
-            last: 'wm-2',
-          ),
+          response: const [ModelShare(model: 'qwen', requests: 2)],
         )..hold = Completer<void>();
         final h = _harness(
           tmp,
@@ -958,12 +916,8 @@ void main() {
           model: routedModel,
           message: 'hi',
         );
+        // Let the attach read reach the gate so it is actually in flight.
         await pumpEventQueue();
-        expect(
-          _conversationScopedCalls(relay),
-          hasLength(1),
-          reason: 'the read has started',
-        );
 
         // The user hits Stop while the read is still in flight.
         chat.stop();
@@ -982,7 +936,6 @@ void main() {
         // and critically, the reply the read was fetching usage *for* never
         // gets to write itself in on top of that afterward.
         expect(conv.messages.map((m) => m.role), [ChatRole.user]);
-        expect(conv.lastRequestWatermark, isNull);
         expect(h.container.read(chatSessionsProvider).sending, isFalse);
       },
     );
@@ -992,10 +945,7 @@ void main() {
       'it deleted — the read finishing afterward must not resurrect it',
       () async {
         final relay = _FakeUsageRelay(
-          response: (
-            models: const [ModelShare(model: 'qwen', requests: 2)],
-            last: 'wm-2',
-          ),
+          response: const [ModelShare(model: 'qwen', requests: 2)],
         )..hold = Completer<void>();
         final h = _harness(
           tmp,
@@ -1014,12 +964,8 @@ void main() {
           model: routedModel,
           message: 'hi',
         );
+        // Let the attach read reach the gate so it is actually in flight.
         await pumpEventQueue();
-        expect(
-          _conversationScopedCalls(relay),
-          hasLength(1),
-          reason: 'the read has started',
-        );
 
         final id = h.container
             .read(chatSessionsProvider)
@@ -1061,13 +1007,6 @@ void main() {
             ..setRoutingGroup(routed))
           .send(network: _credential(), model: routedModel, message: 'hi');
 
-      expect(
-        _conversationScopedCalls(relay),
-        hasLength(1),
-        reason:
-            'the read was attempted — this is the failing read, not a '
-            'chat that never asked',
-      );
       final state = h.container.read(chatSessionsProvider);
       expect(state.sending, isFalse);
       expect(state.error, isNull);
@@ -1076,7 +1015,6 @@ void main() {
       // the caption.
       expect(conv.messages.last.text, 'hi back');
       expect(conv.messages.last.orchestrationModels, isNull);
-      expect(conv.lastRequestWatermark, isNull);
 
       final reloaded = await ChatStore(directory: tmp).loadAll();
       expect(reloaded.single.messages.last.text, 'hi back');
@@ -1111,7 +1049,6 @@ void main() {
           message: 'build a game',
         );
 
-        expect(_conversationScopedCalls(relay), hasLength(1));
         final state = h.container.read(chatSessionsProvider);
         expect(
           state.error,
@@ -1128,10 +1065,7 @@ void main() {
         'every turn in the app up to the read\'s deadline buys nobody '
         'anything', () async {
       final relay = _FakeUsageRelay(
-        response: (
-          models: const [ModelShare(model: 'qwen', requests: 2)],
-          last: 'wm-2',
-        ),
+        response: const [ModelShare(model: 'qwen', requests: 2)],
       )..hold = Completer<void>();
       final h = _harness(
         tmp,
@@ -1149,11 +1083,10 @@ void main() {
           .read(chatSessionsProvider.notifier)
           .send(network: _credential(), model: 'qwen', message: 'hi');
 
-      expect(_conversationScopedCalls(relay), isEmpty);
       final conv = h.container.read(chatSessionsProvider).conversations.single;
       expect(conv.messages.last.text, 'hi back');
+      // Unrouted means the attach read never ran, so the caption is empty.
       expect(conv.messages.last.orchestrationModels, isNull);
-      expect(conv.lastRequestWatermark, isNull);
     });
   });
 
