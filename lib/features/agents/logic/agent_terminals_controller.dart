@@ -133,6 +133,14 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   Future<void> type(String chatId, String text) async =>
       _sessions[chatId]?.type(text);
 
+  /// Puts [text] at the CLI's prompt without submitting it — a dropped file's
+  /// path, landing where the user is still writing the rest of the line.
+  ///
+  /// False when this chat has no terminal running, so a caller can fall back to
+  /// what it would have done otherwise.
+  bool insert(String chatId, String text) =>
+      _sessions[chatId]?.insert(text) ?? false;
+
   /// Ends the terminal that belonged to [chatId], if there was one.
   void end(String chatId) {
     final gone = _sessions.remove(chatId);

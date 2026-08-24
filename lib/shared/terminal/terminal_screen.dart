@@ -3,33 +3,67 @@ import 'dart:async';
 import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:xterm/xterm.dart';
 
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_menu_row.dart';
-import '../../../shared/widgets/labeled_field.dart';
-import '../../../shared/widgets/soft_action_button.dart';
-import '../../../shared/terminal/terminal_session.dart';
-import '../logic/terminal_sessions_controller.dart';
-import '../../../shared/terminal/terminal_palette.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_menu_row.dart';
+import '../widgets/labeled_field.dart';
+import '../widgets/soft_action_button.dart';
+import 'terminal_palette.dart';
+import 'terminal_session.dart';
+
+/// The one line a session that is no longer running shows, or null while it is
+/// still running.
+///
+/// [subject] is what closed, in the words of the screen asking — "This terminal"
+/// in a Terminal tab, the agent's own name in a chat that runs one. The rest of
+/// the sentence is the same everywhere, because a shell that ended is the same
+/// event wherever it is shown (§5).
+///
+/// A dead terminal that says nothing is the worst version of this: the user
+/// types, nothing happens, and there is no telling that from the app being
+/// stuck.
+String? shellEndedMessage(ShellState shell, {required String subject}) =>
+    switch (shell) {
+      ShellIdle() || ShellRunning() => null,
+      ShellFailed(:final message) => message,
+      ShellExited(:final code) =>
+        code == 0
+            ? '$subject closed.'
+            : '$subject closed unexpectedly (exit code $code).',
+    };
 
 /// One terminal on screen: its output, and — once its shell has ended — the
 /// line saying so.
+///
+/// Shared by the Terminal tab and by a chat whose agent runs in its own CLI:
+/// both are a pty on screen, so both get the same selection menu, the same
+/// right-click paste and the same ended bar. The two things that genuinely
+/// differ are what to call the program that closed ([subject]) and who knows
+/// how to start it again ([onRestart]).
 class TerminalScreen extends StatelessWidget {
   const TerminalScreen({
     super.key,
     required this.session,
     required this.focused,
+    required this.subject,
+    required this.onRestart,
     this.onAddToChat,
   });
 
   final TerminalSession session;
 
+  /// What to call the program in the line shown once it has ended — see
+  /// [shellEndedMessage].
+  final String subject;
+
+  /// Opens a fresh program in this terminal, keeping the scrollback above it.
+  final VoidCallback onRestart;
+
   /// A run of output picked out of the screen, on its way to the conversation.
-  /// Null when there is no chat to put it in, and then the menu offers only what
-  /// the clipboard would.
+  /// Null when there is no chat to put it in — including a chat that *is* this
+  /// terminal — and then the menu offers only what the clipboard would.
   final ValueChanged<String>? onAddToChat;
 
   /// Whether the panel holding this is actually open.
@@ -51,17 +85,9 @@ class TerminalScreen extends StatelessWidget {
             onAddToChat: onAddToChat,
           ),
         ),
-        switch (session.shell) {
-          ShellIdle() || ShellRunning() => const SizedBox.shrink(),
-          ShellExited() => _EndedBar(
-            message: 'This terminal has closed.',
-            id: session.id,
-          ),
-          ShellFailed(:final message) => _EndedBar(
-            message: message,
-            id: session.id,
-          ),
-        },
+        if (shellEndedMessage(session.shell, subject: subject)
+            case final message?)
+          _EndedBar(message: message, onRestart: onRestart),
       ],
     );
   }
@@ -187,7 +213,12 @@ class _ScreenState extends State<_Screen> {
   @override
   void didUpdateWidget(_Screen old) {
     super.didUpdateWidget(old);
-    if (widget.focused && !old.focused) _focus.requestFocus();
+    // Also when the same slot is handed a different terminal — switching chats
+    // swaps the session under a view that never stopped being [focused], and a
+    // chat the user just opened has to be typeable straight away.
+    if (widget.focused && (!old.focused || old.session != widget.session)) {
+      _focus.requestFocus();
+    }
   }
 
   @override
@@ -280,20 +311,17 @@ class _ScreenState extends State<_Screen> {
   }
 }
 
-/// The strip under a terminal whose shell has ended — because it exited, or
-/// because it never opened.
-///
-/// A dead terminal that says nothing is the worst version of this: the user
-/// types, nothing happens, and there is no way to tell that from the app being
-/// stuck. So it says what happened and offers the one thing worth doing.
-class _EndedBar extends ConsumerWidget {
-  const _EndedBar({required this.message, required this.id});
+/// The strip under a terminal whose program has ended — because it exited, or
+/// because it never opened — saying what happened and offering the one thing
+/// worth doing.
+class _EndedBar extends StatelessWidget {
+  const _EndedBar({required this.message, required this.onRestart});
 
   final String message;
-  final String id;
+  final VoidCallback onRestart;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     AppTheme.watch(context);
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -318,8 +346,7 @@ class _EndedBar extends ConsumerWidget {
               leading: const Icon(Icons.refresh_rounded, size: 15),
               label: 'Start again',
               compact: true,
-              onPressed: () =>
-                  ref.read(terminalSessionsProvider.notifier).restart(id),
+              onPressed: onRestart,
             ),
           ],
         ),

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/terminal/terminal_screen.dart';
 import '../logic/terminal_sessions_controller.dart';
-import 'terminal_screen.dart';
 
 /// A terminal session, in a panel tab: a real login shell, running in the folder
 /// the conversation is about.
@@ -76,6 +76,9 @@ class _TerminalPanelViewState extends ConsumerState<TerminalPanelView> {
     return TerminalScreen(
       session: session,
       focused: widget.showing,
+      subject: 'This terminal',
+      onRestart: () =>
+          ref.read(terminalSessionsProvider.notifier).restart(widget.tabId),
       onAddToChat: widget.onAddToChat,
     );
   }

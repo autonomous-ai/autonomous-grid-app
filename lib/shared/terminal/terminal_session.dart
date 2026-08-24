@@ -125,10 +125,14 @@ class TerminalSession {
           environment: Platform.environment,
           operatingSystem: Platform.operatingSystem,
         );
+    // A pty on Windows is handed a command line rather than an argv, and
+    // `flutter_pty` builds it by joining these two with spaces and quoting
+    // nothing — see [quoteForWindowsPty] for what that costs.
+    final spawn = Platform.isWindows ? quoteForWindowsPty(command) : command;
     try {
       final pty = Pty.start(
-        command.executable,
-        arguments: command.arguments,
+        spawn.executable,
+        arguments: spawn.arguments,
         workingDirectory: workdir,
         // The app's own environment, then this session's, plus the two variables
         // that decide whether the program believes it has a terminal at all.
@@ -187,13 +191,23 @@ class TerminalSession {
   ///
   /// Does nothing when no program is running — there is nobody to type at.
   Future<void> type(String text) async {
-    final pty = _pty;
-    if (pty == null || _shell is! ShellRunning) return;
-    final encode = const Utf8Encoder().convert;
-    pty.write(encode(text));
+    if (!insert(text)) return;
     await Future<void>.delayed(_submitGap);
-    if (_pty == null) return;
-    pty.write(encode('\r'));
+    final pty = _pty;
+    if (pty == null) return;
+    pty.write(const Utf8Encoder().convert('\r'));
+  }
+
+  /// Puts [text] where the cursor is and leaves it there, unsent — what
+  /// dropping a file onto a terminal does, and what an agent's composer needs
+  /// when the user is still writing the rest of the line.
+  ///
+  /// Returns false when no program is running: there is nobody to type at.
+  bool insert(String text) {
+    final pty = _pty;
+    if (pty == null || _shell is! ShellRunning) return false;
+    pty.write(const Utf8Encoder().convert(text));
+    return true;
   }
 
   /// The beat between the text and the Return that submits it — long enough
@@ -215,19 +229,45 @@ class TerminalSession {
     start(onError: onError);
   }
 
-  /// Ends the shell and releases the pty. The session is unusable afterwards.
+  /// Ends the shell and everything it started, and releases the pty. The
+  /// session is unusable afterwards.
   void dispose() {
     _output?.cancel();
     _output = null;
-    // SIGHUP, not SIGTERM: it is what closing a terminal window sends, so a
-    // shell hangs up its children (a running `flutter run`) on the way out
-    // rather than leaving them holding a pty nobody is reading. Windows knows
-    // only SIGTERM and SIGKILL — asking it for anything else throws.
-    _pty?.kill(
-      Platform.isWindows ? ProcessSignal.sigterm : ProcessSignal.sighup,
-    );
+    final pty = _pty;
     _pty = null;
+    if (pty != null) _endTree(pty);
     controller.dispose();
+  }
+
+  /// Kills the program in the pty **and its children**.
+  ///
+  /// SIGHUP on POSIX, not SIGTERM: it is what closing a terminal window sends,
+  /// so a shell hangs up what it started (a running `flutter run`) on the way
+  /// out rather than leaving it holding a pty nobody is reading.
+  ///
+  /// **Windows has no equivalent and `Pty.kill` does not pretend otherwise** —
+  /// it is `Process.killPid`, which ends the one process it names. An agent CLI
+  /// is a tree (ripgrep, MCP servers, whatever it shelled out to), and every one
+  /// of those outlives the chat that opened it, still holding the folder and the
+  /// ports the next session wants. `taskkill /F /T` is the tree-kill Windows
+  /// does have. The same gap left orphaned engines behind in the CLI until
+  /// `shared/run_records.py` grew the same call.
+  void _endTree(Pty pty) {
+    if (!Platform.isWindows) {
+      pty.kill(ProcessSignal.sighup);
+      return;
+    }
+    unawaited(
+      Process.run('taskkill', ['/F', '/T', '/PID', '${pty.pid}']).catchError((
+        Object _,
+      ) {
+        // No taskkill on this machine is not a reason to leave the CLI running:
+        // one process ended is better than none.
+        pty.kill();
+        return ProcessResult(pty.pid, -1, '', '');
+      }),
+    );
   }
 
   void _onExit(int code) {

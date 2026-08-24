@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:xterm/xterm.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/copy/setup_hints.dart';
-import '../../../shared/terminal/terminal_palette.dart';
-import '../../../shared/terminal/terminal_session.dart';
+import '../../../shared/terminal/terminal_screen.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/soft_action_button.dart';
 import '../logic/agent_catalog.dart';
 import '../logic/agent_terminals_controller.dart';
 
@@ -20,6 +17,11 @@ import '../logic/agent_terminals_controller.dart';
 /// asks; a message typed while it is working reaches the turn that is running;
 /// and the conversation belongs to the session rather than to a transcript this
 /// app replays. Nothing in between reads a byte of it.
+///
+/// The screen itself is [TerminalScreen] — the same one a Terminal tab draws, so
+/// selecting output, copying it and right-click-to-paste work here exactly as
+/// they do there. What this widget adds is the one thing a chat knows and a tab
+/// doesn't: which agent to start, and when.
 ///
 /// The session outlives this widget — it belongs to the chat (see
 /// [agentTerminalsProvider]) — so switching chats and coming back finds the
@@ -53,11 +55,6 @@ class AgentTerminalView extends ConsumerStatefulWidget {
 }
 
 class _AgentTerminalViewState extends ConsumerState<AgentTerminalView> {
-  /// Held rather than left to `autofocus`, which fires once at mount: a chat is
-  /// opened and closed over and over on the same session, and each opening has
-  /// to be typeable straight away.
-  final _focus = FocusNode(debugLabel: 'agent-terminal');
-
   @override
   void initState() {
     super.initState();
@@ -89,19 +86,11 @@ class _AgentTerminalViewState extends ConsumerState<AgentTerminalView> {
             approval: widget.approval,
             network: widget.network,
           );
-      _focus.requestFocus();
     });
   }
 
   @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context);
     final session = ref.watch(
       agentTerminalsProvider.select((s) => s[widget.chatId]),
     );
@@ -114,44 +103,18 @@ class _AgentTerminalViewState extends ConsumerState<AgentTerminalView> {
       );
     }
 
-    return Column(
-      children: [
-        Expanded(
-          child: TerminalView(
-            session.terminal,
-            controller: session.controller,
-            focusNode: _focus,
-            theme: terminalPalette(),
-            // The app's own code face, at the size the rest of the app sets code
-            // in — a path in the agent's output and the same path in a chat
-            // message are then the same width on screen.
-            textStyle: TerminalStyle(
-              fontSize: 12.5,
-              fontFamily: AppFont.mono,
-              fontFamilyFallback: AppFont.monoFallback,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          ),
-        ),
-        if (_endedMessage(session.shell) case final message?)
-          _EndedBar(message: message, chatId: widget.chatId),
-      ],
+    return TerminalScreen(
+      session: session,
+      // The chat pane is only built while it is the pane on screen, and this
+      // terminal is the whole of it — there is nothing else here to type into.
+      focused: true,
+      subject: widget.tool.name,
+      onRestart: () =>
+          ref.read(agentTerminalsProvider.notifier).restart(widget.chatId),
+      // No "Add to Chat": this terminal *is* the chat, so the row would offer
+      // to move a line from where it already is to where it already is.
     );
   }
-
-  /// The line for a session that is no longer running, or null while it is.
-  ///
-  /// A dead terminal that says nothing is the worst version of this: the user
-  /// types, nothing happens, and there is no telling that from the app being
-  /// stuck.
-  String? _endedMessage(ShellState shell) => switch (shell) {
-    ShellRunning() || ShellIdle() => null,
-    ShellFailed(:final message) => message,
-    ShellExited(:final code) =>
-      code == 0
-          ? '${widget.tool.name} closed.'
-          : '${widget.tool.name} closed unexpectedly (exit code $code).',
-  };
 }
 
 /// The moment between opening a chat and its CLI drawing its first frame — the
@@ -164,53 +127,15 @@ class _Opening extends StatelessWidget {
   final AgentTool tool;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Text(
-      installed ? 'Starting ${tool.name}…' : notSetUpToMessage('answer chats'),
-      textAlign: TextAlign.center,
-      style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
-    ),
-  );
-}
-
-/// The strip under a session that has ended, with the one thing worth doing.
-class _EndedBar extends ConsumerWidget {
-  const _EndedBar({required this.message, required this.chatId});
-
-  final String message;
-  final String chatId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppPalette.panelBg,
-        border: Border(top: BorderSide(color: AppPalette.divider)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: AppPalette.textSecondary,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            SoftActionButton(
-              leading: const Icon(Icons.refresh_rounded, size: 15),
-              label: 'Start again',
-              compact: true,
-              onPressed: () =>
-                  ref.read(agentTerminalsProvider.notifier).restart(chatId),
-            ),
-          ],
-        ),
+    return Center(
+      child: Text(
+        installed
+            ? 'Starting ${tool.name}…'
+            : notSetUpToMessage('answer chats'),
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
       ),
     );
   }

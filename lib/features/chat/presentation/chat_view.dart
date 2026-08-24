@@ -13,6 +13,7 @@ import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/chat_drop.dart';
 import '../../../shared/layouts/shell_state.dart';
+import '../../../shared/terminal/terminal_shell.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
@@ -391,10 +392,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // into the agent's own CLI, exactly as the user could have typed it there.
     // The command check above still runs first — `/clear` is the app's, and
     // handing it to the agent is issue #13 whichever lane it is in.
-    // TODO(BE): the composer still offers pictures and documents here, and a
-    // keystroke cannot carry either. They are deliberately *left in the
-    // composer* rather than sent and lost — the chips staying put is the only
-    // sign the user gets — but the honest fix is for this lane not to offer them.
     if (_terminalChatId case final chatId?) {
       unawaited(
         ref.read(agentTerminalsProvider.notifier).type(chatId, message),
@@ -440,6 +437,24 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final id = ref.read(chatSessionsProvider).activeId;
     if (id == null || id.isEmpty) return null;
     return ref.read(activeChatAgentProvider).runsInTerminal ? id : null;
+  }
+
+  /// Types [paths] at the CLI's prompt and leaves them there, unsent — what
+  /// dropping a file onto a terminal has always done, and the only way a file
+  /// reaches an agent that reads keystrokes.
+  ///
+  /// A trailing space, so a second drop doesn't glue itself to the first, and
+  /// so the user can keep typing the sentence the path belongs to.
+  ///
+  /// False when this chat isn't a terminal — or when its CLI has already ended,
+  /// and there is nobody at the prompt to type at — so the caller goes on to
+  /// attach the ordinary way.
+  bool _typedIntoTerminal(Iterable<String> paths) {
+    final chatId = _terminalChatId;
+    if (chatId == null || paths.isEmpty) return false;
+    return ref
+        .read(agentTerminalsProvider.notifier)
+        .insert(chatId, '${droppedPathsLine(paths)} ');
   }
 
   /// Everything hanging off the composer beside the text, by name — what a
@@ -540,6 +555,21 @@ class _ChatViewState extends ConsumerState<ChatView> {
   Future<void> _attachImageBytes(
     List<({String filename, Uint8List bytes})> pictures,
   ) async {
+    if (pictures.isNotEmpty && _terminalChatId != null) {
+      // No file on disk means no path to type, and this lane has no other way
+      // to carry one. Said out loud, because a paste that silently did nothing
+      // is indistinguishable from the app being broken.
+      ToastScope.show(
+        context,
+        const ToastSpec(
+          message:
+              'This chat is a terminal — save the picture to a file and drop '
+              'that in.',
+          severity: ToastSeverity.warning,
+        ),
+      );
+      return;
+    }
     final overflow = <String>[];
     final oversized = <String>[];
 
@@ -574,6 +604,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// open (a folder, a file it was refused) mentioned by path so the assistant
   /// still hears about it.
   Future<void> _attachPaths(Iterable<String> paths) async {
+    if (_typedIntoTerminal(paths)) return;
     final added = await readAttachments(
       paths,
       imageBytesBudget: imageBudgetLeft(_attachments),
@@ -601,6 +632,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// change who answers. It also writes whatever it couldn't attach into the
   /// draft as text, which is not what a menu item promised to do.
   Future<void> _attachRequested(List<String> paths) async {
+    if (_typedIntoTerminal(paths)) return;
     final read = <ChatFile>[];
     final noRoom = <String>[];
     var room = maxChatFiles - _files.length;
@@ -1361,6 +1393,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               ComposerSection(
                                 messageController: _message,
                                 activeCommand: command,
+                                keystrokesOnly: inTerminal,
                                 attachments: _attachments,
                                 files: _files,
                                 snippets: _snippets,

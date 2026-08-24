@@ -417,4 +417,71 @@ void main() {
       expect(AgentTool.hermes.runsInTerminal, isFalse);
     });
   });
+
+  group('quoteForWindowsPty — the argv has to survive being a command line', () {
+    test('a program whose path has a space in it stays one token, or Windows '
+        'starts the wrong program and dies before the TUI draws', () {
+      final quoted = quoteForWindowsPty((
+        executable: r'C:\Program Files\Claude\claude.exe',
+        arguments: const [],
+      ));
+      expect(quoted.executable, r'"C:\Program Files\Claude\claude.exe"');
+    });
+
+    test('a path with nothing to quote is left exactly as it was', () {
+      final quoted = quoteForWindowsPty((
+        executable: 'claude',
+        arguments: const ['--model', 'sonnet'],
+      ));
+      expect(quoted.executable, 'claude');
+      expect(quoted.arguments, ['--model', 'sonnet']);
+    });
+
+    test(
+      "Codex's -c override keeps its quotes, or the value it sets stops being "
+      'a TOML string',
+      () {
+        final quoted = quoteForWindowsPty((
+          executable: 'codex',
+          arguments: const ['-c', 'approval_policy="on-request"'],
+        ));
+        expect(quoted.arguments.last, r'"approval_policy=\"on-request\""');
+      },
+    );
+
+    test('a directory argument ending in a separator doubles it, or the '
+        'separator escapes the quote that closes the argument', () {
+      expect(windowsArgument('C:\\a folder\\'), r'"C:\a folder\\"');
+    });
+  });
+
+  group(
+    'droppedPathsLine — a file dropped on a terminal is typed, not sent',
+    () {
+      test('a plain path is typed as it is, so the user can read it back', () {
+        expect(droppedPathsLine([r'C:\src\main.dart']), r'C:\src\main.dart');
+      });
+
+      test(
+        'a path with a space is quoted, or the CLI reads two half-paths',
+        () {
+          expect(
+            droppedPathsLine([r'C:\My Files\notes.md']),
+            r'"C:\My Files\notes.md"',
+          );
+        },
+      );
+
+      test('several files land as several arguments on one line', () {
+        expect(
+          droppedPathsLine(['/a/one.md', '/b/two.md']),
+          '/a/one.md /b/two.md',
+        );
+      });
+
+      test('a quote in a name is escaped rather than ending the argument', () {
+        expect(droppedPath('/tmp/say "hi".txt'), r'"/tmp/say \"hi\".txt"');
+      });
+    },
+  );
 }
