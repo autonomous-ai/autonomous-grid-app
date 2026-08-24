@@ -5,11 +5,9 @@ import '../../../features/network/logic/grid_overview_provider.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/network/logic/node_display.dart';
 import '../../../features/network/presentation/node_dashboard_dialog.dart';
-import '../../../features/provider_node/logic/serving_engines_provider.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
-import '../shell_state.dart';
 import 'grid_stat_panels.dart';
 import 'memory_split_bar.dart';
 import 'pill_panel_shell.dart';
@@ -28,7 +26,6 @@ class GridPowerPanel extends ConsumerWidget {
     required this.anchorKey,
     required this.gridName,
     required this.tapGroupId,
-    required this.canHost,
     required this.onEnter,
     required this.onExit,
     required this.onDismiss,
@@ -51,10 +48,6 @@ class GridPowerPanel extends ConsumerWidget {
   /// lives in an overlay, and without this every press on its own button would
   /// read as a tap outside and dismiss it before the press landed.
   final Object tapGroupId;
-
-  /// Whether this user may serve on this grid. A consumer who can't is never
-  /// offered the engine screen: it would only tell them they may not.
-  final bool canHost;
 
   final VoidCallback onEnter;
   final VoidCallback onExit;
@@ -154,7 +147,7 @@ class GridPowerPanel extends ConsumerWidget {
             const SizedBox(height: 8),
             _NodeBreakdown(nodes: subNodes, totalGb: null),
           ],
-          _PanelActions(canHost: canHost, onDismiss: onDismiss),
+          _PanelActions(onDismiss: onDismiss),
         ],
       ),
     );
@@ -332,97 +325,30 @@ class _LegendRow extends StatelessWidget {
 /// figures above are exactly where a user asks "can I add to this?" and the
 /// screen that answers had no visible door anywhere in the app.
 ///
-/// So the offer depends on what this machine is already doing: a computer
-/// serving nothing gets the accent button, since starting an engine genuinely is
-/// the one thing to do here; a computer already serving gets two equal links,
-/// because then nothing is urgent and a filled button would be nagging.
+/// It reported for a while, then offered, and now reports again — but for a
+/// different reason than the first time. The offer was right while Model engines
+/// had no visible door; it has one now, permanently, on the top bar. Keeping a
+/// button here as well would mean one screen reached by two controls whose
+/// labels disagreed — this one renamed itself between "Run a model here" and
+/// "Model engines" depending on whether the machine was serving, which is
+/// exactly the confusion the bar's single door removes.
 class _PanelActions extends ConsumerWidget {
-  const _PanelActions({required this.canHost, required this.onDismiss});
+  const _PanelActions({required this.onDismiss});
 
-  final bool canHost;
   final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    // Act first, dismiss second — both closures run from inside the panel, and
-    // dismissing it unmounts the widget whose `ref` and `context` the action
-    // still needs. The dialog is already pushed by the time the panel goes.
-    void openEngines() {
-      ref.read(shellSectionProvider.notifier).select(ShellSection.engines);
-      onDismiss();
-    }
-
-    void openDashboard() {
-      showNodeDashboard(context);
-      onDismiss();
-    }
-
-    final dashboard = _PanelLink(label: 'View dashboard', onTap: openDashboard);
-    // Nothing to offer but the numbers: this user may not serve on this grid.
-    if (!canHost) return dashboard;
-
-    // One shape in both states — what to do about this grid on the left, the way
-    // to look closer on the right — so the panel's foot doesn't rearrange itself
-    // depending on whether this computer happens to be serving.
-    //
-    // What changes is the weight, not the position. A computer already serving
-    // gets a link: nothing here is urgent, and a filled button would be nagging
-    // somebody who has already done the thing it asks for. A computer serving
-    // nothing gets the button, because then starting an engine genuinely is the
-    // one thing to do on this panel.
-    return Row(
-      children: [
-        Expanded(
-          child: ref.watch(servingEnginesProvider).isNotEmpty
-              ? _PanelLink(label: 'Model engines', onTap: openEngines)
-              : _RunHereButton(onTap: openEngines),
-        ),
-        Expanded(child: dashboard),
-      ],
-    );
-  }
-}
-
-/// The offer to put this computer on the grid, sized to sit beside a link.
-///
-/// It said "Run a model on this computer" while it had the panel's full width to
-/// itself. Half a width does not hold that: at 12.5px the label alone is ~175px
-/// against the ~135px this column gets, so it would have ellipsized to "Run a
-/// model on this…" — a button whose text is cut is worse than a shorter one.
-///
-/// "here" carries what the long version was for. The panel above lists other
-/// people's machines, so the one word that matters is which computer this acts
-/// on, and *here* is that word — it just costs four characters instead of
-/// nineteen.
-class _RunHereButton extends StatelessWidget {
-  const _RunHereButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Padding(
-      // Matches [_PanelLink]'s own top inset, so the button and the link beside
-      // it sit on one line rather than one riding above the other.
-      padding: const EdgeInsets.only(top: 9),
-      child: FilledButton(
-        onPressed: onTap,
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(30),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          textStyle: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: AppFont.medium,
-          ),
-        ),
-        child: const Text(
-          'Run a model here',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
+    // Act first, dismiss second: the closure runs from inside the panel, and
+    // dismissing it unmounts the widget whose `context` the action still needs.
+    // The dialog is already pushed by the time the panel goes.
+    return _PanelLink(
+      label: 'View dashboard',
+      onTap: () {
+        showNodeDashboard(context);
+        onDismiss();
+      },
     );
   }
 }

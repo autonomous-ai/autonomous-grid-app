@@ -8,9 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/command_palette/presentation/command_palette.dart';
-import '../../../features/provider_node/logic/serving_engines_provider.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/status_dot.dart';
 import '../office_entry.dart';
 import '../shell_state.dart';
 import 'sidebar_account.dart';
@@ -169,7 +167,6 @@ class _MiniHomeRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final section = ref.watch(shellSectionProvider);
-    final serving = ref.watch(servingEnginesProvider).isNotEmpty;
     return Column(
       children: [
         MiniRailItem(
@@ -208,30 +205,10 @@ class _MiniHomeRail extends ConsumerWidget {
             icon: target.thinIcon,
             tooltip: target.label,
             selected: section == target,
-            // The one mark that survives the fold, and the same condition the
-            // wide rail uses: this machine serving is the only state that
-            // changes while the user is somewhere else.
-            badge: serving && target == ShellSection.engines
-                ? const _ServingDot()
-                : null,
             onTap: () => ref.read(shellSectionProvider.notifier).select(target),
           ),
       ],
     );
-  }
-}
-
-/// The live mark on the Model engines tile while this computer is serving.
-///
-/// Folded, it can't sit after a label, so it rides the tile's top-right corner —
-/// the one place on a 40px square that no glyph reaches.
-class _ServingDot extends StatelessWidget {
-  const _ServingDot();
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return StatusDot(color: AppPalette.online, size: 6);
   }
 }
 

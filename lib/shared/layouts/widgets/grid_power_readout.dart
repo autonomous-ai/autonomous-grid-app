@@ -12,32 +12,32 @@ import '../../../features/network/logic/node_metrics.dart'
 import '../../theme/app_theme.dart';
 import '../../widgets/ring_gauge.dart';
 import '../../widgets/status_dot.dart';
-import '../shell_state.dart';
 import 'grid_models_panel.dart';
 import 'grid_power_panel.dart';
 import 'grid_stat_panels.dart';
-import 'top_bar_pill.dart';
 
 /// The active grid at a glance: which grid you're on, and the hardware standing
 /// behind it. Hovering — or a click, which holds it there — opens a panel with
 /// the full picture: GPU memory, how many requests it can serve at once,
-/// throughput, the machines themselves, and the way to add this one.
+/// throughput, and the machines themselves.
 ///
-/// The pill answers "where am I, and can this grid handle what I'm about to
-/// ask?"; the panel answers "why", and then "what can I do about it". Naming the
-/// grid matters as much as the numbers — with several grids joined, "which one
-/// is this?" is the question asked most often, and the top bar is the only place
-/// that can answer it without navigating away.
+/// The readout answers "where am I, and can this grid handle what I'm about to
+/// ask?"; the panel answers "why". Naming the grid matters as much as the
+/// numbers — with several grids joined, "which one is this?" is the question
+/// asked most often.
 ///
-/// With nothing online it becomes [_StartHostingPill] rather than vanishing: it
-/// used to unmount whole, which took the last thing on screen away at the exact
-/// moment the grid needed a machine. An alternative to [HostingSummary], which
-/// shows the same two counts without the grid name or the hardware panel.
-class GridPowerPill extends ConsumerStatefulWidget {
-  const GridPowerPill({super.key});
+/// It sits on [AppStatusRail] rather than in the top bar, and that move is the
+/// whole point: this is a *readout*, and the bar it used to share is where the
+/// things you press live. Nothing here is a call to action any more — the offer
+/// to put this computer on the grid is a permanent control up on the bar
+/// ([GridCtaPair]), which is why the old `_StartHostingPill` is deleted rather
+/// than relocated. An alternative to [HostingSummary], which shows the same two
+/// counts without the grid name or the hardware panel.
+class GridPowerReadout extends ConsumerStatefulWidget {
+  const GridPowerReadout({super.key});
 
   @override
-  ConsumerState<GridPowerPill> createState() => _GridPowerPillState();
+  ConsumerState<GridPowerReadout> createState() => _GridPowerReadoutState();
 }
 
 /// Which of the pill's panels is open.
@@ -56,39 +56,25 @@ typedef _FigureAnchor = ({LayerLink link, GlobalKey key});
 
 _FigureAnchor _newFigureAnchor() => (link: LayerLink(), key: GlobalKey());
 
-class _GridPowerPillState extends ConsumerState<GridPowerPill> {
+class _GridPowerReadoutState extends ConsumerState<GridPowerReadout> {
   final _link = LayerLink();
 
   /// One anchor per figure, so a stat panel hangs under the number it explains
-  /// rather than under the capsule as a whole. A [LayerLink] can only be
-  /// attached to one target, hence one per figure.
-  /// The two stretches that open the hardware panel — the grid's name (with the
-  /// memory ring, which now shares its stretch) at the left end of the capsule,
-  /// the chevron at the right. Each anchors the panel under itself: one link for
-  /// the whole capsule opens the panel under whichever end it was pinned to,
-  /// ~400px from the other.
+  /// rather than under the row as a whole. A [LayerLink] can only be attached
+  /// to one target, hence one per figure.
+  ///
+  /// One for the hardware panel, not two. The name and the chevron used to sit
+  /// at opposite ends of a ~400px capsule, so each had to anchor the panel
+  /// under itself or it opened a long way from the pointer. They are one
+  /// stretch now — the chevron follows the memory figure — and a second link
+  /// would place the same panel in the same spot.
   final _nameAnchor = _newFigureAnchor();
-  final _chevronAnchor = _newFigureAnchor();
 
   final _memberAnchor = _newFigureAnchor();
   final _nodeAnchor = _newFigureAnchor();
   final _modelAnchor = _newFigureAnchor();
   final _tokenAnchor = _newFigureAnchor();
   final _controller = OverlayPortalController();
-
-  /// Which end of the capsule the hardware panel hangs from — set as the
-  /// pointer enters one of them, so the panel follows the pointer between the
-  /// two rather than staying where it first opened.
-  _FigureAnchor? _powerAnchor;
-
-  void _powerFrom(_FigureAnchor anchor) {
-    if (identical(_powerAnchor, anchor)) return;
-    _powerAnchor = anchor;
-    // [_onEnter] returns early when the open panel is already this kind, so
-    // moving name → ring would otherwise leave the panel behind. Repainted only
-    // while the panel is actually open on it.
-    if (_controller.isShowing && _panel == _PanelKind.power) setState(() {});
-  }
 
   /// Ties the pill and its panel into one tap region, so a click inside either
   /// isn't the "click outside" that dismisses a pinned panel.
@@ -176,12 +162,6 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
     _show();
   }
 
-  /// The empty pill's action. It does *not* dismiss anything first: in that
-  /// state no [OverlayPortal] is mounted at all, and hiding a controller with no
-  /// portal attached trips an assert rather than doing nothing.
-  void _openEngines() =>
-      ref.read(shellSectionProvider.notifier).select(ShellSection.engines);
-
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
@@ -202,55 +182,54 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
     // the moment a user is waiting for the number to change.
     return GridOverviewRefresh(
       child: power.isEmpty
-          // Nothing online. A user allowed to host is offered the one thing that
-          // fixes that; a pure consumer, who would only reach a screen telling
-          // them they may not share, is offered nothing rather than a dead end.
-          ? grid.canManageProvider
-                ? _StartHostingPill(onTap: _openEngines)
-                : const SizedBox.shrink()
-          : MouseRegion(
-              cursor: SystemMouseCursors.click,
-              onEnter: (_) => _onEnter(_PanelKind.power),
-              onExit: (_) => _onExit(_PanelKind.power),
-              child: TapRegion(
-                groupId: _tapGroup,
-                onTapOutside: (_) {
-                  if (_pinned) _hide();
-                },
-                child: CompositedTransformTarget(
-                  link: _link,
-                  child: OverlayPortal(
-                    controller: _controller,
-                    overlayChildBuilder: (context) =>
-                        _panelFor(_panel, grid.name, grid.canManageProvider),
-                    child: Semantics(
-                      label: _semanticsLabel(
-                        grid.name,
-                        power,
-                        members,
-                        activity,
-                      ),
-                      button: true,
-                      container: true,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _toggle,
-                        child: TopBarPill(
-                          child: _PillRow(
-                            name: grid.name,
-                            power: power,
-                            members: members,
-                            nameAnchor: _nameAnchor,
-                            chevronAnchor: _chevronAnchor,
-                            onPowerFrom: _powerFrom,
-                            memberAnchor: _memberAnchor,
-                            nodeAnchor: _nodeAnchor,
-                            modelAnchor: _modelAnchor,
-                            tokenAnchor: _tokenAnchor,
-                            onEnter: _onEnter,
-                            onExit: _onExit,
-                          ),
-                        ),
+          // Nothing online, so nothing to report. It used to become an offer to
+          // start hosting, because vanishing took the last thing on screen away
+          // at the moment the grid needed a machine. That reasoning retires with
+          // the move: Model engines is a permanent control on the top bar now,
+          // so the offer is already on screen whether or not this reports
+          // anything.
+          ? const SizedBox.shrink()
+          // No wrapping MouseRegion any more. The row spans the rail so that
+          // the counts can sit at its right end, and a region around the whole
+          // of it would make the empty middle a hover target for a popover
+          // about the grid. Every figure already owns its own — see
+          // [_HoverTarget], which also carries the click cursor.
+          : TapRegion(
+              groupId: _tapGroup,
+              onTapOutside: (_) {
+                if (_pinned) _hide();
+              },
+              child: CompositedTransformTarget(
+                link: _link,
+                child: OverlayPortal(
+                  controller: _controller,
+                  overlayChildBuilder: (context) =>
+                      _panelFor(_panel, grid.name),
+                  child: Semantics(
+                    label: _semanticsLabel(grid.name, power, members, activity),
+                    button: true,
+                    container: true,
+                    child: GestureDetector(
+                      // Defer, not opaque: opaque would swallow the spacer
+                      // between the two clusters and a click on empty rail
+                      // would pin the hardware panel.
+                      behavior: HitTestBehavior.deferToChild,
+                      onTap: _toggle,
+                      // No capsule. On the top bar a readout had to draw
+                      // its own surface to lift off the transcript behind it;
+                      // the rail *is* that surface, and a pill floating on a
+                      // 26px strip reads as something to press.
+                      child: _PillRow(
+                        name: grid.name,
+                        power: power,
+                        members: members,
+                        nameAnchor: _nameAnchor,
+                        memberAnchor: _memberAnchor,
+                        nodeAnchor: _nodeAnchor,
+                        modelAnchor: _modelAnchor,
+                        tokenAnchor: _tokenAnchor,
+                        onEnter: _onEnter,
+                        onExit: _onExit,
                       ),
                     ),
                   ),
@@ -261,17 +240,12 @@ class _GridPowerPillState extends ConsumerState<GridPowerPill> {
   }
 
   /// The panel [kind] asks for, anchored to the figure it belongs to.
-  Widget _panelFor(
-    _PanelKind kind,
-    String gridName,
-    bool canHost,
-  ) => switch (kind) {
+  Widget _panelFor(_PanelKind kind, String gridName) => switch (kind) {
     _PanelKind.power => GridPowerPanel(
-      link: (_powerAnchor ?? _nameAnchor).link,
-      anchorKey: (_powerAnchor ?? _nameAnchor).key,
+      link: _nameAnchor.link,
+      anchorKey: _nameAnchor.key,
       gridName: gridName,
       tapGroupId: _tapGroup,
-      canHost: canHost,
       onEnter: () => _onEnter(_PanelKind.power),
       onExit: () => _onExit(_PanelKind.power),
       onDismiss: _hide,
@@ -395,54 +369,6 @@ String _semanticsLabel(
   return parts.join(', ');
 }
 
-/// What the bar shows on a grid with nothing online: the offer to be the machine
-/// that changes that.
-///
-/// Accent ink rather than the capsule's usual muted figures — this is the one
-/// state where the pill is asking for something instead of reporting. There is
-/// nothing to hover a panel over yet, so the whole pill is the button.
-class _StartHostingPill extends StatelessWidget {
-  const _StartHostingPill({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Tooltip(
-      message: 'Nothing is online on this grid yet',
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: TopBarPill(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  LucideIcons.zap,
-                  size: 13,
-                  color: AppPalette.accentOnSurface,
-                ),
-                const SizedBox(width: 7),
-                Text(
-                  'Run a model here',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: AppFont.medium,
-                    color: AppPalette.accentOnSurface,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// The capsule's contents: who this grid is, whether it is working, and how
 /// much of its memory is spoken for.
 ///
@@ -465,8 +391,6 @@ class _PillRow extends StatelessWidget {
     required this.power,
     required this.members,
     required this.nameAnchor,
-    required this.chevronAnchor,
-    required this.onPowerFrom,
     required this.memberAnchor,
     required this.nodeAnchor,
     required this.modelAnchor,
@@ -482,13 +406,8 @@ class _PillRow extends StatelessWidget {
   /// is then omitted rather than guessed at.
   final int? members;
 
-  /// The two stretches that open the hardware panel, each anchoring it under
-  /// itself — see [_GridPowerPillState._powerAnchor].
+  /// The stretch that opens the hardware panel, and anchors it under itself.
   final _FigureAnchor nameAnchor;
-  final _FigureAnchor chevronAnchor;
-
-  /// Tells the pill which of those two the pointer just entered.
-  final void Function(_FigureAnchor) onPowerFrom;
 
   final _FigureAnchor memberAnchor;
   final _FigureAnchor nodeAnchor;
@@ -519,18 +438,20 @@ class _PillRow extends StatelessWidget {
     // between them. A bare SizedBox is dead ground — the pointer crossing it
     // belongs to nothing, so the open panel would close on the way past and
     // reopen on landing.
+    // Full width, because the rail's two clusters are read from opposite ends:
+    // what this grid *is* on the left, what it is *made of* on the right. The
+    // gap between them is the separator — a rule there would be a third mark on
+    // a 26px strip that already has two.
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        // The grid name (with the live dot after it) belongs to the grid as a
-        // whole, so it keeps the hardware panel.
+        // The grid name (with the live dot before it) belongs to the grid as a
+        // whole, so it keeps the hardware panel — and the chevron that says so
+        // sits with it rather than at the far end of the row, which is now a
+        // different cluster entirely.
         _HoverTarget(
           kind: _PanelKind.power,
           anchor: nameAnchor,
-          onEnter: (kind) {
-            onPowerFrom(nameAnchor);
-            onEnter(kind);
-          },
+          onEnter: onEnter,
           onExit: onExit,
           padding: const EdgeInsets.only(right: _HoverTarget._gap),
           child: Row(
@@ -588,6 +509,17 @@ class _PillRow extends StatelessWidget {
                       : '· ${util.round()}% busy',
                 ),
               ],
+              // Up, because the panel opens up. It used to sit at the far end of
+              // the row and point down, which was true of both when the row was
+              // one capsule on the top bar; the row is now two clusters at
+              // opposite ends of a rail, so a mark left behind at the far end
+              // would be labelling the counts instead.
+              const SizedBox(width: 5),
+              Icon(
+                Icons.keyboard_arrow_up_rounded,
+                size: 14,
+                color: AppPalette.textFaint,
+              ),
             ],
           ),
         ),
@@ -626,6 +558,7 @@ class _PillRow extends StatelessWidget {
           ),
         // WHAT THE GRID IS MADE OF — people, machines, models. Three glyphs and
         // three figures, each its own hover target over its own list.
+        const Spacer(),
         _CountFigure(
           kind: _PanelKind.members,
           anchor: memberAnchor,
@@ -635,7 +568,6 @@ class _PillRow extends StatelessWidget {
           // rather than about what we know of it.
           value: members == null ? null : '$members',
           semanticLabel: 'people on this grid',
-          leading: true,
           onEnter: onEnter,
           onExit: onExit,
         ),
@@ -645,7 +577,6 @@ class _PillRow extends StatelessWidget {
           icon: LucideIcons.server300,
           value: '${power.onlineNodes}',
           semanticLabel: 'computers hosting',
-          leading: members == null,
           onEnter: onEnter,
           onExit: onExit,
         ),
@@ -657,21 +588,6 @@ class _PillRow extends StatelessWidget {
           semanticLabel: 'models available',
           onEnter: onEnter,
           onExit: onExit,
-        ),
-        _HoverTarget(
-          kind: _PanelKind.power,
-          anchor: chevronAnchor,
-          onEnter: (kind) {
-            onPowerFrom(chevronAnchor);
-            onEnter(kind);
-          },
-          onExit: onExit,
-          padding: const EdgeInsets.only(left: _HoverTarget._gap),
-          child: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            size: 14,
-            color: AppPalette.textFaint,
-          ),
         ),
       ],
     );
@@ -698,7 +614,6 @@ class _CountFigure extends StatefulWidget {
     required this.semanticLabel,
     required this.onEnter,
     required this.onExit,
-    this.leading = false,
   });
 
   final _PanelKind kind;
@@ -708,10 +623,6 @@ class _CountFigure extends StatefulWidget {
 
   /// What the figure counts, for a screen reader — the word the glyph replaced.
   final String semanticLabel;
-
-  /// Whether this is the first count on the row, and so carries the rule that
-  /// separates the three of them from the telemetry before them.
-  final bool leading;
 
   final void Function(_PanelKind) onEnter;
   final void Function(_PanelKind) onExit;
@@ -741,10 +652,6 @@ class _CountFigureState extends State<_CountFigure> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (widget.leading) ...[
-                const _Divider(),
-                const SizedBox(width: 9),
-              ],
               Icon(
                 widget.icon,
                 size: 12.5,
@@ -806,7 +713,11 @@ class _HoverTarget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The cursor rides here rather than on a region around the whole row: the
+    // row spans the rail now, and a click cursor over its empty middle would
+    // promise something to press where there is nothing.
     final region = MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => onEnter(kind),
       onExit: (_) => onExit(kind),
       child: Padding(padding: padding, child: child),

@@ -89,9 +89,12 @@ class GridStatPanel extends StatelessWidget {
       width: panelWidth,
       child: CompositedTransformFollower(
         link: link,
-        targetAnchor: Alignment.bottomLeft,
-        followerAnchor: Alignment.topLeft,
-        offset: Offset(-_inset + _slide(windowWidth, panelWidth), 8),
+        // Upward. The figures these hang from are on the status rail at the
+        // bottom of the window now, so a panel dropped below its anchor would
+        // open off the bottom edge.
+        targetAnchor: Alignment.topLeft,
+        followerAnchor: Alignment.bottomLeft,
+        offset: Offset(-_inset + _slide(windowWidth, panelWidth), -8),
         child: MouseRegion(
           onEnter: (_) => onEnter(),
           onExit: (_) => onExit(),
@@ -122,8 +125,8 @@ class GridStatPanel extends StatelessWidget {
   }
 }
 
-/// The panel arriving: a short fade while it settles the last few pixels down
-/// from the capsule it hangs off.
+/// The panel arriving: a short fade while it settles the last few pixels up from
+/// the rail it hangs off.
 ///
 /// Six pixels and 160ms, which is under the threshold at which a movement reads
 /// as *travel* — the panel should look like it was already there and is coming
@@ -154,7 +157,10 @@ class _Entrance extends StatelessWidget {
       builder: (context, t, child) => Opacity(
         opacity: t,
         child: Transform.translate(
-          offset: Offset(0, (1 - t) * -6),
+          // Positive, so it rises into place: the panel travels *away* from the
+          // rail it opens off, and a fall would read as arriving from the wrong
+          // side of its own anchor.
+          offset: Offset(0, (1 - t) * 6),
           child: child,
         ),
       ),

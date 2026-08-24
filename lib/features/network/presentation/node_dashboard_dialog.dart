@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+
 import '../../../infrastructure/api/models/grid_overview.dart';
+import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/widgets/app_icon_button.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../auth/logic/session_controller.dart';
 import '../logic/grid_power_provider.dart';
 import '../logic/node_dashboard_layout.dart';
 import '../logic/node_dashboard_view.dart';
 import 'node_dashboard_card.dart';
 import 'node_dashboard_toolbar.dart';
+import 'share_grid_dialog.dart';
 
 /// Opens the node dashboard — every machine on this grid with its live readings.
 ///
@@ -46,7 +53,14 @@ class NodeDashboardDialog extends ConsumerWidget {
         side: BorderSide(color: AppCard.hair),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 860),
+        // A grid of cards wants the room; a sentence and two buttons do not.
+        // Holding 1180 for an empty grid drew a near-empty pane the width of the
+        // window, which reads as a dashboard that failed to load rather than as
+        // a grid with nothing on it yet.
+        constraints: BoxConstraints(
+          maxWidth: nodes.isEmpty ? 460 : 1180,
+          maxHeight: 860,
+        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
           child: Column(
@@ -184,10 +198,14 @@ class _DialogHeader extends StatelessWidget {
             ],
           ),
         ),
-        IconButton(
+        // [AppIconButton], not a bare [IconButton]: the raw one keeps Material's
+        // 48px tap padding and its own hover grey, so it sat further from the
+        // dialog's edge than every other close in the app and lit differently
+        // on hover. 18 is the size a dialog's close is drawn at.
+        AppIconButton(
+          icon: Icons.close,
+          size: 18,
           tooltip: 'Close',
-          icon: const Icon(Icons.close, size: 18),
-          color: AppPalette.textSecondary,
           onPressed: () => Navigator.of(context).pop(),
         ),
       ],
@@ -197,64 +215,100 @@ class _DialogHeader extends StatelessWidget {
 
 /// Machines are serving, but none of them answer the filters in force.
 ///
-/// Its own state rather than [_EmptyState]'s sentence, because the two are
-/// opposite facts and only one of them is the user's to fix: an empty grid needs
-/// a machine joined to it, and this needs a button pressed. Telling somebody to
-/// go join a machine to a grid that already has nine is the kind of wrong advice
+/// Its own state rather than the empty grid's, because the two are opposite
+/// facts and only one of them is the user's to fix: an empty grid needs a
+/// machine joined to it, and this needs a button pressed. Telling somebody to go
+/// join a machine to a grid that already has nine is the kind of wrong advice
 /// that costs an afternoon.
+///
+/// [EmptyState] rather than a private column, and not [EmptyState.noMatches]
+/// either: that constructor is deliberately actionless because the usual fix for
+/// a filter is to retype the query, and here there is a button that does it.
 class _NoMatchState extends ConsumerWidget {
   const _NoMatchState();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.filter_alt_off_outlined,
-            size: 26,
-            color: AppPalette.textFaint,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'No machine on this grid matches what you asked for.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
-          ),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: ref
-                .read(nodeDashboardViewProvider.notifier)
-                .clearFilters,
-            child: const Text('Show all machines'),
-          ),
-        ],
+    return EmptyState(
+      icon: Icons.filter_alt_off_outlined,
+      title: 'No machine matches',
+      message:
+          'Every machine on this grid is filtered out by what you asked '
+          'for.',
+      action: TextButton(
+        onPressed: ref.read(nodeDashboardViewProvider.notifier).clearFilters,
+        child: const Text('Show all machines'),
       ),
     );
   }
 }
 
-class _EmptyState extends StatelessWidget {
+/// A grid with nothing serving it yet.
+///
+/// It used to print a second sentence of the fact the header had already given
+/// ("No machines are serving this grid right now" above, "Nothing to show yet"
+/// below) and then stop. Two statements of one fact and no way out of it — the
+/// state §5 asks to be *actionable*.
+///
+/// So the header keeps the fact and this keeps the next step, and the step is
+/// the same pair the top bar offers, because a grid grows in exactly two ways:
+/// this computer joins it, or somebody else's does. The engine half is gated on
+/// [NetworkCredential.canManageProvider] for the reason it always was — a
+/// consumer following it would arrive at a screen that only tells them they may
+/// not.
+///
+/// It also sat visibly off-centre, and that was a layout bug rather than a
+/// choice: a shrink-wrapping column inside a `crossAxisAlignment: start` parent
+/// centres its icon over its own *text width*, not over the dialog.
+/// [EmptyState] wraps itself in a [Center] and the question stops arising.
+class _EmptyState extends ConsumerWidget {
   const _EmptyState();
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48),
-      child: Column(
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    final grid = ref.watch(selectedNetworkProvider);
+    final canHost = grid?.canManageProvider ?? false;
+
+    // Push the next screen only once this dialog is gone: pushing first and
+    // popping after would pop the thing just pushed.
+    void openShare() {
+      if (grid == null) return;
+      final navigator = Navigator.of(context);
+      navigator.pop();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!navigator.mounted) return;
+        ShareGridDialog.show(navigator.context, grid);
+      });
+    }
+
+    void openEngines() {
+      ref.read(shellSectionProvider.notifier).select(ShellSection.engines);
+      Navigator.of(context).pop();
+    }
+
+    return EmptyState(
+      icon: LucideIcons.server300,
+      title: canHost ? 'Add the first machine' : 'No machines yet',
+      message: canHost
+          ? "Share this computer's models with the grid, or invite someone "
+                'who can share theirs.'
+          : 'Invite someone who can run a model for this grid, and their '
+                'readings appear here.',
+      action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.dns_outlined, size: 26, color: AppPalette.textFaint),
-          const SizedBox(height: 10),
-          Text(
-            'Nothing to show yet — join a machine to this grid and its '
-            'readings appear here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
-          ),
+          if (canHost) ...[
+            // The screen's own name, not a verb of its own — the top bar's
+            // button says this too, and one screen answers to one word (§5).
+            FilledButton(
+              onPressed: openEngines,
+              child: const Text('Model engines'),
+            ),
+            const SizedBox(width: 8),
+          ],
+          TextButton(onPressed: openShare, child: const Text('Invite members')),
         ],
       ),
     );

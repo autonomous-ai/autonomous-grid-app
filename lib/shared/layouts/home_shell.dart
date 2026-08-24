@@ -22,6 +22,7 @@ import '../theme/app_theme.dart';
 import 'settings_pane.dart';
 import 'reveal_chat.dart';
 import 'shell_state.dart';
+import 'widgets/app_status_rail.dart';
 import 'widgets/app_top_bar.dart';
 import 'widgets/section_view.dart';
 import 'widgets/session_expired_banner.dart';
@@ -261,19 +262,30 @@ class _MainShellBody extends StatelessWidget {
     //
     // No cast shadow between the rail and the pane — the rail's own right
     // hairline is the separator, the way Codex draws it. Flat and clean.
-    return const Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // A column around the row, not a row inside a column: the status rail runs
+    // under the sidebar as well as the pane, so the window's bottom edge is one
+    // unbroken line. Nested the other way the rail would start at x=284 and put
+    // a step in that edge.
+    return const Column(
       children: [
-        SidebarFold(),
         Expanded(
-          child: Column(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              AppTopBar(),
-              SessionExpiredBanner(),
-              Expanded(child: _SectionView()),
+              SidebarFold(),
+              Expanded(
+                child: Column(
+                  children: [
+                    AppTopBar(),
+                    SessionExpiredBanner(),
+                    Expanded(child: _SectionView()),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
+        AppStatusRail(),
       ],
     );
   }
