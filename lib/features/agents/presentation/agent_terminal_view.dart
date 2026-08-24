@@ -68,11 +68,16 @@ class _AgentTerminalViewState extends ConsumerState<AgentTerminalView> {
     // keeps the one it has, model and mode included — those reach the CLI when
     // it starts, and a running agent cannot be re-flagged mid-session any more
     // than one in a terminal could.
-    if (old.chatId != widget.chatId) _open();
+    if (old.chatId != widget.chatId) return _open();
+    // The model picker settles a frame or two after the chat opens, and a
+    // session cannot start before it does — the model is the `--model` the CLI
+    // runs on. So the first build with a model is also an opening.
+    if (old.model.trim().isEmpty && widget.model.trim().isNotEmpty) _open();
   }
 
   /// Opening is asynchronous and must not run inside `build` (§2), so it is
-  /// asked for after the frame the view first appears in.
+  /// asked for after the frame the view first appears in. It is a no-op until
+  /// the chat knows its model, and once a session exists.
   void _open() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;

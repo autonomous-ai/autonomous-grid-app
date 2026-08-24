@@ -87,6 +87,14 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     required NetworkCredential network,
   }) async {
     if (!tool.runsInTerminal) return;
+    // Nothing about a session can be built before the model is known: it is the
+    // `--model` the CLI is started with, and it is every tier of the grid setup
+    // the CLI answers from. The picker settles a frame or two after the chat
+    // opens, and starting in that gap started Claude Code on `--model ""`,
+    // which asked the grid for a model with no name and got back
+    // `503 No providers available for this model`, ten times over.
+    // [AgentTerminalView] asks again as soon as it has one.
+    if (model.trim().isEmpty) return;
     if (_sessions.containsKey(chatId) || !_opening.add(chatId)) return;
     try {
       final executable = ref.read(agentExecutableProvider(tool));

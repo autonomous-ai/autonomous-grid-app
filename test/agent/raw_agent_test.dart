@@ -457,6 +457,53 @@ void main() {
     });
   });
 
+  group('windowsPtyCommand — the CLI must not be handed its own name', () {
+    test('the program is run through cmd, which is what swallows the copy of '
+        'itself that flutter_pty puts at argv[0]', () {
+      final spawn = windowsPtyCommand((
+        executable: r'C:\claude\claude.exe',
+        arguments: const ['--model', 'glm-4.7-flash'],
+      ));
+      expect(spawn.executable, 'cmd.exe');
+      expect(spawn.arguments.first, '/c');
+      expect(spawn.arguments, hasLength(2));
+    });
+
+    test('the whole command travels as one quoted argument, because cmd drops '
+        'the outer pair and runs precisely what was inside it', () {
+      final spawn = windowsPtyCommand((
+        executable: r'C:\Program Files\Claude\claude.exe',
+        arguments: const ['--model', 'glm-4.7-flash'],
+      ));
+      expect(
+        spawn.arguments.last,
+        r'""C:\Program Files\Claude\claude.exe" --model glm-4.7-flash"',
+      );
+    });
+
+    test('a Codex override survives being read twice — once by cmd and once by '
+        'Codex', () {
+      final spawn = windowsPtyCommand((
+        executable: 'codex',
+        arguments: const ['-c', 'approval_policy="on-request"'],
+      ));
+      expect(
+        spawn.arguments.last,
+        r'"codex -c "approval_policy=\"on-request\"""',
+      );
+    });
+
+    test('an argument holding a character cmd reads as punctuation is quoted, '
+        'or cmd acts on it instead of passing it on', () {
+      expect(cmdSafeArgument(r'C:\Work & Play\bin'), r'"C:\Work & Play\bin"');
+      expect(cmdSafeArgument('--model'), '--model');
+      expect(
+        cmdSafeArgument(r'"already quoted & fine"'),
+        r'"already quoted & fine"',
+      );
+    });
+  });
+
   group('selectionText — what leaves the terminal has to be what it says', () {
     /// A terminal with [lines] already drawn on it, 40 columns wide.
     Terminal painted(List<String> writes) {
