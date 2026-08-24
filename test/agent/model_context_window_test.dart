@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart';
 import 'package:grid_app/features/agents/logic/model_context_window.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
@@ -113,10 +112,6 @@ void main() {
         greaterThanOrEqualTo(kAgentReplyReserveTokens),
       );
     });
-  });
-
-  test('the chat is told what to do rather than shown a 400', () {
-    expect(friendlyClaudeError(_refusal), kClaudeContextFull);
   });
 
   group(

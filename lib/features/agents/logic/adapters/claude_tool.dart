@@ -6,7 +6,7 @@ import '../../../../infrastructure/cli/agent_version_service.dart';
 import '../../../../infrastructure/cli/host_environment.dart';
 
 /// Claude Code — Anthropic's coding agent, run as a chat agent the app drives
-/// over `claude -p --output-format stream-json`.
+/// over `claude -p`, in its own text mode.
 ///
 /// Unlike Hermes and Codex, it isn't fetched from a recipe of ours: it ships its
 /// own installer, which knows its release channel better than a pinned URL here

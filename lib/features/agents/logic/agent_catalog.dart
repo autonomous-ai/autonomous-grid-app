@@ -85,6 +85,21 @@ enum AgentTool {
   bool get resumesBySessionId =>
       this == AgentTool.claude || this == AgentTool.codex;
 
+  /// Whether a turn with this agent can stop mid-way and **ask** the user for
+  /// permission.
+  ///
+  /// True only for Hermes, whose ACP session is a live two-way channel for as
+  /// long as the turn runs. Claude Code and Codex are driven in their own text
+  /// modes, where the only thing coming back is what they print: the channel
+  /// their approval cards were answered on was the JSON stream, and it went with
+  /// it. What they won't run unattended they refuse, saying why in the answer —
+  /// which the chat now shows verbatim.
+  ///
+  /// The composer reads this so it never offers a card that cannot appear: a
+  /// mode labelled "Ask before acting" beside an agent that never asks is a lie
+  /// on screen (§5).
+  bool get asksPermission => this == AgentTool.hermes;
+
   /// The recipe the app runs to put this agent on the machine, or null for an
   /// agent that ships its own installer (Claude Code — see
   /// `ClaudeInstaller`). `AgentInstaller` reads this to pick the route; every

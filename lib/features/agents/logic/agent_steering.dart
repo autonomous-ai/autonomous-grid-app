@@ -19,24 +19,21 @@ typedef AgentSteerChannel = Future<String?> Function(String text);
 /// chat must go to the agent answering *there*, not to whichever turn happened
 /// to start last.
 ///
-/// **This is what stops a follow-up becoming a queue.** Before it, everything
-/// typed during an answer waited for the process to exit and then went out as a
-/// whole new turn; every agent this app drives can take the message mid-answer
-/// instead, and each does it over its own channel:
+/// **This is what stops a follow-up becoming a queue** — for the one agent that
+/// still has a channel to take it on:
 ///
-/// - **Claude Code** — a `user` message on the stdin the turn is already
-///   listening to. Measured against `claude 2.1.183` on 2026-08-18: it is
-///   delivered at the next tool boundary and the model changes course inside the
-///   same turn (one `result`, not two).
-/// - **Codex** — `turn/steer` on the app-server, measured against
-///   `codex-cli 0.144.6` the same day: the text lands as a `userMessage` item in
-///   the running turn, which carries on under its own id.
 /// - **Hermes** — its ACP adapter's `/steer` command, which appends the text to
-///   the last tool result so the model reads it on its next iteration.
+///   the last tool result so the model reads it on its next iteration. The
+///   current turn keeps its work and the answer that lands covers both messages.
 ///
-/// So the shape is the same everywhere: the current turn keeps its work and the
-/// answer that lands covers both messages. Nothing here interrupts an agent —
-/// Stop is still the only thing that does.
+/// **TODO(BE): Claude Code and Codex no longer offer one.** Both took the
+/// message over the JSON channel their turn was driven on — a `user` message on
+/// Claude Code's stream-json stdin, `turn/steer` on Codex's app-server — and both
+/// now run in text mode, where stdin carries the prompt and is closed. A message
+/// typed during their turns falls back to the queue behind it, which is what this
+/// existed to stop.
+///
+/// Nothing here interrupts an agent — Stop is still the only thing that does.
 final agentSteeringProvider =
     NotifierProvider<AgentSteeringController, Set<String>>(
       AgentSteeringController.new,

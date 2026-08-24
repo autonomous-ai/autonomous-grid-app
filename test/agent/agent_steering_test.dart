@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/features/agents/logic/agent_steering.dart';
-import 'package:grid_app/infrastructure/cli/codex_app_server_service.dart';
 import 'package:grid_app/infrastructure/cli/hermes_steer.dart';
 import 'package:grid_app/infrastructure/logging/app_log.dart';
 
@@ -124,25 +123,6 @@ void main() {
         expect(hasTimeline([const TurnText('hi')]), isFalse);
       },
     );
-  });
-
-  group('the call that steers a running Codex turn', () {
-    test('names the turn it means to steer, so a message typed during one turn '
-        'cannot land in the next', () {
-      final params = codexSteerParams(
-        threadId: 'thread-1',
-        turnId: 'turn-9',
-        text: 'just look at the main file',
-      );
-
-      expect(params['threadId'], 'thread-1');
-      // Codex checks this against the turn actually running and refuses when it
-      // has moved on — see [codexSteerParams].
-      expect(params['expectedTurnId'], 'turn-9');
-      expect(params['input'], [
-        {'type': 'text', 'text': 'just look at the main file'},
-      ]);
-    });
   });
 
   group('the prompt that steers a running Hermes turn', () {

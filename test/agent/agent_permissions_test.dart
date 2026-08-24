@@ -1,8 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/agents/logic/agent_permission_decision.dart';
 import 'package:grid_app/features/agents/logic/agent_permissions.dart';
-import 'package:grid_app/features/agents/logic/agent_session_grants.dart';
 import 'package:grid_app/features/agents/logic/agent_providers.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 
@@ -27,10 +25,6 @@ ProviderContainer _container({Duration timeout = const Duration(seconds: 55)}) {
   addTearDown(container.dispose);
   return container;
 }
-
-/// A [Ref] into the container under test — the shared decision takes one the
-/// way a sender hands it its own.
-final _refProvider = Provider<Ref>((ref) => ref);
 
 /// The chat under test. Requests are keyed by conversation, so every call names
 /// the chat it belongs to.
@@ -137,96 +131,5 @@ void main() {
     // And a late tap on a card that is already gone does nothing.
     controller.answer(_chat, AgentPermissionChoice.allowOnce);
     expect(answers, isEmpty);
-  });
-
-  group('one policy for every agent that can ask', () {
-    /// Run the shared decision, collecting whatever it answers the agent.
-    List<String?> decide(
-      ProviderContainer container,
-      AgentApprovalMode mode, {
-      String? grantKey,
-      AgentPermission? request,
-    }) {
-      final answers = <String?>[];
-      container.read(agentRunsProvider.notifier);
-      decideAgentPermission(
-        ref: container.read(_refProvider),
-        agent: 'test',
-        chat: _chat,
-        request: request ?? _command(),
-        approval: mode,
-        grantKey: grantKey,
-        answer: answers.add,
-      );
-      return answers;
-    }
-
-    test('look-dont-touch answers no itself, and the user is never '
-        'interrupted for a command that was never going to run', () {
-      final container = _container();
-      expect(decide(container, AgentApprovalMode.readOnly), ['deny']);
-      expect(container.read(agentPermissionProvider(_chat)), isNull);
-    });
-
-    test('full access answers yes once — never the agent\'s own "always", '
-        'which would outlive the mode the user picked', () {
-      final container = _container();
-      expect(decide(container, AgentApprovalMode.full), ['allow_once']);
-      expect(container.read(agentPermissionProvider(_chat)), isNull);
-    });
-
-    test('ask-first stops and puts it to the user, and nothing is answered '
-        'until they say so', () {
-      final container = _container();
-      expect(decide(container, AgentApprovalMode.ask), isEmpty);
-      expect(container.read(agentPermissionProvider(_chat)), isNotNull);
-    });
-
-    test(
-      'a yes for the whole chat is remembered, so the same command is not '
-      'asked about twice — for a transport that cannot remember it itself',
-      () {
-        final container = _container();
-        decide(
-          container,
-          AgentApprovalMode.ask,
-          grantKey: 'command:rm -rf build',
-        );
-        container
-            .read(agentPermissionsProvider.notifier)
-            .answer(_chat, AgentPermissionChoice.allowForChat);
-
-        // The same command again: answered outright, no second card.
-        final again = decide(
-          container,
-          AgentApprovalMode.ask,
-          grantKey: 'command:rm -rf build',
-        );
-        expect(again, ['allow_once']);
-        expect(container.read(agentPermissionProvider(_chat)), isNull);
-      },
-    );
-
-    test('agreeing to one command does not agree to another', () {
-      final container = _container();
-      decide(container, AgentApprovalMode.ask, grantKey: 'command:ls');
-      container
-          .read(agentPermissionsProvider.notifier)
-          .answer(_chat, AgentPermissionChoice.allowForChat);
-      expect(
-        decide(container, AgentApprovalMode.ask, grantKey: 'command:rm -rf /'),
-        isEmpty,
-      );
-      expect(container.read(agentPermissionProvider(_chat)), isNotNull);
-    });
-
-    test('a chat starting over carries none of its own standing yeses', () {
-      final container = _container();
-      final grants = container.read(agentSessionGrantsProvider.notifier)
-        ..grant(_chat, 'command:ls');
-      expect(grants.holds(_chat, 'command:ls'), isTrue);
-      grants.clear(_chat);
-      expect(grants.holds(_chat, 'command:ls'), isFalse);
-    });
   });
 }
