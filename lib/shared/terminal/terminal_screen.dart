@@ -12,6 +12,7 @@ import '../widgets/labeled_field.dart';
 import '../widgets/soft_action_button.dart';
 import 'terminal_palette.dart';
 import 'terminal_session.dart';
+import 'terminal_text.dart';
 
 /// The one line a session that is no longer running shows, or null while it is
 /// still running.
@@ -134,7 +135,7 @@ class _ScreenState extends State<_Screen> {
   String? get _selectedText {
     final selection = widget.session.controller.selection;
     if (selection == null) return null;
-    final text = widget.session.terminal.buffer.getText(selection);
+    final text = selectionText(widget.session.terminal.buffer, selection);
     return text.trim().isEmpty ? null : text;
   }
 

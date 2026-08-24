@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:xterm/xterm.dart';
 import 'package:grid_app/features/agents/logic/adapters/agent_terminal_command.dart';
 import 'package:grid_app/features/agents/logic/adapters/raw_turn_stream.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/shared/terminal/terminal_shell.dart';
+import 'package:grid_app/shared/terminal/terminal_text.dart';
 import 'package:grid_app/features/agents/logic/agent_server_error.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/raw_agent_argv.dart';
@@ -452,6 +454,56 @@ void main() {
     test('a directory argument ending in a separator doubles it, or the '
         'separator escapes the quote that closes the argument', () {
       expect(windowsArgument('C:\\a folder\\'), r'"C:\a folder\\"');
+    });
+  });
+
+  group('selectionText — what leaves the terminal has to be what it says', () {
+    /// A terminal with [lines] already drawn on it, 40 columns wide.
+    Terminal painted(List<String> writes) {
+      final terminal = Terminal(maxLines: 100);
+      terminal.resize(40, 8);
+      for (final write in writes) {
+        terminal.write(write);
+      }
+      return terminal;
+    }
+
+    BufferRange row(int line) =>
+        BufferRangeLine(CellOffset(0, line), CellOffset(39, line));
+
+    test(
+      'the gaps a TUI jumps over are spaces, not nothing — the CLI permission '
+      'warning copied as "runningin Bypass Permissionsmode" without this',
+      () {
+        // Ink draws a run, moves the cursor, draws the next: the cells in
+        // between are never written to at all.
+        final terminal = painted(['WARNING:', '[15GBypass']);
+        expect(selectionText(terminal.buffer, row(0)), 'WARNING:      Bypass');
+      },
+    );
+
+    test(
+      'a line padded out to the window is trimmed, not pasted as padding',
+      () {
+        final terminal = painted(['done']);
+        expect(selectionText(terminal.buffer, row(0)), 'done');
+      },
+    );
+
+    test('a double-width character keeps its own width and gains no space', () {
+      final terminal = painted(['a漢b']);
+      expect(selectionText(terminal.buffer, row(0)), 'a漢b');
+    });
+
+    test('two rows come back as two lines, since that is what was read', () {
+      final terminal = painted(['first[2;1Hsecond']);
+      expect(
+        selectionText(
+          terminal.buffer,
+          BufferRangeLine(CellOffset(0, 0), CellOffset(39, 1)),
+        ),
+        'first\nsecond',
+      );
     });
   });
 
