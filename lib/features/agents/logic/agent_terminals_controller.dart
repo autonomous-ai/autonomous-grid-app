@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/logging/app_log.dart';
+import '../../../infrastructure/mcp/grid_mcp_provider.dart';
+import '../../../infrastructure/mcp/grid_mcp_server.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/terminal/terminal_session.dart';
 import 'adapters/agent_grid_setup.dart';
@@ -66,6 +68,12 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// spawn a second CLI on the same chat.
   final Set<String> _opening = {};
 
+  /// The Grid-tools grant each session is holding, so ending one takes its
+  /// access with it. A session's grant has no expiry of its own — that is the
+  /// point of it (see [GridMcpServer.mintSessionToken]) — so this is the only
+  /// thing that ever gives it back.
+  final Map<String, String> _mcpTokens = {};
+
   @override
   AgentTerminalsState build() {
     ref.onDispose(_disposeAll);
@@ -125,6 +133,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         onChanged: _publish,
       );
       _sessions[chatId] = session;
+      if (setup.mcpToken case final token?) _mcpTokens[chatId] = token;
       session.start(onError: _logStartFailure);
       _publish();
     } finally {
@@ -153,8 +162,17 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   void end(String chatId) {
     final gone = _sessions.remove(chatId);
     if (gone == null) return;
+    _revokeTools(chatId);
     gone.dispose();
     _publish();
+  }
+
+  /// Hands back the session's Grid-tools grant. Nothing else expires it, so a
+  /// session ended without this leaves a live key to the user's chat behind.
+  void _revokeTools(String chatId) {
+    final token = _mcpTokens.remove(chatId);
+    if (token == null) return;
+    ref.read(gridMcpServerProvider).revoke(token);
   }
 
   /// Starts a fresh CLI in a chat whose last one ended, keeping the scrollback.
@@ -165,8 +183,17 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   void restart(String chatId) =>
       _sessions[chatId]?.restart(onError: _logStartFailure);
 
+  /// The grid setup for one session, asked for as a **session** rather than as a
+  /// turn: the CLI opens its MCP connection once and holds it, so its grant has
+  /// to outlive every turn the app sends into the same chat beside it. See
+  /// [GridMcpServer.mintSessionToken].
   Future<
-    ({Map<String, String> environment, String? mcpConfig, List<String> config})
+    ({
+      Map<String, String> environment,
+      String? mcpConfig,
+      List<String> config,
+      String? mcpToken,
+    })
   >
   _setupFor({
     required AgentTool tool,
@@ -180,11 +207,13 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         network: network,
         model: model,
         conversationId: chatId,
+        session: true,
       );
       return (
         environment: codex.environment,
         mcpConfig: null,
         config: codex.config,
+        mcpToken: codex.mcpToken,
       );
     }
     final claude = await claudeGridSetup(
@@ -192,11 +221,13 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       network: network,
       model: model,
       conversationId: chatId,
+      session: true,
     );
     return (
       environment: claude.environment,
       mcpConfig: claude.mcpConfig,
       config: const <String>[],
+      mcpToken: claude.mcpToken,
     );
   }
 
@@ -219,6 +250,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   AgentTerminalsState _snapshot() => AgentTerminalsState(sessions: _sessions);
 
   void _disposeAll() {
+    // The server is stopped with the app and clears its own grants, so this is
+    // belt and braces — but the map outlives a *hot restart*, which the server
+    // does not, and a token left here would name a grant nobody holds.
+    _mcpTokens.clear();
     for (final session in _sessions.values) {
       session.dispose();
     }

@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../infrastructure/mcp/grid_mcp_provider.dart';
+import '../../../../infrastructure/mcp/grid_mcp_server.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../network/logic/app_guide_snippets.dart';
 import '../model_context_window.dart';
@@ -9,9 +11,15 @@ import 'claude_turn_mcp_config.dart';
 
 /// What a Claude Code run needs to answer on the app's grid, with the app's own
 /// tools: the environment to start it in, and the MCP config to point it at.
+///
+/// [mcpToken] is the grant Grid's tools were handed, or null when the run got
+/// none. A caller that opened a **session** owns it and must
+/// [GridMcpServer.revoke] it when the session ends; a turn's is replaced by the
+/// next turn's and can be forgotten.
 typedef ClaudeGridSetup = ({
   Map<String, String> environment,
   String? mcpConfig,
+  String? mcpToken,
 });
 
 /// What a Codex run needs for the same: `-c` overrides for the command line, and
@@ -19,6 +27,7 @@ typedef ClaudeGridSetup = ({
 typedef CodexGridSetup = ({
   List<String> config,
   Map<String, String> environment,
+  String? mcpToken,
 });
 
 /// Prepare a Claude Code run — one `-p` turn, or a whole terminal session.
@@ -45,18 +54,17 @@ Future<ClaudeGridSetup> claudeGridSetup(
   required String? conversationId,
   Map<String, Object?> mcpExtra = const {},
   bool relayEnv = true,
+  bool session = false,
 }) async {
   final grid = ref.read(gridMcpServerProvider);
   await grid.start();
   final url = grid.url;
+  final token = _mcpToken(grid, conversationId, session: session);
   final mcpConfig = await ClaudeTurnMcpConfig().write(
     extra: {
       ...mcpExtra,
-      if (url != null && conversationId != null)
-        'grid': gridMcpServerEntry(
-          url: url,
-          token: grid.mintTurnToken(conversationId),
-        ),
+      if (url != null && token != null)
+        'grid': gridMcpServerEntry(url: url, token: token),
     },
   );
 
@@ -89,7 +97,27 @@ Future<ClaudeGridSetup> claudeGridSetup(
         ),
     },
     mcpConfig: mcpConfig,
+    mcpToken: token,
   );
+}
+
+/// The grant Grid's tools run under for one agent run, or null when this run has
+/// no chat to speak for — `grid_ask` is answered *into* a conversation, and a run
+/// belonging to none has nowhere to put an answer.
+///
+/// Null is the whole answer, and the caller must then **not register the server
+/// either**. Handing Codex `mcp_servers.grid` with no token behind it is what
+/// produced `UnexpectedServerResponse("HTTP 401: ")` and killed its MCP
+/// transport for the rest of the run.
+String? _mcpToken(
+  GridMcpServer grid,
+  String? conversationId, {
+  required bool session,
+}) {
+  if (conversationId == null) return null;
+  return session
+      ? grid.mintSessionToken(conversationId)
+      : grid.mintTurnToken(conversationId);
 }
 
 /// Prepare a Codex run — one `exec` turn, or a whole terminal session.
@@ -109,11 +137,36 @@ Future<CodexGridSetup> codexGridSetup(
   required NetworkCredential network,
   required String model,
   required String? conversationId,
+  bool session = false,
 }) async {
   final grid = ref.read(gridMcpServerProvider);
   await grid.start();
   final url = grid.url;
+  final token = _mcpToken(grid, conversationId, session: session);
+  // The server and its token are one decision, not two: registering
+  // `mcp_servers.grid` while `$GRID_MCP_TOKEN` is unset hands Codex an endpoint
+  // it can only be refused by, and the refusal is fatal to its whole MCP
+  // transport rather than to the one call.
+  final tools = url != null && token != null;
+
   final window = ref.read(knownModelContextWindowProvider(model));
+  // Codex says so itself — "Model metadata for <id> not found. Defaulting to
+  // fallback metadata; this can degrade performance" — and on the `auto` router
+  // it says so every session, because no source names a window for a model the
+  // relay picks per turn. **Not a number to invent**: see
+  // [knownModelContextWindowProvider] for why telling Codex a figure this app
+  // guessed is worse than leaving it on its own default. What was missing was
+  // this line: the CLI's warning had nothing on our side to match it against.
+  if (window == null) {
+    ref
+        .read(appLogProvider)
+        .info(
+          'agent',
+          'codex: no reported context window for "$model" — it will run on its '
+              'own fallback metadata and say so',
+        );
+  }
+
   return (
     config: [
       ...codexGridOverrides(
@@ -126,13 +179,13 @@ Future<CodexGridSetup> codexGridSetup(
       // per-process lever for *skills* — `$CODEX_HOME/skills` is the only path
       // it reads and moving CODEX_HOME takes the user's login with it — so this
       // is the whole reason the cards became an MCP server.
-      if (url != null) ...gridMcpCodexOverrides(url: url),
+      if (tools) ...gridMcpCodexOverrides(url: url),
     ],
     environment: {
       kCodexAppApiKeyEnv: network.relayApiKey,
       ...gridTurnEnv(conversationId),
-      if (url != null && conversationId != null)
-        kGridMcpTokenEnv: grid.mintTurnToken(conversationId),
+      if (tools) kGridMcpTokenEnv: token,
     },
+    mcpToken: token,
   );
 }

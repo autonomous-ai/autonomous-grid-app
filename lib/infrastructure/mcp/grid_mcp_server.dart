@@ -25,11 +25,14 @@ import 'grid_mcp_tools.dart';
 /// binary brings: no process to fail to start, nothing to install, and on Hermes
 /// no dependency on a python package that reinstalls quietly wipe.
 ///
-/// **A token per turn, not per app.** The agent is answering *some* chat, and
-/// the tool call arrives out of band with no way to say which. So each turn is
-/// handed its own bearer token and the token is the chat: `grid_ask` from a turn
-/// in chat A can only ever start a loop in chat A, and a token outlives its turn
-/// by nothing.
+/// **A token per run, not per app.** The agent is answering *some* chat, and the
+/// tool call arrives out of band with no way to say which. So each run is handed
+/// its own bearer token and the token is the chat: `grid_ask` from a run in chat
+/// A can only ever start a loop in chat A.
+///
+/// A *run* is a turn ([mintTurnToken]) or a whole terminal session
+/// ([mintSessionToken]), and the two have to be told apart — a chat can have both
+/// at once, and the shorter one must not end the longer one.
 class GridMcpServer {
   GridMcpServer({required this.onAsk, Random? random})
     : _random = random ?? Random.secure();
@@ -39,7 +42,7 @@ class GridMcpServer {
   final Future<String> Function(String chatId, ChatCommandCall call) onAsk;
 
   final Random _random;
-  final Map<String, String> _chatByToken = {};
+  final Map<String, _Grant> _chatByToken = {};
   HttpServer? _server;
 
   /// Where the agents should point, or null before [start].
@@ -68,22 +71,55 @@ class GridMcpServer {
 
   /// A bearer token that speaks for [chatId] until the chat's next turn.
   ///
-  /// Minting **replaces** whatever token this chat already had. A chat has one
-  /// turn in flight at a time, so the previous turn's token has nothing left to
-  /// do — and hanging the lifetime on the next mint means no sender has to
+  /// Minting **replaces whatever turn token this chat already had**. A chat has
+  /// one turn in flight at a time, so the previous turn's token has nothing left
+  /// to do — and hanging the lifetime on the next mint means no sender has to
   /// remember a `revoke` in a `finally` it does not have. [revoke] is still
   /// there for a turn that ends knowing it was the last.
-  String mintTurnToken(String chatId) {
-    _chatByToken.removeWhere((_, chat) => chat == chatId);
+  ///
+  /// It leaves [mintSessionToken]'s grants alone. It used to take every token
+  /// the chat had, which killed the tools of any long-lived CLI the same chat
+  /// was driving — see there.
+  String mintTurnToken(String chatId) =>
+      _mint(chatId, session: false, replacing: (grant) => !grant.session);
+
+  /// A bearer token for a **long-lived** agent process in [chatId] — a terminal
+  /// session, which connects to this server once at startup and holds that
+  /// connection for as long as the CLI is running.
+  ///
+  /// **A turn token is the wrong lifetime for one**, and using one shipped this
+  /// bug: `mintTurnToken` revoked every earlier token for the chat, so the next
+  /// turn the *app* sent into that chat — a goal's step, a loop's beat, a
+  /// scheduled task — pulled the rug from under the running CLI. Its next tool
+  /// call came back `HTTP 401`, the transport gave up with `worker quit with
+  /// fatal: Transport channel closed`, and every Grid tool stayed dead for the
+  /// rest of the session because nothing reconnects.
+  ///
+  /// The caller owns this one: it lives until [revoke], or until the server
+  /// stops. A chat gets one, so opening a second session for the same chat ends
+  /// the first's grant.
+  String mintSessionToken(String chatId) =>
+      _mint(chatId, session: true, replacing: (grant) => grant.session);
+
+  void revoke(String token) => _chatByToken.remove(token);
+
+  /// Issues a token for [chatId], dropping the grants of the same kind it
+  /// replaces ([replacing]) and leaving the other kind untouched.
+  String _mint(
+    String chatId, {
+    required bool session,
+    required bool Function(_Grant grant) replacing,
+  }) {
+    _chatByToken.removeWhere(
+      (_, grant) => grant.chat == chatId && replacing(grant),
+    );
     final token = List.generate(
       32,
       (_) => _alphabet[_random.nextInt(_alphabet.length)],
     ).join();
-    _chatByToken[token] = chatId;
+    _chatByToken[token] = _Grant(chat: chatId, session: session);
     return token;
   }
-
-  void revoke(String token) => _chatByToken.remove(token);
 
   static const String _alphabet =
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -134,7 +170,7 @@ class GridMcpServer {
   String? _chatFor(String? header) {
     const prefix = 'Bearer ';
     if (header == null || !header.startsWith(prefix)) return null;
-    return _chatByToken[header.substring(prefix.length)];
+    return _chatByToken[header.substring(prefix.length)]?.chat;
   }
 
   Future<Map<String, Object?>> _dispatch(
@@ -267,4 +303,16 @@ String skillCardBody(String card) {
   final end = text.indexOf('\n---', 3);
   if (end < 0) return text.trim();
   return text.substring(text.indexOf('\n', end + 1) + 1).trim();
+}
+
+/// What one bearer token is allowed to speak for: the chat, and whether it
+/// belongs to a whole agent **session** or to a single turn.
+///
+/// The kind is what keeps the two lifetimes from cancelling each other — see
+/// [GridMcpServer.mintSessionToken] for the failure that made it necessary.
+class _Grant {
+  const _Grant({required this.chat, required this.session});
+
+  final String chat;
+  final bool session;
 }

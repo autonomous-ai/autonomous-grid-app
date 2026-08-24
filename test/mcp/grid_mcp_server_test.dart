@@ -228,6 +228,66 @@ void main() {
         isNotNull,
       );
     });
+
+    /// Whether [token] is still allowed to use the tools.
+    Future<bool> works(String token, int id) async =>
+        (await send(token, {
+          'jsonrpc': '2.0',
+          'id': id,
+          'method': 'tools/list',
+        }))['result'] !=
+        null;
+
+    test(
+      'a terminal session keeps its tools while the app sends turns into the '
+      'same chat beside it — a turn token used to retire the session\'s, and '
+      'the running CLI lost every Grid tool for good with one 401',
+      () async {
+        final session = server.mintSessionToken('chat-1');
+        // A goal step, a loop beat, a scheduled task: all of them mint one.
+        server.mintTurnToken('chat-1');
+        server.mintTurnToken('chat-1');
+
+        expect(await works(session, 20), isTrue);
+      },
+    );
+
+    test('and the turns keep working beside the session, so neither lane is '
+        'paying for the other', () async {
+      final session = server.mintSessionToken('chat-1');
+      final turn = server.mintTurnToken('chat-1');
+
+      expect(await works(turn, 21), isTrue);
+      expect(await works(session, 22), isTrue);
+    });
+
+    test('opening a second session for one chat retires the first, because a '
+        'chat drives one CLI and the old one is gone', () async {
+      final first = server.mintSessionToken('chat-1');
+      final second = server.mintSessionToken('chat-1');
+
+      expect(await works(first, 23), isFalse);
+      expect(await works(second, 24), isTrue);
+    });
+
+    test('a session grant has no expiry of its own, so ending the session is '
+        'the only thing that gives it back', () async {
+      final session = server.mintSessionToken('chat-1');
+      expect(await works(session, 25), isTrue);
+
+      server.revoke(session);
+      expect(await works(session, 26), isFalse);
+    });
+
+    test('one chat\'s session is no key to another\'s, whichever kind of grant '
+        'the other holds', () async {
+      final session = server.mintSessionToken('chat-1');
+      server.mintSessionToken('chat-2');
+      server.mintTurnToken('chat-2');
+
+      expect(await works(session, 27), isTrue);
+      expect(ran, isEmpty);
+    });
   });
 
   group('the guides', () {
