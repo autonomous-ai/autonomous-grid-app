@@ -98,6 +98,7 @@ class CodexChatSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? turnId,
     String? instructions,
     // TODO(BE): Codex has thread goals over `thread/goal/set|get|clear`, not a
     // slash command on the wire — see GoalOwner.codex. Not supported yet.
@@ -176,7 +177,7 @@ class CodexChatSender implements ChatSender {
       approval: mode,
       environment: {
         kCodexAppApiKeyEnv: network.relayApiKey,
-        ...gridTurnEnv(conversationId),
+        ...gridTurnEnv(conversationId, turnId: turnId),
       },
       planFirst: planFirst,
       slot: turn.slot,

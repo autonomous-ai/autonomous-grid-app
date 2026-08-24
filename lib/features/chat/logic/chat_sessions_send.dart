@@ -265,6 +265,11 @@ mixin _ChatSend on _ChatSessions {
     String? agentCommand,
   }) async {
     final id = conversation.id;
+    // One per-turn id per user input, so the relay can group every LLM call
+    // this turn makes under a single `X-Request-Id` — a fresh id each new
+    // input (send and retry both land here). Timestamp + conversation id is
+    // unique enough for grouping and needs no uuid dependency.
+    final turnId = '${conversation.id}-${DateTime.now().microsecondsSinceEpoch}';
     _retryableTurns[id] = _RetryableTurn(
       messageCount: conversation.messages.length,
       attachments: List.unmodifiable(attachments),
@@ -334,6 +339,7 @@ mixin _ChatSend on _ChatSessions {
     }
 
     void dispatch() => _dispatch(
+      turnId: turnId,
       agentCommand: agentCommand,
       conversation: conversation,
       network: network,
@@ -392,6 +398,7 @@ mixin _ChatSend on _ChatSessions {
   /// keyed by conversation, so [stop] and disposal cancel exactly this reply and
   /// it never writes back into the wrong chat after the user has moved on.
   void _dispatch({
+    required String turnId,
     required Conversation conversation,
     required NetworkCredential network,
     required String model,
@@ -485,6 +492,7 @@ mixin _ChatSend on _ChatSessions {
     );
 
     final updates = _senderFor(viaAgent, agent).send(
+      turnId: turnId,
       network: network,
       model: model,
       // Not the whole transcript when it has been compacted: the summary

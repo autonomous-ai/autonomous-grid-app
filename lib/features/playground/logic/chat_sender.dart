@@ -130,6 +130,13 @@ abstract interface class ChatSender {
     /// Playground) and the relay sender, which are stateless.
     String? conversationId,
 
+    /// A per-turn id minted by the caller for this user input. The agent
+    /// senders inject it as an `X-Request-Id` request header (Claude Code /
+    /// Codex via a per-turn env var) so the relay can attribute every LLM call
+    /// this turn makes under one id; the relay sender ignores it (a direct
+    /// relay call carries the app's own transport, not a turn id).
+    String? turnId,
+
     /// The project's standing rules for the agent, prepended to the first turn
     /// of a session (the app's `AGENTS.md`). Null/blank for a chat in no project
     /// and ignored by the relay sender, which has no agent to instruct.
@@ -238,6 +245,9 @@ class DefaultChatSender implements ChatSender {
     // A relay call has no filesystem — the project folder means nothing here.
     String? workdir,
     String? conversationId,
+    // A relay DIRECT call has no agent turn — the header there comes from the
+    // app's own transport, so a turn id is not threaded through here.
+    String? turnId,
     // The relay has no agent to instruct, so project rules are irrelevant here.
     String? instructions,
     // A relay call has no agent, so it has no commands to run either.

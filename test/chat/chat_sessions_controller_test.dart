@@ -89,6 +89,7 @@ class _FakeSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     this.history = history;
@@ -133,6 +134,7 @@ class _ScriptedSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     histories.add(history);
@@ -169,6 +171,7 @@ class _OpenEndedSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) => _controller.stream;
 }
@@ -200,6 +203,7 @@ class _PerChatSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     final id = conversationId!;
@@ -232,6 +236,7 @@ class _HangAfterFirstSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     calls++;
@@ -270,6 +275,7 @@ class _StreamingLoopSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     calls++;

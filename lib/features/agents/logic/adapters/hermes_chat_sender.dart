@@ -130,6 +130,11 @@ class HermesChatSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    // Hermes serves a live ACP process, not a spawn-env per turn, so the
+    // per-turn X-Request-Id header is not threaded through its env today.
+    // ponytail: wire via the hermes config `extra_headers` when turn-level
+    // usage on the Hermes lane is needed.
+    String? turnId,
     String? instructions,
     // Hermes' ACP server advertises nine commands and `goal` is not among
     // them; an unknown one falls through to the model as prose — see

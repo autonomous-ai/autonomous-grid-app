@@ -137,6 +137,7 @@ class _OpenStreamSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) => controller.stream;
 }
