@@ -265,6 +265,11 @@ mixin _ChatSend on _ChatSessions {
     String? agentCommand,
   }) async {
     final id = conversation.id;
+    // One per-turn id per user input, so the relay can group every LLM call
+    // this turn makes under a single `X-Request-Id` — a fresh id each new
+    // input (send and retry both land here). Timestamp + conversation id is
+    // unique enough for grouping and needs no uuid dependency.
+    final turnId = '${conversation.id}-${DateTime.now().microsecondsSinceEpoch}';
     _retryableTurns[id] = _RetryableTurn(
       messageCount: conversation.messages.length,
       attachments: List.unmodifiable(attachments),
@@ -334,6 +339,7 @@ mixin _ChatSend on _ChatSessions {
     }
 
     void dispatch() => _dispatch(
+      turnId: turnId,
       agentCommand: agentCommand,
       conversation: conversation,
       network: network,
@@ -392,6 +398,7 @@ mixin _ChatSend on _ChatSessions {
   /// keyed by conversation, so [stop] and disposal cancel exactly this reply and
   /// it never writes back into the wrong chat after the user has moved on.
   void _dispatch({
+    required String turnId,
     required Conversation conversation,
     required NetworkCredential network,
     required String model,
@@ -460,7 +467,7 @@ mixin _ChatSend on _ChatSessions {
     // knows, since the agent makes its own relay calls and only ever knows the
     // name it was handed (`auto`, or a tier alias). Watched from here so the
     // working bubble can show it changing while a long task runs.
-    ref.read(turnModelUsageProvider.notifier).begin(id, network);
+    ref.read(turnModelUsageProvider.notifier).begin(id, network, turnId);
 
     // Who answered, with what, where, and how long it took — the footer's four
     // facts, stamped onto whatever the turn produced (a whole reply, or the
@@ -491,6 +498,7 @@ mixin _ChatSend on _ChatSessions {
     // machine behind it and to work out which agents can answer with it, and
     // none of those questions is answered by a pinned model list.
     final updates = _senderFor(viaAgent, agent).send(
+      turnId: turnId,
       network: network,
       model: wireModelFor(conversation, model),
       // Not the whole transcript when it has been compacted: the summary

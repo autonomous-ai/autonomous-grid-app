@@ -131,6 +131,11 @@ class HermesChatSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    // Hermes serves a live ACP process, not a spawn-env per turn, so the
+    // per-turn X-Request-Id header is not threaded through its env today.
+    // ponytail: wire via the hermes config `extra_headers` when turn-level
+    // usage on the Hermes lane is needed.
+    String? turnId,
     String? instructions,
     // Hermes' ACP server advertises nine commands and `goal` is not among
     // them; an unknown one falls through to the model as prose — see
@@ -176,6 +181,24 @@ class HermesChatSender implements ChatSender {
     final String text;
     final _LiveSession live;
     try {
+      // Stamp this turn's id into Hermes's config so the NEXT Hermes process
+      // reads it into its request `extra_headers` at agent build. Hermes reads
+      // the config when it changes (mtime cache) but bakes the headers into the
+      // OpenAI client once at session build — so a turn with an id must open a
+      // fresh session (history is replayed, so the conversation continues).
+      // That re-spawn + full-history replay every turn is the deliberate cost of
+      // per-turn attribution for Hermes; leave this block if that feels heavy.
+      if (turnId != null && turnId.isNotEmpty) {
+        try {
+          await HermesConfigFile().setTurnRequestHeader(
+            gridBaseUrl: network.relayBaseUrl,
+            turnId: turnId,
+          );
+        } on Object {
+          // A config write must never take the turn down — on a miss the turn
+          // simply runs without a turn id.
+        }
+      }
       final resolved = await _sessionFor(
         network,
         model,
@@ -183,6 +206,7 @@ class HermesChatSender implements ChatSender {
         history,
         workdir,
         instructions,
+        forceFresh: turnId != null && turnId.isNotEmpty,
       );
       session = resolved.session;
       text = resolved.text;
@@ -236,8 +260,9 @@ class HermesChatSender implements ChatSender {
     String? conversationId,
     List<ChatMessage> history,
     String? workdir,
-    String? instructions,
-  ) async {
+    String? instructions, {
+    bool forceFresh = false,
+  }) async {
     // The folder is part of the key: moving a chat to another project must start
     // a fresh session, or the agent would keep reading the old folder.
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
@@ -248,6 +273,7 @@ class HermesChatSender implements ChatSender {
     final slot = conversationId ?? '';
     final live = _live[slot];
     final continues =
+        !forceFresh &&
         live != null &&
         !live.session.isClosed &&
         live.key == key &&

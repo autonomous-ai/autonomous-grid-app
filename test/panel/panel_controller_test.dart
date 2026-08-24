@@ -294,6 +294,7 @@ class _HeldTurn implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     this.history = history;

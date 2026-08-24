@@ -58,17 +58,13 @@ class _FakeRelayApiClient implements RelayApiClient {
   /// nothing, which is also what a grid whose master predates the endpoint
   /// does — so the app's degrade path is what runs here.
   @override
-  Future<ConversationUsage> usage({
+  Future<List<ModelShare>> usageTurn({
     required String baseUrl,
     required String apiKey,
-    DateTime? since,
-    DateTime? until,
-    String? conversation,
-    String? from,
-    String? to,
+    required String turnId,
   }) async {
     if (error != null) throw error!;
-    return (models: const <ModelShare>[], last: null);
+    return const [];
   }
 
   /// Same posture as `usage` above: these tests exercise the model and overview
