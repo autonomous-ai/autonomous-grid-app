@@ -85,20 +85,26 @@ enum AgentTool {
   bool get resumesBySessionId =>
       this == AgentTool.claude || this == AgentTool.codex;
 
-  /// Whether a turn with this agent can stop mid-way and **ask** the user for
-  /// permission.
+  /// Whether a chat with this agent is driven through the agent's **own
+  /// interactive CLI**, in a terminal, rather than through turns the app sends.
   ///
-  /// True only for Hermes, whose ACP session is a live two-way channel for as
-  /// long as the turn runs. Claude Code and Codex are driven in their own text
-  /// modes, where the only thing coming back is what they print: the channel
-  /// their approval cards were answered on was the JSON stream, and it went with
-  /// it. What they won't run unattended they refuse, saying why in the answer —
-  /// which the chat now shows verbatim.
+  /// True for Claude Code and Codex, and it is what gives the user back
+  /// everything the one-shot text lane cannot offer: the CLI asks for permission
+  /// in its own words and takes the answer from the keyboard, a message typed
+  /// mid-answer reaches the turn that is running, and the conversation is the
+  /// CLI's own rather than a transcript replayed into every prompt. Nothing is
+  /// parsed on the way through — a pty carries the bytes and an emulator draws
+  /// them.
   ///
-  /// The composer reads this so it never offers a card that cannot appear: a
-  /// mode labelled "Ask before acting" beside an agent that never asks is a lie
-  /// on screen (§5).
-  bool get asksPermission => this == AgentTool.hermes;
+  /// False for Hermes, which has no interactive CLI this app drives: it speaks
+  /// ACP, and its chat is built out of those events.
+  ///
+  /// It is *not* the whole story of how a chat reaches these two. A turn the app
+  /// sends by itself — a goal's next step, a loop's beat, a scheduled task — has
+  /// no keyboard behind it and still goes out through the one-shot lane
+  /// (`claude -p` / `codex exec`).
+  bool get runsInTerminal =>
+      this == AgentTool.claude || this == AgentTool.codex;
 
   /// The recipe the app runs to put this agent on the machine, or null for an
   /// agent that ships its own installer (Claude Code — see

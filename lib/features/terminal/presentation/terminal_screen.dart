@@ -11,9 +11,9 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_menu_row.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/soft_action_button.dart';
-import '../logic/terminal_session.dart';
+import '../../../shared/terminal/terminal_session.dart';
 import '../logic/terminal_sessions_controller.dart';
-import 'terminal_palette.dart';
+import '../../../shared/terminal/terminal_palette.dart';
 
 /// One terminal on screen: its output, and — once its shell has ended — the
 /// line saying so.

@@ -10,11 +10,9 @@ import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/cli/raw_agent_argv.dart';
 import '../../../../infrastructure/cli/raw_agent_service.dart';
 import '../../../../infrastructure/logging/app_log.dart';
-import '../../../../infrastructure/mcp/grid_mcp_provider.dart';
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../../shared/copy/setup_hints.dart';
-import '../../../network/logic/app_guide_snippets.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
@@ -23,11 +21,9 @@ import '../agent_model_support.dart';
 import '../agent_prompt.dart';
 import '../agent_providers.dart';
 import '../agent_turn_log.dart';
-import '../model_context_window.dart';
-import 'agent_turn_env.dart';
+import 'agent_grid_setup.dart';
 import 'claude_browser.dart';
 import 'claude_tool.dart';
-import 'claude_turn_mcp_config.dart';
 import 'raw_turn_stream.dart';
 
 /// Claude Code's own `/goal`, which the app delegates to rather than running a
@@ -192,77 +188,40 @@ class ClaudeChatSender implements ChatSender {
             planFirst ? withPlanPreamble(replay) : replay,
             instructions,
           );
-
-    // How much of the model Claude Code may fill before it summarizes — what the
-    // grid advertises, what an engine taught, or the assumption the app falls
-    // back on. See [modelContextWindowProvider].
-    final window = _ref.read(modelContextWindowProvider(model));
-
     // Which browser this turn can reach, if any — decided per turn because the
     // answer moves between two messages: the user installs the extension,
     // restarts Chrome, or switches to a model the extension can't serve.
     final browser = await _openBrowser(model);
     final onExtension = browser.lane == ClaudeBrowserLane.extension;
 
-    // Rewritten per turn, not cached: a connector signed in or disconnected since
-    // the last message has to be in — or out of — this one. Null when the write
-    // failed, which launches the turn on `~/.claude.json` rather than on a path
-    // `claude` would reject. Grid's own tools ride in `extra` rather than in that
-    // file: the user's file is theirs, and an entry naming a port this process
-    // happens to be holding would outlive the session that made it true.
-    final grid = _ref.read(gridMcpServerProvider);
-    await grid.start();
-    final gridUrl = grid.url;
-    final mcpConfigPath = await ClaudeTurnMcpConfig().write(
-      extra: {
-        ...browser.mcpExtra,
-        // No chat, no tools: `grid_ask` is answered *into* a conversation, and a
-        // turn that belongs to none has nowhere to start a loop.
-        if (gridUrl != null && conversationId != null)
-          'grid': gridMcpServerEntry(
-            url: gridUrl,
-            token: grid.mintTurnToken(conversationId),
-          ),
-      },
+    // The grid, the window it may fill, the connectors and Grid's own tools —
+    // the same preparation the terminal lane runs, so a chat and a terminal
+    // answer on the same grid with the same tools. Rewritten per turn, not
+    // cached: a connector signed in or disconnected since the last message has
+    // to be in — or out of — this one.
+    final grid = await claudeGridSetup(
+      _ref,
+      network: network,
+      model: model,
+      conversationId: conversationId,
+      mcpExtra: browser.mcpExtra,
+      // On the extension lane Claude Code runs against its own sign-in, and must
+      // not be handed the relay's credentials at all.
+      relayEnv: !onExtension,
     );
 
-    // On the extension lane Claude Code runs against its own sign-in, where the
-    // relay's name for the seat (`claude:opus`) is not a model it knows.
+    // On that lane the relay's name for the seat (`claude:opus`) is not a model
+    // Claude Code knows.
     final turnModel = onExtension ? claudeLocalModel(model) : model;
-    final environment = {
-      // On both lanes: it says which chat this turn is in, which has nothing to
-      // do with who serves the model.
-      ...gridTurnEnv(conversationId),
-      ...onExtension
-          ? const <String, String>{}
-          : claudeCodeEnv(
-              network.relayBaseUrl,
-              network.relayApiKey,
-              [model],
-              // Null below Claude Code's own floor of 100000, where the value
-              // would be discarded and 100000 used instead — see
-              // [claudeCompactWindow].
-              compactWindow: claudeCompactWindow(agentContextCeiling(window)),
-              // Claude Code reserves 32000 output tokens by default — more than a
-              // grid model's window can spare above the ceiling, and the reply
-              // alone drew the 400 (#47). Sized to what *this* model's ceiling
-              // leaves room for.
-              maxOutputTokens: agentReplyReserve(window),
-              // A chat turn, so the ~922 KB reference for Anthropic's API — and
-              // every other bundle that could grow to match it — stays out of a
-              // window this turn needs for the conversation.
-              withoutBundledSkills: true,
-            ),
-    };
 
     yield* _runTurn(
       workdir: root,
       prompt: prompt,
       model: turnModel,
       approval: mode,
-      environment: environment,
+      environment: grid.environment,
       dropEnvironment: onExtension ? kClaudeRelayEnvKeys : const <String>{},
-      mcpConfigPath: mcpConfigPath,
+      mcpConfigPath: grid.mcpConfig,
       chrome: onExtension,
       // Whether to take away Claude Code's server-side web tools for this turn.
       // They are the provider's to run, so whatever answers the request has to

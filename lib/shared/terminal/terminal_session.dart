@@ -53,7 +53,13 @@ class ShellFailed extends ShellState {
 /// they can't do is publish themselves — [onChanged] is how the controller
 /// hears that a shell started or died.
 class TerminalSession {
-  TerminalSession({required this.id, required this.workdir, this.onChanged});
+  TerminalSession({
+    required this.id,
+    required this.workdir,
+    this.command,
+    this.environment = const {},
+    this.onChanged,
+  });
 
   /// The id of the panel tab this terminal belongs to.
   final String id;
@@ -61,6 +67,22 @@ class TerminalSession {
   /// The folder the shell starts in — the same one the assistant is working in,
   /// so a command here acts on the files the chat beside it is talking about.
   final String workdir;
+
+  /// What to run, or null for the user's own login shell — which is what a
+  /// Terminal tab wants and what [resolveShell] picks.
+  ///
+  /// An agent chat passes its CLI here instead ([agentTerminalCommand]): the
+  /// point of that lane is that the user drives the agent's own interface, and
+  /// the only difference from a Terminal tab is which program is on the other
+  /// end of the pty.
+  final ShellCommand? command;
+
+  /// Variables layered over the app's own for this session — the grid a chat
+  /// answers on, and the key to reach it. Empty for a plain shell.
+  ///
+  /// Applied *under* `TERM`, so a caller cannot accidentally hand the program a
+  /// terminal type that turns off colour and the cursor.
+  final Map<String, String> environment;
 
   /// Fires when [shell] moves, so the controller can republish its state.
   final VoidCallback? onChanged;
@@ -97,23 +119,27 @@ class TerminalSession {
       return;
     }
 
-    final command = resolveShell(
-      environment: Platform.environment,
-      operatingSystem: Platform.operatingSystem,
-    );
+    final command =
+        this.command ??
+        resolveShell(
+          environment: Platform.environment,
+          operatingSystem: Platform.operatingSystem,
+        );
     try {
       final pty = Pty.start(
         command.executable,
         arguments: command.arguments,
         workingDirectory: workdir,
-        // The app's own environment, plus the two variables that decide whether
-        // the shell believes it has a terminal at all. `flutter_pty` sets both,
-        // but only for the variables it copies itself — spreading ours over the
-        // top would otherwise hand the shell whatever `TERM` the app inherited
-        // (`dumb`, when launched from an IDE), and a `dumb` terminal turns off
-        // colour, the cursor and every full-screen program.
+        // The app's own environment, then this session's, plus the two variables
+        // that decide whether the program believes it has a terminal at all.
+        // `flutter_pty` sets both, but only for the variables it copies itself —
+        // spreading ours over the top would otherwise hand the program whatever
+        // `TERM` the app inherited (`dumb`, when launched from an IDE), and a
+        // `dumb` terminal turns off colour, the cursor and every full-screen
+        // program. Which is to say: the whole agent TUI.
         environment: {
           ...Platform.environment,
+          ...environment,
           'TERM': 'xterm-256color',
           'TERM_PROGRAM': 'Grid',
         },
@@ -147,6 +173,33 @@ class TerminalSession {
     }
     onChanged?.call();
   }
+
+  /// Types [text] into the program as if the user had typed it, then sends the
+  /// Return that submits it.
+  ///
+  /// **The Return goes in a write of its own, a beat later, and that is not
+  /// tidiness.** Sent in the same burst an agent's TUI reads the pair as a
+  /// paste: measured against `codex-cli 0.144.6` on 2026-08-24, `"say only the
+  /// word PONG\r"` in one write landed in the composer as a newline and the turn
+  /// never started, while the same text followed by a separate `\r` submitted
+  /// and was answered. Claude Code's TUI takes either, so both lanes send the
+  /// pair the way the stricter one needs.
+  ///
+  /// Does nothing when no program is running — there is nobody to type at.
+  Future<void> type(String text) async {
+    final pty = _pty;
+    if (pty == null || _shell is! ShellRunning) return;
+    final encode = const Utf8Encoder().convert;
+    pty.write(encode(text));
+    await Future<void>.delayed(_submitGap);
+    if (_pty == null) return;
+    pty.write(encode('\r'));
+  }
+
+  /// The beat between the text and the Return that submits it — long enough
+  /// that a TUI has read the first write and left paste mode, short enough that
+  /// nobody sees it.
+  static const _submitGap = Duration(milliseconds: 40);
 
   /// Opens a fresh shell in a terminal whose last one ended, keeping the
   /// scrollback above it — the transcript of what went wrong is usually why the

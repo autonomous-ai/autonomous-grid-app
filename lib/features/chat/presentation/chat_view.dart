@@ -21,6 +21,8 @@ import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/hermes_vision_controller.dart';
 import '../../agents/logic/active_chat_agent.dart';
+import '../../agents/logic/agent_terminals_controller.dart';
+import '../../agents/presentation/agent_terminal_view.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
 import '../../agents/logic/agent_providers.dart';
@@ -385,6 +387,22 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _runCommand(command);
       return;
     }
+    // A chat running in a terminal has no turns to send: Send types the line
+    // into the agent's own CLI, exactly as the user could have typed it there.
+    // The command check above still runs first — `/clear` is the app's, and
+    // handing it to the agent is issue #13 whichever lane it is in.
+    // TODO(BE): the composer still offers pictures and documents here, and a
+    // keystroke cannot carry either. They are deliberately *left in the
+    // composer* rather than sent and lost — the chips staying put is the only
+    // sign the user gets — but the honest fix is for this lane not to offer them.
+    if (_terminalChatId case final chatId?) {
+      unawaited(
+        ref.read(agentTerminalsProvider.notifier).type(chatId, message),
+      );
+      _message.clear();
+      _clearDraft();
+      return;
+    }
     // Everything else goes to the assistant as the sentence it is, including
     // "repeat every 30 minutes and check the deploy". Reading a command out of
     // words was a phrase list that guessed both ways, and the assistant has to
@@ -411,6 +429,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // after.
     ref.read(attachedTerminalsProvider.notifier).clear();
     _clearDraft();
+  }
+
+  /// The chat whose agent is being driven in a terminal right now, or null when
+  /// this chat sends turns the ordinary way.
+  ///
+  /// Read rather than watched: it answers a question about the moment Send was
+  /// pressed, and `ref.watch` outside `build` is not allowed in any case.
+  String? get _terminalChatId {
+    final id = ref.read(chatSessionsProvider).activeId;
+    if (id == null || id.isEmpty) return null;
+    return ref.read(activeChatAgentProvider).runsInTerminal ? id : null;
   }
 
   /// Everything hanging off the composer beside the text, by name — what a
@@ -1095,6 +1124,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // `ref.watch` may only be called during it.
     final workdir = ref.watch(activeChatWorkdirProvider);
     final approval = ref.watch(chatApprovalModeProvider);
+    // A chat whose agent has an interactive CLI is shown *as* that CLI, live —
+    // see [AgentTerminalView]. Not for a chat that has no id yet: the session
+    // belongs to the conversation, and there is no conversation to belong to.
+    final chatAgent = ref.watch(activeChatAgentProvider);
+    final inTerminal =
+        agentMode &&
+        chatAgent.runsInTerminal &&
+        (activeId?.isNotEmpty ?? false);
     // Two ways a file arrives by hand, one landing. [DropTarget] is the one the
     // system hands us — a file dragged in from Finder, which Flutter never sees
     // as a drag at all. [DragTarget] is a file dragged out of the Files panel,
@@ -1133,6 +1170,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           onGoToEngines: () => ref
                               .read(shellSectionProvider.notifier)
                               .select(ShellSection.engines),
+                        )
+                      : inTerminal
+                      ? AgentTerminalView(
+                          chatId: activeId!,
+                          tool: chatAgent,
+                          model: _model.text.trim(),
+                          workdir: workdir,
+                          approval: approval,
+                          network: widget.network,
                         )
                       : isNewChat
                       ? ChatStarters(

@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/agents/logic/adapters/agent_terminal_command.dart';
 import 'package:grid_app/features/agents/logic/adapters/raw_turn_stream.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
-import 'package:grid_app/features/agents/presentation/approval_picker.dart';
+import 'package:grid_app/shared/terminal/terminal_shell.dart';
 import 'package:grid_app/features/agents/logic/agent_server_error.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/raw_agent_argv.dart';
@@ -318,45 +319,102 @@ void main() {
     );
   });
 
-  group('the composer says what the agent can actually do', () {
-    test('an agent with no channel to ask never offers to — the label used to '
-        'promise a card that cannot appear', () {
-      expect(AgentTool.hermes.asksPermission, isTrue);
-      expect(AgentTool.claude.asksPermission, isFalse);
-      expect(AgentTool.codex.asksPermission, isFalse);
-    });
+  group('agentTerminalCommand — the agent CLI, as the user would run it', () {
+    ShellCommand claude({
+      AgentApprovalMode approval = AgentApprovalMode.ask,
+      String? mcpConfigPath,
+    }) => agentTerminalCommand(
+      tool: AgentTool.claude,
+      executable: '/bin/claude',
+      model: 'opus',
+      workdir: '/tmp/project',
+      approval: approval,
+      mcpConfigPath: mcpConfigPath,
+    );
 
-    test('"ask before acting" keeps its words only where something asks', () {
-      expect(approvalLabel(AgentApprovalMode.ask), 'Ask before acting');
-      expect(
-        approvalLabel(AgentApprovalMode.ask, canAsk: false),
-        isNot('Ask before acting'),
-      );
-    });
+    ShellCommand codex({
+      AgentApprovalMode approval = AgentApprovalMode.ask,
+      List<String> config = const [],
+    }) => agentTerminalCommand(
+      tool: AgentTool.codex,
+      executable: '/bin/codex',
+      model: 'qwen3',
+      workdir: '/tmp/project',
+      approval: approval,
+      config: config,
+    );
 
-    test('the detail says what happens instead: it refuses, rather than '
-        'waiting for a yes nobody will be shown', () {
-      final line = approvalDetail(AgentApprovalMode.ask, canAsk: false);
+    test(
+      'runs the REPL, not the one-shot mode: `-p` here would print an answer '
+      'and exit, and there would be nothing to type into',
+      () {
+        expect(claude().arguments, isNot(contains('-p')));
+        expect(codex().arguments, isNot(contains('exec')));
+      },
+    );
 
-      expect(line, contains('refuses'));
-      expect(line.toLowerCase(), isNot(contains('waits for a yes')));
+    test('starts the binary the app resolved, so a machine with two installs '
+        'runs the one the rest of the app talks about', () {
+      expect(claude().executable, '/bin/claude');
+      expect(codex().executable, '/bin/codex');
     });
 
     test(
-      'the two modes that never promised a card read the same either way — '
-      'read-only cannot write and full access does not ask, whoever runs it',
+      'never passes `--skip-git-repo-check` to the interactive Codex — '
+      '`codex --help` does not list it, and an unknown flag kills the session '
+      'before the TUI draws, which reads as a terminal that flashed and died',
       () {
-        for (final mode in [
-          AgentApprovalMode.readOnly,
-          AgentApprovalMode.full,
-        ]) {
-          expect(
-            approvalDetail(mode, canAsk: false),
-            approvalDetail(mode),
-            reason: '${mode.name} should not change with the channel',
-          );
-        }
+        expect(codex().arguments, isNot(contains('--skip-git-repo-check')));
       },
     );
+
+    test('tells Codex which folder is its working root, and hands it the grid '
+        'as `-c` overrides', () {
+      final args = codex(config: const ['model_provider="grid-app"']).arguments;
+
+      expect(args, containsAllInOrder(['-C', '/tmp/project']));
+      expect(args, containsAllInOrder(['-m', 'qwen3']));
+      expect(overrideFor(args, 'model_provider'), 'model_provider="grid-app"');
+    });
+
+    test("the chat's mode reaches both CLIs, so the picker means the same thing "
+        'here as it does in a terminal', () {
+      expect(
+        codex(approval: AgentApprovalMode.readOnly).arguments,
+        containsAllInOrder(['-s', 'read-only']),
+      );
+      expect(
+        claude(approval: AgentApprovalMode.full).arguments,
+        containsAllInOrder(['--permission-mode', 'bypassPermissions']),
+      );
+      // Ask-first passes no mode: interactive Claude Code's own default gate is
+      // the one that stops and asks, which is the whole point of this lane.
+      expect(claude().arguments, isNot(contains('--permission-mode')));
+    });
+
+    test('takes the session schedulers away here too — they die with the '
+        'process whichever way it was started', () {
+      expect(claude().arguments, contains('--disallowedTools'));
+      for (final tool in kClaudeSessionSchedulerTools) {
+        expect(claude().arguments, contains(tool));
+      }
+    });
+
+    test('a missing MCP config drops both flags, as it does for a one-shot '
+        'turn: a path that is not there aborts the session outright', () {
+      expect(claude().arguments, isNot(contains('--mcp-config')));
+      expect(claude().arguments, isNot(contains('--strict-mcp-config')));
+      expect(
+        claude(mcpConfigPath: '/tmp/turn.json').arguments,
+        containsAllInOrder(['--mcp-config', '/tmp/turn.json']),
+      );
+    });
+
+    test('Hermes has no interactive CLI to run, and the capability says so — a '
+        'chat with it must never reach this lane', () {
+      expect(AgentTool.claude.runsInTerminal, isTrue);
+      expect(AgentTool.codex.runsInTerminal, isTrue);
+      expect(AgentTool.hermes.runsInTerminal, isFalse);
+    });
   });
 }

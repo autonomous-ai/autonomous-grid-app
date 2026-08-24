@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
-import '../logic/active_chat_agent.dart';
-import '../logic/agent_catalog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/composer_trigger.dart';
@@ -139,7 +137,7 @@ double _menuMaxHeight(BuildContext context) =>
 /// row that wraps to a third line at the user's font size is not the height it
 /// is on this machine. A flat per-row guess is what put a 70px estimate on rows
 /// that draw ~81 and ~98.
-Size _menuSize(BuildContext context, {required bool canAsk}) {
+Size _menuSize(BuildContext context) {
   final theme = Theme.of(context);
   final scaler = MediaQuery.textScalerOf(context);
   final title = _titleStyle(theme);
@@ -147,24 +145,10 @@ Size _menuSize(BuildContext context, {required bool canAsk}) {
 
   var height = _menuPadding * 2 + _headingHeight(theme, scaler);
   for (final mode in AgentApprovalMode.values) {
-    // The rows the agent cannot ask on carry different sentences, and they are
-    // not the same height — measuring the other set puts the panel off its pill.
     final text =
-        _textHeight(
-          approvalLabel(mode, canAsk: canAsk),
-          title,
-          _detailWidth,
-          scaler,
-          1,
-        ) +
+        _textHeight(approvalLabel(mode), title, _detailWidth, scaler, 1) +
         _titleDetailGap +
-        _textHeight(
-          approvalDetail(mode, canAsk: canAsk),
-          detail,
-          _detailWidth,
-          scaler,
-          null,
-        );
+        _textHeight(approvalDetail(mode), detail, _detailWidth, scaler, null);
     height += _rowOuterPadV * 2 + _rowInnerPad * 2 + math.max(_iconChip, text);
   }
   return Size(_menuWidth, height);
@@ -214,11 +198,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
     _menu.close();
   }
 
-  void _toggleMenu(
-    BuildContext context,
-    MenuController controller, {
-    required bool canAsk,
-  }) {
+  void _toggleMenu(BuildContext context, MenuController controller) {
     if (controller.isOpen) {
       controller.close();
       return;
@@ -227,7 +207,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
       // Positioned, not aligned — see [_menuSize] for why.
       position: anchoredMenuPosition(
         context,
-        menuSize: _menuSize(context, canAsk: canAsk),
+        menuSize: _menuSize(context),
         margin: _menuMargin,
         gap: AppControl.menuGap,
         // The pill sits at the bottom of the window, so the menu opens upward;
@@ -246,10 +226,6 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
     // `appMenuStyle` reads palette tokens; follow theme flips.
     AppTheme.watch(context);
     final current = widget.value;
-    // Whether the agent answering *this* chat has a channel to ask on. It moves
-    // when the user switches agent, so the panel is worded for the one that will
-    // actually run the turn.
-    final canAsk = ref.watch(activeChatAgentProvider).asksPermission;
     return MenuAnchor(
       controller: _menu,
       // The shared recipe — see the same note on the agent pill beside this one
@@ -266,13 +242,12 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
           _ModeItem(
             mode: mode,
             selected: mode == current,
-            canAsk: canAsk,
             onTap: () => _select(mode),
           ),
       ],
       builder: (context, controller, _) => ComposerTrigger(
-        label: approvalLabel(current, canAsk: canAsk),
-        tooltip: approvalDetail(current, canAsk: canAsk),
+        label: approvalLabel(current),
+        tooltip: approvalDetail(current),
         // The icon alone carries the mode (orange for Full access); the pill
         // itself stays neutral, like every other control in the composer.
         leading: Icon(
@@ -280,7 +255,7 @@ class _ApprovalPickerState extends ConsumerState<ApprovalPicker> {
           size: 13,
           color: approvalColor(current),
         ),
-        onTap: () => _toggleMenu(context, controller, canAsk: canAsk),
+        onTap: () => _toggleMenu(context, controller),
       ),
     );
   }
@@ -322,15 +297,11 @@ class _ModeItem extends StatefulWidget {
   const _ModeItem({
     required this.mode,
     required this.selected,
-    required this.canAsk,
     required this.onTap,
   });
 
   final AgentApprovalMode mode;
   final bool selected;
-
-  /// Whether this chat's agent can stop and ask — see [approvalDetail].
-  final bool canAsk;
   final VoidCallback onTap;
 
   @override
@@ -396,7 +367,7 @@ class _ModeItemState extends State<_ModeItem> {
                       children: [
                         Flexible(
                           child: Text(
-                            approvalLabel(mode, canAsk: widget.canAsk),
+                            approvalLabel(mode),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             // The same styles [_menuSize] lays out to place the
@@ -417,7 +388,7 @@ class _ModeItemState extends State<_ModeItem> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      approvalDetail(mode, canAsk: widget.canAsk),
+                      approvalDetail(mode),
                       style: _detailStyle(
                         theme,
                       ).copyWith(color: AppPalette.textSecondary),
@@ -531,47 +502,24 @@ Color approvalColor(AgentApprovalMode mode) => switch (mode) {
 };
 
 /// The name of a mode, as the user reads it in the composer.
-///
-/// [canAsk] is [AgentTool.asksPermission] for the agent this chat runs. Only one
-/// label moves with it, and it has to: "Ask before acting" beside an agent with
-/// no way to ask names a card the user will wait for and never see.
-String approvalLabel(AgentApprovalMode mode, {bool canAsk = true}) =>
-    switch (mode) {
-      AgentApprovalMode.readOnly => 'Read only',
-      AgentApprovalMode.plan => 'Plan first',
-      AgentApprovalMode.ask =>
-        canAsk ? 'Ask before acting' : 'Safe actions only',
-      AgentApprovalMode.full => 'Full access',
-    };
+String approvalLabel(AgentApprovalMode mode) => switch (mode) {
+  AgentApprovalMode.readOnly => 'Read only',
+  AgentApprovalMode.plan => 'Plan first',
+  AgentApprovalMode.ask => 'Ask before acting',
+  AgentApprovalMode.full => 'Full access',
+};
 
-/// What the mode actually means — no euphemisms for the one that stops asking,
-/// and none for what an agent that cannot ask does instead.
-///
-/// The two middle modes are the ones [canAsk] changes, because they are the two
-/// that used to promise a card. Without one the agent decides for itself and
-/// refuses what it won't run unattended, which is a real gate and a weaker one:
-/// say so rather than let the user read the sentence written for Hermes.
-String approvalDetail(
-  AgentApprovalMode mode, {
-  bool canAsk = true,
-}) => switch (mode) {
+/// What the mode actually means — no euphemisms for the one that stops asking.
+String approvalDetail(AgentApprovalMode mode) => switch (mode) {
   AgentApprovalMode.readOnly =>
     'It can read your project files, but never change them or run anything.',
-  AgentApprovalMode.plan when canAsk =>
-    'It shows you a plan first and does nothing until you approve it, then '
-        'carries it out asking before each step.',
   AgentApprovalMode.plan =>
     'It shows you a plan first and does nothing until you approve it, then '
-        'carries it out on its own.',
-  AgentApprovalMode.ask when canAsk =>
-    'It shows you each command and each change to a file, and waits for a '
-        'yes.',
+        'carries it out asking before each step.',
   AgentApprovalMode.ask =>
-    'It does the plainly safe things itself and refuses anything riskier, '
-        'saying why in its answer. Nothing stops to ask you.',
+    'It shows you each command and each change to a file, and waits for a yes.',
   AgentApprovalMode.full =>
-    'It runs commands and changes your files without asking. Nothing to '
-        'undo.',
+    'It runs commands and changes your files without asking. Nothing to undo.',
 };
 
 IconData approvalIcon(AgentApprovalMode mode) => switch (mode) {

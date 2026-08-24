@@ -16,6 +16,7 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../agents/logic/agent_changes.dart';
 import '../../agents/logic/agent_questions.dart';
+import '../../agents/logic/agent_terminals_controller.dart';
 import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/hermes_vision_controller.dart';
@@ -883,6 +884,9 @@ class ChatSessionsController extends _ChatSessions
     ref.read(agentChangesProvider.notifier).forget(id);
     ref.read(agentRunsProvider.notifier).forget(id);
     ref.read(agentQuestionsProvider.notifier).clear(id);
+    // And the agent's own CLI, if this chat was driving one: a pty nobody can
+    // see any more is a process the user has no way left to stop.
+    ref.read(agentTerminalsProvider.notifier).end(id);
     final remaining = [
       for (final c in state.conversations)
         if (c.id != id) c,

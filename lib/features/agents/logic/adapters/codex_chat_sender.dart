@@ -7,19 +7,16 @@ import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/cli/raw_agent_argv.dart';
 import '../../../../infrastructure/cli/raw_agent_service.dart';
-import '../../../../infrastructure/mcp/grid_mcp_provider.dart';
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../../shared/copy/setup_hints.dart';
-import '../../../network/logic/app_guide_snippets.dart';
 import '../../../playground/logic/chat_message.dart';
 import '../../../playground/logic/chat_sender.dart';
 import '../../../playground/logic/playground_request.dart';
 import '../agent_prompt.dart';
 import '../agent_providers.dart';
 import '../agent_turn_log.dart';
-import '../model_context_window.dart';
-import 'agent_turn_env.dart';
+import 'agent_grid_setup.dart';
 import 'codex_tool.dart';
 import 'raw_turn_stream.dart';
 
@@ -105,16 +102,18 @@ class CodexChatSender implements ChatSender {
         ? AgentApprovalMode.readOnly
         : (chosen == AgentApprovalMode.plan ? AgentApprovalMode.ask : chosen);
 
-    // Only a figure something actually reported — never the assumption. See
-    // [knownModelContextWindowProvider] for why this lane wants the nullable one.
-    final contextWindow = _ref.read(knownModelContextWindowProvider(model));
     final root = workdir ?? _ref.read(agentWorkspaceDirProvider).path;
 
-    // Grid's tools for this turn. Started here rather than at launch so a run
-    // that never reaches an agent never opens a socket.
-    final gridMcp = _ref.read(gridMcpServerProvider);
-    await gridMcp.start();
-    final gridMcpUrl = gridMcp.url;
+    // The grid, the model and Grid's own tools — the same preparation the
+    // terminal lane runs, so a chat and a terminal answer on the same grid.
+    // Started here rather than at launch so a run that never reaches an agent
+    // never opens a socket.
+    final grid = await codexGridSetup(
+      _ref,
+      network: network,
+      model: model,
+      conversationId: conversationId,
+    );
 
     // The whole conversation, every turn: with no thread to resume there is no
     // "what it has already seen" to send only the rest of.
@@ -129,32 +128,8 @@ class CodexChatSender implements ChatSender {
       prompt: prompt,
       model: model,
       approval: mode,
-      // The grid rides on this run's own command line, and its key in the child
-      // process's environment. Codex flies blind on a grid model otherwise: its
-      // bundled catalog only carries the `gpt-5.*` slugs, so a grid id has no
-      // window in it at all and it summarizes on a default it picked for a model
-      // it isn't talking to.
-      config: [
-        ...codexGridOverrides(
-          base: network.relayBaseUrl,
-          model: model,
-          contextWindow: contextWindow,
-          compactAt: contextWindow == null
-              ? null
-              : agentContextCeiling(contextWindow),
-        ),
-        // Grid's own tools, as `-c` overrides for this run alone. Codex has no
-        // per-process lever for *skills* — `$CODEX_HOME/skills` is the only path
-        // it reads and moving CODEX_HOME takes the user's login with it — so
-        // this is the whole reason the cards became an MCP server.
-        if (gridMcpUrl != null) ...gridMcpCodexOverrides(url: gridMcpUrl),
-      ],
-      environment: {
-        kCodexAppApiKeyEnv: network.relayApiKey,
-        ...gridTurnEnv(conversationId),
-        if (gridMcpUrl != null && conversationId != null)
-          kGridMcpTokenEnv: gridMcp.mintTurnToken(conversationId),
-      },
+      config: grid.config,
+      environment: grid.environment,
     );
   }
 

@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/logging/app_log.dart';
-import 'terminal_session.dart';
+import '../../../shared/terminal/terminal_session.dart';
 
 /// The terminals the app has open, one per panel tab that asked for one.
 @immutable
