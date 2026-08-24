@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_pty/flutter_pty.dart';
 import 'package:xterm/xterm.dart';
 
+import '../../infrastructure/cli/host_environment.dart';
 import 'terminal_shell.dart';
 
 /// What the shell behind a terminal is doing.

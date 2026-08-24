@@ -3,6 +3,7 @@ import 'package:xterm/xterm.dart';
 import 'package:grid_app/features/agents/logic/adapters/agent_terminal_command.dart';
 import 'package:grid_app/features/agents/logic/adapters/raw_turn_stream.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
+import 'package:grid_app/infrastructure/cli/host_environment.dart';
 import 'package:grid_app/shared/terminal/terminal_shell.dart';
 import 'package:grid_app/shared/terminal/terminal_text.dart';
 import 'package:grid_app/features/agents/logic/agent_server_error.dart';
@@ -454,6 +455,45 @@ void main() {
     test('a directory argument ending in a separator doubles it, or the '
         'separator escapes the quote that closes the argument', () {
       expect(windowsArgument('C:\\a folder\\'), r'"C:\a folder\\"');
+    });
+  });
+
+  group('withoutInheritedAgentSession — a chat opens a session of its own', () {
+    test("another Claude Code session's name and message pipe do not travel "
+        'into the CLI this app starts', () {
+      final scrubbed = withoutInheritedAgentSession(const {
+        'CLAUDE_CODE_CHILD_SESSION': '1',
+        'CLAUDE_CODE_SESSION_ID': '999f9db5-06ca-4b92-a0f0-2207cb5bae26',
+        'CLAUDE_CODE_MESSAGING_SOCKET': r'\\.\pipe\LOCAL\cc-msg-baadf3',
+        'CLAUDE_CODE_MESSAGING_TOKEN': '2e91a4256e5094954a6215101b49de9c',
+        'CLAUDECODE': '1',
+      });
+      expect(scrubbed, isEmpty);
+    });
+
+    test('everything else is left exactly where it was, the grid settings the '
+        'CLI actually answers from included', () {
+      final scrubbed = withoutInheritedAgentSession(const {
+        'PATH': '/usr/bin',
+        'ANTHROPIC_BASE_URL': 'http://127.0.0.1:8787',
+        'ANTHROPIC_MODEL': 'DeepSeek-V4-Flash-0731',
+        'CLAUDE_CODE_ENTRYPOINT': 'claude-vscode',
+      });
+      expect(scrubbed, {
+        'PATH': '/usr/bin',
+        'ANTHROPIC_BASE_URL': 'http://127.0.0.1:8787',
+        'ANTHROPIC_MODEL': 'DeepSeek-V4-Flash-0731',
+      });
+    });
+
+    test('a variable that only configures the CLI stays, because a user is as '
+        'likely to have exported it on purpose', () {
+      expect(
+        withoutInheritedAgentSession(const {
+          'CLAUDE_CODE_AUTO_COMPACT_WINDOW': '200000',
+        }),
+        {'CLAUDE_CODE_AUTO_COMPACT_WINDOW': '200000'},
+      );
     });
   });
 

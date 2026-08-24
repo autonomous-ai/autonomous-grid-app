@@ -131,7 +131,10 @@ class _RawAgentTurn {
       // The packaged app inherits a minimal PATH, so a CLI that shells out to
       // git or node finds nothing without this (see [HostEnvironment]).
       environment: {
-        ...Platform.environment,
+        // Minus whichever Claude Code session started the app, if one did — the
+        // turn starting here is not that session (see
+        // [withoutInheritedAgentSession]).
+        ...withoutInheritedAgentSession(Platform.environment),
         'PATH': HostEnvironment.path(),
         ...environment,
       }..removeWhere((name, _) => dropEnvironment.contains(name)),
