@@ -66,6 +66,7 @@ class ChatMessage {
     this.modelShares = const [],
     this.took,
     this.firstToken,
+    this.sentAt,
     this.sentBy = TurnOrigin.user,
   });
 
@@ -167,6 +168,13 @@ class ChatMessage {
   /// replies saved before this was recorded.
   final Duration? firstToken;
 
+  /// When this turn was sent or finished, for the transcript's timestamp.
+  ///
+  /// Null on messages saved before timestamps existed and on synthetic turns
+  /// whose source cannot say when they happened. The UI omits the label rather
+  /// than pretending an old message was sent when the chat was reopened.
+  final DateTime? sentAt;
+
   ChatMessage copyWith({
     ChatRole? role,
     String? text,
@@ -182,6 +190,7 @@ class ChatMessage {
     List<ModelShare>? modelShares,
     Duration? took,
     Duration? firstToken,
+    DateTime? sentAt,
     TurnOrigin? sentBy,
   }) => ChatMessage(
     role: role ?? this.role,
@@ -198,6 +207,7 @@ class ChatMessage {
     modelShares: modelShares ?? this.modelShares,
     took: took ?? this.took,
     firstToken: firstToken ?? this.firstToken,
+    sentAt: sentAt ?? this.sentAt,
     sentBy: sentBy ?? this.sentBy,
   );
 }

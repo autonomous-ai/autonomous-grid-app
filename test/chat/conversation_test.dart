@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_title.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
+import 'package:grid_app/features/chat/logic/import/parsed_session.dart';
 import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
@@ -193,6 +194,41 @@ void main() {
       );
     });
 
+    test('round-trips message times so reopened chats still say when each turn '
+        'was sent', () {
+      final sentAt = DateTime(2026, 8, 24, 21, 17);
+      final original = _conversation(
+        messages: [
+          ChatMessage(
+            role: ChatRole.user,
+            text: 'When was this?',
+            sentAt: sentAt,
+          ),
+        ],
+      );
+
+      final json = original.toJson();
+      final stored = (json['messages'] as List).single as Map<String, dynamic>;
+      final restored = Conversation.fromJson(json);
+
+      expect(stored['sent_at'], sentAt.toUtc().toIso8601String());
+      expect(restored.messages.single.sentAt, sentAt);
+    });
+
+    test('keeps legacy or malformed message times unknown instead of inventing '
+        'one when a chat is reopened', () {
+      final legacy = _conversation(
+        messages: const [ChatMessage(role: ChatRole.user, text: 'Old turn')],
+      ).toJson();
+      final malformed = _conversation().toJson()
+        ..['messages'] = [
+          {'role': 'assistant', 'text': 'Broken stamp', 'sent_at': 'later'},
+        ];
+
+      expect(Conversation.fromJson(legacy).messages.single.sentAt, isNull);
+      expect(Conversation.fromJson(malformed).messages.single.sentAt, isNull);
+    });
+
     test('a chat saved before turns were timed reloads without one, rather '
         'than claiming it was instant', () {
       final json = _conversation(
@@ -320,6 +356,20 @@ void main() {
       expect(restored.messages, isEmpty);
       expect(restored.title, kNewConversationTitle);
     });
+  });
+
+  test('an imported turn keeps the final source timestamp when adjacent event '
+      'pieces are merged', () {
+    final first = DateTime.utc(2026, 8, 24, 10);
+    final finished = DateTime.utc(2026, 8, 24, 10, 2);
+    final drafts = mergeDrafts([
+      TurnDraft(ChatRole.assistant, sentAt: first)..say('First'),
+      TurnDraft(ChatRole.assistant, sentAt: finished)..say('Second'),
+    ]);
+
+    final result = finishDrafts(drafts, agentId: 'codex');
+
+    expect(result.messages.single.sentAt, finished);
   });
 
   group('deriveConversationTitle', () {

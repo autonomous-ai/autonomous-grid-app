@@ -388,6 +388,8 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   if (message.took != null) 'took_ms': message.took!.inMilliseconds,
   if (message.firstToken != null)
     'first_token_ms': message.firstToken!.inMilliseconds,
+  if (message.sentAt != null)
+    'sent_at': message.sentAt!.toUtc().toIso8601String(),
   // Written only for the turns the app sent, so an ordinary chat's file is
   // byte-identical to what every build before this wrote — and so a transcript
   // saved by an older one reads back as the user's own words, which is what it
@@ -454,6 +456,7 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
     firstToken: json['first_token_ms'] is num
         ? Duration(milliseconds: (json['first_token_ms'] as num).toInt())
         : null,
+    sentAt: _parseNullableDate(json['sent_at']),
     sentBy: _parseOrigin(json['sent_by']),
   );
 }

@@ -76,7 +76,12 @@ ParsedSession? parseCodexSession({
           firstAt ??= at;
           lastAt = at;
         }
-        final draft = _itemToDraft(payload, model: model, pending: pending);
+        final draft = _itemToDraft(
+          payload,
+          model: model,
+          pending: pending,
+          sentAt: at,
+        );
         if (draft == null) continue;
         toolCalls += draft.items.whereType<StepDraft>().length;
         drafts.add(draft);
@@ -117,6 +122,7 @@ TurnDraft? _itemToDraft(
   Map<String, dynamic> payload, {
   required String? model,
   required Map<String, StepDraft> pending,
+  required DateTime? sentAt,
 }) {
   switch (payload['type']) {
     case 'message':
@@ -127,14 +133,16 @@ TurnDraft? _itemToDraft(
       final text = _messageText(payload['content']);
       if (text.isEmpty) return null;
       return role == 'user'
-          ? (TurnDraft(ChatRole.user)..say(text))
-          : (TurnDraft(ChatRole.assistant, model: model)..say(text));
+          ? (TurnDraft(ChatRole.user, sentAt: sentAt)..say(text))
+          : (TurnDraft(ChatRole.assistant, model: model, sentAt: sentAt)
+              ..say(text));
 
     case 'function_call':
       return _stepDraft(
         payload,
         model: model,
         pending: pending,
+        sentAt: sentAt,
         tool: _stringOrNull(payload['name']) ?? 'tool',
         request: _requestText(payload['arguments']),
       );
@@ -144,6 +152,7 @@ TurnDraft? _itemToDraft(
         payload,
         model: model,
         pending: pending,
+        sentAt: sentAt,
         tool: _stringOrNull(payload['name']) ?? 'tool',
         request: _stringOrNull(payload['input']),
       );
@@ -154,6 +163,7 @@ TurnDraft? _itemToDraft(
         payload,
         model: model,
         pending: pending,
+        sentAt: sentAt,
         tool: 'tool search',
         request: arguments is Map<String, dynamic>
             ? _stringOrNull(arguments['query'])
@@ -180,6 +190,7 @@ TurnDraft _stepDraft(
   Map<String, dynamic> payload, {
   required String? model,
   required Map<String, StepDraft> pending,
+  required DateTime? sentAt,
   required String tool,
   required String? request,
 }) {
@@ -192,7 +203,7 @@ TurnDraft _stepDraft(
     request: request,
   );
   if (id.isNotEmpty) pending[id] = step;
-  return TurnDraft(ChatRole.assistant, model: model)..ran(step);
+  return TurnDraft(ChatRole.assistant, model: model, sentAt: sentAt)..ran(step);
 }
 
 /// The readable text of a message's content blocks.

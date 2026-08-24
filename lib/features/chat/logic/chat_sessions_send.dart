@@ -504,9 +504,9 @@ mixin _ChatSend on _ChatSessions {
     // working bubble can show it changing while a long task runs.
     ref.read(turnModelUsageProvider.notifier).begin(id, network);
 
-    // Who answered, with what, where, and how long it took — the footer's four
-    // facts, stamped onto whatever the turn produced (a whole reply, or the
-    // part-answer a failure left behind).
+    // Who answered, with what, where, when, and how long it took — stamped onto
+    // whatever the turn produced (a whole reply, or the part-answer a failure
+    // left behind).
     ChatMessage stamp(ChatMessage reply) => reply.copyWith(
       // And how the turn went, so the finished transcript keeps the order the
       // user watched it in. Here rather than in each sender: this is the one
@@ -524,6 +524,7 @@ mixin _ChatSend on _ChatSessions {
       modelShares: ref.read(turnModelUsageProvider)[id] ?? const [],
       took: clock.elapsed,
       firstToken: firstToken,
+      sentAt: DateTime.now(),
     );
 
     final updates = _senderFor(viaAgent, agent).send(
@@ -944,6 +945,7 @@ mixin _ChatSend on _ChatSessions {
           ChatMessage(
             role: ChatRole.assistant,
             text: partial,
+            sentAt: DateTime.now(),
             // The steps it ran before it was stopped are half the account of
             // what happened — a turn cut off after six commands and one cut off
             // before it did anything are different turns, and the transcript is

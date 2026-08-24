@@ -214,6 +214,7 @@ Future<ChatMessage> buildUserTurn({
       text: text,
       files: files,
       contexts: contexts,
+      sentAt: DateTime.now(),
       sentBy: origin,
     );
   }
@@ -226,6 +227,7 @@ Future<ChatMessage> buildUserTurn({
     media: media,
     files: files,
     contexts: contexts,
+    sentAt: DateTime.now(),
     sentBy: origin,
   );
 }

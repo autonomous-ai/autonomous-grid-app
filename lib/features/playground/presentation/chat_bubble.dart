@@ -78,7 +78,11 @@ class ChatBubble extends StatelessWidget {
                   modelShares: message.modelShares,
                   took: message.took,
                   firstToken: message.firstToken,
+                  sentAt: message.sentAt,
                 ),
+              ] else if (message.sentAt != null) ...[
+                const SizedBox(height: 8),
+                _MessageTimestamp(sentAt: message.sentAt!),
               ],
             ],
           ),
@@ -146,6 +150,10 @@ class ChatBubble extends StatelessWidget {
               media: message.media,
               color: AppPalette.textPrimary,
             ),
+            if (message.sentAt != null) ...[
+              const SizedBox(height: 6),
+              _MessageTimestamp(sentAt: message.sentAt!),
+            ],
           ],
         ),
       ),
@@ -153,14 +161,16 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
-/// A quiet footer under an assistant reply — who answered, with which model, on
-/// whose machine, and how long it took. Faint by design: it's a caption on the
-/// answer, not part of it.
+/// A quiet footer under an assistant reply — who answered, when, with which
+/// model, on whose machine, and how long it took.
 ///
-/// The four belong together. On a grid the same prompt is seconds on one machine
-/// and minutes on another, and the same model reads differently through an agent
-/// that can open your files than through a bare relay call — so any one of them
-/// alone leaves "why was that slow?" and "who read my prompt?" unanswerable.
+/// Faint by design: it's a caption on the answer, not part of it.
+///
+/// These facts belong together. On a grid the same prompt is seconds on one
+/// machine and minutes on another, and the same model reads differently through
+/// an agent that can open your files than through a bare relay call — so any
+/// fact alone leaves "when was this?", "why was that slow?", or "who read my
+/// prompt?" unanswered.
 class _ReplyFooter extends StatelessWidget {
   const _ReplyFooter({
     required this.model,
@@ -169,6 +179,7 @@ class _ReplyFooter extends StatelessWidget {
     this.modelShares = const [],
     this.took,
     this.firstToken,
+    this.sentAt,
   });
 
   final String model;
@@ -181,7 +192,8 @@ class _ReplyFooter extends StatelessWidget {
   /// [ChatMessage.node]. Left out rather than guessed at.
   final String? node;
 
-  /// Which models actually answered, busiest first — see [ChatMessage.modelShares].
+  /// Which models actually answered, busiest first — see
+  /// [ChatMessage.modelShares].
   final List<ModelShare> modelShares;
 
   /// How long the answer took, or null on a reply saved before the app recorded
@@ -192,6 +204,10 @@ class _ReplyFooter extends StatelessWidget {
   /// there was no first word to time — the total then stands alone rather than
   /// repeating itself under a second label.
   final Duration? firstToken;
+
+  /// When this reply finished, or null for a transcript saved before the app
+  /// recorded message times.
+  final DateTime? sentAt;
 
   @override
   Widget build(BuildContext context) {
@@ -216,9 +232,11 @@ class _ReplyFooter extends StatelessWidget {
         // as how long the whole answer took.
         if (took != null && firstToken != null)
           ..._segment('first token ${formatTurnDuration(firstToken!)}', style),
+        if (sentAt != null)
+          ..._segment(_messageTimestamp(context, sentAt!), style),
       ],
     );
-    return Tooltip(message: _plainSentence(), child: row);
+    return Tooltip(message: _plainSentence(context), child: row);
   }
 
   /// Who, what and where, in that order — the answer's provenance, narrowing
@@ -244,7 +262,7 @@ class _ReplyFooter extends StatelessWidget {
   /// The footer spelled out for the hover, where nothing is ellipsised and
   /// "first token" needn't stay jargon — the term people compare models by, on a
   /// screen built for people who don't have it (§5).
-  String _plainSentence() {
+  String _plainSentence(BuildContext context) {
     final who = _agentName == null ? 'Answered' : '$_agentName answered';
     final where = [
       '$who with ${modelDisplayLabel(model)}',
@@ -255,10 +273,14 @@ class _ReplyFooter extends StatelessWidget {
     final breakdown = modelShares.isEmpty
         ? ''
         : '\n${modelShareDetail(modelShares, label: modelShortLabel)}';
-    if (took == null || firstToken == null) return '$where.$breakdown';
-    return '$where.$breakdown\nStarted answering after '
-        '${formatTurnDuration(firstToken!)}, '
-        'finished in ${formatTurnDuration(took!)}.';
+    final timing = took == null || firstToken == null
+        ? ''
+        : '\nStarted answering after ${formatTurnDuration(firstToken!)}, '
+              'finished in ${formatTurnDuration(took!)}.';
+    final stamp = sentAt == null
+        ? ''
+        : '\nSent ${_messageTimestampDetail(context, sentAt!)}.';
+    return '$where.$breakdown$timing$stamp';
   }
 
   /// A `·` and one more reading, so the footer's parts stay evenly spaced
@@ -269,6 +291,45 @@ class _ReplyFooter extends StatelessWidget {
     const SizedBox(width: 6),
     Text(text, style: style),
   ];
+}
+
+/// A message time without provenance beside it, used on user and synthetic
+/// turns. Assistant replies with provenance include the same label in their
+/// footer so the transcript keeps one quiet metadata line per message.
+class _MessageTimestamp extends StatelessWidget {
+  const _MessageTimestamp({required this.sentAt});
+
+  final DateTime sentAt;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Tooltip(
+      message: 'Sent ${_messageTimestampDetail(context, sentAt)}.',
+      child: Text(
+        _messageTimestamp(context, sentAt),
+        style: TextStyle(fontSize: 11.5, color: AppPalette.textFaint),
+      ),
+    );
+  }
+}
+
+/// Short on today's messages; includes the date once time alone is ambiguous.
+String _messageTimestamp(BuildContext context, DateTime sentAt) {
+  final local = sentAt.toLocal();
+  final localizations = MaterialLocalizations.of(context);
+  final time = localizations.formatTimeOfDay(TimeOfDay.fromDateTime(local));
+  if (DateUtils.isSameDay(local, DateTime.now())) return time;
+  return '${localizations.formatShortDate(local)}, $time';
+}
+
+/// The unabridged date behind a timestamp's tooltip.
+String _messageTimestampDetail(BuildContext context, DateTime sentAt) {
+  final local = sentAt.toLocal();
+  final localizations = MaterialLocalizations.of(context);
+  final date = localizations.formatFullDate(local);
+  final time = localizations.formatTimeOfDay(TimeOfDay.fromDateTime(local));
+  return '$date at $time';
 }
 
 /// A live progress bubble while a media generation streams — percent plus the

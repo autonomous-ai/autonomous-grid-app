@@ -989,7 +989,11 @@ class ChatSessionsController extends _ChatSessions
     if (text.trim().isEmpty) return;
 
     final existing = _find(id);
-    final message = ChatMessage(role: ChatRole.assistant, text: text.trim());
+    final message = ChatMessage(
+      role: ChatRole.assistant,
+      text: text.trim(),
+      sentAt: DateTime.now(),
+    );
     final conversation =
         (existing ??
                 Conversation(

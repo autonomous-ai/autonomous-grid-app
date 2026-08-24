@@ -577,6 +577,7 @@ class _RenameChatDialogState extends State<_RenameChatDialog> {
               hint: 'What this chat is about',
               autofocus: true,
               onChanged: (_) => setState(() {}),
+              onSubmitted: (_) => _submit(),
             ),
           ],
         ),
