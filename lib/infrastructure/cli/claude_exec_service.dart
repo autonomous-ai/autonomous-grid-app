@@ -240,6 +240,24 @@ List<String> claudeExecArgs({
   if (resumeSessionId != null) ...['--resume', resumeSessionId],
 ];
 
+/// The environment one Claude Code turn runs in: what every agent Grid spawns
+/// inherits ([HostEnvironment.agentEnvironment]), with this turn's own
+/// [environment] over it, and then [dropEnvironment] taken back out.
+///
+/// Pure, and unit-tested, for the same reason [claudeExecArgs] is: a variable
+/// that never reaches the turn fails silently, because nothing on either side
+/// treats a missing one as an error.
+///
+/// The removal runs **last**, so a name the turn must not carry is gone whether
+/// it came from this process or from the turn's own map — which is the point on
+/// the extension lane, where the relay's credentials must not be present at all.
+Map<String, String> claudeExecEnvironment({
+  Map<String, String> environment = const {},
+  Set<String> dropEnvironment = const {},
+}) =>
+    {...HostEnvironment.agentEnvironment(), ...environment}
+      ..removeWhere((name, _) => dropEnvironment.contains(name));
+
 /// How long a finished turn's process is given to exit on its own.
 ///
 /// A turn is a `claude -p` that should end with its answer, and the app closes
@@ -354,11 +372,10 @@ class _ClaudeExecTurn {
         withoutServerWebTools: withoutServerWebTools,
       ),
       workingDirectory: workdir,
-      environment: {
-        ...Platform.environment,
-        'PATH': HostEnvironment.path(),
-        ...environment,
-      }..removeWhere((name, _) => dropEnvironment.contains(name)),
+      environment: claudeExecEnvironment(
+        environment: environment,
+        dropEnvironment: dropEnvironment,
+      ),
     ).then(_onStarted).catchError(_onStartError);
     return ClaudeExecRun(
       events: _events.stream,
