@@ -45,6 +45,7 @@ class _FakeChatTransport implements ChatTransport {
 
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,
@@ -70,6 +71,7 @@ class _DeltaTransport implements ChatTransport {
 
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,

@@ -62,12 +62,17 @@ abstract interface class ChatTransport {
   /// `X-Grid-Conversation` header — the relay's hook for attributing which
   /// model(s) answered a given conversation turn. Null for callers with no
   /// conversation of their own (a one-off skill generation, the Playground).
+  ///
+  /// [turnId], when non-null and non-empty, rides as the `X-Request-Id` header
+  /// — the per-turn id the app stamps so `/usage/turn/{id}` can count exactly
+  /// what served that one turn. Same null rule.
   Stream<ChatStreamEvent> stream({
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
     String? conversationId,
+    String? turnId,
   });
 }
 
@@ -116,6 +121,7 @@ class HttpChatTransport implements ChatTransport {
     required String model,
     required List<Map<String, dynamic>> messages,
     String? conversationId,
+    String? turnId,
   }) async* {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
     try {
@@ -127,6 +133,9 @@ class HttpChatTransport implements ChatTransport {
       }
       if (conversationId != null && conversationId.isNotEmpty) {
         request.headers.set('X-Grid-Conversation', conversationId);
+      }
+      if (turnId != null && turnId.isNotEmpty) {
+        request.headers.set('X-Request-Id', turnId);
       }
       request.add(
         utf8.encode(

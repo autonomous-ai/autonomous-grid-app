@@ -147,6 +147,7 @@ class _FakeTransport implements PanelTransport {
 class _SilentTransport implements ChatTransport {
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,
@@ -183,6 +184,7 @@ class _OneShotModel implements ChatTransport {
 
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,

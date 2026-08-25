@@ -29,21 +29,20 @@ Future<RoutingGroup?> showRoutingSetupDialog(
 /// unconstrained hands the width to whichever string is longest.
 const double _dialogWidth = 940;
 
-/// The models pinned as Fixed Brute Force proposers. Floor is three distinct
-/// models — a "Brute Force" that fans out to one or two isn't brute force — the
-/// ceiling is unbounded (it follows however many models the grid serves; the
-/// backend no longer caps it).
-const int _kMinModels = 3;
+/// The models pinned as Fixed Brute Force proposers. Floor is two distinct
+/// models — one proposer writes the draft, the other the grid picks to answer —
+/// the ceiling is unbounded (it follows however many models the grid serves;
+/// the backend no longer caps it).
+const int _kMinModels = 2;
 
 /// Distinct-model floors for the Dynamic/Feedback pools: Brute Force keeps at
-/// least three distinct models available; Feedback Loop needs at least two
+/// least two distinct models available; Feedback Loop needs at least two
 /// (a worker and a fully different judge).
-const int _kMinBrutePool = 3;
+const int _kMinBrutePool = 2;
 const int _kMinJudgePool = 2;
 
 /// Lowest the actual fan-out (steps) may go. The pool has to hold at least
-/// three models, but only two of them need to run — the pool floor and the
-/// steps floor are different numbers.
+/// two models, and both need to run — the pool floor and the steps floor meet.
 const int _kMinBruteProposers = 2;
 
 /// The modal shown the first time a chat picks routing: starts from whatever

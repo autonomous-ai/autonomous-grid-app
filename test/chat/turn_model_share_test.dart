@@ -56,6 +56,27 @@ void main() {
       expect(modelShareLabel([_share('qwen', 1)], label: _plain), isNull);
     });
 
+    test('auto reveals the lone model it routed to even when it answered once',
+        () {
+      // The wire model "auto" is a routing alias, not the model spent; the
+      // caller cannot supply the resolved name, so it must be shown rather
+      // than hidden as an "answered with auto".
+      expect(
+        modelShareLabel([_share('Qwen3.8-27B', 1)],
+            label: _plain, wireModel: 'auto'),
+        'Qwen3.8-27B ×1',
+      );
+    });
+
+    test('pinned lone model once stays hidden (the bubble already names it)',
+        () {
+      expect(
+        modelShareLabel([_share('deepseek', 1)],
+            label: _plain, wireModel: 'deepseek'),
+        isNull,
+      );
+    });
+
     test('nothing recorded stays null so the caller keeps its own label', () {
       expect(modelShareLabel(const [], label: _plain), isNull);
     });

@@ -269,6 +269,7 @@ class DefaultChatSender implements ChatSender {
         model: model,
         history: history,
         conversationId: conversationId,
+        turnId: turnId,
       );
     }
 
@@ -292,6 +293,7 @@ class DefaultChatSender implements ChatSender {
           model: model,
           history: history,
           conversationId: conversationId,
+          turnId: turnId,
         );
       case PlaygroundModality.image:
         final edit = attachments.isNotEmpty;
@@ -328,6 +330,7 @@ class DefaultChatSender implements ChatSender {
     required String model,
     required List<ChatMessage> history,
     String? conversationId,
+    String? turnId,
   }) async* {
     final messages = _messagesFor(history);
     final log = _ref.read(commandLogProvider.notifier);
@@ -351,6 +354,7 @@ class DefaultChatSender implements ChatSender {
               model: model,
               messages: messages,
               conversationId: conversationId,
+              turnId: turnId,
             )) {
       switch (event) {
         case ChatDelta(:final text):
