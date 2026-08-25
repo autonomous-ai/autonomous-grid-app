@@ -11,6 +11,7 @@ import '../widgets/app_menu_row.dart';
 import '../widgets/labeled_field.dart';
 import '../widgets/soft_action_button.dart';
 import 'terminal_metrics.dart';
+import 'terminal_ime_input.dart';
 import 'terminal_palette.dart';
 import 'terminal_session.dart';
 import 'terminal_text.dart';
@@ -305,19 +306,28 @@ class _ScreenState extends State<_Screen> {
           metrics: widget.metrics,
           background: theme.background,
           session: session,
-          child: TerminalView(
-            session.terminal,
-            controller: session.controller,
+          child: ImeTerminalInput(
             focusNode: _focus,
-            theme: theme,
-            // The app's own code face, at the size and on the line the metrics
-            // set — so a path in a Terminal tab is the same width as the same
-            // path in a chat message, and a CLI drawing a TUI gets the leading
-            // a terminal app would have given it.
-            textStyle: widget.metrics.style,
-            padding: widget.metrics.padding,
-            onSecondaryTapDown: (details, _) =>
-                unawaited(_secondaryTap(details.localPosition)),
+            onInput: session.terminal.textInput,
+            child: TerminalView(
+              session.terminal,
+              controller: session.controller,
+              focusNode: _focus,
+              theme: theme,
+              // The text half of the keyboard is [ImeTerminalInput]'s, not
+              // xterm's: its own can only append, so Vietnamese Telex — which
+              // rewrites the letter it just typed — came out doubled. The keys
+              // that are not text stay here.
+              hardwareKeyboardOnly: true,
+              // The app's own code face, at the size and on the line the metrics
+              // set — so a path in a Terminal tab is the same width as the same
+              // path in a chat message, and a CLI drawing a TUI gets the leading
+              // a terminal app would have given it.
+              textStyle: widget.metrics.style,
+              padding: widget.metrics.padding,
+              onSecondaryTapDown: (details, _) =>
+                  unawaited(_secondaryTap(details.localPosition)),
+            ),
           ),
         ),
       ),
