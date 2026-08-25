@@ -107,6 +107,15 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// same reason and with the same override.
   final AgentSessionFiles _sessionFiles = AgentSessionFiles();
 
+  /// What to say to a chat's CLI the moment it has a prompt — the message the
+  /// user typed *before* the terminal existed.
+  ///
+  /// A chat that has never been sent to has no id, and with no id there is no
+  /// terminal: the composer stands in for one until the first message makes the
+  /// conversation real. That message is meant for the agent, so it waits here
+  /// for the CLI the same send is about to open. See [openWith].
+  final Map<String, String> _firstTurns = {};
+
   /// How long a handover waits for the new CLI to open a prompt. Claude Code
   /// and Codex both draw one within a second or two of a warm start; this is
   /// the allowance for a cold one, not the expected wait.
@@ -276,6 +285,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         if (handover != null) {
           _pasteWhenReady(chatId, session, handover, generation);
         }
+        _sendFirstTurn(chatId, session, generation);
         return;
       }
       final session = TerminalSession(
@@ -296,6 +306,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         onSessionId,
         generation,
       );
+      _sendFirstTurn(chatId, session, generation);
     } finally {
       _opening.remove(chatId);
     }
@@ -376,6 +387,34 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     }
   }
 
+  /// Sends the message [openWith] was holding for this chat, once its CLI has a
+  /// prompt to take it.
+  ///
+  /// **Sent, not merely typed** — the user already pressed Send, and a message
+  /// that arrives sitting in a prompt waiting for a second Enter reads as the
+  /// app having dropped it. That is the one difference from the handover
+  /// ([_pasteWhenReady]), which nobody asked to send.
+  void _sendFirstTurn(String chatId, TerminalSession session, int generation) {
+    final text = _firstTurns.remove(chatId);
+    if (text == null) return;
+    _atPrompt(
+      chatId,
+      session,
+      generation,
+      ifNever:
+          "this chat's CLI never opened a prompt, so the message that "
+          'started it was not delivered',
+      deliver: () async {
+        session.paste(text);
+        // The Enter goes in a write of its own. A `\r` in the same burst as
+        // the text is read as part of the paste rather than as a key, so the
+        // line would land at the prompt and sit there — measured on both CLIs.
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        session.insert('\r');
+      },
+    );
+  }
+
   /// Pastes [text] at the new CLI's prompt as soon as it has one, and leaves it
   /// there **unsent**.
   ///
@@ -383,20 +422,41 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// spends their tokens, and a chat that fires a turn nobody typed the moment
   /// they change a picker is the shape of an app that has been taken over. They
   /// press Enter, or they delete it and start clean.
-  ///
-  /// The wait is for [TerminalSession.takesPaste] rather than a fixed delay —
-  /// an agent CLI prints a banner, an update notice and a tips box before it
-  /// draws its composer, and text written into the pty before then is read by
-  /// whatever was on screen at the time. It gives up at [_pasteWindow] and says
-  /// so: a CLI that never took the keyboard has a bigger problem than a missing
-  /// handover, and a paste that lands minutes later would land in the middle of
-  /// whatever the user had since typed.
   void _pasteWhenReady(
     String chatId,
     TerminalSession session,
     String text,
     int generation,
-  ) {
+  ) => _atPrompt(
+    chatId,
+    session,
+    generation,
+    ifNever:
+        'the agent taking over this chat never opened a prompt, so the '
+        'conversation it was handed was not pasted',
+    deliver: () async => session.paste(text),
+  );
+
+  /// Runs [deliver] once the chat's CLI is ready to be written into.
+  ///
+  /// The wait is for [TerminalSession.takesPaste] rather than a fixed delay —
+  /// an agent CLI prints a banner, an update notice and a tips box before it
+  /// draws its composer, and text written into the pty before then is read by
+  /// whatever was on screen at the time. It gives up at [_pasteWindow] and logs
+  /// [ifNever]: a CLI that never took the keyboard has a bigger problem than a
+  /// missing message, and a write that landed minutes later would land in the
+  /// middle of whatever the user had since typed.
+  ///
+  /// It stops the moment this stops being the chat's current run — closed,
+  /// restarted, or handed to another agent — so a message meant for one session
+  /// never arrives in the next.
+  void _atPrompt(
+    String chatId,
+    TerminalSession session,
+    int generation, {
+    required Future<void> Function() deliver,
+    required String ifNever,
+  }) {
     unawaited(() async {
       final deadline = DateTime.now().add(_pasteWindow);
       while (DateTime.now().isBefore(deadline)) {
@@ -404,16 +464,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
             _watch[chatId] != generation) {
           return;
         }
-        if (session.paste(text)) return;
+        if (session.takesPaste) return deliver();
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
-      ref
-          .read(appLogProvider)
-          .info(
-            'agent',
-            'the agent taking over this chat never opened a prompt, so the '
-                'conversation it was handed was not pasted',
-          );
+      ref.read(appLogProvider).info('agent', ifNever);
     }());
   }
 
@@ -492,6 +546,26 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     );
   }
 
+  /// Holds [text] for the terminal [chatId] is about to open, and sends it
+  /// there as the first thing the agent is asked.
+  ///
+  /// **This is how a chat that runs its agent in a CLI gets started at all.**
+  /// The terminal only appears once the conversation has an id, and a
+  /// conversation only gets one when something is sent into it — so the opening
+  /// message is always typed while there is no CLI to type it into. Sending it
+  /// the ordinary way instead is what shipped: `claude -p` answered into a
+  /// transcript that the very next frame replaced with the CLI, so the user
+  /// watched their first message disappear and paid for a reply nobody ever
+  /// saw.
+  ///
+  /// Kept until a terminal actually opens rather than dropped on a timer: the
+  /// chat may take a moment to appear, and a message the user has already sent
+  /// must not quietly go nowhere.
+  void openWith(String chatId, String text) {
+    if (text.trim().isEmpty) return;
+    _firstTurns[chatId] = text;
+  }
+
   /// Puts [text] at the CLI's prompt without submitting it — a dropped file's
   /// path, landing where the user is still writing the rest of the line.
   ///
@@ -504,6 +578,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   void end(String chatId) {
     _running.remove(chatId);
     _watch.remove(chatId);
+    _firstTurns.remove(chatId);
     final gone = _sessions.remove(chatId);
     if (gone == null) return;
     _revokeTools(chatId);

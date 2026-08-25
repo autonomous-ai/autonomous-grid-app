@@ -207,6 +207,39 @@ mixin _ChatSend on _ChatSessions {
             ),
           )
         : named;
+    // A chat whose agent runs in its own CLI has nowhere for this turn to go but
+    // that CLI — and the opening message of such a chat is *always* typed while
+    // there is no CLI to type it into, because the terminal only appears once
+    // the conversation has an id and only a send gives it one.
+    //
+    // Committed all the same, because that is what names the chat in the
+    // sidebar; then handed to the terminal the next frame opens ([openWith]).
+    // Dispatching it the ordinary way is what shipped: `claude -p` answered into
+    // a transcript that the very next frame replaced with the CLI, so the user
+    // watched their first message disappear and paid for a reply nobody saw.
+    //
+    // Only a turn the *user* typed into the open chat. A goal's next step, a
+    // loop's beat and a carry-on are all judged by reading the reply the app
+    // gets back, and a CLI answers to the screen instead — see the TODO(BE)
+    // below.
+    if (into == null &&
+        !continuing &&
+        origin == TurnOrigin.user &&
+        viaAgent &&
+        ref
+            .read(chatAgentForProjectProvider(conversation.projectId))
+            .runsInTerminal) {
+      _commit(conversation, phase: const SendIdle(), makeActive: true);
+      ref.read(agentTerminalsProvider.notifier).openWith(conversation.id, text);
+      return;
+    }
+    // TODO(BE): the turns this app sends itself still take the one-shot lane in
+    // a chat that is shown as a CLI — a goal's step, a loop's beat. They answer
+    // into a transcript nobody is looking at, and the CLI beside it never hears
+    // them. Routing them into the pty would fix what the user sees and break
+    // what reads the answer back (the goal judge), so it wants the judging path
+    // to learn to read the session file, not a one-line change here.
+
     // The send owns the open slot: make it active and clear any prior error. A
     // queued follow-up doesn't — it goes out into a chat the user may have left,
     // and nothing the app sends on its own may pull them back to it.
