@@ -506,50 +506,120 @@ void main() {
     });
   });
 
-  group('newCodexSessionId — read back, because Codex cannot be told one', () {
+  group('pickCodexSession — read back, because Codex cannot be told one', () {
     const dir = '/home/u/.codex/sessions/2026/08/25';
-    const a =
+    const mine =
         '$dir/rollout-2026-08-25T10-24-50-'
         '01a036f3-005e-7dc0-95af-62aa6efd3385.jsonl';
-    const b =
+    const other =
         '$dir/rollout-2026-08-25T10-31-02-'
         '01a036d4-4c50-78f1-9411-2ad5f47fb911.jsonl';
+    const workdir = '/Users/u/.grid/app/agent-workspace';
 
-    test('the one rollout that appeared is the session that started', () {
+    CodexRolloutMeta meta({
+      String originator = kCodexTuiOriginator,
+      String cwd = workdir,
+      String id = '01a036f3-005e-7dc0-95af-62aa6efd3385',
+    }) => (originator: originator, cwd: cwd, sessionId: id);
+
+    test('the rollout this app\'s terminal wrote in this folder is the session '
+        'it started', () {
       expect(
-        newCodexSessionId(before: {b}, after: {a, b}),
+        pickCodexSession(fresh: {mine: meta()}, workdir: workdir),
         '01a036f3-005e-7dc0-95af-62aa6efd3385',
       );
     });
 
-    test(
-      'two new rollouts answer nothing rather than guess — a wrong id here '
-      'resumes a stranger\'s conversation, which does not look like a bug',
-      () {
-        expect(newCodexSessionId(before: const {}, after: {a, b}), isNull);
-      },
-    );
-
-    test(
-      'a rollout only touched, not created, is not the new session — this is '
-      'the case picking the newest by mtime got wrong, taking another '
-      "chat's live Codex",
-      () {
-        expect(newCodexSessionId(before: {a, b}, after: {a, b}), isNull);
-      },
-    );
-
-    test('the uuid is read off the end, since the timestamp in the middle '
-        'carries dashes of its own', () {
-      expect(codexSessionIdFromPath(a), '01a036f3-005e-7dc0-95af-62aa6efd3385');
-      expect(codexSessionIdFromPath('$dir/notes.jsonl'), isNull);
+    test('Codex Desktop writing into the same folder is not this chat — it was '
+        'there on the machine this was written for, working in another project '
+        'entirely, and counting it refused the real one', () {
       expect(
-        codexSessionIdFromPath(
-          r'C:\x\rollout-2026-08-25T10-24-50-'
-          '01a036f3-005e-7dc0-95af-62aa6efd3385.jsonl',
+        pickCodexSession(
+          fresh: {
+            mine: meta(),
+            other: meta(
+              originator: 'Codex Desktop',
+              cwd: '/Users/u/WorkPlace/something-else',
+            ),
+          },
+          workdir: workdir,
         ),
         '01a036f3-005e-7dc0-95af-62aa6efd3385',
       );
+    });
+
+    test('a `codex exec` turn is not this chat either, even in the same '
+        'folder — the one-shot lane writes here too', () {
+      expect(
+        pickCodexSession(
+          fresh: {other: meta(originator: 'codex_exec')},
+          workdir: workdir,
+        ),
+        isNull,
+      );
+    });
+
+    test('a terminal opened on another folder is another chat', () {
+      expect(
+        pickCodexSession(
+          fresh: {other: meta(cwd: '/Users/u/projects/api')},
+          workdir: workdir,
+        ),
+        isNull,
+      );
+    });
+
+    test('two of this app\'s own terminals in one folder answer nothing rather '
+        "than guess — a wrong id resumes a stranger's conversation, which does "
+        'not look like a bug', () {
+      expect(
+        pickCodexSession(
+          fresh: {
+            mine: meta(),
+            other: meta(id: 'other-id'),
+          },
+          workdir: workdir,
+        ),
+        isNull,
+      );
+    });
+
+    test('a rollout caught before its first line landed is "not yet", not a '
+        'wrong answer', () {
+      expect(pickCodexSession(fresh: {mine: null}, workdir: workdir), isNull);
+    });
+
+    test('the uuid is read off the end of the name, since the timestamp in the '
+        'middle carries dashes of its own', () {
+      expect(
+        codexSessionIdFromPath(mine),
+        '01a036f3-005e-7dc0-95af-62aa6efd3385',
+      );
+      expect(codexSessionIdFromPath('$dir/notes.jsonl'), isNull);
+    });
+  });
+
+  group('parseCodexRolloutMeta — whose session is this', () {
+    test(
+      "the fields that say who wrote it are read off the session_meta line",
+      () {
+        const line =
+            '{"timestamp":"2026-08-25T03:39:07.142Z","type":"session_meta",'
+            '"payload":{"session_id":"01a03700-11eb-7c53-a11b-bd0a6a775a09",'
+            '"cwd":"/Users/u/.grid/app/agent-workspace","originator":"codex-tui",'
+            '"cli_version":"0.144.6"}}';
+        final meta = parseCodexRolloutMeta(line);
+        expect(meta?.originator, kCodexTuiOriginator);
+        expect(meta?.cwd, '/Users/u/.grid/app/agent-workspace');
+        expect(meta?.sessionId, '01a03700-11eb-7c53-a11b-bd0a6a775a09');
+      },
+    );
+
+    test('a half-written line reads as "cannot tell" rather than throwing on a '
+        'background poll', () {
+      expect(parseCodexRolloutMeta('{"type":"session_m'), isNull);
+      expect(parseCodexRolloutMeta(''), isNull);
+      expect(parseCodexRolloutMeta('{"type":"turn","payload":{}}'), isNull);
     });
   });
 

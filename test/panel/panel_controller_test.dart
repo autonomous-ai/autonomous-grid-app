@@ -15,6 +15,7 @@ import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_scope.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
+import 'package:grid_app/features/projects/logic/project_folder_status.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
@@ -1674,6 +1675,14 @@ void main() {
           ),
           panelLinkProvider.overrideWithValue(PanelLink(transport)),
           chatStoreProvider.overrideWithValue(ChatStore(directory: tmp)),
+          // Every folder answers "here". These tests point projects at paths
+          // nobody created (`/tmp/api`), and the send path now refuses a turn
+          // whose working directory is gone — so without this the turn never
+          // reaches the agent and the assertion fails a long way from the cause.
+          // This is the seam `folderProbeProvider` exists for: no test stats a
+          // real path.
+          folderProbeProvider.overrideWithValue((_) async => true),
+
           projectsStoreProvider.overrideWithValue(
             ProjectsStore(file: File('${tmp.path}/projects.json')),
           ),

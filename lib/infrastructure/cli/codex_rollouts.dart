@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'agent_session_id.dart';
@@ -48,27 +49,61 @@ class CodexRollouts {
     }
   }
 
-  /// Waits for the one rollout that wasn't in [before], and answers with its id.
+  /// Watches for the rollout this app's terminal writes in [workdir], and
+  /// answers with the session id inside it.
   ///
-  /// Polled rather than watched: the folder is nested by date
-  /// (`sessions/<y>/<m>/<d>/`), so a run that starts the first session of a day
-  /// creates directories a recursive watch would have to be re-armed for, and
-  /// this is a handful of `list()` calls over a few seconds either way.
+  /// **Codex does not write the file when it starts** — measured on 0.144.6:
+  /// spawning the TUI and typing nothing left the folder untouched for 35
+  /// seconds. The rollout arrives with the *first turn*, which is whenever the
+  /// user gets round to it. A fixed window after the spawn therefore finds
+  /// nothing at all, which is exactly how this shipped not working: the log said
+  /// "could not tell which Codex session started" three times out of four.
   ///
-  /// Null when nothing new appears inside [timeout], and null just as readily
-  /// when *two* do — [newCodexSessionId] refuses to guess between them, and a
-  /// chat that guesses wrong resumes a stranger's conversation.
+  /// So it waits as long as the session does. [keepWaiting] is the caller's
+  /// answer to "is this still the terminal you asked about" — false once the
+  /// chat has closed it, switched agent, or restarted — and this stops with it
+  /// rather than outliving the thing it is watching.
+  ///
+  /// Every new file is opened far enough to read its `session_meta` line, which
+  /// is what tells this app's terminal apart from the other programs writing
+  /// here — see [pickCodexSession]. Only paths are listed until then, so the
+  /// wait costs one directory listing every [every] and nothing else.
   Future<String?> discover({
     required Set<String> before,
-    Duration timeout = const Duration(seconds: 10),
-    Duration every = const Duration(milliseconds: 250),
+    required String workdir,
+    required bool Function() keepWaiting,
+    Duration every = const Duration(seconds: 3),
   }) async {
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      final id = newCodexSessionId(before: before, after: await snapshot());
-      if (id != null) return id;
+    while (keepWaiting()) {
+      final fresh = (await snapshot()).difference(before);
+      if (fresh.isNotEmpty) {
+        final id = pickCodexSession(
+          fresh: {for (final path in fresh) path: await _metaOf(path)},
+          workdir: workdir,
+        );
+        if (id != null) return id;
+      }
       await Future<void>.delayed(every);
     }
     return null;
+  }
+
+  /// The `session_meta` line at the head of [path], or null when it cannot be
+  /// read yet.
+  ///
+  /// A rollout is caught the instant it is created, so the first poll often
+  /// finds a file with nothing in it — that is a "not yet", not a failure, and
+  /// the next poll a quarter-second later reads it.
+  Future<CodexRolloutMeta?> _metaOf(String path) async {
+    try {
+      final line = await File(path)
+          .openRead()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .first;
+      return parseCodexRolloutMeta(line);
+    } on Object {
+      return null;
+    }
   }
 }

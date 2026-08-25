@@ -85,6 +85,13 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// `TerminalSession` is the Terminal tab's too.
   final Map<String, AgentTool> _running = {};
 
+  /// Which run of a chat's terminal is the current one.
+  ///
+  /// [_learnCodexSession] can be waiting for minutes, and a relaunch reuses the
+  /// **same** `TerminalSession` object — so identity alone cannot tell the
+  /// watcher for the run that has been replaced to stop. This can.
+  final Map<String, int> _watch = {};
+
   /// Where a Codex session id is read back from. A field so a test can point it
   /// at a temp folder instead of the user's own Codex history.
   final CodexRollouts _rollouts = CodexRollouts();
@@ -194,7 +201,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
           environment: setup.environment,
           onError: _logStartFailure,
         );
-        _learnCodexSession(rollouts, onSessionId);
+        _learnCodexSession(rollouts, chatId, workdir, session, onSessionId);
         return;
       }
       final session = TerminalSession(
@@ -207,35 +214,56 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       _sessions[chatId] = session;
       session.start(onError: _logStartFailure);
       _publish();
-      _learnCodexSession(rollouts, onSessionId);
+      _learnCodexSession(rollouts, chatId, workdir, session, onSessionId);
     } finally {
       _opening.remove(chatId);
     }
   }
 
-  /// Reads back the id Codex gave the session just started, and hands it to
+  /// Reads back the id Codex gave this chat's session, and hands it to
   /// [onSessionId].
   ///
-  /// Not awaited by [ensure], and deliberately: the chat is usable the moment
-  /// the pty is drawing, and this is a few seconds of watching a folder for a
-  /// file whose only job is to make *tomorrow's* launch continue rather than
-  /// start over. A session whose id is never found is a session that starts
-  /// fresh next time, which is exactly where the app was before.
-  void _learnCodexSession(Set<String>? before, ValueChanged<String>? onId) {
+  /// Not awaited by [ensure], and it cannot be: Codex writes its rollout on the
+  /// **first turn**, not at start-up (see [CodexRollouts.discover]), so this may
+  /// be waiting for as long as it takes the user to type. The chat is usable
+  /// throughout — all this decides is whether *tomorrow's* launch continues the
+  /// conversation or starts another.
+  ///
+  /// It stops when the terminal it is watching stops being this chat's: closed,
+  /// restarted, or handed to another agent. Otherwise a chat opened and left
+  /// alone would keep a directory listing going for the life of the app, and a
+  /// restarted one would have two watchers racing to name it.
+  void _learnCodexSession(
+    Set<String>? before,
+    String chatId,
+    String workdir,
+    TerminalSession session,
+    ValueChanged<String>? onId,
+  ) {
     if (before == null || onId == null) return;
+    final generation = (_watch[chatId] ?? 0) + 1;
+    _watch[chatId] = generation;
     unawaited(
-      _rollouts.discover(before: before).then((id) {
-        if (id == null) {
-          return ref
-              .read(appLogProvider)
-              .info(
-                'agent',
-                'could not tell which Codex session started; this chat will '
-                    'begin a new one next time',
-              );
-        }
-        onId(id);
-      }),
+      _rollouts
+          .discover(
+            before: before,
+            workdir: workdir,
+            keepWaiting: () =>
+                identical(_sessions[chatId], session) &&
+                _watch[chatId] == generation,
+          )
+          .then((id) {
+            if (id == null) {
+              return ref
+                  .read(appLogProvider)
+                  .info(
+                    'agent',
+                    'the Codex terminal closed before it started a session; '
+                        'this chat will begin a new one next time',
+                  );
+            }
+            onId(id);
+          }),
     );
   }
 
@@ -250,6 +278,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// Ends the terminal that belonged to [chatId], if there was one.
   void end(String chatId) {
     _running.remove(chatId);
+    _watch.remove(chatId);
     final gone = _sessions.remove(chatId);
     if (gone == null) return;
     _revokeTools(chatId);

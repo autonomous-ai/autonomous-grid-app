@@ -12,6 +12,7 @@ import 'package:grid_app/features/chat/logic/commands/chat_loop.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_compaction.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_goal.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
+import 'package:grid_app/features/projects/logic/project_folder_status.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
@@ -391,6 +392,14 @@ _harness(
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
+      // Every folder answers "here". These tests point projects at paths
+      // nobody created (`/tmp/api`), and the send path now refuses a turn
+      // whose working directory is gone — so without this the turn never
+      // reaches the agent and the assertion fails a long way from the cause.
+      // This is the seam `folderProbeProvider` exists for: no test stats a
+      // real path.
+      folderProbeProvider.overrideWithValue((_) async => true),
+
       // Shorten the stall window so a test can prove a hung loop turn is stopped
       // — and a working one is left alone — without waiting the full hour.
       if (loopTurnStall != null)
@@ -1649,6 +1658,14 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         chatStoreProvider.overrideWithValue(store),
+        // Every folder answers "here". These tests point projects at paths
+        // nobody created (`/tmp/api`), and the send path now refuses a turn
+        // whose working directory is gone — so without this the turn never
+        // reaches the agent and the assertion fails a long way from the cause.
+        // This is the seam `folderProbeProvider` exists for: no test stats a
+        // real path.
+        folderProbeProvider.overrideWithValue((_) async => true),
+
         chatSenderProvider.overrideWithValue(_FakeSender(const [])),
       ],
     );
