@@ -36,6 +36,7 @@ class ChatHoverPreview extends StatefulWidget {
     required this.placeIcon,
     required this.updatedAt,
     required this.child,
+    this.suppressed = false,
   });
 
   final String title;
@@ -51,6 +52,18 @@ class ChatHoverPreview extends StatefulWidget {
 
   /// The row this hangs off.
   final Widget child;
+
+  /// Hold the card back — something else is speaking for this row.
+  ///
+  /// The row's right-click menu opens at the pointer and grows into the same
+  /// space this card floats in, so the two would overlap while the pointer is
+  /// still, by definition, on the row. The card gives way: a menu is being
+  /// answered, a preview is only being read.
+  ///
+  /// The hover itself is untouched, so dismissing the menu with the pointer
+  /// still on the row brings the card back rather than making the row look
+  /// spent.
+  final bool suppressed;
 
   @override
   State<ChatHoverPreview> createState() => _ChatHoverPreviewState();
@@ -101,25 +114,27 @@ class _ChatHoverPreviewState extends State<ChatHoverPreview> {
           // Never a pointer target: the card is a report, and letting it take
           // the hover would mean the row it describes stops being hovered the
           // moment you looked at it.
-          overlayChildBuilder: (context) => Positioned(
-            width: _cardWidth,
-            child: CompositedTransformFollower(
-              link: _link,
-              targetAnchor: Alignment.centerRight,
-              followerAnchor: Alignment.centerLeft,
-              offset: const Offset(_cardGap, 0),
-              child: IgnorePointer(
-                child: _CardEntrance(
-                  child: _PreviewCard(
-                    title: widget.title,
-                    age: _age,
-                    place: widget.place,
-                    placeIcon: widget.placeIcon,
+          overlayChildBuilder: (context) => widget.suppressed
+              ? const SizedBox.shrink()
+              : Positioned(
+                  width: _cardWidth,
+                  child: CompositedTransformFollower(
+                    link: _link,
+                    targetAnchor: Alignment.centerRight,
+                    followerAnchor: Alignment.centerLeft,
+                    offset: const Offset(_cardGap, 0),
+                    child: IgnorePointer(
+                      child: _CardEntrance(
+                        child: _PreviewCard(
+                          title: widget.title,
+                          age: _age,
+                          place: widget.place,
+                          placeIcon: widget.placeIcon,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ),
           child: widget.child,
         ),
       ),

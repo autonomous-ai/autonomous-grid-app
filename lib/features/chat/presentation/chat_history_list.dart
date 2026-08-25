@@ -22,6 +22,7 @@ import '../../scheduled/logic/task_conversation_id.dart';
 import '../../scheduled/logic/task_unread_store.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
+import 'chat_header.dart';
 import 'chat_hover_preview.dart';
 
 /// The sidebar's body: your projects, each holding the chats you opened inside
@@ -577,10 +578,10 @@ class _ChatRow extends ConsumerWidget {
       padding: EdgeInsets.only(left: indented ? 28 : 0),
       // Hovering a row floats the whole title out to the right of the rail,
       // where there's room for it — the rail itself can only ever show the
-      // first few words of a conversation's name.
-      child: ChatHoverPreview(
-        title: chat.title,
-        updatedAt: chat.updatedAt,
+      // first few words of a conversation's name. Right-clicking it opens the
+      // chat's own menu, the same one the header's "…" opens.
+      child: _ChatRowSurface(
+        chat: chat,
         // Where this conversation lives, and for a document's chat that is
         // Docs — the same answer the page glyph in its row gives, in words.
         place: chat.documentPath != null ? 'Docs' : project?.name ?? 'Chats',
@@ -688,6 +689,69 @@ class _ChatRow extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// What a chat's row hangs in: its hover preview, and the right-click that opens
+/// the chat's menu.
+///
+/// Both are about the row without being *in* it, so they sit outside
+/// [SidebarItem] rather than growing it a second set of parameters — the rail's
+/// nav entries and its New chat row use the same item and want neither.
+///
+/// The one piece of state is which of the two is speaking. A menu opened at the
+/// pointer covers the space the preview floats in, and the pointer is by
+/// definition still on the row, so without this the card sits under the menu
+/// answering a question nobody asked any more.
+class _ChatRowSurface extends StatefulWidget {
+  const _ChatRowSurface({
+    required this.chat,
+    required this.place,
+    required this.placeIcon,
+    required this.child,
+  });
+
+  final Conversation chat;
+
+  /// Where the chat lives, for the preview card — its project, or the section
+  /// holding the chats that belong to none.
+  final String place;
+  final IconData placeIcon;
+
+  /// The row itself.
+  final Widget child;
+
+  @override
+  State<_ChatRowSurface> createState() => _ChatRowSurfaceState();
+}
+
+class _ChatRowSurfaceState extends State<_ChatRowSurface> {
+  bool _menuOpen = false;
+
+  void _setMenuOpen(bool value) {
+    if (_menuOpen == value) return;
+    setState(() => _menuOpen = value);
+  }
+
+  @override
+  Widget build(BuildContext context) => ChatMenuAnchor(
+    conversation: widget.chat,
+    onOpen: () => _setMenuOpen(true),
+    onClose: () => _setMenuOpen(false),
+    builder: (context, controller, openAt) => GestureDetector(
+      // Secondary only: the row's own tap opens the chat, and it belongs to
+      // the item's InkWell — a detector claiming the primary button here would
+      // take the press feedback and the ink with it.
+      onSecondaryTapDown: (details) => openAt(details.globalPosition),
+      child: ChatHoverPreview(
+        title: widget.chat.title,
+        updatedAt: widget.chat.updatedAt,
+        place: widget.place,
+        placeIcon: widget.placeIcon,
+        suppressed: _menuOpen,
+        child: widget.child,
+      ),
+    ),
+  );
 }
 
 /// The agent mark on a chat row: smaller than the 24px action buttons beside it

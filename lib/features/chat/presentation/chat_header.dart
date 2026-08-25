@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
+import '../../../shared/layouts/reveal_chat.dart';
 import '../../../shared/widgets/header_hover_button.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
@@ -148,21 +149,70 @@ class ChatHeaderVisibleNotifier extends Notifier<bool> {
   void set(bool visible) => state = visible;
 }
 
-/// The "…" on the header: rename this chat, copy it out, or delete it.
-class ChatHeaderMenuButton extends ConsumerStatefulWidget {
-  const ChatHeaderMenuButton({super.key, required this.conversation});
+/// Draws whatever opens a chat's menu.
+///
+/// [controller] is for a trigger that wants the menu placed against *itself* —
+/// a button, which knows where it is. [openAt] is for a gesture that happened at
+/// a *point*: a right-click has to be answered where it landed, not at the top
+/// of whatever list the row is in.
+typedef ChatMenuTriggerBuilder =
+    Widget Function(
+      BuildContext context,
+      MenuController controller,
+      void Function(Offset globalPosition) openAt,
+    );
+
+/// A chat's menu — rename it, draft a skill from it, pin, archive, copy it out,
+/// delete it — and the one implementation of all six.
+///
+/// Whatever opens it is [builder]'s business; what the rows *do* is this
+/// widget's, and that split is the point. The header's "…" and a right-click on
+/// the chat's row in the rail are two gestures onto one menu: written twice,
+/// "Archive chat" becomes two answers to what archiving does, and the second one
+/// stops matching the day the first grows a confirm step or a toast.
+///
+/// The conversation is passed in rather than read off the open chat, because the
+/// rail's rows are about chats that are *not* on screen.
+class ChatMenuAnchor extends ConsumerStatefulWidget {
+  const ChatMenuAnchor({
+    super.key,
+    required this.conversation,
+    required this.builder,
+    this.onOpen,
+    this.onClose,
+  });
 
   final Conversation conversation;
+  final ChatMenuTriggerBuilder builder;
+
+  /// Told when the menu opens and closes, for a caller that has to stand
+  /// something else down while it is up — the rail's hover preview opens over
+  /// the same space this menu does.
+  final VoidCallback? onOpen;
+  final VoidCallback? onClose;
 
   @override
-  ConsumerState<ChatHeaderMenuButton> createState() =>
-      _ChatHeaderMenuButtonState();
+  ConsumerState<ChatMenuAnchor> createState() => _ChatMenuAnchorState();
 }
 
-class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
+class _ChatMenuAnchorState extends ConsumerState<ChatMenuAnchor> {
   final _menu = MenuController();
 
   Conversation get _chat => widget.conversation;
+
+  /// Open at the pointer. A menu answering a right-click has to arrive at the
+  /// thing that was clicked — the rail's rows are 36px tall in a column of
+  /// twenty, and one opening at the row's corner would read as an answer about
+  /// a different row.
+  ///
+  /// The offset is local to this widget's box, which is the box `MenuAnchor`
+  /// measures its own placement against — the same recipe the file tree's
+  /// context menu uses (`file_tree_rows.dart`).
+  void _openAt(Offset globalPosition) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox) return;
+    _menu.open(position: box.globalToLocal(globalPosition));
+  }
 
   Future<void> _rename() {
     _menu.close();
@@ -179,11 +229,23 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
   /// Ask the assistant to turn this conversation into a reusable skill. The
   /// draft comes back in the transcript, where the user can read it before the
   /// bar above the composer offers to keep it.
-  Future<void> _makeSkill() {
+  ///
+  /// Opens the chat first when it isn't the one on screen. Two reasons, and the
+  /// second is a bug the first would have hidden: the user has to be looking at
+  /// the transcript the draft lands in, and [ChatSessions.send] with no `into`
+  /// puts its turn in whichever chat is *open* — so from the rail's right-click
+  /// this would have asked one chat's question inside another one.
+  ///
+  /// Not `into:` instead, which looks like the narrower fix: that path is the
+  /// queue's, and it skips the steer-or-queue check a chat mid-reply needs.
+  Future<void> _makeSkill() async {
     _menu.close();
     final network = ref.read(selectedNetworkProvider);
-    if (network == null) return Future<void>.value();
-    return ref
+    if (network == null) return;
+    if (ref.read(chatSessionsProvider).activeId != _chat.id) {
+      openChat(ref, _chat.id);
+    }
+    await ref
         .read(chatSessionsProvider.notifier)
         .send(
           network: network,
@@ -226,29 +288,13 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
     ref.read(chatSessionsProvider.notifier).deleteConversation(_chat.id);
   }
 
-  void _toggle(BuildContext context, MenuController controller) {
-    if (controller.isOpen) {
-      controller.close();
-      return;
-    }
-    // Right-aligned: the button sits at the title's trailing edge, so a menu
-    // growing rightwards from it would hang over the transcript.
-    controller.open(
-      position: anchoredMenuPosition(
-        context,
-        menuSize: _menuSize,
-        margin: 8,
-        gap: 6,
-        alignEnd: true,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return MenuAnchor(
       controller: _menu,
+      onOpen: widget.onOpen,
+      onClose: widget.onClose,
       // The shared surface, not a hand-rolled one: it lifts the fill clear of
       // *both* grounds a menu can open over. The header sits on the window, but
       // the themed default lands within 1.02:1 of a raised block and in light
@@ -270,14 +316,46 @@ class _ChatHeaderMenuButtonState extends ConsumerState<ChatHeaderMenuButton> {
           onDelete: _delete,
         ),
       ],
-      builder: (context, controller, _) => HeaderHoverButton(
-        icon: LucideIcons.ellipsis300,
-        tooltip: 'Chat options',
-        semanticsLabel: 'Chat options',
-        onTap: () => _toggle(context, controller),
+      builder: (context, controller, _) =>
+          widget.builder(context, controller, _openAt),
+    );
+  }
+}
+
+/// The "…" on the header: the chat's menu, opened under the button.
+class ChatHeaderMenuButton extends StatelessWidget {
+  const ChatHeaderMenuButton({super.key, required this.conversation});
+
+  final Conversation conversation;
+
+  void _toggle(BuildContext context, MenuController controller) {
+    if (controller.isOpen) {
+      controller.close();
+      return;
+    }
+    // Right-aligned: the button sits at the title's trailing edge, so a menu
+    // growing rightwards from it would hang over the transcript.
+    controller.open(
+      position: anchoredMenuPosition(
+        context,
+        menuSize: _menuSize,
+        margin: 8,
+        gap: 6,
+        alignEnd: true,
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => ChatMenuAnchor(
+    conversation: conversation,
+    builder: (context, controller, _) => HeaderHoverButton(
+      icon: LucideIcons.ellipsis300,
+      tooltip: 'Chat options',
+      semanticsLabel: 'Chat options',
+      onTap: () => _toggle(context, controller),
+    ),
+  );
 }
 
 /// The menu's rows. Lives in the MenuAnchor's overlay — detached from the
