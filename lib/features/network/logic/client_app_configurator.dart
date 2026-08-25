@@ -407,14 +407,19 @@ class ClientAppConfigurator {
     final name = hermesProviderName(base);
     // A responses-only grid also carries a stable `provider_key` (so the
     // `model.provider` selector matches this entry regardless of host) and the
-    // `api_mode` that switches Hermes to the Responses dialect.
-    final entry = <String, String>{
+    // `api_mode` that switches Hermes to the Responses dialect. `extra_headers`
+    // carries a literal Hermes template ([kGridChatIdTemplate]) that Hermes
+    // itself expands from `GRID_CHAT_ID` at `hermes acp` startup — not a value
+    // computed here — so every relay call this provider makes is tagged with
+    // the conversation that's asking.
+    final entry = <String, Object>{
       'name': name,
       if (responses) 'provider_key': kHermesGridProviderKey,
       'base_url': base,
       'api_key': key,
       'model': model,
       if (responses) 'api_mode': kHermesResponsesApiMode,
+      'extra_headers': {kGridConversationHeader: kGridChatIdTemplate},
     };
     final existing = editor.parseAt([
       'custom_providers',

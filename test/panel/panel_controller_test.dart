@@ -156,10 +156,12 @@ class _FakeTransport implements PanelTransport {
 class _SilentTransport implements ChatTransport {
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) => Stream.value(
     const ChatFailed(ChatTransportError('nothing is serving here')),
   );
@@ -191,10 +193,12 @@ class _OneShotModel implements ChatTransport {
 
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) {
     asked = messages;
     return Stream.fromIterable([ChatDelta(_reply), const ChatDone()]);
@@ -301,6 +305,7 @@ class _HeldTurn implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     this.history = history;

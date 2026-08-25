@@ -598,6 +598,7 @@ class _NeverSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) => throw StateError('a delivered result must not call the model');
 }

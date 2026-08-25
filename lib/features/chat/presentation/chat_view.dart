@@ -60,6 +60,8 @@ import '../logic/composer_snippet.dart';
 import '../logic/conversation.dart';
 import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
+import '../logic/grid_model_catalog.dart' show routingModeOptions;
+import '../logic/routing_group.dart' show routingModeForModelId;
 import 'queued_follow_ups.dart';
 import '../../../shared/widgets/composer_buttons.dart';
 import '../../agents/logic/agent_steering.dart';
@@ -208,7 +210,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _rememberModel() {
     final id = _model.text.trim();
     if (id.isEmpty || !_options.any((o) => o.id == id)) return;
-    ref.read(chatScopePrefsProvider).setModel(id);
+    // How a chat is routed is a decision about *that* chat, not a standing
+    // one: saved to the scope, the next new chat would open in Brute Force
+    // with no group behind it to say which models — the mode without the
+    // setup that gives it meaning.
+    if (routingModeForModelId(id) == null) {
+      ref.read(chatScopePrefsProvider).setModel(id);
+    }
     ref.read(chatSessionsProvider.notifier).setActiveModel(id);
   }
 
@@ -941,7 +949,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final steerable = ref.watch(canSteerChatProvider(activeId));
     final error = ref.watch(chatSessionsProvider.select((s) => s.error));
     final openProject = ref.watch(openChatProjectProvider);
-    final options = ref.watch(playgroundModelsProvider);
+    // The grid's models plus the two orchestrator rows the picker offers
+    // beside them, so a chat routed through one is remembered, restored and
+    // read for its modality exactly the way an ordinary pick is — the field
+    // holds the mode's id, and a list without it would treat that as a name
+    // the user typed by hand and drop it on the next switch.
+    final served = ref.watch(playgroundModelsProvider);
+    final options = [...served, ...routingModeOptions(served)];
     // Still resolving means waiting on the *first* answer from either source —
     // see [playgroundModelsResolvingProvider] for why a later poll must not
     // count.

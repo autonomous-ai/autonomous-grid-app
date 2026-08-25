@@ -60,6 +60,34 @@ class HermesConfigFile {
     editor.update(path, value);
   }
 
+  /// Stamp the per-turn `X-Request-Id` onto the grid's `custom_providers`
+  /// entry (the one pointing at [gridBaseUrl]) so the NEXT Hermes process reads
+  /// it into its request `extra_headers` at agent build. Hermes reads the file
+  /// when it changes (mtime cache), so this is written once per turn, before a
+  /// fresh session spawns. A miss (no matching entry) is a silent no-op — the
+  /// turn still runs, it just carries no turn id.
+  Future<void> setTurnRequestHeader({
+    required String gridBaseUrl,
+    required String turnId,
+  }) async {
+    await edit((editor) {
+      final list = editor
+          .parseAt(['custom_providers'], orElse: () => wrapAsYamlNode(null))
+          .value;
+      if (list is! List) return;
+      for (var i = 0; i < list.length; i++) {
+        final e = list[i];
+        if (e is! Map) continue;
+        if ('${e['base_url'] ?? ''}' != gridBaseUrl) continue;
+        editor.update(
+          ['custom_providers', i, 'extra_headers', 'X-Request-Id'],
+          turnId,
+        );
+        return;
+      }
+    });
+  }
+
   /// Drop [path] if it's there. A key that was never written is already gone.
   static void remove(YamlEditor editor, List<String> path) {
     final existing = editor

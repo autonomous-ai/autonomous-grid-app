@@ -62,13 +62,6 @@ class ModelShare {
   int get hashCode => Object.hash(model, requests, tokensIn, tokensOut);
 }
 
-/// Below this many requests the footer shows counts, not percentages.
-///
-/// At ten requests one call is 10%, so the first percentage shown is never finer
-/// than the data behind it. `67% · 33%` off three calls reads as a measurement
-/// when it is really "two and one".
-const int kPercentFloor = 10;
-
 /// How many models the footer names before it stops counting them out.
 const int kNamedModels = 3;
 
@@ -124,15 +117,26 @@ List<int> percentages(List<ModelShare> shares) {
 String? modelShareLabel(
   List<ModelShare> shares, {
   required String Function(String) label,
+  String? wireModel,
 }) {
   final ranked = rankedShares(shares);
   if (ranked.isEmpty) return null;
   final total = ranked.fold(0, (sum, s) => sum + s.requests);
-  if (ranked.length == 1 && total == 1) return null;
+  // Hide a lone model that answered once only when the caller already shows
+  // that exact model (a pinned pick, or no wire model given): `×1` would just
+  // repeat the name the bubble already carries. Under auto the wire model is a
+  // routing alias like `auto` that differs from what the grid actually spent,
+  // so the resolved name must be shown even at `×1` — the caller cannot
+  // supply it, and hiding it would read as "answered with auto".
+  if (ranked.length == 1 &&
+      total == 1 &&
+      (wireModel == null || wireModel == ranked.first.model)) {
+    return null;
+  }
   final named = ranked.take(kNamedModels).toList();
   final rest = ranked.length - named.length;
   final parts = <String>[];
-  if (ranked.length > 1 && total >= kPercentFloor) {
+  if (ranked.length > 1) {
     final percents = percentages(ranked);
     for (var i = 0; i < named.length; i++) {
       parts.add('${label(named[i].model)} ${percents[i]}%');
