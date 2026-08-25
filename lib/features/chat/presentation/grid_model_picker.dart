@@ -445,7 +445,38 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         }
         continue;
       }
-      for (final option in answerableGridOptions(group.options)) {
+      // One pass in the grid's own `/models` order, so the routing rows keep the
+      // position the relay gave them instead of being pushed to the bottom. The
+      // backend lists "Brute Force"/"Feedback Loop" among the models as bare
+      // rows; each is replaced HERE, in place, by the Fixed/Dynamic-aware one
+      // (so the two can never both draw), while Auto and the real models render
+      // as ordinary rows. Nothing is sorted — whatever order `/models` returns
+      // is exactly the order the menu shows.
+      final answerableIds =
+          answerableGridOptions(group.options).map((o) => o.id).toSet();
+      final routingByLabel = {
+        for (final o in routingModeOptions(group.options)) o.label: o,
+      };
+      for (final option in group.options) {
+        final modeOpt = routingByLabel[option.id];
+        if (modeOpt != null) {
+          final mode = routingModeForModelId(modeOpt.id);
+          if (mode == null) continue;
+          rows.add(
+            _OptionRow(
+              option: modeOpt,
+              selected:
+                  group.grid.networkId == currentGridId &&
+                  modeOpt.id == widget.currentModelId,
+              onTap: () {
+                widget.onSelectRouting(group.grid, modeOpt, mode);
+                widget.onClose();
+              },
+            ),
+          );
+          continue;
+        }
+        if (!answerableIds.contains(option.id)) continue;
         rows.add(
           _OptionRow(
             option: option,
@@ -463,27 +494,6 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
             visionContext: widget.visionBlocked,
             onTap: () {
               widget.onSelect(group.grid, option);
-              widget.onClose();
-            },
-          ),
-        );
-      }
-      // The grid's own models first, then the two ways of putting several of
-      // them on one question — Brute Force and Feedback Loop stay below the
-      // plain list, grouped under the grid they draw from.
-      for (final option in routingModeOptions(group.options)) {
-        final mode = routingModeForModelId(option.id);
-        // Unreachable — every row [routingModeOptions] builds is named after a
-        // mode — but this is a lookup, not an invariant worth a `!` (§3).
-        if (mode == null) continue;
-        rows.add(
-          _OptionRow(
-            option: option,
-            selected:
-                group.grid.networkId == currentGridId &&
-                option.id == widget.currentModelId,
-            onTap: () {
-              widget.onSelectRouting(group.grid, option, mode);
               widget.onClose();
             },
           ),

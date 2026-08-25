@@ -21,9 +21,9 @@ class DiagramNode {
 /// Fixed geometry every layout in this file shares, so a node reads as the
 /// same box wherever it appears and a connector always meets one at the same
 /// point.
-const double _kNodeWidth = 176;
-const double _kNodeHeight = 44;
-const double _kNodeGap = 10; // between stacked proposer pills
+const double _kNodeWidth = 200;
+const double _kNodeHeight = 50;
+const double _kNodeGap = 12; // between stacked proposer pills
 const double _kConnectorWidth = 44;
 const double _kLoopArcHeight = 26;
 const double _kLoopArcGap = 6; // air between the pills and the arc's foot
@@ -265,7 +265,7 @@ class _JudgeLoopFlow extends StatelessWidget {
                 Text(
                   loopLabel,
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 12.5,
                     fontWeight: AppFont.medium,
                     color: AppPalette.textFaint,
                   ),
@@ -332,7 +332,7 @@ class _NodePill extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: AppFont.codeStyle(
                   color: AppPalette.textPrimary,
-                  scale: 0.94,
+                  scale: 1.12,
                 ),
               ),
             ),

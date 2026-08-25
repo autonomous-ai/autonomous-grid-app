@@ -31,7 +31,7 @@ String routingModelId(RoutingMode mode) => 'auto/${mode.wireValue}';
 /// that nobody has to.
 String routingHoldNote({required bool isFixed}) => isFixed
     ? 'Same models every message.'
-    : 'The grid picks new models every message.';
+    : 'The grid decides which model best suits each request.';
 
 /// The routing mode [id] names, or null when it is an ordinary model id.
 RoutingMode? routingModeForModelId(String id) {

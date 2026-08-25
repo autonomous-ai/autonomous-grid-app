@@ -27,7 +27,7 @@ Future<RoutingGroup?> showRoutingSetupDialog(
 /// The dialog's width, applied to both the title and the content — an
 /// [AlertDialog] sizes itself to the wider of the two, so leaving either
 /// unconstrained hands the width to whichever string is longest.
-const double _dialogWidth = 560;
+const double _dialogWidth = 940;
 
 /// The models pinned as Fixed Brute Force proposers. Floor is three distinct
 /// models — a "Brute Force" that fans out to one or two isn't brute force — the
@@ -265,7 +265,9 @@ class _RoutingSetupDialogState extends ConsumerState<RoutingSetupDialog> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Pick the models, or let the grid choose each time.',
+              widget.mode == RoutingMode.bruteForce
+                  ? 'Several AI models answer your question at the same time, then the answers are combined into one best reply.'
+                  : 'One AI writes a first answer, a second AI checks it for mistakes, and they keep improving it until it is good enough.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: AppPalette.textSecondary,
                 height: 1.35,
@@ -346,6 +348,7 @@ class _RoutingSetupDialogState extends ConsumerState<RoutingSetupDialog> {
                             child: _PoolMultiSelect(
                               pool: _pool,
                               minCount: _kMinJudgePool,
+                              helper: 'The models that write and check the answer.',
                               onToggle: _togglePool,
                               onSelectAll: _selectAllPool,
                             ),
@@ -413,14 +416,14 @@ class _DiagramPreview extends StatelessWidget {
   static const _you = DiagramNode('You', NodeStatus.queued);
   static const _answer = DiagramNode('Answer', NodeStatus.queued);
   static const _genericProposers = [
-    DiagramNode('Proposer', NodeStatus.queued),
-    DiagramNode('Proposer', NodeStatus.queued),
+    DiagramNode('AI answers', NodeStatus.queued),
+    DiagramNode('AI answers', NodeStatus.queued),
   ];
-  static const _genericWorker = DiagramNode('Worker', NodeStatus.queued);
-  static const _genericJudge = DiagramNode('Judge', NodeStatus.queued);
+  static const _genericWorker = DiagramNode('First writer', NodeStatus.queued);
+  static const _genericJudge = DiagramNode('Checker', NodeStatus.queued);
 
   // The grid's live pick when nothing is pinned — see [RoutingGroup.aggregator].
-  static const _genericAggregator = DiagramNode('Aggregator', NodeStatus.queued);
+  static const _genericAggregator = DiagramNode('Final reply', NodeStatus.queued);
 
   /// Padding on all four sides of the card, doubled for the height reserved
   /// below so the card never visibly resizes as the model count changes.
@@ -436,7 +439,7 @@ class _DiagramPreview extends StatelessWidget {
         : (dynCount >= 1
               ? List<DiagramNode>.generate(
                   dynCount,
-                  (_) => const DiagramNode('Proposer', NodeStatus.queued),
+                  (_) => const DiagramNode('AI answers', NodeStatus.queued),
                 )
               : _genericProposers);
     final diagram = switch (mode) {
@@ -531,7 +534,7 @@ class _ProposerMultiSelectState extends ConsumerState<_ProposerMultiSelect> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const FieldLabel('Proposers'),
+        const FieldLabel('Models that answer'),
         MenuAnchor(
           controller: _menu,
           alignmentOffset: const Offset(0, 6),
@@ -615,7 +618,7 @@ class _AggregatorSelect extends ConsumerWidget {
         if (!excluding.contains(id)) id,
     ];
     return AppSelectField<String>(
-      label: 'Aggregator',
+      label: 'Writes the final reply',
       value: aggregator,
       options: [
         for (final id in candidates) AppSelectOption(value: id, label: id),
@@ -731,7 +734,7 @@ class _DynamicBruteForceSectionState
       children: [
         Expanded(
           child: _NumberField(
-            label: 'Max proposers',
+            label: 'Models at once',
             // Always a concrete filled number — never a blank "All" hint. The
             // pool holds at least 3 distinct models, but only 2 need to run.
             value: widget.maxProposers ?? _kMinBruteProposers,
@@ -739,8 +742,7 @@ class _DynamicBruteForceSectionState
             max: widget.pool.length >= _kMinBruteProposers
                 ? widget.pool.length
                 : _kMinBruteProposers,
-            helper:
-                'Fan out to this many distinct proposers (at least $_kMinBruteProposers), drawn from the pool.',
+            helper: 'How many models answer at the same time.',
             onChanged: widget.onMaxProposersChanged,
           ),
         ),
@@ -749,6 +751,7 @@ class _DynamicBruteForceSectionState
           child: _PoolMultiSelect(
             pool: widget.pool,
             minCount: _kMinBrutePool,
+            helper: 'The models the grid may choose from.',
             onToggle: widget.onTogglePool,
             onSelectAll: () {
               final served = _textModelIds(ref.read(gridModelCatalogProvider));
@@ -777,13 +780,12 @@ class _MaxRoundsField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _NumberField(
-      label: 'Max rounds',
+      label: 'Max improvements',
       value: value,
       min: 1,
       max: 10,
       hint: '5',
-      helper:
-          'Worker rewrites against the latest failed checks each round; the judge keeps the best.',
+      helper: 'The maximum number of times the answer is checked and improved.',
       onChanged: onChanged,
     );
   }
@@ -886,9 +888,12 @@ class _PoolMultiSelect extends ConsumerStatefulWidget {
     required this.minCount,
     required this.onToggle,
     required this.onSelectAll,
+    this.helper,
   });
 
   final List<String> pool;
+
+  final String? helper;
 
   /// The fewest distinct models the pool must keep — Brute Force 3, Feedback 2.
   final int minCount;
@@ -919,7 +924,7 @@ class _PoolMultiSelectState extends ConsumerState<_PoolMultiSelect> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const FieldLabel('Pool'),
+        const FieldLabel('Available models'),
         MenuAnchor(
           controller: _menu,
           alignmentOffset: const Offset(0, 6),
@@ -981,6 +986,15 @@ class _PoolMultiSelectState extends ConsumerState<_PoolMultiSelect> {
             ),
           ),
         ),
+        if (widget.helper != null) ...[
+          const SizedBox(height: 3),
+          Text(
+            widget.helper!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textSecondary,
+                ),
+          ),
+        ],
       ],
     );
   }
@@ -1075,7 +1089,7 @@ class _WorkerJudgeRows extends ConsumerWidget {
       children: [
         Expanded(
           child: AppSelectField<String?>(
-            label: 'Worker',
+            label: 'First writer',
             value: worker,
             options: [
               for (final id in candidates)
@@ -1089,7 +1103,7 @@ class _WorkerJudgeRows extends ConsumerWidget {
         const SizedBox(width: 12),
         Expanded(
           child: AppSelectField<String?>(
-            label: 'Judge',
+            label: 'Checker',
             value: judge,
             options: [
               for (final id in candidates)
@@ -1124,8 +1138,8 @@ class _PinnedDynamicSection extends StatelessWidget {
         AppSegmented(
           expand: true,
           segments: const [
-            SegmentSpec(label: 'Pinned'),
-            SegmentSpec(label: 'Dynamic'),
+            SegmentSpec(label: 'Same models'),
+            SegmentSpec(label: 'Grid picks'),
           ],
           selected: fixed ? 0 : 1,
           onChanged: (i) => onChanged(i == 0),

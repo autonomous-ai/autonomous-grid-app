@@ -60,10 +60,12 @@ void main() {
       expect(modelShareLabel(const [], label: _plain), isNull);
     });
 
-    test('under ten requests it counts', () {
+    test('two models percent from the first handful of requests', () {
+      // No floor: a 6/2 split shows its share immediately instead of waiting
+      // for ten requests before a percentage is worth showing.
       expect(
         modelShareLabel([_share('a', 6), _share('b', 2)], label: _plain),
-        'a ×6 · b ×2',
+        'a 75% · b 25%',
       );
     });
 
