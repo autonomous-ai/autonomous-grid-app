@@ -11,6 +11,14 @@ import 'package:grid_app/infrastructure/providers.dart';
 import 'package:grid_app/infrastructure/state/grid_home_store.dart';
 import 'package:grid_app/infrastructure/state/models/engine_run.dart';
 
+/// A join with no context window given — and therefore **no `--ctx-size`**.
+///
+/// This used to carry `--ctx-size 200000` for every external engine, because
+/// the app sent a flat 200k whatever the server actually served. The CLI is
+/// built for the window to be absent (`capability_entry` omits
+/// `context_window` entirely so the relay records "unknown"), and the router
+/// picks nodes on that number — so the fabricated one won work the node could
+/// not do. See the `--ctx-size` group below for both halves of the rule.
 const _args = [
   'join',
   'net',
@@ -18,8 +26,6 @@ const _args = [
   'http://x/v1',
   '-m',
   'm',
-  '--ctx-size',
-  '200000',
   '--name',
   'grid-app',
 ];
@@ -1148,6 +1154,52 @@ void main() {
           .startExternal(network: 'net', endpoint: 'http://x/v1', model: 'm');
 
       expect(fake.lastStartArgs, containsAllInOrder(['--name', 'grid-app']));
+    });
+  });
+
+  group('the context window an external engine advertises', () {
+    ProviderContainer containerOn(FakeGridCliService cli) {
+      final container = ProviderContainer(
+        overrides: [
+          gridCliServiceProvider.overrideWithValue(cli),
+          nodeNameProvider.overrideWithValue('grid-app'),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('an unknown window sends no --ctx-size at all', () async {
+      // The whole point. With the flag absent the CLI omits `context_window`
+      // from the capability envelope and the relay records the window as
+      // unknown — *"an unknown window is omitted, never defaulted, so the
+      // master (and the auto-router Advisor) treats absence as 'unknown'
+      // rather than trusting a fabricated 128000"*. This app used to send a
+      // flat 200000 here and defeat that from the outside.
+      final fake = FakeGridCliService();
+
+      await containerOn(fake)
+          .read(providerRunControllerProvider.notifier)
+          .startExternal(network: 'net', endpoint: 'http://x/v1', model: 'm');
+
+      expect(fake.lastStartArgs, isNot(contains('--ctx-size')));
+    });
+
+    test('a window the user gave is passed through as typed', () async {
+      // The router picks nodes on this number, so it has to be the one the
+      // person actually vouched for — not rounded, not defaulted.
+      final fake = FakeGridCliService();
+
+      await containerOn(fake)
+          .read(providerRunControllerProvider.notifier)
+          .startExternal(
+            network: 'net',
+            endpoint: 'http://x/v1',
+            model: 'm',
+            contextLength: 8192,
+          );
+
+      expect(fake.lastStartArgs, containsAllInOrder(['--ctx-size', '8192']));
     });
   });
 }

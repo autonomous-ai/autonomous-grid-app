@@ -191,11 +191,6 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// the same thing.
   late final String _engineName = ref.read(nodeNameProvider);
 
-  /// Context window for an external (`--at`) engine, passed via `--ctx-size`.
-  /// There's no local GGUF to inspect for the real maximum, so we send a fixed
-  /// 200k — the local `--serve` path derives its own from `grid ctx` instead.
-  static const _externalCtxSize = 200000;
-
   GridProcess? _process;
   GridCliService? _service;
   String? _grid;
@@ -299,11 +294,24 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   }
 
   /// Serve from an external OpenAI-compatible endpoint
-  /// (`grid join <grid> --at <url> -m <model> --ctx-size <n>`).
+  /// (`grid join <grid> --at <url> -m <model> [--ctx-size <n>]`).
+  ///
+  /// [contextLength] null means **unknown**, and the flag is then left off
+  /// entirely. That is the honest state and the CLI is built for it: with no
+  /// `--ctx-size`, `capability_entry` omits `context_window` altogether so the
+  /// relay records "unknown" rather than a number — *"an unknown window is
+  /// omitted, never defaulted, so the master (and the auto-router Advisor)
+  /// treats absence as 'unknown' rather than trusting a fabricated 128000"*
+  /// (`autonomous-grid/remote/probe.py`).
+  ///
+  /// This used to send a flat 200000 for every external engine, which defeated
+  /// that design from the outside: every node advertised a 200k window whatever
+  /// its server really served, and the router chooses nodes on that number.
   Future<void> startExternal({
     required String network,
     required String endpoint,
     required String model,
+    int? contextLength,
     String? advertiseAs,
     String? nodeName,
   }) {
@@ -316,7 +324,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         '-m',
         model,
         ..._advertiseArgs(advertiseAs),
-        ..._ctxArgs(_externalCtxSize),
+        ..._ctxArgs(contextLength),
         '--name',
         _nameOr(nodeName),
       ],

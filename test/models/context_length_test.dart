@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/models/logic/context_length.dart';
+import 'package:grid_app/core/context_length.dart';
 
 void main() {
   group('defaultContextLength', () {
@@ -38,6 +38,24 @@ void main() {
       expect(formatContextLength(204800), '200k');
       expect(formatContextLength(262144), '256k');
       expect(formatContextLength(40960), '40k');
+    });
+
+    test('a megabyte-scale window switches unit instead of reading 1024k', () {
+      // The external-engine slider reaches 1M, and "1024k" is a number people
+      // have to convert in their heads to compare against the "1M" their own
+      // engine's flags are written in.
+      expect(formatContextLength(1024 * 1024), '1M');
+      expect(formatContextLength(2 * 1024 * 1024), '2M');
+    });
+
+    test('the decimal appears only where it says something', () {
+      // 1.5M is worth reading; "1.0M" is a longer way to write 1M.
+      expect(formatContextLength(1536 * 1024), '1.5M');
+      expect(formatContextLength(1024 * 1024).contains('.'), isFalse);
+    });
+
+    test('just under a megabyte still reads in k', () {
+      expect(formatContextLength(1023 * 1024), '1023k');
     });
   });
 }
