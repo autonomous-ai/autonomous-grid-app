@@ -130,6 +130,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// agent being *replaced* is where the handover is read from. Which of them
   /// is which is a fact only this controller has — the view knows the agent the
   /// picker names, not the one still running under it.
+  ///
+  /// The two are alternatives, never both. An agent that has its own session in
+  /// this chat resumes it; only one arriving with nothing is handed the
+  /// conversation the agent before it was having.
   Future<void> ensure({
     required String chatId,
     required AgentTool tool,
@@ -237,12 +241,24 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       // that terminal rather than replacing it — see [TerminalSession.relaunch]
       // for the crash that replacing it caused.
       if (_sessions[chatId] case final session?) {
-        // What the agent being replaced had worked out, read while its files
-        // are still the newest thing on disk and before its CLI is killed.
-        final handover = await _handoverFrom(
-          leaving,
-          _pointFor(sessions, leaving, workdir),
-        );
+        // What the agent being replaced had worked out — but **only when the
+        // agent taking over has nothing of its own here**. Switching back to an
+        // agent that already has a conversation in this chat resumes *that*
+        // one: it remembers the work first-hand, and pasting the other agent's
+        // transcript over the top of its own memory hands it a second, worse
+        // account of what it already knows — which is what it did, and what
+        // this reads as on screen: a wall of someone else's chat sitting above
+        // a prompt that had already picked up where it left off.
+        //
+        // Read here rather than earlier so the skip also skips the read: a
+        // session file runs to megabytes, and parsing one to throw it away is
+        // the switch stalling for no reason.
+        final handover = resumeId != null
+            ? null
+            : await _handoverFrom(
+                leaving,
+                _pointFor(sessions, leaving, workdir),
+              );
         if (!ref.mounted) return;
         session.relaunch(
           command: command,
@@ -306,13 +322,13 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// The conversation [leaving] was holding, as text for the agent taking over
   /// — or null when there is nothing to hand across.
   ///
-  /// **A switch is not a resume, and this is the only thing that stops it being
-  /// a memory wipe.** The new CLI opens on an empty session: it has never seen
-  /// the file the last one was halfway through changing, and the user's next
-  /// sentence — which is usually "keep going" — lands on nothing. Reading the
-  /// outgoing agent's own session file is what makes the difference, and the
-  /// app already knows how to read both (`parseClaudeSession`,
-  /// `parseCodexSession`).
+  /// **For an agent arriving with nothing, and only then.** A CLI opening on an
+  /// empty session has never seen the file the last one was halfway through
+  /// changing, and the user's next sentence — usually "keep going" — lands on
+  /// nothing. Reading the outgoing agent's own session file is what makes the
+  /// difference, and the app already knows how to read both
+  /// (`parseClaudeSession`, `parseCodexSession`). An agent that can resume its
+  /// own conversation here is never given this: see the caller.
   ///
   /// Every failure here answers null: a session file another tool writes owes
   /// this app no shape, and a handover that could not be built has to cost the
