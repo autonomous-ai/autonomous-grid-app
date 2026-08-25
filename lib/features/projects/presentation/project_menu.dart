@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -26,16 +27,18 @@ const _menuPadding = 5.0;
 /// What the menu will measure given what it's about to show — the reveal row is
 /// dropped when the folder is gone. Summed rather than guessed so
 /// [anchoredMenuPosition] lands the menu on the button instead of near it.
+///
+/// Four rows above the divider (pin, reveal, rename, change folder), one below.
 Size _menuSize({required bool reveal}) => Size(
   _menuWidth,
   _menuPadding * 2 +
-      _rowHeight * (reveal ? 3 : 2) +
+      _rowHeight * (reveal ? 4 : 3) +
       _dividerHeight +
       _rowHeight,
 );
 
 /// The "…" overflow menu on a project row: pin it to the top, reveal its folder,
-/// rename it, or take it off the list. Mirrors the app's MenuAnchor pattern so it
+/// rename it, point it at another folder, or take it off the list. Mirrors the app's MenuAnchor pattern so it
 /// reads like every other menu (the task-power and account menus).
 class ProjectMenuButton extends ConsumerStatefulWidget {
   const ProjectMenuButton({super.key, required this.project});
@@ -76,6 +79,31 @@ class _ProjectMenuButtonState extends ConsumerState<ProjectMenuButton> {
   Future<void> _rename() async {
     _menu.close();
     await showRenameProjectDialog(context, ref, _project);
+  }
+
+  /// Move the project to another folder, keeping its chats.
+  ///
+  /// The repair for a folder deleted or moved in Finder: the path is the agent's
+  /// working directory, so until it names somewhere real every turn in this
+  /// project fails before the agent starts (see [projectFolderGoneMessage]).
+  /// Removing the project was the only way out before this, and that takes its
+  /// chats' project with it.
+  Future<void> _changeFolder() async {
+    _menu.close();
+    final path = await getDirectoryPath(confirmButtonText: 'Use folder');
+    if (path == null || path == _project.path) return;
+    ref.read(projectsProvider.notifier).setPath(_project.id, path);
+    // The badge and the "Show in Finder" row both read the cached probe, and the
+    // folder that was missing a second ago is exactly the one this just fixed.
+    revalidateProjectFolders(ref);
+    if (!mounted) return;
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message: '${_project.name} now opens in $path',
+        severity: ToastSeverity.success,
+      ),
+    );
   }
 
   Future<void> _remove() async {
@@ -128,6 +156,7 @@ class _ProjectMenuButtonState extends ConsumerState<ProjectMenuButton> {
           onPin: _togglePin,
           onReveal: _reveal,
           onRename: _rename,
+          onChangeFolder: _changeFolder,
           onRemove: _remove,
         ),
       ],
@@ -148,6 +177,7 @@ class _ProjectMenuContent extends StatelessWidget {
     required this.onPin,
     required this.onReveal,
     required this.onRename,
+    required this.onChangeFolder,
     required this.onRemove,
   });
 
@@ -156,6 +186,7 @@ class _ProjectMenuContent extends StatelessWidget {
   final VoidCallback onPin;
   final VoidCallback onReveal;
   final VoidCallback onRename;
+  final VoidCallback onChangeFolder;
   final VoidCallback onRemove;
 
   @override
@@ -182,6 +213,14 @@ class _ProjectMenuContent extends StatelessWidget {
             icon: LucideIcons.pencilLine300,
             label: 'Rename project',
             onPressed: onRename,
+          ),
+          // Shown whether or not the folder is there: moving a project that
+          // still has its folder is the same action, and a row that only
+          // appears once something has broken is one nobody knows exists.
+          _ProjectMenuItem(
+            icon: LucideIcons.folderInput300,
+            label: 'Change folder…',
+            onPressed: onChangeFolder,
           ),
           // The one destructive entry, fenced off so it can't be hit on the way
           // to Rename.

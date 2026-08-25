@@ -527,7 +527,8 @@ mixin _ChatSend on _ChatSessions {
       sentAt: DateTime.now(),
     );
 
-    final updates = _senderFor(viaAgent, agent).send(
+    // Started only if there is a folder to start it in — see [_intoFolder].
+    Stream<ChatSendUpdate> startSender() => _senderFor(viaAgent, agent).send(
       network: network,
       model: model,
       // Not the whole transcript when it has been compacted: the summary
@@ -557,6 +558,8 @@ mixin _ChatSend on _ChatSessions {
       // isn't its own agent's, in its own folder.
       resume: conversation.resume,
     );
+
+    final updates = _intoFolder(workdir, startSender);
 
     String? agentSessionId;
     _subs[id] = updates.listen(
@@ -696,6 +699,32 @@ mixin _ChatSend on _ChatSessions {
       onError: (Object _) => _finish(id),
       cancelOnError: true,
     );
+  }
+
+  /// [send]'s updates, or a single failure when the folder the turn would run in
+  /// isn't on this computer any more.
+  ///
+  /// The folder is the agent's working directory, so a project pointed at a
+  /// folder that has been deleted or moved in Finder fails at `Process.start`,
+  /// before the agent exists to say anything. What that reported was
+  /// "Couldn't start Claude Code on this computer" — the app blaming the agent
+  /// for a folder the user removed, with nothing about which folder or what to
+  /// do. Asked here rather than in each sender because all three spawn into this
+  /// same directory, and asked *lazily* (the sender is a callback) so nothing is
+  /// spawned at all.
+  ///
+  /// Only a folder that is genuinely gone stops the turn: [projectFolderMissing]
+  /// counts a slow share's silence as present, so a stat that times out sends
+  /// the turn rather than refusing it.
+  Stream<ChatSendUpdate> _intoFolder(
+    String? workdir,
+    Stream<ChatSendUpdate> Function() send,
+  ) async* {
+    if (workdir != null && await projectFolderMissing(ref, workdir)) {
+      yield ChatSendFailure(projectFolderGoneMessage(workdir));
+      return;
+    }
+    yield* send();
   }
 
   /// How the turn in chat [id] went — its passages and steps in order, with
