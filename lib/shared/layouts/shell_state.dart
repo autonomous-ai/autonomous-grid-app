@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/app_environment.dart';
+import '../../infrastructure/analytics/analytics_events.dart';
+import '../../infrastructure/analytics/analytics_providers.dart';
 
 /// The two halves of the app, chosen at the top of the sidebar.
 ///
@@ -425,6 +427,9 @@ class ShellSectionNotifier extends Notifier<ShellSection> {
   /// window from either half, and "Back to app" has to return to the one the
   /// user left.
   void select(ShellSection section) {
+    // The enum's own name, not its label: labels are rewritten often, and a
+    // renamed label would read as a brand-new screen in the funnel.
+    if (section != state) ref.read(analyticsProvider).screenView(section.name);
     if (section.isSettings) {
       if (!state.isSettings) previous = state;
       state = section;

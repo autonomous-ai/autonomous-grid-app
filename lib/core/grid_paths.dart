@@ -164,6 +164,15 @@ class GridPaths {
   /// App-owned; the CLI never touches it.
   static File get welcomeFile => File('${home.path}/app/welcome.json');
 
+  /// The analytics device id, the current visit id, and the user's own
+  /// `"enabled": false` switch (`~/.grid/app/analytics.json`).
+  ///
+  /// App-owned; the CLI never touches it. Its own file rather than a field on
+  /// [chatPrefsFile] because it is the one place a person can turn tracking
+  /// off, and that answer must not be reachable by anything that rewrites
+  /// preferences.
+  static File get analyticsFile => File('${home.path}/app/analytics.json');
+
   /// Which scheduled-task results have already been put into Chat, so a finished
   /// run is delivered once and not again on every launch. App-owned.
   static File get taskDeliveryFile =>
