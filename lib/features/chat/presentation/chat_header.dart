@@ -10,6 +10,7 @@ import '../../../shared/widgets/header_hover_button.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/chat_sessions_controller.dart';
+import '../logic/chat_transcript.dart';
 import '../logic/chat_title.dart';
 import '../logic/conversation.dart';
 import '../../auth/logic/session_controller.dart';
@@ -254,9 +255,31 @@ class _ChatMenuAnchorState extends ConsumerState<ChatMenuAnchor> {
         );
   }
 
+  /// Put this chat on the clipboard.
+  ///
+  /// Asked of [ChatTranscript] rather than read off `_chat.messages`, and that
+  /// is the whole fix: a chat running Claude Code or Codex keeps its
+  /// conversation in the CLI's own session file and its `messages` list empty
+  /// for life, so this copied nothing at all and then said "Transcript copied".
+  ///
+  /// A chat with nothing in it either place says so instead of reporting a copy
+  /// that copied nothing — a toast that lies about the clipboard is worse than
+  /// no toast, because the user only finds out when they paste (§5).
   Future<void> _copy() async {
     _menu.close();
-    await Clipboard.setData(ClipboardData(text: transcriptText(_chat)));
+    final text = await ref.read(chatTranscriptProvider).textOf(_chat);
+    if (!mounted) return;
+    if (text == null || text.isEmpty) {
+      ToastScope.show(
+        context,
+        const ToastSpec(
+          message: 'Nothing to copy yet — this chat has no conversation in it.',
+          severity: ToastSeverity.warning,
+        ),
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     ToastScope.show(context, const ToastSpec(message: 'Transcript copied'));
   }
@@ -540,21 +563,6 @@ class _ChatMenuDivider extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The conversation as plain text, for the clipboard — one labelled block per
-/// turn, in the order they were said.
-///
-/// Three labels, not two: a goal's next step and a loop's beat go out under the
-/// user's role but nobody typed them, and a copied transcript that puts "You:"
-/// in front of one is the same lie the bubble used to tell (see [TurnOrigin]).
-String transcriptText(Conversation chat) => [
-  for (final m in chat.messages) '${_transcriptSpeaker(m)}: ${m.text}',
-].join('\n\n');
-
-String _transcriptSpeaker(ChatMessage message) {
-  if (message.role == ChatRole.assistant) return 'Assistant';
-  return message.sentBy.isFromApp ? 'Grid' : 'You';
 }
 
 /// Renames [chat] after asking for the new name. Returns the new title, or null
