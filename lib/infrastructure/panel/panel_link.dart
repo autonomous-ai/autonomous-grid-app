@@ -13,6 +13,7 @@ import 'dart:async';
 
 import 'panel_frame.dart';
 import 'panel_message.dart';
+import 'panel_stranger.dart';
 
 /// Somewhere bytes come from and go to.
 ///
@@ -25,12 +26,25 @@ abstract interface class PanelTransport {
   /// Write bytes. May be called before [incoming] has produced anything.
   void send(List<int> bytes);
 
+  /// Let this port go: it is another product's device, not a panel.
+  ///
+  /// Distinct from [close], which ends the transport for good. This one detaches
+  /// and keeps looking — the user may have a real panel on another port, or may
+  /// plug one into this socket later — but it must not reopen *this* port for a
+  /// while, or the two apps trade the tty back and forth and neither works.
+  ///
+  /// On the interface rather than on `PanelPort` alone because [PanelLink] is
+  /// what can tell: ownership is decided by whether frames decode, and the
+  /// transport only ever sees bytes.
+  void disown(String why);
+
   Future<void> close();
 }
 
 /// Frames and unframes messages over a [PanelTransport].
 class PanelLink {
-  PanelLink(this._transport) {
+  PanelLink(this._transport, {void Function(String message)? log})
+    : _log = log ?? _silent {
     _sub = _transport.incoming.listen(
       _onBytes,
       onError: _messages.addError,
@@ -39,7 +53,15 @@ class PanelLink {
   }
 
   final PanelTransport _transport;
+
+  /// Where a port being let go is reported. Passed in rather than imported, so
+  /// this file stays runnable from a plain `dart:io` script.
+  final void Function(String message) _log;
+
   final _decoder = PanelFrameDecoder();
+
+  /// Whether the thing on the other end is somebody else's device.
+  final _stranger = PanelStrangerWatch();
   final _messages = StreamController<PanelInbound>.broadcast();
   late final StreamSubscription<List<int>> _sub;
 
@@ -82,10 +104,26 @@ class PanelLink {
       _transport.send(encodePanelFrame(PanelFrameType.firmware, slice));
 
   void _onBytes(List<int> chunk) {
+    _stranger.heard(chunk.length, DateTime.now());
+    _letGo();
     for (final frame in _decoder.feed(chunk)) {
+      // Anything that decoded settles ownership: the magic AND the CRC both
+      // passed, which another product's stream cannot manage.
+      _stranger.decoded();
       switch (frame.type) {
         case PanelFrameType.json:
-          _messages.add(PanelInbound.parse(frame.text));
+          final message = PanelInbound.parse(frame.text);
+          // THE POSITIVE MATCH, at the earliest point it can be made. A greeting
+          // that does not name this product is not forwarded — not answered with
+          // a refusal, not logged as unreadable, not seen by the controller at
+          // all. `welcome` is what opens a session, and there is no session to
+          // have with somebody else's device.
+          if (message is PanelHello && !message.isOurs) {
+            _stranger.foreignGreeting();
+            _letGo();
+            continue;
+          }
+          _messages.add(message);
         case PanelFrameType.pcm:
           _audio.add(frame.payload);
         case PanelFrameType.firmware:
@@ -101,6 +139,23 @@ class PanelLink {
       }
     }
   }
+
+  /// Let the port go when the traffic on it is not addressed to this app.
+  ///
+  /// Called as bytes arrive rather than on a timer: the two conditions it reads
+  /// — bytes seen, nothing decoded — only ever change when bytes arrive, so a
+  /// timer would be a second clock measuring the same thing. It costs one clock
+  /// comparison per chunk, and returns immediately in the ordinary case.
+  void _letGo() {
+    final why = _stranger.reason(DateTime.now());
+    if (why == null) return;
+    _log('letting go of the port: $why');
+    _stranger.closed();
+    _decoder.reset();
+    _transport.disown(why);
+  }
+
+  static void _silent(String _) {}
 
   /// Stop listening and release the transport.
   ///
