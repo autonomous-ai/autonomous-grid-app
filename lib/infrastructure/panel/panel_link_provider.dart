@@ -31,7 +31,14 @@ final panelPortProvider = Provider<PanelPort>((ref) {
 /// closes the port too, and closing a closed port is a no-op, so registering
 /// both costs nothing and neither can leak when it is the only one read.
 final panelLinkProvider = Provider<PanelLink>((ref) {
-  final link = PanelLink(ref.watch(panelPortProvider));
+  final log = ref.read(appLogProvider);
+  final link = PanelLink(
+    ref.watch(panelPortProvider),
+    // Letting a port go is the one thing this layer does that looks, from the
+    // outside, exactly like a panel that never connected. Logged for the same
+    // reason attaching and detaching are one provider up.
+    log: (message) => log.info('panel', message),
+  );
   ref.onDispose(link.close);
   return link;
 });

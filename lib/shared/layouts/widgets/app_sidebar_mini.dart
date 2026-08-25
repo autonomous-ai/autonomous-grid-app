@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../features/app_update/presentation/update_banner.dart';
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/command_palette/presentation/command_palette.dart';
 import '../../theme/app_theme.dart';
@@ -76,6 +77,9 @@ class AppSidebarMini extends ConsumerWidget {
             ),
             const Divider(height: 1, thickness: 1),
             const SizedBox(height: 4),
+            // Same place as the wide rail's card, folded to one button — see
+            // `UpdateBanner.compact`.
+            const UpdateBanner(compact: true),
             const SidebarAccount(compact: true),
           ],
         ),
