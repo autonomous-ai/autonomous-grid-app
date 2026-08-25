@@ -164,6 +164,14 @@ class GridPaths {
   /// App-owned; the CLI never touches it.
   static File get welcomeFile => File('${home.path}/app/welcome.json');
 
+  /// The newest build number the user has closed the update banner on
+  /// (`~/.grid/app/update_dismissed.json`), so closing it means "not this
+  /// version" rather than "not until you restart". A higher release opens the
+  /// banner again on its own. App-owned; Sparkle keeps its own separate record
+  /// of versions skipped through its dialog, and neither can read the other's.
+  static File get updateDismissedFile =>
+      File('${home.path}/app/update_dismissed.json');
+
   /// Which scheduled-task results have already been put into Chat, so a finished
   /// run is delivered once and not again on every launch. App-owned.
   static File get taskDeliveryFile =>

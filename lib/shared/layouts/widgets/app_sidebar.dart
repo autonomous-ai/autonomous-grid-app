@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../features/app_update/presentation/update_banner.dart';
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/presentation/chat_history_list.dart';
 import '../../../features/code/presentation/code_rail.dart';
@@ -97,6 +98,11 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
             // the way Codex separates its signed-in user from the list above.
             const Divider(height: 1, thickness: 1),
             const SizedBox(height: 4),
+            // Above the account rather than below it: the account is the last
+            // thing in the window and stays where people expect it, while the
+            // banner appears and disappears. Draws nothing when there is no
+            // release to offer, so nothing shifts on an ordinary launch.
+            const UpdateBanner(),
             const SidebarAccount(),
           ],
         ),
