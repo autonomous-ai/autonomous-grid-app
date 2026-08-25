@@ -173,12 +173,20 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   @override
   void updateEditingValue(TextEditingValue value) {
     if (_connection == null) return;
-    // Preedit, not text. It is the word the user is still choosing, and
-    // diffing it would type every candidate they scrolled past into the
-    // program. The commit arrives as an ordinary value with the range gone,
-    // and is diffed then.
+    // Preedit is sent as it changes, not held back until the input method
+    // commits — **because nothing else here would draw it.** `xterm` renders
+    // marked text itself, underlined, but only through the text input this
+    // widget took off it (`hardwareKeyboardOnly`), so held-back preedit is
+    // simply invisible: the user typed a Vietnamese word, watched nothing
+    // happen, and got the whole thing at once when the mark landed. Sending it
+    // costs nothing, because a rewrite is what [terminalEdit] is for — the
+    // commit arrives as one more edit and corrects whatever the preedit put
+    // there.
+    //
+    // The flag still matters for the *keyboard*: while a candidate window is
+    // up, Enter commits the word instead of running the line
+    // ([terminalKeyLane]).
     _composing = value.composing.isValid && !value.composing.isCollapsed;
-    if (_composing) return;
     final edit = terminalEdit(_sent, value.text);
     _sent = value.text;
     if (edit.isEmpty) return;
