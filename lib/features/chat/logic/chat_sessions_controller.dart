@@ -169,6 +169,13 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// request.
   final Set<String> _naming = {};
 
+  /// The most recent routing group the user set up, carried across chats so a
+  /// fresh conversation (new chat / blank composer) reuses the same brute-force
+  /// or feedback flow instead of silently dropping back to the grid's ordinary
+  /// pick. Seeded from the most recently touched routed chat on restore, so it
+  /// survives a restart too. null until the user has routed any chat.
+  RoutingGroup? _lastRoutingGroup;
+
   ChatStore get _store => ref.read(chatStoreProvider);
 
   /// The open conversation, or a fresh (unsaved) one seeded with [model] and the
@@ -177,13 +184,19 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     final active = state.active;
     if (active != null) return active;
     final now = DateTime.now();
+    // A fresh chat reuses the routing the user last set up, so it keeps the same
+    // brute-force / feedback flow they expect instead of dropping back to the
+    // grid's ordinary pick. Must also route the model to the mode's own slot id
+    // (`auto/brute_force`), because [wireModelFor] keys the routing off it.
+    final last = _lastRoutingGroup;
     return Conversation(
       id: now.microsecondsSinceEpoch.toString(),
       title: kNewConversationTitle,
-      model: model,
+      model: last != null ? routingModelId(last.mode) : model,
       createdAt: now,
       updatedAt: now,
       projectId: state.draftProjectId,
+      routingGroup: last,
     );
   }
 
@@ -446,6 +459,15 @@ class ChatSessionsController extends _ChatSessions
           ? state.activeId
           : (opening.isEmpty ? null : opening.first.id),
     );
+    // A restart must remember the last routing the user set up, so a new chat
+    // created now keeps the same brute-force / feedback flow. The most recently
+    // touched routed chat is the best stand-in for "the last one used".
+    for (final c in merged) {
+      if (c.routingGroup != null) {
+        _lastRoutingGroup = c.routingGroup;
+        break; // merged is sorted newest-first
+      }
+    }
     // Last, and only here: the history has to be in state before a loop can be
     // found in it, and this is the one path that reads *this* computer's own
     // chat folder (see [_stopForeignLoop] for the other one).
@@ -790,6 +812,7 @@ class ChatSessionsController extends _ChatSessions
   /// Leaves `updatedAt` alone, like [setActiveModel]: choosing how a chat is
   /// routed is not talking in it, and must not re-sort the sidebar.
   void setRoutingGroup(RoutingGroup group) {
+    _lastRoutingGroup = group;
     final active = state.active;
     if (active != null) {
       if (active.routingGroup == group) return;

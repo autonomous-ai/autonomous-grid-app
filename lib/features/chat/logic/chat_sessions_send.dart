@@ -648,6 +648,11 @@ mixin _ChatSend on _ChatSessions {
               ranSteps: messages.last.parts.isNotEmpty,
             );
           case ChatSendFailure(:final error, :final partial):
+            // A failed turn never reaches [_settleModelShares]'s stop, so its
+            // /usage/turn poller would leak a 5s request every interval,
+            // forever. Cancel it here (success stops in [_settleModelShares];
+            // Stop/Delete stop in [_cancel]).
+            ref.read(turnModelUsageProvider.notifier).stop(id);
             // Keep what the assistant produced before it failed — its streamed
             // prose, the plan it laid out — instead of wiping the turn to a bare
             // error line, which reads as "it did nothing". The error still

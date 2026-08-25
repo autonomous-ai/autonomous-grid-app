@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/code_text_scope.dart';
-import '../../../shared/widgets/status_dot.dart';
 
 /// How far along a node's turn has gotten. 'You' and 'Answer' never carry
 /// one — they are the request and the reply, not a step that runs.
@@ -22,8 +21,8 @@ class DiagramNode {
 /// Fixed geometry every layout in this file shares, so a node reads as the
 /// same box wherever it appears and a connector always meets one at the same
 /// point.
-const double _kNodeWidth = 132;
-const double _kNodeHeight = 38;
+const double _kNodeWidth = 176;
+const double _kNodeHeight = 44;
 const double _kNodeGap = 10; // between stacked proposer pills
 const double _kConnectorWidth = 44;
 const double _kLoopArcHeight = 26;
@@ -289,9 +288,10 @@ class _JudgeLoopFlow extends StatelessWidget {
   }
 }
 
-/// A model-name pill: mono text (model ids are copied, not read) plus a
-/// status dot — except for 'You'/'Answer', which are the ends of the flow,
-/// not a step in it.
+/// A model-name pill: mono text (model ids are copied, not read) — except for
+/// 'You'/'Answer', which are the ends of the flow, not a step in it. A coloured
+/// border, not an inline dot, marks the pill the grid is answering with right
+/// now: a running node glows so the active step stands out at a glance.
 class _NodePill extends StatelessWidget {
   const _NodePill(this.node, {this.showStatus = true});
 
@@ -306,55 +306,46 @@ class _NodePill extends StatelessWidget {
     return SizedBox(
       width: _kNodeWidth,
       height: _kNodeHeight,
-      child: Tooltip(
-        message: node.label,
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            color: _isEndpoint ? AppGlass.bubbleFill : AppPalette.cardBg,
-            borderRadius: BorderRadius.circular(AppControl.radius),
-            border: Border.all(color: AppPalette.divider),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: _isEndpoint ? AppGlass.bubbleFill : AppPalette.cardBg,
+          borderRadius: BorderRadius.circular(AppControl.radius),
+          border: Border.all(
+            // Activity is a border glow, not a dot: the step being answered
+            // right now draws a coloured edge so it reads at a glance.
+            color: (!_isEndpoint && showStatus &&
+                    node.status == NodeStatus.running)
+                ? AppPalette.online
+                : AppPalette.divider,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  node.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: AppFont.codeStyle(
-                    color: AppPalette.textPrimary,
-                    scale: 0.94,
-                  ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                node.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: AppFont.codeStyle(
+                  color: AppPalette.textPrimary,
+                  scale: 0.94,
                 ),
               ),
-              if (!_isEndpoint && showStatus) ...[
-                const SizedBox(width: 6),
-                StatusDot(
-                  color: _statusColor(node.status),
-                  size: 7,
-                  pulsing: node.status == NodeStatus.running,
-                ),
-              ],
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// A status's mark — reusing the app's existing online/offline/warn tokens
-/// (job_status.dart draws `running` the same way) rather than new colours.
-Color _statusColor(NodeStatus status) => switch (status) {
-  NodeStatus.queued => AppPalette.offline,
-  NodeStatus.running => AppPalette.online,
-  NodeStatus.done => AppPalette.online,
-  NodeStatus.rejected => AppPalette.warn,
-};
+/// REMOVED: the inline status dot lived here. Activity now shows as a coloured
+/// border on [_NodePill] (online = running) instead. Kept [NodeStatus] and the
+/// enum keys' colours only where a node outside a pill still needs them.
 
 /// A straight line across [size], left edge to right edge.
 Path _straightPath(Size size) => Path()

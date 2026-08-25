@@ -312,8 +312,6 @@ class _PanelHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        PillPanelBadge(label: flow.group.isFixed ? 'Pinned' : 'Dynamic'),
-        const SizedBox(width: 10),
         Expanded(
           child: Text(
             flow.status,
