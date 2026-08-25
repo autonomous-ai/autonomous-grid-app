@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/shared/terminal/terminal_ime.dart';
 
@@ -74,4 +75,88 @@ void main() {
       });
     },
   );
+
+  group('terminalKeyLane — which keyboard a key belongs to', () {
+    TerminalKeyLane lane(
+      LogicalKeyboardKey key, {
+      String? character,
+      bool modified = false,
+      bool hasRun = false,
+    }) => terminalKeyLane(
+      key: key,
+      character: character,
+      modified: modified,
+      hasRun: hasRun,
+    );
+
+    test('a plain letter is declined so macOS offers it to the input method — '
+        'this is the bug: xterm inserted it and answered "handled", and a key '
+        'the framework claims never reaches Telex at all', () {
+      expect(
+        lane(LogicalKeyboardKey.keyE, character: 'e'),
+        TerminalKeyLane.input,
+      );
+      expect(
+        lane(LogicalKeyboardKey.space, character: ' '),
+        TerminalKeyLane.input,
+      );
+    });
+
+    test('Enter, Tab and Escape stay with the terminal, which knows how to '
+        'spell them for the buffer the program is on', () {
+      expect(
+        lane(LogicalKeyboardKey.enter, character: '\r'),
+        TerminalKeyLane.terminal,
+      );
+      expect(
+        lane(LogicalKeyboardKey.tab, character: '\t'),
+        TerminalKeyLane.terminal,
+      );
+      expect(
+        lane(LogicalKeyboardKey.escape, character: '\x1b'),
+        TerminalKeyLane.terminal,
+      );
+    });
+
+    test('a key with no character of its own — an arrow, a function key — is '
+        "the terminal's", () {
+      expect(lane(LogicalKeyboardKey.arrowUp), TerminalKeyLane.terminal);
+      expect(
+        lane(LogicalKeyboardKey.f1, character: ''),
+        TerminalKeyLane.terminal,
+      );
+    });
+
+    test('a chord is never text, so ctrl-C still interrupts and ⌘V still '
+        'pastes', () {
+      expect(
+        lane(LogicalKeyboardKey.keyC, character: 'c', modified: true),
+        TerminalKeyLane.terminal,
+      );
+    });
+
+    test('Backspace goes wherever the text is: to the field while a word is '
+        'still being composed, so the two agree on what is on the line, and to '
+        'the program when the field is empty and there is nothing to edit', () {
+      expect(
+        lane(LogicalKeyboardKey.backspace, hasRun: true),
+        TerminalKeyLane.input,
+      );
+      expect(lane(LogicalKeyboardKey.backspace), TerminalKeyLane.terminal);
+    });
+  });
+
+  group('isModifierKey — a held modifier must not end the run', () {
+    test('a Shift held for a capital in the middle of a Vietnamese word sends '
+        'nothing, so it cannot count as moving on from that word', () {
+      expect(isModifierKey(LogicalKeyboardKey.shiftLeft), isTrue);
+      expect(isModifierKey(LogicalKeyboardKey.metaRight), isTrue);
+      expect(isModifierKey(LogicalKeyboardKey.capsLock), isTrue);
+    });
+
+    test('a key that does send something is not one', () {
+      expect(isModifierKey(LogicalKeyboardKey.enter), isFalse);
+      expect(isModifierKey(LogicalKeyboardKey.keyA), isFalse);
+    });
+  });
 }
