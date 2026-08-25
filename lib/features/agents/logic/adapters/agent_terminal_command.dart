@@ -21,6 +21,18 @@ import '../agent_catalog.dart';
 /// [config] is Codex's `-c` overrides (the grid, the model, the provider), the
 /// same list the one-shot lane builds. Claude Code takes its grid in the
 /// environment instead, so it ignores this.
+/// The conversation an interactive CLI should be holding: its id, and whether
+/// that id already names one.
+///
+/// The two are not the same argument to either program, which is why this is a
+/// pair rather than a nullable id. Claude Code is *told* the id up front
+/// (`--session-id`) and asked for it back later (`--resume`) — and refuses
+/// `--session-id` for a session that exists, so the flag has to change once the
+/// first launch is done. Codex cannot be told one at all, so [resume] is only
+/// ever true for it, on an id read back off the rollout it wrote
+/// (`newCodexSessionId`).
+typedef AgentSession = ({String id, bool resume});
+
 ShellCommand agentTerminalCommand({
   required AgentTool tool,
   required String executable,
@@ -29,6 +41,7 @@ ShellCommand agentTerminalCommand({
   required AgentApprovalMode approval,
   String? mcpConfigPath,
   List<String> config = const [],
+  AgentSession? session,
 }) => (
   executable: executable,
   arguments: switch (tool) {
@@ -36,12 +49,14 @@ ShellCommand agentTerminalCommand({
       model: model,
       approval: approval,
       mcpConfigPath: mcpConfigPath,
+      session: session,
     ),
     AgentTool.codex => _codexTerminalArgs(
       model: model,
       workdir: workdir,
       approval: approval,
       config: config,
+      session: session,
     ),
     // Hermes has no interactive CLI this app drives — it speaks ACP, and that
     // is the whole of it. [AgentTool.runsInTerminal] is what keeps a chat from
@@ -64,7 +79,12 @@ List<String> _claudeTerminalArgs({
   required String model,
   required AgentApprovalMode approval,
   required String? mcpConfigPath,
+  required AgentSession? session,
 }) => [
+  if (session != null)
+    ...(session.resume
+        ? ['--resume', session.id]
+        : ['--session-id', session.id]),
   '--model',
   model,
   ...claudePermissionArgs(approval),
@@ -89,9 +109,16 @@ List<String> _codexTerminalArgs({
   required String workdir,
   required AgentApprovalMode approval,
   required List<String> config,
+  required AgentSession? session,
 }) {
   final gate = codexApprovalPolicy(approval);
   return [
+    // `resume` is a subcommand, not a flag, so it leads — and the id goes with
+    // it rather than after the options. `codex resume --help` documents
+    // `[OPTIONS] [SESSION_ID]`, but keeping the positional next to the word that
+    // takes it is what stops a variadic option (`-i/--image <FILE>...`) from
+    // ever swallowing it, the same rule the one-shot argv follows.
+    if (session != null && session.resume) ...['resume', session.id],
     '-C',
     workdir,
     '-m',

@@ -417,6 +417,42 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _clearDraft();
   }
 
+  /// The session this chat's CLI should pick back up, or null to start a new
+  /// conversation.
+  ///
+  /// Both halves of [AgentResumePoint.matches] have to agree before an id is
+  /// handed over. The agent is the obvious one — Codex cannot resume a Claude
+  /// session. The folder is the half that looks optional and isn't: the id would
+  /// resume perfectly well from anywhere, and the CLI would carry on editing the
+  /// files it remembers rather than the ones this chat is pointed at.
+  String? _resumeIdFor(AgentTool agent, String workdir) {
+    final point = ref.watch(
+      chatSessionsProvider.select((s) => s.active?.resume),
+    );
+    if (point == null) return null;
+    if (!point.matches(thisAgent: agent.id, thisWorkdir: workdir)) return null;
+    return point.sessionId;
+  }
+
+  /// Write down the session the terminal has just opened, so closing the app
+  /// doesn't cost the conversation.
+  void _rememberSession(
+    String? chatId,
+    AgentTool agent,
+    String sessionId,
+    String workdir,
+  ) {
+    if (chatId == null || chatId.isEmpty) return;
+    ref
+        .read(chatSessionsProvider.notifier)
+        .rememberAgentSession(
+          chatId: chatId,
+          agent: agent,
+          sessionId: sessionId,
+          workdir: workdir,
+        );
+  }
+
   /// The chat whose agent is being driven in a terminal right now, or null when
   /// this chat sends turns the ordinary way.
   ///
@@ -1200,6 +1236,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           workdir: workdir,
                           approval: approval,
                           network: widget.network,
+                          resumeSessionId: _resumeIdFor(chatAgent, workdir),
+                          onSessionId: (id) => _rememberSession(
+                            activeId,
+                            chatAgent,
+                            id,
+                            workdir,
+                          ),
                         )
                       : isNewChat
                       ? ChatStarters(
@@ -1330,6 +1373,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                       workdir: workdir,
                                       approval: approval,
                                       network: widget.network,
+                                      onSessionId: (id) => _rememberSession(
+                                        activeId,
+                                        chatAgent,
+                                        id,
+                                        workdir,
+                                      ),
                                     ),
                               ),
                             );

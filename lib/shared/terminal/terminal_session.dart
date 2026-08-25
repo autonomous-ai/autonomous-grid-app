@@ -8,6 +8,7 @@ import 'package:xterm/xterm.dart';
 
 import '../../infrastructure/cli/host_environment.dart';
 import '../theme/app_theme.dart';
+import 'scroll_region_terminal.dart';
 import 'terminal_shell.dart';
 
 /// What the shell behind a terminal is doing.
@@ -96,7 +97,10 @@ class TerminalSession {
   /// build log is exactly the case that needs them.
   static const _scrollback = 10000;
 
-  final Terminal terminal = Terminal(maxLines: _scrollback);
+  /// The emulator itself is [ScrollRegionTerminal] rather than stock `xterm`:
+  /// an agent's CLI writes its transcript through a scroll region, and the
+  /// stock buffer drops it and then throws on every byte after (see there).
+  final Terminal terminal = ScrollRegionTerminal(maxLines: _scrollback);
   final TerminalController controller = TerminalController();
 
   ShellState _shell = const ShellIdle();

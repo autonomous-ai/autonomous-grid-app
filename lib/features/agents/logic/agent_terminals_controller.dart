@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_session_id.dart';
+import '../../../infrastructure/cli/codex_rollouts.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/mcp/grid_mcp_provider.dart';
 import '../../../infrastructure/mcp/grid_mcp_server.dart';
@@ -81,6 +85,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// `TerminalSession` is the Terminal tab's too.
   final Map<String, AgentTool> _running = {};
 
+  /// Where a Codex session id is read back from. A field so a test can point it
+  /// at a temp folder instead of the user's own Codex history.
+  final CodexRollouts _rollouts = CodexRollouts();
+
   @override
   AgentTerminalsState build() {
     ref.onDispose(_disposeAll);
@@ -100,6 +108,8 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     required String workdir,
     required AgentApprovalMode approval,
     required NetworkCredential network,
+    String? resumeSessionId,
+    ValueChanged<String>? onSessionId,
   }) async {
     if (!tool.runsInTerminal) return;
     // Nothing about a session can be built before the model is known: it is the
@@ -142,6 +152,15 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       // The chat was closed while its grid was being prepared.
       if (!ref.mounted) return;
 
+      // What the CLI should be holding when it opens. Claude Code is handed an
+      // id the app made up; Codex has no way to be told one, so it can only be
+      // *resumed* with an id read back off a rollout it wrote (see
+      // [_learnCodexSession]).
+      final handle = switch ((tool, resumeSessionId)) {
+        (_, final id?) => (id: id, resume: true),
+        (AgentTool.claude, _) => (id: newAgentSessionId(), resume: false),
+        _ => null,
+      };
       final command = agentTerminalCommand(
         tool: tool,
         executable: executable,
@@ -150,8 +169,18 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         approval: approval,
         mcpConfigPath: setup.mcpConfig,
         config: setup.config,
+        session: handle,
       );
       _running[chatId] = tool;
+      // Told before the process starts, because the id *is* the flag it starts
+      // with: written down now, a chat that is closed mid-answer still knows
+      // what to resume.
+      if (handle != null && !handle.resume) onSessionId?.call(handle.id);
+      // Codex's own id can only be found by watching for the file it writes, so
+      // the listing has to be taken before the spawn below.
+      final rollouts = tool == AgentTool.codex && resumeSessionId == null
+          ? await _rollouts.snapshot()
+          : null;
       // Handed back only now: a setup that failed above leaves the CLI that is
       // still running with the tools it had.
       _revokeTools(chatId);
@@ -165,6 +194,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
           environment: setup.environment,
           onError: _logStartFailure,
         );
+        _learnCodexSession(rollouts, onSessionId);
         return;
       }
       final session = TerminalSession(
@@ -177,9 +207,36 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       _sessions[chatId] = session;
       session.start(onError: _logStartFailure);
       _publish();
+      _learnCodexSession(rollouts, onSessionId);
     } finally {
       _opening.remove(chatId);
     }
+  }
+
+  /// Reads back the id Codex gave the session just started, and hands it to
+  /// [onSessionId].
+  ///
+  /// Not awaited by [ensure], and deliberately: the chat is usable the moment
+  /// the pty is drawing, and this is a few seconds of watching a folder for a
+  /// file whose only job is to make *tomorrow's* launch continue rather than
+  /// start over. A session whose id is never found is a session that starts
+  /// fresh next time, which is exactly where the app was before.
+  void _learnCodexSession(Set<String>? before, ValueChanged<String>? onId) {
+    if (before == null || onId == null) return;
+    unawaited(
+      _rollouts.discover(before: before).then((id) {
+        if (id == null) {
+          return ref
+              .read(appLogProvider)
+              .info(
+                'agent',
+                'could not tell which Codex session started; this chat will '
+                    'begin a new one next time',
+              );
+        }
+        onId(id);
+      }),
+    );
   }
 
   /// Puts [text] at the CLI's prompt without submitting it — a dropped file's
@@ -226,6 +283,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     required String workdir,
     required AgentApprovalMode approval,
     required NetworkCredential network,
+    ValueChanged<String>? onSessionId,
   }) async {
     _running.remove(chatId);
     await ensure(
@@ -235,6 +293,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       workdir: workdir,
       approval: approval,
       network: network,
+      // No `resumeSessionId`, and that is the point of the button: Restart is
+      // what a user reaches for to be rid of the conversation on screen, so it
+      // starts a new one and [onSessionId] replaces the id the chat had stored.
+      onSessionId: onSessionId,
     );
   }
 

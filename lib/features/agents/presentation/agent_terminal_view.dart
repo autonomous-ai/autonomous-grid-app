@@ -35,6 +35,8 @@ class AgentTerminalView extends ConsumerStatefulWidget {
     required this.workdir,
     required this.approval,
     required this.network,
+    this.resumeSessionId,
+    this.onSessionId,
   });
 
   final String chatId;
@@ -55,6 +57,20 @@ class AgentTerminalView extends ConsumerStatefulWidget {
   final AgentApprovalMode approval;
 
   final NetworkCredential network;
+
+  /// The conversation the CLI should pick back up, or null to start a new one.
+  ///
+  /// Only ever a session this same agent recorded in this same folder — an id
+  /// resumes perfectly well from anywhere, and the agent would carry on editing
+  /// the files it remembers rather than the ones it is now pointed at
+  /// (`AgentResumePoint.matches`).
+  final String? resumeSessionId;
+
+  /// Fires with the id the CLI is holding, once it is known — immediately for
+  /// Claude Code, which is *told* its id, and a few seconds later for Codex,
+  /// which has to be read back off the rollout it writes. The chat writes it
+  /// down so the next launch continues instead of starting over.
+  final ValueChanged<String>? onSessionId;
 
   @override
   ConsumerState<AgentTerminalView> createState() => _AgentTerminalViewState();
@@ -103,6 +119,8 @@ class _AgentTerminalViewState extends ConsumerState<AgentTerminalView> {
             workdir: widget.workdir,
             approval: widget.approval,
             network: widget.network,
+            resumeSessionId: widget.resumeSessionId,
+            onSessionId: widget.onSessionId,
           );
     });
   }

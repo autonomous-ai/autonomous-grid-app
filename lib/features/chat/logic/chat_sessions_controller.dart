@@ -802,6 +802,55 @@ class ChatSessionsController extends _ChatSessions
     state = state.copyWith(conversations: merged, activeId: gone ? null : id);
   }
 
+  /// Write down which session the chat's own CLI is holding, so the next launch
+  /// carries the conversation on instead of starting another.
+  ///
+  /// The terminal lane has no turns to hang this off — nothing is sent through
+  /// the app, so `_resumePointFor` (which runs on a reply landing) never fires
+  /// for these chats. The session is reported by the terminal itself, once the
+  /// CLI is holding it.
+  ///
+  /// `seen: 0` is honest rather than lazy: it counts how much of *this app's*
+  /// transcript the agent already has, and a terminal chat has no transcript
+  /// here at all. Nothing replays into a session that answers from its own.
+  ///
+  /// Leaves `updatedAt` where it was, like the model is left: a chat must not
+  /// climb the sidebar because its CLI started.
+  ///
+  /// **TODO(BE): a chat holds one resume point, and two agents can want it.**
+  /// Switching a terminal chat from Claude Code to Codex records Codex's
+  /// session over Claude's, so switching back starts Claude over rather than
+  /// where it was. Storing a point per agent is a change to the saved shape, so
+  /// it is written down here rather than guessed at.
+  ///
+  /// **TODO(BE): the one-shot lane reads this same field.** A goal step, a loop
+  /// beat or a scheduled task would pass `--resume <id>` to `claude -p` for an
+  /// id a terminal is holding open, and two processes writing one session is not
+  /// a thing either CLI promises to survive. It cannot happen today — a terminal
+  /// chat has no composer, so nothing in it can start a goal or a loop, and a
+  /// scheduled task makes its own chat — but the field is shared and the guard
+  /// is circumstance, not design.
+  void rememberAgentSession({
+    required String chatId,
+    required AgentTool agent,
+    required String sessionId,
+    required String? workdir,
+  }) {
+    final current = _find(chatId);
+    if (current == null) return;
+    if (current.resume?.sessionId == sessionId) return;
+    _saveAndReplace(
+      current.copyWith(
+        resume: AgentResumePoint(
+          agent: agent.id,
+          sessionId: sessionId,
+          seen: 0,
+          workdir: workdir,
+        ),
+      ),
+    );
+  }
+
   /// Remember the model chosen for the open conversation, so leaving the chat and
   /// coming back — or reopening it later — restores *that* choice, not the grid's
   /// default. A no-op for a not-yet-saved compose (its model rides the first

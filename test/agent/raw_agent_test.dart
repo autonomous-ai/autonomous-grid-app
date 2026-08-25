@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xterm/xterm.dart';
 import 'package:grid_app/features/agents/logic/adapters/agent_terminal_command.dart';
@@ -8,6 +10,7 @@ import 'package:grid_app/shared/terminal/terminal_shell.dart';
 import 'package:grid_app/shared/terminal/terminal_text.dart';
 import 'package:grid_app/features/agents/logic/agent_server_error.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
+import 'package:grid_app/infrastructure/cli/agent_session_id.dart';
 import 'package:grid_app/infrastructure/cli/raw_agent_argv.dart';
 
 /// The value of the `-c` override named [key], or null when the argv carries
@@ -326,6 +329,7 @@ void main() {
     ShellCommand claude({
       AgentApprovalMode approval = AgentApprovalMode.ask,
       String? mcpConfigPath,
+      AgentSession? session,
     }) => agentTerminalCommand(
       tool: AgentTool.claude,
       executable: '/bin/claude',
@@ -333,11 +337,13 @@ void main() {
       workdir: '/tmp/project',
       approval: approval,
       mcpConfigPath: mcpConfigPath,
+      session: session,
     );
 
     ShellCommand codex({
       AgentApprovalMode approval = AgentApprovalMode.ask,
       List<String> config = const [],
+      AgentSession? session,
     }) => agentTerminalCommand(
       tool: AgentTool.codex,
       executable: '/bin/codex',
@@ -345,6 +351,7 @@ void main() {
       workdir: '/tmp/project',
       approval: approval,
       config: config,
+      session: session,
     );
 
     test(
@@ -418,6 +425,131 @@ void main() {
       expect(AgentTool.claude.runsInTerminal, isTrue);
       expect(AgentTool.codex.runsInTerminal, isTrue);
       expect(AgentTool.hermes.runsInTerminal, isFalse);
+    });
+  });
+
+  group('a chat keeps the conversation its CLI is holding', () {
+    ShellCommand claude({AgentSession? session}) => agentTerminalCommand(
+      tool: AgentTool.claude,
+      executable: '/bin/claude',
+      model: 'opus',
+      workdir: '/tmp/project',
+      approval: AgentApprovalMode.ask,
+      session: session,
+    );
+    ShellCommand codex({AgentSession? session}) => agentTerminalCommand(
+      tool: AgentTool.codex,
+      executable: '/bin/codex',
+      model: 'qwen3',
+      workdir: '/tmp/project',
+      approval: AgentApprovalMode.ask,
+      session: session,
+    );
+
+    test('Claude Code is told the id on the launch that creates the session, '
+        'and asked for it back on every one after — measured on 2.1.243, '
+        'passing --session-id twice is refused outright', () {
+      expect(
+        claude(session: (id: 'abc', resume: false)).arguments,
+        containsAllInOrder(['--session-id', 'abc']),
+      );
+      expect(
+        claude(session: (id: 'abc', resume: true)).arguments,
+        containsAllInOrder(['--resume', 'abc']),
+      );
+      expect(claude().arguments, isNot(contains('--session-id')));
+      expect(claude().arguments, isNot(contains('--resume')));
+    });
+
+    test(
+      "Codex's resume is a subcommand, so it leads the argv and keeps its id "
+      'beside it — an option in between is how a variadic flag swallows the '
+      'thing it was meant to resume',
+      () {
+        final args = codex(session: (id: 'uuid-1', resume: true)).arguments;
+        expect(args.take(2), ['resume', 'uuid-1']);
+        // The rest of the session still reaches it: `codex resume` takes these,
+        // and only `--skip-git-repo-check` is missing from its list.
+        expect(args, containsAllInOrder(['-C', '/tmp/project']));
+        expect(args, containsAllInOrder(['-m', 'qwen3']));
+      },
+    );
+
+    test('a Codex chat with nothing to resume starts the plain TUI, because '
+        'there is no flag that can hand it an id up front', () {
+      expect(codex().arguments, isNot(contains('resume')));
+      expect(
+        codex(session: (id: 'x', resume: false)).arguments,
+        isNot(contains('resume')),
+      );
+    });
+  });
+
+  group('newAgentSessionId — the CLI parses it and names a file after it', () {
+    test('it is a v4 UUID, not merely something unique', () {
+      final id = newAgentSessionId(Random(7));
+      expect(
+        id,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}'
+            r'-[0-9a-f]{12}$',
+          ),
+        ),
+      );
+    });
+
+    test('two chats opened in the same breath never share one, or the second '
+        'is refused and answers out of the first chat', () {
+      final ids = {for (var i = 0; i < 200; i++) newAgentSessionId()};
+      expect(ids, hasLength(200));
+    });
+  });
+
+  group('newCodexSessionId — read back, because Codex cannot be told one', () {
+    const dir = '/home/u/.codex/sessions/2026/08/25';
+    const a =
+        '$dir/rollout-2026-08-25T10-24-50-'
+        '01a036f3-005e-7dc0-95af-62aa6efd3385.jsonl';
+    const b =
+        '$dir/rollout-2026-08-25T10-31-02-'
+        '01a036d4-4c50-78f1-9411-2ad5f47fb911.jsonl';
+
+    test('the one rollout that appeared is the session that started', () {
+      expect(
+        newCodexSessionId(before: {b}, after: {a, b}),
+        '01a036f3-005e-7dc0-95af-62aa6efd3385',
+      );
+    });
+
+    test(
+      'two new rollouts answer nothing rather than guess — a wrong id here '
+      'resumes a stranger\'s conversation, which does not look like a bug',
+      () {
+        expect(newCodexSessionId(before: const {}, after: {a, b}), isNull);
+      },
+    );
+
+    test(
+      'a rollout only touched, not created, is not the new session — this is '
+      'the case picking the newest by mtime got wrong, taking another '
+      "chat's live Codex",
+      () {
+        expect(newCodexSessionId(before: {a, b}, after: {a, b}), isNull);
+      },
+    );
+
+    test('the uuid is read off the end, since the timestamp in the middle '
+        'carries dashes of its own', () {
+      expect(codexSessionIdFromPath(a), '01a036f3-005e-7dc0-95af-62aa6efd3385');
+      expect(codexSessionIdFromPath('$dir/notes.jsonl'), isNull);
+      expect(
+        codexSessionIdFromPath(
+          r'C:\x\rollout-2026-08-25T10-24-50-'
+          '01a036f3-005e-7dc0-95af-62aa6efd3385.jsonl',
+        ),
+        '01a036f3-005e-7dc0-95af-62aa6efd3385',
+      );
     });
   });
 
