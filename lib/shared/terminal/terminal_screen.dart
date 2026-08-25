@@ -211,6 +211,19 @@ class _ScreenState extends State<_Screen> {
     if (text != null) widget.session.terminal.paste(text);
   }
 
+  /// Text an input method has finished with, on its way to the program — and
+  /// the view back to the bottom with it.
+  ///
+  /// `xterm` does the same for every key it handles itself; this path doesn't
+  /// go through it, and typing into a screen scrolled up puts the characters
+  /// somewhere the user can't see them.
+  void _typed(String text) {
+    widget.session.terminal.textInput(text);
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    position.jumpTo(position.maxScrollExtent);
+  }
+
   /// The viewport `TerminalView` scrolls, held here rather than left to it.
   ///
   /// The margins beside a clamped screen have to move the *same* scrollback the
@@ -316,8 +329,8 @@ class _ScreenState extends State<_Screen> {
           scroll: _scroll,
           child: ImeTerminalInput(
             focusNode: _focus,
-            onInput: session.terminal.textInput,
-            child: TerminalView(
+            onInput: _typed,
+            builder: (context, onKeyEvent) => TerminalView(
               session.terminal,
               controller: session.controller,
               scrollController: _scroll,
@@ -327,7 +340,9 @@ class _ScreenState extends State<_Screen> {
               // The text half of the keyboard is [ImeTerminalInput]'s, not
               // xterm's: its own can only append, so Vietnamese Telex — which
               // rewrites the letter it just typed — came out doubled. The keys
-              // that are not text stay here.
+              // that are not text stay here, and this is how they get here
+              // first.
+              onKeyEvent: onKeyEvent,
               hardwareKeyboardOnly: true,
               // The app's own code face, at the size and on the line the metrics
               // set — so a path in a Terminal tab is the same width as the same

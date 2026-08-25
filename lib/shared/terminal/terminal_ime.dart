@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 /// The byte a terminal reads as "rub out the character before the cursor".
@@ -5,6 +6,87 @@ import 'package:flutter/widgets.dart';
 /// `\x7f` (DEL), not `\b`: it is what a terminal sends for Backspace, and what
 /// an agent's TUI is listening for.
 const String kTerminalDelete = '\x7f';
+
+/// Which of the two keyboards a key belongs to.
+///
+/// A terminal needs both. Most keys are escape sequences that only the emulator
+/// knows how to spell, and text is text — but on macOS a key can only go to one
+/// of them, because the platform hands a key to the input method *only* when the
+/// framework says nobody handled it.
+enum TerminalKeyLane {
+  /// `xterm`'s own key handler, which turns the key into whatever the program
+  /// on the other end expects to read for it.
+  terminal,
+
+  /// The platform text input, so an input method gets to compose before
+  /// anything is sent — see [terminalEdit].
+  input,
+}
+
+/// Where [key] should be sent.
+///
+/// **This is the whole Vietnamese fix**, and it is a routing decision rather
+/// than an encoding one. `xterm 4.0.0` in `hardwareKeyboardOnly` mode inserts
+/// `event.character` itself and answers `handled`, so macOS never offers the
+/// key to the input method and Telex never runs at all. Every printable key has
+/// to be declined here instead, and the letters arrive later as an edit to the
+/// field.
+///
+/// Everything that is not plain text stays with the terminal, because that is
+/// where the knowledge is: Enter, Tab, Escape, the arrows, the function keys and
+/// every `ctrl`/`alt`/`⌘` chord spell differently depending on the buffer the
+/// program is using, and the input method has no use for any of them.
+///
+/// Backspace is the one key that belongs to both, decided by [hasRun]: while
+/// there is text in the field the input method has to see it, or the field and
+/// the program disagree about what is on the line and the next letter is sent
+/// into the wrong place. With nothing in the field there is nothing to edit, so
+/// it is the program's own rub-out.
+TerminalKeyLane terminalKeyLane({
+  required LogicalKeyboardKey key,
+  required String? character,
+  required bool modified,
+  required bool hasRun,
+}) {
+  if (modified) return TerminalKeyLane.terminal;
+  if (key == LogicalKeyboardKey.backspace) {
+    return hasRun ? TerminalKeyLane.input : TerminalKeyLane.terminal;
+  }
+  if (character == null || character.isEmpty) return TerminalKeyLane.terminal;
+  // Enter arrives carrying `\r`, Tab `\t`, Escape `\x1b`. They are keys, not
+  // text, and the terminal spells them.
+  if (LogicalKeyboardKey.isControlCharacter(character)) {
+    return TerminalKeyLane.terminal;
+  }
+  return TerminalKeyLane.input;
+}
+
+/// Whether [key] is only a modifier being held.
+///
+/// It sends nothing on its own, so it must not be read as the user having moved
+/// on from the word the input method is still composing — holding Shift for a
+/// capital in the middle of a Vietnamese word would otherwise end the run and
+/// strand the letters already sent.
+bool isModifierKey(LogicalKeyboardKey key) => _modifiers.contains(key);
+
+// Not `const`: `LogicalKeyboardKey` defines its own `==`, which a constant
+// set is not allowed to rely on.
+final Set<LogicalKeyboardKey> _modifiers = {
+  LogicalKeyboardKey.shift,
+  LogicalKeyboardKey.shiftLeft,
+  LogicalKeyboardKey.shiftRight,
+  LogicalKeyboardKey.control,
+  LogicalKeyboardKey.controlLeft,
+  LogicalKeyboardKey.controlRight,
+  LogicalKeyboardKey.alt,
+  LogicalKeyboardKey.altLeft,
+  LogicalKeyboardKey.altRight,
+  LogicalKeyboardKey.meta,
+  LogicalKeyboardKey.metaLeft,
+  LogicalKeyboardKey.metaRight,
+  LogicalKeyboardKey.capsLock,
+  LogicalKeyboardKey.fn,
+};
 
 /// What to send a program to turn what it has already been told ([previous])
 /// into what the user now means ([next]).
@@ -26,8 +108,7 @@ const String kTerminalDelete = '\x7f';
 /// units would send two rub-outs for one letter and eat the one before it.
 ///
 /// Newlines are never emitted. Enter reaches the program through the key path,
-/// which owns it — see [ImeTerminalInput], which resets its baseline on one
-/// rather than diffing it and sending a second.
+/// which owns it — see [terminalKeyLane].
 String terminalEdit(String previous, String next) {
   if (previous == next) return '';
   final prefix = _sharedPrefix(previous, next);

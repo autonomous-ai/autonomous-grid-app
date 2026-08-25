@@ -6,43 +6,48 @@ import 'terminal_ime.dart';
 /// The terminal's text input, taken off `xterm` so an input method can rewrite
 /// what it has already typed.
 ///
-/// **This is what makes Vietnamese work.** `xterm 4.0.0` owns the platform text
-/// connection itself and can only ever append what it has not seen yet, so a
-/// Telex `e` → `ẻ` arrives as an extra character rather than a replacement and
-/// the user reads `eẻ`. `TerminalView(hardwareKeyboardOnly: true)` hands that
-/// connection back, and this holds it instead: every change to the field is
+/// **This is what makes Vietnamese work**, and it is two halves that only work
+/// together. `TerminalView(hardwareKeyboardOnly: true)` gives up the platform
+/// text connection, which this holds instead: every change to the field is
 /// diffed against what the program was last told, and the difference goes out as
-/// rub-outs and a new tail ([terminalEdit]).
+/// rub-outs and a new tail ([terminalEdit]). But xterm in that mode still
+/// *inserts printable characters itself* and answers `handled`, and on macOS a
+/// key the framework claims is never offered to the input method at all — so
+/// Telex never ran and the letters arrived raw. So the key handler passed to
+/// [builder] declines them ([terminalKeyLane]), and lets everything that is not
+/// text through to xterm untouched.
 ///
-/// **The keyboard is still `xterm`'s**, and deliberately: Enter, Escape, Tab,
-/// the arrows and every `ctrl`-chord reach the program through
-/// `TerminalView`'s own key handler, which knows the escape sequences each of
-/// them means on the buffer the program is using. Nothing here competes for
-/// them — a plain letter is the only thing that handler declines (it answers
-/// only for `ctrl`/`alt` chords), which is exactly the gap this fills.
+/// **The rest of the keyboard is still xterm's**, and deliberately: Enter,
+/// Escape, Tab, the arrows and every `ctrl`-chord reach the program through
+/// `TerminalView`'s own handler, which knows the escape sequences each of them
+/// means on the buffer the program is using. Nothing here competes for them.
 ///
-/// The one place the two meet is Enter: the key handler sends the carriage
-/// return, and the newline the platform also puts in the field would be a
-/// second one. So a run ends at whitespace ([endsRun]) — the baseline is
-/// cleared and the newline is never diffed. That is also what keeps the hidden
-/// field from growing for the life of a session, while leaving the word the IME
-/// is still working on in place for it to rewrite.
+/// A key that goes to xterm ends the run: the field never saw it, so the mirror
+/// is stale from that moment and diffing against it would send the next word
+/// into the wrong place.
 class ImeTerminalInput extends StatefulWidget {
   const ImeTerminalInput({
     super.key,
     required this.focusNode,
     required this.onInput,
-    required this.child,
+    required this.builder,
   });
 
-  /// The terminal's own focus. The connection follows it, so a terminal nobody
-  /// is looking at holds no keyboard.
+  /// The terminal's own focus — the same node the view is given. The connection
+  /// follows it, so a terminal nobody is looking at holds no keyboard.
   final FocusNode focusNode;
 
-  /// What to send the program — already escapes and text, ready for the pty.
+  /// What to send the program — already text, ready for the pty.
   final ValueChanged<String> onInput;
 
-  final Widget child;
+  /// Builds the terminal, handing it the key handler it must call *first*
+  /// (`TerminalView.onKeyEvent`). Passing it any other way would leave xterm
+  /// swallowing the letters before this ever sees them.
+  final Widget Function(
+    BuildContext context,
+    FocusOnKeyEventCallback onKeyEvent,
+  )
+  builder;
 
   @override
   State<ImeTerminalInput> createState() => _ImeTerminalInputState();
@@ -109,7 +114,43 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   /// Start a fresh run: an empty field, and nothing owed to the program.
   void _reset(TextInputConnection connection) {
     _sent = '';
-    connection.setEditingState(TextEditingValue.empty);
+    connection.setEditingState(_empty);
+  }
+
+  /// End the run because something the field didn't see has just been sent.
+  void _endRun() {
+    final connection = _connection;
+    if (connection == null || _sent.isEmpty) return;
+    _reset(connection);
+  }
+
+  /// Called by `TerminalView` before it does anything of its own with the key.
+  ///
+  /// [KeyEventResult.skipRemainingHandlers] rather than `handled` is the point:
+  /// it stops xterm and every ancestor, and still leaves the framework telling
+  /// the engine that nobody handled the key — which is the only thing that gets
+  /// it to the input method.
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    // Nothing is holding the keyboard yet, so declining would drop the key on
+    // the floor. Better xterm's own insertion than silence.
+    if (_connection == null) return KeyEventResult.ignored;
+
+    final keyboard = HardwareKeyboard.instance;
+    final lane = terminalKeyLane(
+      key: event.logicalKey,
+      character: event.character,
+      modified:
+          keyboard.isControlPressed ||
+          keyboard.isMetaPressed ||
+          keyboard.isAltPressed,
+      hasRun: _sent.isNotEmpty,
+    );
+    if (lane == TerminalKeyLane.input) {
+      return KeyEventResult.skipRemainingHandlers;
+    }
+    if (!isModifierKey(event.logicalKey)) _endRun();
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -119,13 +160,13 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     final edit = terminalEdit(_sent, value.text);
     _sent = value.text;
     if (edit.isNotEmpty) widget.onInput(edit);
-    // Ended on whitespace — including the newline Enter leaves behind, which
-    // the key handler has already sent as a carriage return.
+    // Ended on whitespace — the word is finished, and an input method has no
+    // use for the sentence before it.
     if (endsRun(value.text)) _reset(connection);
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) => widget.builder(context, _onKeyEvent);
 
   // — the rest of TextInputClient, none of which a terminal has an answer for —
 
@@ -133,8 +174,10 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   void connectionClosed() => _connection = null;
 
   @override
-  TextEditingValue? get currentTextEditingValue =>
-      TextEditingValue(text: _sent);
+  TextEditingValue? get currentTextEditingValue => TextEditingValue(
+    text: _sent,
+    selection: TextSelection.collapsed(offset: _sent.length),
+  );
 
   @override
   AutofillScope? get currentAutofillScope => null;
@@ -180,3 +223,7 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   @override
   bool onFocusReceived() => false;
 }
+
+/// An empty field with the caret *in* it. `TextEditingValue.empty` carries an
+/// invalid selection (offset `-1`), which the platform reads as no caret at all.
+const _empty = TextEditingValue(selection: TextSelection.collapsed(offset: 0));
