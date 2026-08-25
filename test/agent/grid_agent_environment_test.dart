@@ -1,11 +1,19 @@
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_service.dart';
 import 'package:grid_app/infrastructure/cli/codex_app_server_service.dart';
 import 'package:grid_app/infrastructure/cli/host_environment.dart';
+import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
+import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
+import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
 void main() {
+  group('the grid the app is on is the grid an agent searches through',
+      _selectionAdoptsTheGrid);
+
   // One test over all three agents, deliberately. Three tests each reading one
   // is the shape that lets a single builder stop merging the shared
   // environment while the other two keep the suite green — and a variable that
@@ -33,6 +41,76 @@ void main() {
         );
       }
     }
+  });
+
+  // Seam 3b (public-repo ADR 0036 D-e). The hazard the ADR calls out as having
+  // no existing net: the pair must be in all THREE spawn environments, and a
+  // pair added to two of them takes web search away from the third in silence,
+  // because a missing environment variable is not an error anywhere. One test
+  // reading all three, for the same reason the one above is.
+  test('every agent Grid spawns is told which grid it is on', () {
+    const url = 'https://relay.invalid/relay/v1';
+    const token = 'per-grid-access-token';
+    HostEnvironment.adoptGrid(relayBaseUrl: url, relayToken: token);
+    addTearDown(HostEnvironment.adoptGrid);
+
+    final spawned = {
+      'Claude Code': claudeExecEnvironment(),
+      'Codex': codexAppServerEnvironment(),
+      'Hermes': HostEnvironment.hermesEnvironment(),
+    };
+
+    for (final MapEntry(key: agent, value: environment) in spawned.entries) {
+      expect(
+        environment[HostEnvironment.relayUrlVar],
+        url,
+        reason: '$agent cannot reach the grid to search the web',
+      );
+      expect(
+        environment[HostEnvironment.relayTokenVar],
+        token,
+        reason: '$agent has no credential for the grid',
+      );
+    }
+  });
+
+  // The other direction, and the one nothing else would catch. `adoptGrid`
+  // with no grid is what signing out looks like, and the inherited environment
+  // is where a developer's own `GRID_RELAY_TOKEN` — a live credential for
+  // somebody else's grid — would be sitting.
+  test('no grid picked means no credential, however it got there', () {
+    HostEnvironment.adoptGrid();
+
+    final environment = HostEnvironment.agentEnvironment(
+      environment: const {
+        'GRID_RELAY_URL': 'https://someone-elses-grid.invalid/relay/v1',
+        'GRID_RELAY_TOKEN': 'a-token-for-a-grid-this-app-is-not-on',
+        'GRID_TEST_KEPT': 'kept',
+      },
+    );
+
+    expect(environment.containsKey(HostEnvironment.relayUrlVar), isFalse);
+    expect(environment.containsKey(HostEnvironment.relayTokenVar), isFalse);
+    // The positive control: a builder that returned an empty map would satisfy
+    // both assertions above without doing anything.
+    expect(environment['GRID_TEST_KEPT'], 'kept');
+  });
+
+  test('half a pair is never handed down', () {
+    // A URL with no token is a script posting unauthenticated and being refused
+    // at the far end, which reads as a broken grid rather than as one not
+    // picked yet — and it is the state a partially-populated credential
+    // produces, so it is not hypothetical.
+    HostEnvironment.adoptGrid(relayBaseUrl: 'https://relay.invalid/relay/v1');
+    addTearDown(HostEnvironment.adoptGrid);
+
+    final environment = HostEnvironment.agentEnvironment(
+      environment: const {'GRID_TEST_KEPT': 'kept'},
+    );
+
+    expect(environment.containsKey(HostEnvironment.relayUrlVar), isFalse);
+    expect(environment.containsKey(HostEnvironment.relayTokenVar), isFalse);
+    expect(environment['GRID_TEST_KEPT'], 'kept');
   });
 
   // What the test above cannot see. Hermes reads its environment at the
@@ -97,5 +175,112 @@ void main() {
       isFalse,
       reason: "a dropped name the turn's own map carried survived",
     );
+  });
+}
+
+/// The other half of the contract: [HostEnvironment.adoptGrid] holds whatever
+/// it was last told, so the question that decides whether an agent can search
+/// the web is *who tells it*, and when.
+///
+/// [SelectedNetwork] has two write paths — [SelectedNetwork.build], which
+/// re-runs on every refresh of the credential list, and [SelectedNetwork.select],
+/// which does not re-run it. Two doors onto one fact is the shape where a
+/// second caller inherits none of the first one's guards, so both are driven
+/// here rather than one.
+void _selectionAdoptsTheGrid() {
+  NetworkCredential grid(String id) => NetworkCredential(
+    networkId: id,
+    name: id,
+    networkType: 'permissioned',
+    lanSignalingUrl: 'https://$id.invalid',
+    accessToken: 'token-for-$id',
+    refreshToken: '',
+    email: 'dev@example.com',
+    nodeId: 'node',
+    deviceId: 'device',
+    roles: const ['consumer'],
+    scopes: const ['consumer:chat'],
+    memberEpoch: 1,
+    networkEpoch: 1,
+    expiresAt: 0,
+  );
+
+  ProviderContainer containerFor(List<NetworkCredential> networks) {
+    final prefsFile = File(
+      '${Directory.systemTemp.createTempSync('grid-prefs').path}/prefs.json',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        sessionProvider.overrideWithValue(
+          CredentialsFile(networks: networks, sessionToken: 'session'),
+        ),
+        activeRemoteGridProvider.overrideWithValue(null),
+        chatPrefsStoreProvider.overrideWithValue(
+          ChatPrefsStore(file: prefsFile),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(() => prefsFile.parent.deleteSync(recursive: true));
+    return container;
+  }
+
+  setUp(HostEnvironment.adoptGrid);
+  tearDown(HostEnvironment.adoptGrid);
+
+  test('resolving a grid hands its relay and token to the next agent', () {
+    final container = containerFor([grid('grid-a')]);
+
+    container.read(selectedNetworkProvider);
+
+    final environment = HostEnvironment.agentEnvironment(
+      environment: const {},
+    );
+    expect(
+      environment[HostEnvironment.relayUrlVar],
+      'https://grid-a.invalid/relay/v1',
+    );
+    expect(environment[HostEnvironment.relayTokenVar], 'token-for-grid-a');
+  });
+
+  test('switching grids replaces the credential, it does not add one', () {
+    // `select` sets `state` directly and never re-runs `build`, so an
+    // implementation that adopted only in `build` would leave every agent
+    // searching on the grid the person just left — silently, and with the
+    // previous grid's name on the spend.
+    final container = containerFor([grid('grid-a'), grid('grid-b')]);
+    container.read(selectedNetworkProvider);
+
+    container
+        .read(selectedNetworkProvider.notifier)
+        .select(container.read(sessionProvider).networks.last);
+
+    final environment = HostEnvironment.agentEnvironment(
+      environment: const {},
+    );
+    expect(
+      environment[HostEnvironment.relayUrlVar],
+      'https://grid-b.invalid/relay/v1',
+    );
+    expect(environment[HostEnvironment.relayTokenVar], 'token-for-grid-b');
+  });
+
+  test('no grid to resolve takes the credential away', () {
+    // Signing out, or leaving the last grid. Null is a value here: leaving the
+    // previous token live would keep an agent posting to a grid the app is no
+    // longer on.
+    HostEnvironment.adoptGrid(
+      relayBaseUrl: 'https://stale.invalid/relay/v1',
+      relayToken: 'stale',
+    );
+    final container = containerFor(const []);
+
+    expect(container.read(selectedNetworkProvider), isNull);
+
+    final environment = HostEnvironment.agentEnvironment(
+      environment: const {},
+    );
+    expect(environment.containsKey(HostEnvironment.relayUrlVar), isFalse);
+    expect(environment.containsKey(HostEnvironment.relayTokenVar), isFalse);
   });
 }

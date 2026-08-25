@@ -64,7 +64,7 @@ the words a vendor uses, the words a critic uses, and the plain words the user
 used. Each surfaces a different set of pages.
 
 ```
-"$uvPath" run --with ddgs --no-project python3 "$searchScriptPath" "<query>"
+python3 "$searchScriptPath" "<query>"
 ```
 
 ## 2. Read the pages, don't trust the snippets

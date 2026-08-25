@@ -35,12 +35,14 @@ void main() {
     test('spells out all three runnable commands with the real uv and script '
         'paths', () {
       final md = card();
+      // Search runs through no package runner at all: it is standard-library
+      // only now, and the guide naming `uv` would tell an agent to provision a
+      // package nothing uses (public-repo ADR 0036 D-g).
+      expect(md, contains('python3 "/skills/grid-web/scripts/search.py"'));
       expect(
         md,
-        contains(
-          '"/grid/bin/uv" run --with ddgs python3 '
-          '"/skills/grid-web/scripts/search.py"',
-        ),
+        isNot(contains('uv" run --with ddgs')),
+        reason: 'the search command still names a package runner',
       );
       expect(
         md,
@@ -74,7 +76,9 @@ void main() {
     });
 
     test('all three scripts degrade to a typed exit, never a crash', () {
-      expect(kGridWebSearchScript, contains('from ddgs import DDGS'));
+      // Search reaches the web through the grid now — its behaviour is covered
+      // by running it (`grid_web_search_script_test.dart`); what is asserted
+      // here is only that it still has a typed exit for "not available".
       expect(kGridWebSearchScript, contains('return 2'));
       // Read pulls the article body, then falls back to page metadata (a tweet's
       // text lives there), and never throws on a missing reader.

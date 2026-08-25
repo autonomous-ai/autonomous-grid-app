@@ -61,14 +61,14 @@ description: Search the web and read pages for current, live, or online informat
 
 # Search and read the web
 
-You can search the live web and read a specific page. No key, no setup — each
-backend is provisioned on first run, then cached.
+You can search the live web and read a specific page. No key, no setup.
 
 ## Search — find pages and current info
 ```
-"$uvPath" run --with ddgs python3 "$searchScriptPath" "<query>" [--max N]
+python3 "$searchScriptPath" "<query>" [--max N]
 ```
-Prints each result as three lines — title, URL, then a snippet — a blank line
+The search runs on your grid, not on this machine. Prints each result as three
+lines — title, URL, then an excerpt chosen for your query — a blank line
 between. `--max` caps the count (default 5).
 
 ## Read — the main text of one page
@@ -103,63 +103,170 @@ URLs** you used.
   a complete one.
 
 ## If it fails
-- Exit code 2 = a backend couldn't be provisioned (no `uv`/network). Tell the
-  user web access isn't available right now.
+Every failure prints one sentence saying what to do. Read it and say it to the
+user — don't retry a command that told you why it won't work.
+- `search` exit 2 = web search isn't available here (no grid, or this grid's
+  relay is too old). Tell the user what the message said.
+- `search` exit 1 = it failed this time. If the message says the search is
+  busy, wait a few seconds and try **once** more, never in a loop.
+- Exit code 2 on `read`/`browse` = a backend couldn't be provisioned (no
+  `uv`/network). Tell the user page reading isn't available right now.
 - Exit code 1 on `read`/`browse` = the page couldn't be fetched; try another
   source.
 - Exit code 3 on `browse` = one-time browser download needed (see above).
-- Empty output = nothing found or readable; reword once, then say so.
-- DuckDuckGo can rate-limit a burst of searches — if it errors, wait and retry
-  once rather than hammering it.
+- `No results.` = nothing found; reword once, then say so. It is not an error,
+  and it is never what a refusal looks like — those print a sentence and exit
+  non-zero.
 ''';
 
-/// The search itself: a tiny, credential-free DuckDuckGo query via the `ddgs`
-/// package. Kept dependency-light on purpose — it is run under `uv run --with
-/// ddgs`, which supplies `ddgs` without touching either agent's environment.
+/// The search itself: a POST to this grid's relay, which forwards it to the
+/// control plane — the only thing holding the search vendor's key.
+///
+/// **Standard library only.** No package runner, no on-demand download, and no
+/// DuckDuckGo: the first web question of a fresh install now answers as fast as
+/// the tenth, and the rate limit that used to cut a research question in half
+/// belonged to the user's own address and is gone with it.
+///
+/// It reads exactly two variables — `GRID_RELAY_URL` and `GRID_RELAY_TOKEN`,
+/// which the app sets in the environment of every agent it spawns. It reads **no** credential file and, deliberately,
+/// none of the vendor variables that are already in that environment: the app's
+/// own process can be carrying an `ANTHROPIC_*` a developer exported, so a
+/// script reading one of those names could pick up a person's real vendor key
+/// and post it to a relay.
 const String kGridWebSearchScript = r'''#!/usr/bin/env python3
-"""Search the web via DuckDuckGo (the `ddgs` package).
+"""Search the live web through your grid.
 
-Meant to be run as:
-    <uv> run --with ddgs python3 search.py "<query>" [--max N]
-so `ddgs` is provisioned on demand. Prints one result per block:
+    python3 search.py "<query>" [--max N]
+
+Standard library only — nothing to install. The grid's relay holds the
+credential; this script holds none. Prints one result per block:
     title
     url
-    snippet
-(blank line between). Exit 2 if ddgs is unavailable, 1 on a search error.
+    excerpt
+(blank line between).
+
+Exit codes:
+    0  it worked (possibly with no results, which prints "No results.")
+    1  the search failed this time — the message says what to do
+    2  web search is not available here — the message says why
 """
 
 import argparse
+import json
+import os
 import sys
+import urllib.error
+import urllib.request
+
+RELAY_URL_VAR = "GRID_RELAY_URL"
+RELAY_TOKEN_VAR = "GRID_RELAY_TOKEN"
+SEARCH_PATH = "/web/search"
+
+# Generous: a search is a third party crawling the live web, behind two hops.
+# Finite: an agent is waiting inside somebody's turn.
+TIMEOUT_SECONDS = 60
+
+NO_GRID = (
+    "Web search needs a grid. Open Grid, pick or create a grid, then try again."
+)
+OLD_RELAY = (
+    "This grid cannot search the web yet: its relay does not serve "
+    + SEARCH_PATH
+    + ". Ask whoever runs the grid to update it."
+)
+REFUSED = (
+    "This grid refused the credential. In Grid, switch grids and back, or sign "
+    "out and in again."
+)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Search the web (DuckDuckGo).")
+    parser = argparse.ArgumentParser(description="Search the web through your grid.")
     parser.add_argument("query", help="what to search for")
     parser.add_argument("--max", type=int, default=5, dest="max_results")
     args = parser.parse_args()
 
-    try:
-        from ddgs import DDGS
-    except ImportError:
-        print("ddgs is not available", file=sys.stderr)
+    base = (os.environ.get(RELAY_URL_VAR) or "").strip()
+    token = (os.environ.get(RELAY_TOKEN_VAR) or "").strip()
+    if not base or not token:
+        print(NO_GRID, file=sys.stderr)
         return 2
 
+    body = json.dumps(
+        {"query": args.query, "num_results": max(1, args.max_results)}
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        base.rstrip("/") + SEARCH_PATH,
+        data=body,
+        headers={
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
     try:
-        rows = list(DDGS().text(args.query, max_results=max(1, args.max_results)))
-    except Exception as exc:  # noqa: BLE001 - any failure is "couldn't search"
-        print(f"search failed: {exc}", file=sys.stderr)
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as error:
+        return refused(error)
+    except (urllib.error.URLError, OSError) as error:
+        print("couldn't reach the grid: %s" % error, file=sys.stderr)
+        return 1
+    except ValueError:
+        print("the grid answered with something that isn't a search result",
+              file=sys.stderr)
         return 1
 
-    if not rows:
+    results = payload.get("results") if isinstance(payload, dict) else None
+    if not isinstance(results, list):
+        print("the grid answered with something that isn't a search result",
+              file=sys.stderr)
+        return 1
+    if not results:
         print("No results.")
         return 0
 
-    for row in rows:
-        title = (row.get("title") or "").strip()
-        url = (row.get("href") or row.get("url") or "").strip()
-        snippet = (row.get("body") or row.get("snippet") or "").strip()
-        print(f"{title}\n{url}\n{snippet}\n")
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("title") or "").strip()
+        url = str(row.get("url") or "").strip()
+        excerpt = str(row.get("excerpt") or "").strip()
+        print("%s\n%s\n%s\n" % (title, url, excerpt))
     return 0
+
+
+def refused(error) -> int:
+    """Turn a refusal into one sentence the agent can act on.
+
+    Every one of these has to be distinguishable from "I found nothing", which
+    is a perfectly good exit 0 above — an agent that reported an empty result
+    when it was actually turned away would be reporting a fact that is not true.
+    """
+    if error.code == 404:
+        print(OLD_RELAY, file=sys.stderr)
+        return 2
+    if error.code in (401, 403):
+        print(REFUSED, file=sys.stderr)
+        return 2
+    sentence = detail(error)
+    print(sentence, file=sys.stderr)
+    # 503 is the grid saying it cannot search at all; everything else, 429
+    # included, is worth one more try later in the same turn.
+    return 2 if error.code == 503 else 1
+
+
+def detail(error) -> str:
+    """The sentence the far side sent, or a plain one when it sent none."""
+    try:
+        payload = json.loads(error.read().decode("utf-8", "replace"))
+        sentence = payload.get("detail") if isinstance(payload, dict) else None
+        if isinstance(sentence, str) and sentence.strip():
+            return sentence.strip()
+    except Exception:  # noqa: BLE001 - a refusal we cannot read is still a refusal
+        pass
+    return "the search was refused (HTTP %s)" % error.code
 
 
 if __name__ == "__main__":
