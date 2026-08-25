@@ -144,6 +144,7 @@ Map<String, Object?> analyticsPayload(
     'user_id': identity.userId,
     'user_email': identity.userEmail,
     ...event.params,
+    "category": "grid-app",
   };
   return {
     'event_name': event.name,
