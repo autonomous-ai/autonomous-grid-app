@@ -38,7 +38,8 @@ void main() {
       expect(
         term.buffer.scrollBack,
         greaterThan(0),
-        reason: 'a transcript with nothing above the fold cannot be scrolled '
+        reason:
+            'a transcript with nothing above the fold cannot be scrolled '
             'back to, which is what the user sees as "it lost my message"',
       );
       final kept = text.where((line) => line.startsWith('finished line'));

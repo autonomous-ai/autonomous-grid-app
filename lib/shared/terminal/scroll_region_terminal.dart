@@ -28,8 +28,10 @@ import 'package:xterm/core.dart';
 /// Measured by replaying a real Codex session (v0.144.6, 100×14) through both:
 /// stock threw on **32 writes** and finished with **0 lines of scrollback** —
 /// nothing above the fold to scroll to, and rows written into the middle of
-/// other rows. Through this class: **0 throws, 32 lines of scrollback**, equal
-/// line for line to an independent emulator (`pyte`) bar two.
+/// other rows. Through this class: **0 throws, 32 lines of scrollback**, and a
+/// transcript that agrees with an independent emulator (`pyte`) on 41 of its 46
+/// lines — each keeping a couple the other drops, on a recording where nothing
+/// answered the CLI's cursor-position query, so neither is the last word.
 ///
 /// The fix is to move the *contents* of the lines rather than the line objects,
 /// so no line is ever in two slots and none is detached while in use. The one
@@ -157,7 +159,11 @@ class ScrollRegionTerminal extends Terminal {
   static void _copy(BufferLine from, BufferLine to, int width) {
     final cells = min(width, from.length);
     to.copyFrom(from, 0, 0, cells);
-    if (cells < width) to.eraseRange(cells, width, CursorStyle.empty);
+    if (cells == width) return;
+    // `copyFrom` sizes the destination to what it copied, so a short source
+    // would leave the row short as well as blank.
+    to.resize(width);
+    to.eraseRange(cells, width, CursorStyle.empty);
   }
 
   static void _blank(BufferLine line, int width) {

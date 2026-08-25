@@ -216,7 +216,10 @@ class TerminalSession {
   /// is a chat frozen mid-answer that looks exactly like an agent thinking for
   /// ever. Logged once, because a buffer that has broken will keep breaking and
   /// a log of the same line ten thousand times diagnoses nothing (§6).
-  void _draw(String data, void Function(Object error, StackTrace stack) onError) {
+  void _draw(
+    String data,
+    void Function(Object error, StackTrace stack) onError,
+  ) {
     try {
       terminal.write(data);
     } on Object catch (error, stack) {
