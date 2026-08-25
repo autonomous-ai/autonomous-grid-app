@@ -210,6 +210,12 @@ class _ScreenState extends State<_Screen> {
     if (text != null) widget.session.terminal.paste(text);
   }
 
+  /// The viewport `TerminalView` scrolls, held here rather than left to it.
+  ///
+  /// The margins beside a clamped screen have to move the *same* scrollback the
+  /// screen does, and there is no other way to reach it — see [_ScrollSpill].
+  final _scroll = ScrollController();
+
   /// Held here rather than left to `autofocus`, which fires once at mount: a
   /// panel is opened and closed over and over on the same terminal, and each
   /// opening has to be typeable straight away.
@@ -235,6 +241,7 @@ class _ScreenState extends State<_Screen> {
   @override
   void dispose() {
     _focus.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -305,9 +312,12 @@ class _ScreenState extends State<_Screen> {
           metrics: widget.metrics,
           background: theme.background,
           session: session,
+          scroll: _scroll,
           child: TerminalView(
             session.terminal,
             controller: session.controller,
+            scrollController: _scroll,
+            simulateScroll: widget.metrics.simulateScroll,
             focusNode: _focus,
             theme: theme,
             // The app's own code face, at the size and on the line the metrics
@@ -387,12 +397,14 @@ class _Clamped extends StatelessWidget {
     required this.metrics,
     required this.background,
     required this.session,
+    required this.scroll,
     required this.child,
   });
 
   final TerminalMetrics metrics;
   final Color background;
   final TerminalSession session;
+  final ScrollController scroll;
   final Widget child;
 
   @override
@@ -407,7 +419,12 @@ class _Clamped extends StatelessWidget {
           return Row(
             children: [
               if (spill > 0)
-                _ScrollSpill(session: session, metrics: metrics, width: spill),
+                _ScrollSpill(
+                  session: session,
+                  metrics: metrics,
+                  scroll: scroll,
+                  width: spill,
+                ),
               // Sized rather than constrained: `TerminalView` divides the box it
               // is given by the cell to decide how many columns the program has,
               // so the box has to be an exact width and the full height — a
@@ -419,7 +436,12 @@ class _Clamped extends StatelessWidget {
                 child: child,
               ),
               if (spill > 0)
-                _ScrollSpill(session: session, metrics: metrics, width: spill),
+                _ScrollSpill(
+                  session: session,
+                  metrics: metrics,
+                  scroll: scroll,
+                  width: spill,
+                ),
             ],
           );
         },
@@ -445,11 +467,13 @@ class _ScrollSpill extends StatefulWidget {
   const _ScrollSpill({
     required this.session,
     required this.metrics,
+    required this.scroll,
     required this.width,
   });
 
   final TerminalSession session;
   final TerminalMetrics metrics;
+  final ScrollController scroll;
   final double width;
 
   @override
@@ -466,17 +490,37 @@ class _ScrollSpillState extends State<_ScrollSpill> {
 
   void _scroll(double dy) {
     final terminal = widget.session.terminal;
-    if (!terminal.mouseMode.reportScroll) return;
-    final lines = dy ~/ widget.metrics.lineBox();
-    if (lines == 0) return;
-    final at = CellOffset(terminal.viewWidth ~/ 2, terminal.viewHeight ~/ 2);
-    for (var i = 0; i < lines.abs(); i++) {
-      terminal.mouseInput(
-        lines < 0 ? TerminalMouseButton.wheelUp : TerminalMouseButton.wheelDown,
-        TerminalMouseButtonState.down,
-        at,
-      );
+    // The program asked for the mouse, so the wheel is its own — it keeps the
+    // transcript and scrolls it itself. The cell handed over is the middle of
+    // the screen, not the pointer: the pointer is *outside* the terminal, so it
+    // has no cell, and the program only needs to know the wheel turned over its
+    // transcript.
+    if (terminal.mouseMode.reportScroll) {
+      final lines = dy ~/ widget.metrics.lineBox();
+      if (lines == 0) return;
+      final at = CellOffset(terminal.viewWidth ~/ 2, terminal.viewHeight ~/ 2);
+      for (var i = 0; i < lines.abs(); i++) {
+        terminal.mouseInput(
+          lines < 0
+              ? TerminalMouseButton.wheelUp
+              : TerminalMouseButton.wheelDown,
+          TerminalMouseButtonState.down,
+          at,
+        );
+      }
+      return;
     }
+    // It didn't, so what scrolls is the scrollback the emulator kept — the same
+    // viewport the screen itself scrolls, which is the whole reason the
+    // controller is passed down here. Codex spends most of its life this way.
+    if (!widget.scroll.hasClients) return;
+    final position = widget.scroll.position;
+    final target = (position.pixels + dy).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (target == position.pixels) return;
+    position.jumpTo(target);
   }
 
   @override
