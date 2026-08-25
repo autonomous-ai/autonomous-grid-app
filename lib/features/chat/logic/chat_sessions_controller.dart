@@ -37,6 +37,7 @@ import '../../playground/logic/one_shot_target.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
+import '../../projects/logic/project_folder_status.dart';
 import 'chat_title.dart';
 import 'chat_title_writer.dart';
 import 'commands/agent_ask_block.dart';

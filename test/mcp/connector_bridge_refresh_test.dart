@@ -6,7 +6,7 @@ import 'package:grid_app/features/agents/logic/rest_entry.dart';
 import 'package:grid_app/infrastructure/mcp/connector_bridge.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The bridge renews an expiring credential before it calls the provider.
+/// The bridge keeps agent transport stable and renews credentials before use.
 ///
 /// Driven over a real socket rather than by calling private methods: the bridge
 /// is deliberately free of Flutter so it can be exercised the way an agent
@@ -100,6 +100,67 @@ void main() {
       }
     }
   }
+
+  Future<Map<String, Object?>> sendRaw(
+    ConnectorBridge bridge, {
+    required String path,
+    required String body,
+    String method = 'POST',
+  }) async {
+    await bridge.start();
+    addTearDown(bridge.stop);
+    final client = HttpClient();
+    addTearDown(client.close);
+    final uri = Uri.parse('http://127.0.0.1:${bridge.port}$path');
+    final request = await client.openUrl(method, uri);
+    request.headers.contentType = ContentType.json;
+    request.write(body);
+    final response = await request.close();
+    final text = await utf8.decoder.bind(response).join();
+    return {
+      'status': response.statusCode,
+      if (text.isNotEmpty) ...jsonDecode(text) as Map<String, Object?>,
+    };
+  }
+
+  test('local protocol failures stay inside JSON-RPC over HTTP 200, so agents '
+      'do not retry them as transport failures', () async {
+    final bridge = ConnectorBridge(
+      home: home,
+      readTokens: () async => const {},
+      restEntryFor: (_) => null,
+    );
+
+    final unknownPath = await sendRaw(bridge, path: '/wrong', body: '{}');
+    final malformed = await sendRaw(bridge, path: '/c/demo/mcp', body: '{');
+
+    expect(unknownPath['status'], HttpStatus.ok);
+    expect((unknownPath['error']! as Map)['code'], -32600);
+    expect(malformed['status'], HttpStatus.ok);
+    expect((malformed['error']! as Map)['code'], -32700);
+  });
+
+  test(
+    'an internal bridge failure is JSON-RPC over HTTP 200, so a long-running '
+    'agent turn stays alive',
+    () async {
+      final bridge = ConnectorBridge(
+        home: home,
+        readTokens: () async => throw StateError('boom'),
+        restEntryFor: (_) => null,
+      );
+
+      final reply = await sendRaw(
+        bridge,
+        path: '/c/demo/mcp',
+        body: jsonEncode({'jsonrpc': '2.0', 'id': 7, 'method': 'tools/list'}),
+      );
+
+      expect(reply['status'], HttpStatus.ok);
+      expect(reply['id'], 7);
+      expect((reply['error']! as Map)['code'], -32603);
+    },
+  );
 
   test('an expiring token is renewed before the provider is called', () async {
     var stored = tokenWith(
