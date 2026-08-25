@@ -211,16 +211,20 @@ class _ScreenState extends State<_Screen> {
     if (text != null) widget.session.terminal.paste(text);
   }
 
-  /// Text an input method has finished with, on its way to the program — and
-  /// the view back to the bottom with it.
+  /// Text an input method has finished with, on its way to the program — and,
+  /// only if the screen was scrolled up, the view back to the bottom with it.
   ///
-  /// `xterm` does the same for every key it handles itself; this path doesn't
-  /// go through it, and typing into a screen scrolled up puts the characters
-  /// somewhere the user can't see them.
+  /// `xterm` does the same for every key it handles itself, and typing into a
+  /// screen scrolled up puts the characters somewhere the user can't see them.
+  /// **Guarded, because this runs on every keystroke:** `jumpTo` ends the
+  /// current scroll activity and starts another whether or not the offset
+  /// moves, and the offset almost never moves — `RenderTerminal` already
+  /// corrects to the bottom in `performLayout` for a screen that was there.
   void _typed(String text) {
     widget.session.terminal.textInput(text);
     if (!_scroll.hasClients) return;
     final position = _scroll.position;
+    if (position.pixels >= position.maxScrollExtent) return;
     position.jumpTo(position.maxScrollExtent);
   }
 

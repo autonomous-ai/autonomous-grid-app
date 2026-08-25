@@ -22,9 +22,15 @@ import 'terminal_ime.dart';
 /// `TerminalView`'s own handler, which knows the escape sequences each of them
 /// means on the buffer the program is using. Nothing here competes for them.
 ///
-/// A key that goes to xterm ends the run: the field never saw it, so the mirror
-/// is stale from that moment and diffing against it would send the next word
-/// into the wrong place.
+/// **The mirror never runs ahead of the platform.** An earlier version cleared
+/// the field itself at every space — `setEditingState('')` plus a local
+/// `_sent = ''` — and that races: the clear crosses a channel, so a keystroke
+/// arriving before it lands is reported against the *old* text and diffed
+/// against the new baseline, which re-sends the whole line. Typing `ls -la`
+/// quickly put `ls ls -la` on the prompt and then rubbed out four characters
+/// that were still in use. So [_sent] is only ever assigned what the platform
+/// just said, the field is left to grow for as long as the terminal holds
+/// focus, and nothing here writes to it except on attach and detach.
 class ImeTerminalInput extends StatefulWidget {
   const ImeTerminalInput({
     super.key,
@@ -60,6 +66,13 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   /// What the program has already been told. The diff is against this, never
   /// against the field's own history.
   String _sent = '';
+
+  /// Whether the letters on the program's current line are ones this put there.
+  ///
+  /// False again the moment a key goes to the terminal instead — Enter runs the
+  /// line, an arrow moves the cursor — because from then on a rub-out belongs to
+  /// the program, not to the field.
+  bool _ownsLine = false;
 
   /// Whether the platform is holding preedit text — a candidate window is up
   /// and the user has not chosen yet.
@@ -109,7 +122,10 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
       ),
     );
     _connection = connection;
-    _reset(connection);
+    _sent = '';
+    _ownsLine = false;
+    _composing = false;
+    connection.setEditingState(_empty);
     connection.show();
   }
 
@@ -117,21 +133,8 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     _connection?.close();
     _connection = null;
     _sent = '';
+    _ownsLine = false;
     _composing = false;
-  }
-
-  /// Start a fresh run: an empty field, and nothing owed to the program.
-  void _reset(TextInputConnection connection) {
-    _sent = '';
-    _composing = false;
-    connection.setEditingState(_empty);
-  }
-
-  /// End the run because something the field didn't see has just been sent.
-  void _endRun() {
-    final connection = _connection;
-    if (connection == null || _sent.isEmpty) return;
-    _reset(connection);
   }
 
   /// Called by `TerminalView` before it does anything of its own with the key.
@@ -154,20 +157,22 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
           keyboard.isControlPressed ||
           keyboard.isMetaPressed ||
           keyboard.isAltPressed,
-      hasRun: _sent.isNotEmpty,
+      ownsLine: _ownsLine,
       composing: _composing,
     );
     if (lane == TerminalKeyLane.input) {
       return KeyEventResult.skipRemainingHandlers;
     }
-    if (!isModifierKey(event.logicalKey)) _endRun();
+    // The program is about to act on the line itself, so what is on it stops
+    // being this widget's to edit. The field is left alone — writing to it here
+    // is what used to race the next keystroke.
+    if (!isModifierKey(event.logicalKey)) _ownsLine = false;
     return KeyEventResult.ignored;
   }
 
   @override
   void updateEditingValue(TextEditingValue value) {
-    final connection = _connection;
-    if (connection == null) return;
+    if (_connection == null) return;
     // Preedit, not text. It is the word the user is still choosing, and
     // diffing it would type every candidate they scrolled past into the
     // program. The commit arrives as an ordinary value with the range gone,
@@ -176,10 +181,9 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     if (_composing) return;
     final edit = terminalEdit(_sent, value.text);
     _sent = value.text;
-    if (edit.isNotEmpty) widget.onInput(edit);
-    // Ended on whitespace — the word is finished, and an input method has no
-    // use for the sentence before it.
-    if (endsRun(value.text)) _reset(connection);
+    if (edit.isEmpty) return;
+    _ownsLine = true;
+    widget.onInput(edit);
   }
 
   @override

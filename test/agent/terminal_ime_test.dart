@@ -49,45 +49,25 @@ void main() {
       expect(terminalEdit('', ''), '');
     });
 
-    test('the newline Enter leaves in the field is never sent, because the key '
-        'handler has already sent the carriage return', () {
+    test('a newline is never sent, because the key handler has already sent '
+        'the carriage return for Enter', () {
       expect(terminalEdit('ls', 'ls\n'), '');
       expect(terminalEdit('', '\r\n'), '');
     });
   });
-
-  group(
-    'endsRun — how much the input method is allowed to reach back over',
-    () {
-      test(
-        'a space ends the run, so the hidden field cannot grow all session and '
-        'a stale edit cannot reach across a word',
-        () {
-          expect(endsRun('xin '), isTrue);
-          expect(endsRun('ls\n'), isTrue);
-        },
-      );
-
-      test('mid-word it keeps going, which is exactly what Telex needs to turn '
-          '"cha" into "chà"', () {
-        expect(endsRun('cha'), isFalse);
-        expect(endsRun(''), isFalse);
-      });
-    },
-  );
 
   group('terminalKeyLane — which keyboard a key belongs to', () {
     TerminalKeyLane lane(
       LogicalKeyboardKey key, {
       String? character,
       bool modified = false,
-      bool hasRun = false,
+      bool ownsLine = false,
       bool composing = false,
     }) => terminalKeyLane(
       key: key,
       character: character,
       modified: modified,
-      hasRun: hasRun,
+      ownsLine: ownsLine,
       composing: composing,
     );
 
@@ -137,11 +117,11 @@ void main() {
       );
     });
 
-    test('Backspace goes wherever the text is: to the field while a word is '
-        'still being composed, so the two agree on what is on the line, and to '
-        'the program when the field is empty and there is nothing to edit', () {
+    test('Backspace goes wherever the text is: to the field while the letters '
+        'on the line are ones this put there, so the two agree on what is on '
+        'it, and to the program once the program has taken the line back', () {
       expect(
-        lane(LogicalKeyboardKey.backspace, hasRun: true),
+        lane(LogicalKeyboardKey.backspace, ownsLine: true),
         TerminalKeyLane.input,
       );
       expect(lane(LogicalKeyboardKey.backspace), TerminalKeyLane.terminal);
@@ -158,7 +138,7 @@ void main() {
           key: LogicalKeyboardKey.enter,
           character: '\r',
           modified: false,
-          hasRun: true,
+          ownsLine: true,
           composing: true,
         ),
         TerminalKeyLane.input,
@@ -168,7 +148,7 @@ void main() {
           key: LogicalKeyboardKey.arrowDown,
           character: null,
           modified: false,
-          hasRun: true,
+          ownsLine: true,
           composing: true,
         ),
         TerminalKeyLane.input,
@@ -182,7 +162,7 @@ void main() {
           key: LogicalKeyboardKey.keyC,
           character: 'c',
           modified: true,
-          hasRun: true,
+          ownsLine: true,
           composing: true,
         ),
         TerminalKeyLane.terminal,
@@ -203,4 +183,32 @@ void main() {
       expect(isModifierKey(LogicalKeyboardKey.keyA), isFalse);
     });
   });
+
+  group(
+    'terminalEdit — the field is never cleared, so it just keeps growing',
+    () {
+      test('a whole line typed one key at a time sends exactly one key at a '
+          'time — the version that cleared the field at every space raced the '
+          'platform and re-sent the line from the start', () {
+        const keys = ['l', 's', ' ', '-', 'l', 'a'];
+        var field = '';
+        final sent = StringBuffer();
+        for (final key in keys) {
+          final next = field + key;
+          sent.write(terminalEdit(field, next));
+          field = next;
+        }
+        expect(sent.toString(), 'ls -la');
+        expect(field, 'ls -la');
+      });
+
+      test('an input method still rewrites the word it is on, however long the '
+          'line in front of it has grown', () {
+        expect(
+          terminalEdit('git commit -m xin cha', 'git commit -m xin chà'),
+          '$kTerminalDeleteà',
+        );
+      });
+    },
+  );
 }

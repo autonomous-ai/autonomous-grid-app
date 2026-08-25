@@ -37,11 +37,12 @@ enum TerminalKeyLane {
 /// every `ctrl`/`alt`/`⌘` chord spell differently depending on the buffer the
 /// program is using, and the input method has no use for any of them.
 ///
-/// Backspace is the one key that belongs to both, decided by [hasRun]: while
-/// there is text in the field the input method has to see it, or the field and
-/// the program disagree about what is on the line and the next letter is sent
-/// into the wrong place. With nothing in the field there is nothing to edit, so
-/// it is the program's own rub-out.
+/// Backspace is the one key that belongs to both, decided by [ownsLine]: while
+/// the letters on the program's line are ones this put there, the input method
+/// has to see the rub-out too, or the field and the program disagree about what
+/// is on the line and the next letter is sent into the wrong place. Once the
+/// program has taken the line back — it ran it on Enter, or a key moved the
+/// cursor — the rub-out is the program's own.
 ///
 /// [composing] is the other whole-keyboard case, and it is the one Vietnamese
 /// never reaches: Telex is *modeless* — it commits each letter and then
@@ -51,7 +52,7 @@ TerminalKeyLane terminalKeyLane({
   required LogicalKeyboardKey key,
   required String? character,
   required bool modified,
-  required bool hasRun,
+  required bool ownsLine,
   required bool composing,
 }) {
   if (modified) return TerminalKeyLane.terminal;
@@ -62,7 +63,7 @@ TerminalKeyLane terminalKeyLane({
   // with.
   if (composing) return TerminalKeyLane.input;
   if (key == LogicalKeyboardKey.backspace) {
-    return hasRun ? TerminalKeyLane.input : TerminalKeyLane.terminal;
+    return ownsLine ? TerminalKeyLane.input : TerminalKeyLane.terminal;
   }
   if (character == null || character.isEmpty) return TerminalKeyLane.terminal;
   // Enter arrives carrying `\r`, Tab `\t`, Escape `\x1b`. They are keys, not
@@ -125,9 +126,13 @@ String terminalEdit(String previous, String next) {
   if (previous == next) return '';
   final prefix = _sharedPrefix(previous, next);
   final removed = previous.substring(prefix).characters.length;
-  final added = next.substring(prefix).replaceAll(RegExp(r'[\r\n]'), '');
+  final added = next.substring(prefix).replaceAll(_newline, '');
   return kTerminalDelete * removed + added;
 }
+
+/// Compiled once. This runs on every keystroke, and `RegExp` is not cached by
+/// the language.
+final RegExp _newline = RegExp(r'[\r\n]');
 
 /// How many code units [a] and [b] open with in common, never splitting a
 /// surrogate pair.
@@ -150,12 +155,3 @@ bool _isHighSurrogate(String text, int index) {
   final unit = text.codeUnitAt(index);
   return unit >= 0xD800 && unit <= 0xDBFF;
 }
-
-/// Whether the mirror should be emptied and started again after [text].
-///
-/// An IME needs the word it is still working on to be there to rewrite; it has
-/// no use for the sentence before it. Cutting at a space keeps exactly that
-/// much, so the hidden field cannot grow for the life of a session and a stale
-/// edit cannot reach back across a word boundary.
-bool endsRun(String text) =>
-    text.isNotEmpty && RegExp(r'[\s\r\n]$').hasMatch(text);
