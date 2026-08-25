@@ -7,20 +7,44 @@ import '../../../shared/theme/app_theme.dart';
 /// [AppFont.monoFallback], never in front of it.
 ///
 /// A terminal outside this app reaches the whole system font book, and Flutter
-/// reaches exactly the list it is given. Measured with `fc-list` on macOS 15:
-/// `⏺` (U+23FA), which Claude Code prints before every answer it gives, is in
-/// **none** of the five faces behind [AppFont.mono] — not the system monospace,
-/// not Menlo, Monaco or Courier New. On this machine it lives only in Apple
-/// Color Emoji, STIX Two Math and LastResort, so the chat drew a tofu box where
-/// the terminal beside it drew a circle.
+/// reaches exactly the list it is given. **So this list is the book, in the
+/// order the system itself would have read it**: each entry below is what
+/// `CTFontCreateForString` picks for that character over a Menlo base — the
+/// same call Terminal.app makes — rather than a face that looked likely.
 ///
-/// Emoji faces are not monospaced and a glyph taken from one can run wider than
-/// its cell. That is what the terminal the user is comparing against does too,
-/// and a character drawn a little wide reads as the character; a tofu box reads
-/// as a broken app. Names for the other two platforms are harmless where they
-/// don't exist — an unmatched family is skipped.
+/// Over a real code face only four characters fall through at all, and Claude
+/// Code prints all four:
+///
+///     ⏺ U+23FA  every answer, every tool call   -> STIX Two Math
+///     ⏵ U+23F5  the run marker                  -> STIX Two Math
+///     ⎿ U+23BF  the branch under a tool result  -> Hiragino Sans
+///     ⧉ U+29C9  copy/duplicate                  -> Apple Symbols
+///
+/// **The order is the whole fix.** `Apple Symbols` does not carry U+23FA, so
+/// listing it first only got as far as the next entry — and the next entry was
+/// an emoji face, which is where the app's own `⏺` came from: a blue rounded
+/// square, drawn in the font's own colours rather than in the colour the CLI
+/// asked for, beside a terminal drawing a plain dot. An emoji face answers a
+/// question no code font was asked, so it belongs last: after it, nothing else
+/// is ever reached.
+///
+/// The faces are not monospaced and a glyph taken from one can run wider than
+/// its cell (`⎿` measures 12.5px in a 7.5px cell). That is what the terminal the
+/// user is comparing against does too, and a character drawn a little wide
+/// reads as the character; a tofu box reads as a broken app.
+///
+/// Names for the other two platforms are harmless where they don't exist — an
+/// unmatched family is skipped.
 const List<String> kTerminalSymbolFallback = [
+  // macOS, in CoreText's own order.
+  'STIX Two Math',
+  'Hiragino Sans',
   'Apple Symbols',
+  // Windows and Linux, for the same characters.
+  'Segoe UI Symbol',
+  'Noto Sans Symbols 2',
+  'DejaVu Sans',
+  // Last, and only for what is genuinely an emoji.
   'Apple Color Emoji',
   'Noto Color Emoji',
   'Segoe UI Emoji',

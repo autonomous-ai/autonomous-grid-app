@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/copy/setup_hints.dart';
+import '../../../shared/terminal/terminal_metrics.dart';
 import '../../../shared/terminal/terminal_screen.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/agent_catalog.dart';
@@ -141,6 +142,12 @@ class _AgentTerminalViewState extends ConsumerState<AgentTerminalView> {
 
     return TerminalScreen(
       session: session,
+      // Set the way the agent's own CLI expects to be read — and held to the
+      // width it was drawn for. A chat pane is half again as wide as a terminal
+      // window, and Claude Code lays itself out in columns: given 154 of them it
+      // stretches its welcome box edge to edge and wraps a paragraph at 154
+      // characters. See [TerminalMetrics].
+      metrics: TerminalMetrics.agent,
       // The chat pane is only built while it is the pane on screen, and this
       // terminal is the whole of it — there is nothing else here to type into.
       focused: true,

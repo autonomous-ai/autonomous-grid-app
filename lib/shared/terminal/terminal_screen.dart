@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart' show kPrimaryButton;
+import 'package:flutter/gestures.dart' show PointerScrollEvent, kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_menu_row.dart';
 import '../widgets/labeled_field.dart';
 import '../widgets/soft_action_button.dart';
+import 'terminal_metrics.dart';
 import 'terminal_palette.dart';
 import 'terminal_session.dart';
 import 'terminal_text.dart';
@@ -51,9 +52,15 @@ class TerminalScreen extends StatelessWidget {
     required this.subject,
     required this.onRestart,
     this.onAddToChat,
+    this.metrics = TerminalMetrics.panel,
   });
 
   final TerminalSession session;
+
+  /// How the screen is set — text size, and how wide it may grow. A Terminal tab
+  /// takes the default; a chat that *is* a CLI passes [TerminalMetrics.agent],
+  /// which stops at the width the program was drawn for.
+  final TerminalMetrics metrics;
 
   /// What to call the program in the line shown once it has ended — see
   /// [shellEndedMessage].
@@ -84,6 +91,7 @@ class TerminalScreen extends StatelessWidget {
             session: session,
             focused: focused,
             onAddToChat: onAddToChat,
+            metrics: metrics,
           ),
         ),
         if (shellEndedMessage(session.shell, subject: subject)
@@ -99,11 +107,13 @@ class _Screen extends StatefulWidget {
     required this.session,
     required this.focused,
     required this.onAddToChat,
+    required this.metrics,
   });
 
   final TerminalSession session;
   final bool focused;
   final ValueChanged<String>? onAddToChat;
+  final TerminalMetrics metrics;
 
   @override
   State<_Screen> createState() => _ScreenState();
@@ -233,6 +243,7 @@ class _ScreenState extends State<_Screen> {
     AppTheme.watch(context);
     final session = widget.session;
     final canAdd = widget.onAddToChat != null;
+    final theme = terminalPalette();
     return MenuAnchor(
       controller: _menu,
       style: appMenuStyle().copyWith(
@@ -290,25 +301,24 @@ class _ScreenState extends State<_Screen> {
           if ((event.localPosition - from).distance < _dragSlop) return;
           _offerMenu(event.localPosition);
         },
-        child: TerminalView(
-          session.terminal,
-          controller: session.controller,
-          focusNode: _focus,
-          theme: terminalPalette(),
-          // The app's own code face, at the size the rest of the app sets code
-          // in, so a path in the terminal and the same path in a chat message
-          // are the same width on screen.
-          textStyle: TerminalStyle(
-            fontSize: 12.5,
-            fontFamily: AppFont.mono,
-            fontFamilyFallback: [
-              ...AppFont.monoFallback,
-              ...kTerminalSymbolFallback,
-            ],
+        child: _Clamped(
+          metrics: widget.metrics,
+          background: theme.background,
+          session: session,
+          child: TerminalView(
+            session.terminal,
+            controller: session.controller,
+            focusNode: _focus,
+            theme: theme,
+            // The app's own code face, at the size and on the line the metrics
+            // set — so a path in a Terminal tab is the same width as the same
+            // path in a chat message, and a CLI drawing a TUI gets the leading
+            // a terminal app would have given it.
+            textStyle: widget.metrics.style,
+            padding: widget.metrics.padding,
+            onSecondaryTapDown: (details, _) =>
+                unawaited(_secondaryTap(details.localPosition)),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          onSecondaryTapDown: (details, _) =>
-              unawaited(_secondaryTap(details.localPosition)),
         ),
       ),
     );
@@ -357,4 +367,140 @@ class _EndedBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Holds the screen to the width its metrics allow, and paints the terminal's
+/// own background over whatever is left.
+///
+/// The strip either side is the *same* colour as the screen, deliberately: the
+/// point is a terminal with a generous margin, not a terminal sitting on a slab.
+/// Without the paint it would be the pane's background instead, and the two
+/// differ (`windowBg` is the page, and a chat pane is not always on it).
+///
+/// **The strips also take the wheel** ([_ScrollSpill]). They are not part of
+/// `TerminalView`, so a scroll landing on one reached nothing at all — and at
+/// this width they are three hundred pixels of dead margin either side of the
+/// text, which is exactly where a hand rests. That read as "the terminal
+/// doesn't scroll".
+class _Clamped extends StatelessWidget {
+  const _Clamped({
+    required this.metrics,
+    required this.background,
+    required this.session,
+    required this.child,
+  });
+
+  final TerminalMetrics metrics;
+  final Color background;
+  final TerminalSession session;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (metrics.maxColumns == null) return child;
+    return ColoredBox(
+      color: background,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = metrics.screenWidth(constraints.maxWidth);
+          final spill = (constraints.maxWidth - width) / 2;
+          return Row(
+            children: [
+              if (spill > 0)
+                _ScrollSpill(session: session, metrics: metrics, width: spill),
+              // Sized rather than constrained: `TerminalView` divides the box it
+              // is given by the cell to decide how many columns the program has,
+              // so the box has to be an exact width and the full height — a
+              // loose constraint would let it shrink-wrap and take the column
+              // count with it.
+              SizedBox(
+                width: width,
+                height: constraints.maxHeight,
+                child: child,
+              ),
+              if (spill > 0)
+                _ScrollSpill(session: session, metrics: metrics, width: spill),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// One of the margins beside a clamped screen: it draws nothing, and turns a
+/// scroll into the wheel report the program is waiting for.
+///
+/// **Only when the program asked for the mouse** (`mouseMode.reportScroll`),
+/// which the agent CLIs do — they take the whole screen and scroll their own
+/// transcript, so the wheel is theirs and there is no scrollback here to move
+/// instead. When they haven't asked, this does nothing rather than guessing:
+/// synthesising arrow keys into a program that reads them as history is worse
+/// than a margin that ignores a gesture.
+///
+/// The cell handed over is the middle of the screen, not the pointer: the
+/// pointer is *outside* the terminal, so it has no cell — and the program only
+/// needs to be told the wheel turned somewhere over its transcript.
+class _ScrollSpill extends StatefulWidget {
+  const _ScrollSpill({
+    required this.session,
+    required this.metrics,
+    required this.width,
+  });
+
+  final TerminalSession session;
+  final TerminalMetrics metrics;
+  final double width;
+
+  @override
+  State<_ScrollSpill> createState() => _ScrollSpillState();
+}
+
+class _ScrollSpillState extends State<_ScrollSpill> {
+  /// Pan distance a trackpad has travelled since the last line was sent.
+  ///
+  /// A trackpad reports a continuous stream of small deltas rather than notches,
+  /// so the remainder has to be kept: rounding each one on its own is how a slow
+  /// two-finger drag scrolls nothing at all.
+  double _panned = 0;
+
+  void _scroll(double dy) {
+    final terminal = widget.session.terminal;
+    if (!terminal.mouseMode.reportScroll) return;
+    final lines = dy ~/ widget.metrics.lineBox();
+    if (lines == 0) return;
+    final at = CellOffset(terminal.viewWidth ~/ 2, terminal.viewHeight ~/ 2);
+    for (var i = 0; i < lines.abs(); i++) {
+      terminal.mouseInput(
+        lines < 0 ? TerminalMouseButton.wheelUp : TerminalMouseButton.wheelDown,
+        TerminalMouseButtonState.down,
+        at,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    // The margin draws nothing, so without this it isn't in the hit test at all
+    // and every gesture over it lands on whatever is behind — which is how it
+    // came to swallow the wheel in the first place.
+    behavior: HitTestBehavior.opaque,
+    onPointerSignal: (event) {
+      if (event is PointerScrollEvent) _scroll(event.scrollDelta.dy);
+    },
+    onPointerPanZoomStart: (_) => _panned = 0,
+    onPointerPanZoomUpdate: (event) {
+      // Pan is where the *content* went, so it points the opposite way to a
+      // wheel: dragging two fingers down moves the transcript down, which is
+      // scrolling up.
+      final moved = -event.panDelta.dy;
+      _panned += moved;
+      final line = widget.metrics.lineBox();
+      if (_panned.abs() < line) return;
+      _scroll(_panned);
+      _panned %= line;
+    },
+    onPointerPanZoomEnd: (_) => _panned = 0,
+    child: SizedBox(width: widget.width, height: double.infinity),
+  );
 }
