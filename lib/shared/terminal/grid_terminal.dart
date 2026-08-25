@@ -2,8 +2,12 @@ import 'dart:math' show min;
 
 import 'package:xterm/core.dart';
 
-/// The emulator every terminal in this app draws from: `xterm`, with the one
-/// thing it gets wrong about **scroll regions** taken off it.
+import 'terminal_wheel.dart';
+
+/// The emulator every terminal in this app draws from: `xterm`, with the two
+/// things it gets wrong for the programs this app runs taken off it — how a
+/// **scroll region** moves lines (below), and how the **wheel** is reported to
+/// a full-screen program ([terminalMouseHandler]).
 ///
 /// An agent's CLI does not print its transcript — it *scrolls* it. Codex sets a
 /// region around the block it keeps pinned at the bottom, pushes that block
@@ -40,13 +44,14 @@ import 'package:xterm/core.dart';
 /// at the top of the screen inserts a line below the region rather than moving
 /// any, so the line leaving the screen lands above the fold (`Buffer.index`).
 ///
-/// TODO(BE): this is a patch over a dependency, held to it by nothing but this
-/// file. `xterm 4.0.0` is the latest published version and the bug is in its
-/// core, so an upgrade cannot be assumed to fix it — re-run
-/// `test/agent/terminal_scroll_region_test.dart` after one, and read
-/// `Buffer.scrollUp` before deleting anything here.
-class ScrollRegionTerminal extends Terminal {
-  ScrollRegionTerminal({super.maxLines});
+/// TODO(BE): this and the wheel are patches over a dependency, held to it by
+/// nothing but these two files. `xterm 4.0.0` is the latest published version
+/// and both bugs are in its core, so an upgrade cannot be assumed to fix
+/// either — re-run `test/agent/grid_terminal_test.dart` after one, and read
+/// `Buffer.scrollUp` and `TerminalMouseButton.wheelUp` before deleting
+/// anything here.
+class GridTerminal extends Terminal {
+  GridTerminal({super.maxLines}) : super(mouseHandler: terminalMouseHandler);
 
   @override
   void index() {

@@ -8,7 +8,7 @@ import 'package:xterm/xterm.dart';
 
 import '../../infrastructure/cli/host_environment.dart';
 import '../theme/app_theme.dart';
-import 'scroll_region_terminal.dart';
+import 'grid_terminal.dart';
 import 'terminal_shell.dart';
 
 /// What the shell behind a terminal is doing.
@@ -97,10 +97,10 @@ class TerminalSession {
   /// build log is exactly the case that needs them.
   static const _scrollback = 10000;
 
-  /// The emulator itself is [ScrollRegionTerminal] rather than stock `xterm`:
+  /// The emulator itself is [GridTerminal] rather than stock `xterm`:
   /// an agent's CLI writes its transcript through a scroll region, and the
   /// stock buffer drops it and then throws on every byte after (see there).
-  final Terminal terminal = ScrollRegionTerminal(maxLines: _scrollback);
+  final Terminal terminal = GridTerminal(maxLines: _scrollback);
   final TerminalController controller = TerminalController();
 
   ShellState _shell = const ShellIdle();
@@ -211,7 +211,7 @@ class TerminalSession {
   /// A throw out of `Terminal.write` lands in the pty's own output listener,
   /// and the byte after it meets the same broken buffer — the emulator has
   /// taken this app down 48 times in five minutes that way (see
-  /// [ScrollRegionTerminal] and [relaunch]). The bytes that follow are still
+  /// [GridTerminal] and [relaunch]). The bytes that follow are still
   /// worth drawing: a mangled frame is a bad frame, while a listener that stops
   /// is a chat frozen mid-answer that looks exactly like an agent thinking for
   /// ever. Logged once, because a buffer that has broken will keep breaking and

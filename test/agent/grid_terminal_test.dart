@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/shared/terminal/scroll_region_terminal.dart';
+import 'package:grid_app/shared/terminal/grid_terminal.dart';
+import 'package:xterm/core.dart';
 
 /// The escape sequences an agent's CLI actually writes, and what the emulator
 /// behind the chat has to make of them.
@@ -11,13 +12,13 @@ import 'package:grid_app/shared/terminal/scroll_region_terminal.dart';
 /// pty's own output listener — so the screen stops at whatever landed last.
 void main() {
   /// Everything the buffer holds, scrollback first, as trimmed text.
-  List<String> allLines(ScrollRegionTerminal term) => [
+  List<String> allLines(GridTerminal term) => [
     for (var i = 0; i < term.buffer.lines.length; i++)
       term.buffer.lines[i].getText().trimRight(),
   ];
 
-  ScrollRegionTerminal open({int rows = 10, int columns = 40}) {
-    final term = ScrollRegionTerminal(maxLines: 1000);
+  GridTerminal open({int rows = 10, int columns = 40}) {
+    final term = GridTerminal(maxLines: 1000);
     term.resize(columns, rows);
     return term;
   }
@@ -109,6 +110,81 @@ void main() {
       term.write('\x1b[2;5r\x1b[2;1H\x1b[2M\x1b[r');
 
       expect(allLines(term), ['row 1', 'row 4', 'row 5', '', '', 'row 6']);
+    });
+  });
+
+  group('the wheel, over a program that asked for the mouse', () {
+    /// The terminal as Claude Code leaves it: alternate screen, mouse tracking,
+    /// SGR reporting.
+    (GridTerminal, List<String>) tracked() {
+      final term = open();
+      final sent = <String>[];
+      term.onOutput = sent.add;
+      term.write('\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h');
+      sent.clear();
+      return (term, sent);
+    }
+
+    test('a notch is button 64, not the 68 that means shift+wheel', () {
+      final (term, sent) = tracked();
+
+      final handled = term.mouseInput(
+        TerminalMouseButton.wheelUp,
+        TerminalMouseButtonState.down,
+        const CellOffset(4, 2),
+      );
+
+      // Claude Code 2.1.241 ignores 68 outright and scrolls on 64 — measured
+      // both ways against the real CLI, which is the only vote that counts.
+      expect(handled, isTrue);
+      expect(sent, ['\x1b[<64;5;3M']);
+    });
+
+    test('scrolling the other way is 65', () {
+      final (term, sent) = tracked();
+      term.mouseInput(
+        TerminalMouseButton.wheelDown,
+        TerminalMouseButtonState.down,
+        const CellOffset(0, 0),
+      );
+      expect(sent, ['\x1b[<65;1;1M']);
+    });
+
+    test('a wheel has no release to report', () {
+      final (term, sent) = tracked();
+      term.mouseInput(
+        TerminalMouseButton.wheelUp,
+        TerminalMouseButtonState.up,
+        const CellOffset(0, 0),
+      );
+      expect(sent, isEmpty);
+    });
+
+    test('a program that never asked for the mouse is sent nothing', () {
+      final term = open();
+      final sent = <String>[];
+      term.onOutput = sent.add;
+
+      final handled = term.mouseInput(
+        TerminalMouseButton.wheelUp,
+        TerminalMouseButtonState.down,
+        const CellOffset(0, 0),
+      );
+
+      // The view falls back to arrow keys on false, which is what a terminal
+      // does for a program with no mouse of its own.
+      expect(handled, isFalse);
+      expect(sent, isEmpty);
+    });
+
+    test('a click still goes out the way xterm sends it', () {
+      final (term, sent) = tracked();
+      term.mouseInput(
+        TerminalMouseButton.left,
+        TerminalMouseButtonState.down,
+        const CellOffset(1, 1),
+      );
+      expect(sent, ['\x1b[<0;2;2M']);
     });
   });
 
