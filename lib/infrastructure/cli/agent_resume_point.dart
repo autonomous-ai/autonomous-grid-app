@@ -1,3 +1,11 @@
+/// How many agent sessions one conversation remembers.
+///
+/// Two agents in one folder is the case this exists for; the rest of the room
+/// is for a chat that has been moved between projects and back. Oldest is
+/// dropped, so a chat cannot grow a resume point for every folder it has ever
+/// visited.
+const int kMaxResumePoints = 8;
+
 /// Where a conversation can pick an agent session back up.
 ///
 /// Claude Code and Codex each hold the conversation on their own side and take
@@ -63,6 +71,20 @@ class AgentResumePoint {
     'sessionId': sessionId,
     'seen': seen,
     if (workdir != null) 'workdir': workdir,
+  };
+
+  /// Reads every point a conversation stored, newest first.
+  ///
+  /// Takes the single object every file written before a chat could hold more
+  /// than one session carries, as well as the list they hold now: a chat saved
+  /// by the build that only ever knew one agent's session keeps it rather than
+  /// starting over.
+  static List<AgentResumePoint> listFromJson(Object? raw) => switch (raw) {
+    final List<Object?> many => [
+      for (final entry in many)
+        if (fromJson(entry) case final point?) point,
+    ].take(kMaxResumePoints).toList(),
+    final Object? one => [if (fromJson(one) case final point?) point],
   };
 
   /// Reads a stored point, or null when there isn't a usable one.

@@ -839,14 +839,16 @@ class ChatSessionsController extends _ChatSessions
   }) {
     final current = _find(chatId);
     if (current == null) return;
-    if (current.resume?.sessionId == sessionId) return;
+    if (current.resumeFor(agent.id)?.sessionId == sessionId) return;
     _saveAndReplace(
       current.copyWith(
-        resume: AgentResumePoint(
-          agent: agent.id,
-          sessionId: sessionId,
-          seen: 0,
-          workdir: workdir,
+        resume: current.resumeWith(
+          AgentResumePoint(
+            agent: agent.id,
+            sessionId: sessionId,
+            seen: 0,
+            workdir: workdir,
+          ),
         ),
       ),
     );

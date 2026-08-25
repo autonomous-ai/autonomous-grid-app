@@ -552,11 +552,12 @@ mixin _ChatSend on _ChatSessions {
       // This chat's own permission level, not the app's — a turn dispatched
       // into a background chat must run under that chat's rules.
       approval: approval,
-      // The session this chat was last having, so quitting the app — or
-      // importing the chat from the tool that opened it — doesn't cost the
-      // agent everything it had worked out. The sender ignores a point that
-      // isn't its own agent's, in its own folder.
-      resume: conversation.resume,
+      // The session this *agent* was last having here, so quitting the app —
+      // or importing the chat from the tool that opened it — doesn't cost it
+      // everything it had worked out. Each agent keeps its own place, so a chat
+      // handed to another one and back resumes where it left off rather than
+      // where the other agent did. The sender still checks the folder half.
+      resume: conversation.resumeFor(agent.id),
     );
 
     final updates = _intoFolder(workdir, startSender);
@@ -612,12 +613,14 @@ mixin _ChatSend on _ChatSessions {
               // Null leaves whatever was already there: a relay turn (a
               // picture) has no session of its own and must not erase the one
               // the agent is still holding.
-              resume: _resumePointFor(
-                viaAgent: viaAgent,
-                agent: agent,
-                sessionId: agentSessionId,
-                root: root,
-                seen: messages.length,
+              resume: current.resumeWith(
+                _resumePointFor(
+                  viaAgent: viaAgent,
+                  agent: agent,
+                  sessionId: agentSessionId,
+                  root: root,
+                  seen: messages.length,
+                ),
               ),
             );
             // The last reading of what served this turn. Fired rather than

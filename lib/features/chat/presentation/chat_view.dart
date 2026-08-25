@@ -427,7 +427,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// files it remembers rather than the ones this chat is pointed at.
   String? _resumeIdFor(AgentTool agent, String workdir) {
     final point = ref.watch(
-      chatSessionsProvider.select((s) => s.active?.resume),
+      chatSessionsProvider.select((s) => s.active?.resumeFor(agent.id)),
     );
     if (point == null) return null;
     if (!point.matches(thisAgent: agent.id, thisWorkdir: workdir)) return null;

@@ -29,7 +29,7 @@ class Conversation {
     this.goal,
     this.loop,
     this.compaction,
-    this.resume,
+    this.resume = const [],
     this.documentPath,
   });
 
@@ -116,8 +116,9 @@ class Conversation {
   /// whole history. See [ChatCompaction].
   final ChatCompaction? compaction;
 
-  /// The agent session this chat can carry on from, or null when the next
-  /// message has to start a fresh one. See [AgentResumePoint].
+  /// The agent sessions this chat can carry on from — one per agent, newest
+  /// first, empty when the next message has to start a fresh one. See
+  /// [AgentResumePoint].
   ///
   /// Two chats need this and they are the same need. A chat *imported* from
   /// Claude Code or Codex has a session this app never opened, and continuing
@@ -125,7 +126,43 @@ class Conversation {
   /// app started has one too — but only in memory, so quitting the app used to
   /// throw it away and replay the entire history into a new session on the next
   /// message.
-  final AgentResumePoint? resume;
+  ///
+  /// **A list rather than one point, because a chat outlives the agent it was
+  /// started with.** Switching Claude Code for Codex used to overwrite the one
+  /// slot, so switching back handed the chat to a stranger: the id it had was
+  /// Codex's, `matches` refused it, and Claude Code's own conversation — still
+  /// sitting in `~/.claude/projects` — was unreachable for good. Each agent
+  /// keeps its own place now, and picking one back up resumes where *it* was
+  /// left.
+  final List<AgentResumePoint> resume;
+
+  /// Where [agent] left this chat, or null when it has never answered in it.
+  ///
+  /// The folder half of the rule is deliberately not applied here — it belongs
+  /// to [AgentResumePoint.matches], which is the one place that knows why a
+  /// session resumed somewhere else is the wrong session.
+  AgentResumePoint? resumeFor(String agent) {
+    for (final point in resume) {
+      if (point.agent == agent) return point;
+    }
+    return null;
+  }
+
+  /// This chat's points with [point] in place of the one its agent had — or
+  /// null when there is nothing to record, which is what `copyWith` reads as
+  /// "leave whatever is already there".
+  ///
+  /// Null is the common case and must not clear: a turn the grid's chat API
+  /// answered has no session of its own, and wiping the list would take the
+  /// conversation the agent is still holding with it.
+  List<AgentResumePoint>? resumeWith(AgentResumePoint? point) {
+    if (point == null) return null;
+    return [
+      point,
+      for (final old in resume)
+        if (old.agent != point.agent || old.workdir != point.workdir) old,
+    ].take(kMaxResumePoints).toList();
+  }
 
   /// The document in Docs this chat belongs to, or null for an ordinary chat.
   ///
@@ -185,8 +222,9 @@ class Conversation {
     // moment it fails, not by a caller here — except on a compaction, which
     // starts the agent's own session afresh from the summary. Leaving it would
     // hand the agent back the very history the summary replaced, and free
-    // nothing at all.
-    AgentResumePoint? resume,
+    // nothing at all. Build the new list with [resumeWith] rather than by hand,
+    // so one agent's point never quietly drops another's.
+    List<AgentResumePoint>? resume,
     bool clearResume = false,
     // Only ever *set*, like [projectId]: a chat started beside a document goes
     // on being that document's chat. There is no gesture that unpairs them —
@@ -208,7 +246,7 @@ class Conversation {
     goal: clearGoal ? null : (goal ?? this.goal),
     loop: loop ?? this.loop,
     compaction: compaction ?? this.compaction,
-    resume: clearResume ? null : (resume ?? this.resume),
+    resume: clearResume ? const [] : (resume ?? this.resume),
     documentPath: documentPath ?? this.documentPath,
   );
 
@@ -242,7 +280,8 @@ class Conversation {
     if (compaction != null) 'compaction': compaction!.toJson(),
     // Same rule again: absent means "start a fresh session", which is what
     // every chat saved before this field existed did.
-    if (resume != null) 'resume': resume!.toJson(),
+    if (resume.isNotEmpty)
+      'resume': [for (final point in resume) point.toJson()],
     // Same rule once more: absent means an ordinary chat, which is what every
     // conversation written before Docs existed is.
     if (documentPath != null) 'documentPath': documentPath,
@@ -291,7 +330,7 @@ class Conversation {
       compaction: ChatCompaction.fromJson(json['compaction']),
       // A point that won't parse reads as none, which costs a replay — the same
       // thing that happens to every chat written before this existed.
-      resume: AgentResumePoint.fromJson(json['resume']),
+      resume: AgentResumePoint.listFromJson(json['resume']),
       // An empty string reads as none: a chat paired with "" would open Docs
       // and then fail to find a file, which is worse than an ordinary chat.
       documentPath:

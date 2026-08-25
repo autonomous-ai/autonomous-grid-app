@@ -343,12 +343,14 @@ class SessionImportController extends AsyncNotifier<List<ImportableSession>> {
         .copyWith(
           resume: parsed.workdir == null
               ? null
-              : AgentResumePoint(
-                  agent: parsed.agent.id,
-                  sessionId: parsed.sessionId,
-                  seen: parsed.messages.length,
-                  workdir: parsed.workdir,
-                ),
+              : [
+                  AgentResumePoint(
+                    agent: parsed.agent.id,
+                    sessionId: parsed.sessionId,
+                    seen: parsed.messages.length,
+                    workdir: parsed.workdir,
+                  ),
+                ],
         );
 
     ref.read(chatStoreProvider).save(conversation);

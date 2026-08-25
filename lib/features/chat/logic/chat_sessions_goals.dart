@@ -133,7 +133,7 @@ mixin _ChatGoals on _ChatSessions {
     if (_disposed) return;
     await runClaudeSessionCommand(
       ref,
-      resume: _find(chat.id)?.resume ?? chat.resume,
+      resume: (_find(chat.id) ?? chat).resumeFor(AgentTool.claude.id),
       model: chat.model,
       command: command,
     );
