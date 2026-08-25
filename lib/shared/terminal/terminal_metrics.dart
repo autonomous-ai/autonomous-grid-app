@@ -29,6 +29,7 @@ class TerminalMetrics {
     required this.lineHeight,
     required this.padding,
     this.maxColumns,
+    this.simulateScroll = true,
   });
 
   /// A Terminal tab: the app's code size, in a pane the user already sized
@@ -52,6 +53,7 @@ class TerminalMetrics {
     lineHeight: 1.3,
     padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
     maxColumns: 110,
+    simulateScroll: false,
   );
 
   final double fontSize;
@@ -64,6 +66,18 @@ class TerminalMetrics {
 
   /// The widest the screen may get, in columns, or null to fill the space.
   final int? maxColumns;
+
+  /// Whether a wheel turn a program didn't ask for should be sent as an arrow
+  /// key instead — `xterm`'s own fallback, and what a terminal does for a
+  /// full-screen program with no scrollback of its own.
+  ///
+  /// **Off for an agent's CLI, because there the arrow keys mean something
+  /// else.** Codex spends part of its life on the alternate screen without
+  /// mouse tracking, and `Up` there walks the prompt history: measured on a live
+  /// session, three `ESC[A` changed what was on screen. So a scroll gesture was
+  /// not merely doing nothing — it was typing into the draft. Nothing is the
+  /// better answer.
+  final bool simulateScroll;
 
   /// The text style this hands `xterm`, on the app's own code face.
   ///
