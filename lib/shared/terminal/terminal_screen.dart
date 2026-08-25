@@ -334,28 +334,50 @@ class _ScreenState extends State<_Screen> {
           child: ImeTerminalInput(
             focusNode: _focus,
             onInput: _typed,
-            builder: (context, onKeyEvent) => TerminalView(
-              session.terminal,
-              controller: session.controller,
-              scrollController: _scroll,
-              simulateScroll: widget.metrics.simulateScroll,
-              focusNode: _focus,
-              theme: theme,
-              // The text half of the keyboard is [ImeTerminalInput]'s, not
-              // xterm's: its own can only append, so Vietnamese Telex — which
-              // rewrites the letter it just typed — came out doubled. The keys
-              // that are not text stay here, and this is how they get here
-              // first.
-              onKeyEvent: onKeyEvent,
-              hardwareKeyboardOnly: true,
-              // The app's own code face, at the size and on the line the metrics
-              // set — so a path in a Terminal tab is the same width as the same
-              // path in a chat message, and a CLI drawing a TUI gets the leading
-              // a terminal app would have given it.
-              textStyle: widget.metrics.style,
-              padding: widget.metrics.padding,
-              onSecondaryTapDown: (details, _) =>
-                  unawaited(_secondaryTap(details.localPosition)),
+            // No scrollbar over a terminal. `xterm` draws its screen inside a
+            // plain [Scrollable], and a `Scrollable` takes its chrome from the
+            // ambient [ScrollBehavior] — so Material's desktop scrollbar was
+            // sliding in over the right-hand column of the program's own output,
+            // uninvited and unstyled by anything in the design system.
+            //
+            // It also made two agents look like different features. A CLI on the
+            // alt screen has no scrollback, so its scroll extent is zero and the
+            // bar never paints: Claude Code showed none, Codex — on the normal
+            // buffer, with history behind it — showed one. Same terminal, same
+            // pane, two answers.
+            //
+            // `copyWith` rather than a hand-rolled behaviour: the drag devices,
+            // the physics and the overscroll are the platform's and stay so.
+            // Scrolling is untouched — the wheel reaches the same
+            // [ScrollController] it always did, and [_ScrollSpill] still feeds
+            // it from the margins.
+            builder: (context, onKeyEvent) => ScrollConfiguration(
+              behavior: ScrollConfiguration.of(
+                context,
+              ).copyWith(scrollbars: false),
+              child: TerminalView(
+                session.terminal,
+                controller: session.controller,
+                scrollController: _scroll,
+                simulateScroll: widget.metrics.simulateScroll,
+                focusNode: _focus,
+                theme: theme,
+                // The text half of the keyboard is [ImeTerminalInput]'s, not
+                // xterm's: its own can only append, so Vietnamese Telex — which
+                // rewrites the letter it just typed — came out doubled. The keys
+                // that are not text stay here, and this is how they get here
+                // first.
+                onKeyEvent: onKeyEvent,
+                hardwareKeyboardOnly: true,
+                // The app's own code face, at the size and on the line the metrics
+                // set — so a path in a Terminal tab is the same width as the same
+                // path in a chat message, and a CLI drawing a TUI gets the leading
+                // a terminal app would have given it.
+                textStyle: widget.metrics.style,
+                padding: widget.metrics.padding,
+                onSecondaryTapDown: (details, _) =>
+                    unawaited(_secondaryTap(details.localPosition)),
+              ),
             ),
           ),
         ),
