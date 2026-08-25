@@ -183,26 +183,6 @@ class TerminalSession {
     onChanged?.call();
   }
 
-  /// Types [text] into the program as if the user had typed it, then sends the
-  /// Return that submits it.
-  ///
-  /// **The Return goes in a write of its own, a beat later, and that is not
-  /// tidiness.** Sent in the same burst an agent's TUI reads the pair as a
-  /// paste: measured against `codex-cli 0.144.6` on 2026-08-24, `"say only the
-  /// word PONG\r"` in one write landed in the composer as a newline and the turn
-  /// never started, while the same text followed by a separate `\r` submitted
-  /// and was answered. Claude Code's TUI takes either, so both lanes send the
-  /// pair the way the stricter one needs.
-  ///
-  /// Does nothing when no program is running — there is nobody to type at.
-  Future<void> type(String text) async {
-    if (!insert(text)) return;
-    await Future<void>.delayed(_submitGap);
-    final pty = _pty;
-    if (pty == null) return;
-    pty.write(const Utf8Encoder().convert('\r'));
-  }
-
   /// Puts [text] where the cursor is and leaves it there, unsent — what
   /// dropping a file onto a terminal does, and what an agent's composer needs
   /// when the user is still writing the rest of the line.
@@ -214,11 +194,6 @@ class TerminalSession {
     pty.write(const Utf8Encoder().convert(text));
     return true;
   }
-
-  /// The beat between the text and the Return that submits it — long enough
-  /// that a TUI has read the first write and left paste mode, short enough that
-  /// nobody sees it.
-  static const _submitGap = Duration(milliseconds: 40);
 
   /// Opens a fresh shell in a terminal whose last one ended, keeping the
   /// scrollback above it — the transcript of what went wrong is usually why the

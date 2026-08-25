@@ -23,6 +23,7 @@ import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/hermes_vision_controller.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_terminals_controller.dart';
+import '../../agents/presentation/agent_terminal_controls.dart';
 import '../../agents/presentation/agent_terminal_view.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
@@ -386,18 +387,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final command = parseChatCommand(message);
     if (command != null) {
       _runCommand(command);
-      return;
-    }
-    // A chat running in a terminal has no turns to send: Send types the line
-    // into the agent's own CLI, exactly as the user could have typed it there.
-    // The command check above still runs first — `/clear` is the app's, and
-    // handing it to the agent is issue #13 whichever lane it is in.
-    if (_terminalChatId case final chatId?) {
-      unawaited(
-        ref.read(agentTerminalsProvider.notifier).type(chatId, message),
-      );
-      _message.clear();
-      _clearDraft();
       return;
     }
     // Everything else goes to the assistant as the sentence it is, including
@@ -1321,6 +1310,42 @@ class _ChatViewState extends ConsumerState<ChatView> {
                       child: ListenableBuilder(
                         listenable: _message,
                         builder: (context, _) {
+                          // A chat that *is* a CLI has no composer to build: the
+                          // terminal takes the keystrokes, so what belongs here
+                          // is only what the CLI can't decide for itself. The
+                          // listenable above is irrelevant to this branch —
+                          // nothing types into `_message` while it is taken.
+                          if (inTerminal) {
+                            return AgentTerminalControls(
+                              approvalPicker: ApprovalPicker(
+                                value: approval,
+                                onChanged: ref
+                                    .read(chatSessionsProvider.notifier)
+                                    .setApproval,
+                              ),
+                              agentPicker: agentInstalled
+                                  ? const AgentPicker()
+                                  : null,
+                              modelPicker: GridModelPicker(
+                                currentModelId: _model.text,
+                                onSelect: _pickGridModel,
+                                visionBlocked: visionLocked,
+                                selectedModel: selectedModel,
+                              ),
+                              onRestart: () => unawaited(
+                                ref
+                                    .read(agentTerminalsProvider.notifier)
+                                    .reopen(
+                                      chatId: activeId!,
+                                      tool: chatAgent,
+                                      model: _model.text.trim(),
+                                      workdir: workdir,
+                                      approval: approval,
+                                      network: widget.network,
+                                    ),
+                              ),
+                            );
+                          }
                           // "There is something to send", not "the chat is free":
                           // a turn already in flight no longer blocks Send, it
                           // queues what is typed behind it. The text check lives
@@ -1393,7 +1418,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               ComposerSection(
                                 messageController: _message,
                                 activeCommand: command,
-                                keystrokesOnly: inTerminal,
                                 attachments: _attachments,
                                 files: _files,
                                 snippets: _snippets,

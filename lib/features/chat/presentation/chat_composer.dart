@@ -61,7 +61,6 @@ class ComposerSection extends StatelessWidget {
     required this.focusNode,
     required this.onStop,
     this.activeCommand,
-    this.keystrokesOnly = false,
   });
 
   final TextEditingController messageController;
@@ -139,16 +138,6 @@ class ComposerSection extends StatelessWidget {
 
   /// Ends the turn that's running — Send turns into Stop while one is.
   final VoidCallback onStop;
-
-  /// Whether everything on this message reaches its reader as typed characters
-  /// — a chat that *is* an agent's CLI, running in a terminal.
-  ///
-  /// It takes the attach button away, because a keystroke cannot carry a
-  /// picture or a document, and a button offering to attach one would be
-  /// promising a delivery this lane has no way to make (§5). Files still arrive
-  /// here, dropped or pasted: their paths are typed at the prompt, which is
-  /// what dropping a file onto a terminal has always done.
-  final bool keystrokesOnly;
 
   bool get _isText => modality == PlaygroundModality.text;
 
@@ -251,7 +240,6 @@ class ComposerSection extends StatelessWidget {
                   // Room for either kind: the one button attaches both, so it
                   // stays live until the message is full of pictures *and* files.
                   canAttach:
-                      !keystrokesOnly &&
                       _isText &&
                       (imageBudgetLeft(attachments) > 0 ||
                           files.length < maxChatFiles),

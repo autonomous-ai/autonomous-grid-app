@@ -141,15 +141,6 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     }
   }
 
-  /// Types [text] into the chat's agent and submits it — what the composer's
-  /// Send does for a chat that runs in a terminal.
-  ///
-  /// The user can type into the terminal directly too, and that is the same
-  /// keystrokes down the same pipe: this exists so Send keeps working, not
-  /// because the app needs a channel of its own.
-  Future<void> type(String chatId, String text) async =>
-      _sessions[chatId]?.type(text);
-
   /// Puts [text] at the CLI's prompt without submitting it — a dropped file's
   /// path, landing where the user is still writing the rest of the line.
   ///
@@ -173,6 +164,38 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     final token = _mcpTokens.remove(chatId);
     if (token == null) return;
     ref.read(gridMcpServerProvider).revoke(token);
+  }
+
+  /// Throws the chat's CLI away and starts it again on the settings it has
+  /// *now* — the agent, the model and the access mode the chat's controls are
+  /// showing.
+  ///
+  /// [restart] cannot do this and must not be made to: it re-runs the argv the
+  /// session was built with, which is right for a CLI that exited on its own and
+  /// wrong for a picker that has been moved since. The argv is built once, in
+  /// [ensure], so the only way a new `--model` reaches the CLI is a new session.
+  ///
+  /// **The scrollback goes with it**, because it belonged to the CLI that is
+  /// being replaced. That is the honest cost of switching model mid-chat and the
+  /// reason this is a button the user presses rather than something a picker
+  /// does by itself.
+  Future<void> reopen({
+    required String chatId,
+    required AgentTool tool,
+    required String model,
+    required String workdir,
+    required AgentApprovalMode approval,
+    required NetworkCredential network,
+  }) async {
+    end(chatId);
+    await ensure(
+      chatId: chatId,
+      tool: tool,
+      model: model,
+      workdir: workdir,
+      approval: approval,
+      network: network,
+    );
   }
 
   /// Starts a fresh CLI in a chat whose last one ended, keeping the scrollback.
