@@ -116,14 +116,22 @@ void main() {
     });
 
     test('Backspace is the terminal\'s, always — routed to the input method it '
-        'was dropped on the floor, because on desktop Flutter never lets the '
-        'platform edit anything and xterm had been told not to', () {
+        'was dropped on the floor, and EVKey corrects a word by sending one '
+        'itself, so swallowing it puts the fix beside the mistake', () {
       expect(lane(LogicalKeyboardKey.backspace), TerminalKeyLane.terminal);
       // Even with a candidate window up: there is nowhere else for it to go.
       expect(
         lane(LogicalKeyboardKey.backspace, composing: true),
         TerminalKeyLane.terminal,
       );
+    });
+
+    test('a delete selector macOS sends instead of the key becomes the rub-out '
+        'a terminal reads, and an unmapped one is left alone', () {
+      expect(terminalSelectorInput('deleteBackward:'), kTerminalDelete);
+      expect(terminalSelectorInput('deleteWordBackward:'), '\x17');
+      expect(terminalSelectorInput('deleteToBeginningOfLine:'), '\x15');
+      expect(terminalSelectorInput('moveLeft:'), isNull);
     });
   });
 

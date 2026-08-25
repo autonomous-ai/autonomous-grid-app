@@ -207,6 +207,34 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     return started;
   }
 
+  /// Start a chat whose agent runs in its own CLI, named after the message that
+  /// started it, and hand that message to the terminal about to open.
+  ///
+  /// **A terminal chat's first message is not a turn.** Every other lane commits
+  /// the sentence to the transcript and sends it to the agent; here the agent's
+  /// CLI *is* the transcript, and the sentence reaches it as the argument the
+  /// CLI is started with ([AgentTerminals.prime]). Sending it the ordinary way
+  /// instead ran `claude -p` beside a terminal that never saw it — an answer
+  /// the user paid eleven seconds for and could not read anywhere.
+  ///
+  /// Returns the chat it started, already open.
+  Conversation startTerminalChat({
+    required String model,
+    required String message,
+  }) {
+    final chat = _startedChat(model);
+    final text = message.trim();
+    if (text.isEmpty || chat.title != kNewConversationTitle) return chat;
+    // The same name the transcript lane would have derived, from the same line —
+    // a chat called "New chat" for the rest of its life is the sidebar losing
+    // track of what is in it.
+    final title = chatTitleFromLine(firstLinePreview(text));
+    if (title.isEmpty) return chat;
+    final named = chat.copyWith(title: title);
+    _saveAndReplace(named);
+    return named;
+  }
+
   Conversation? _find(String id) {
     for (final c in state.conversations) {
       if (c.id == id) return c;

@@ -42,9 +42,18 @@ enum TerminalKeyLane {
 /// and there it vanished: on desktop Flutter does not let the platform edit
 /// anything. `EditableText` does its own deleting in Dart, and macOS hands the
 /// key down as a `deleteBackward:` selector for the framework to act on
-/// (`TextInputClient.performSelector`). With the key declined here, `xterm`
-/// never sent `\x7f` and nothing else did either. Whatever else changes, a key
-/// that is not *inserting text* belongs to the terminal.
+/// (`TextInputClient.performSelector`) — which [ImeTerminalInput] now answers,
+/// for the cases where the platform sends the selector instead of the key. With
+/// the key declined here and nothing answering the selector, `xterm` never sent
+/// `\x7f` and nothing else did either. Whatever else changes, a key that is not
+/// *inserting text* belongs to the terminal.
+///
+/// It matters most for the input methods that don't compose at all. EVKey,
+/// which is what Vietnamese is usually typed with here, corrects a word by
+/// *sending Backspace itself* and then the replacement letter: type `cuar` and
+/// it rubs out `r` and types `ủ`. Swallow that Backspace and the correction
+/// lands beside the mistake instead of over it — `cuaủa` where the user meant
+/// `của`, which is exactly what the screen showed.
 ///
 /// [composing] is the other whole-keyboard case, and it is the one Vietnamese
 /// never reaches: Telex is *modeless* — it commits each letter and then
@@ -156,3 +165,25 @@ bool _isHighSurrogate(String text, int index) {
   final unit = text.codeUnitAt(index);
   return unit >= 0xD800 && unit <= 0xDBFF;
 }
+
+/// What a macOS editing selector means to a terminal, or null for one it has no
+/// answer for.
+///
+/// macOS delivers a key an input method didn't consume as a *selector* rather
+/// than as text — `deleteBackward:` for Backspace, and the rest of the Emacs-ish
+/// bindings a Cocoa text field answers. Flutter passes them to the text input
+/// client and `EditableText` turns them into intents; a client that ignores them
+/// (which this one did) loses the keystroke entirely.
+///
+/// Only the rub-outs are mapped. Movement selectors (`moveLeft:` and friends)
+/// are deliberately absent: the caret they would move belongs to the program,
+/// which draws its own line and is already sent those keys through xterm's
+/// handler.
+String? terminalSelectorInput(String selector) => switch (selector) {
+  'deleteBackward:' => kTerminalDelete,
+  // ^W and ^U, which is what a terminal line editor reads these as.
+  'deleteWordBackward:' => '\x17',
+  'deleteToBeginningOfLine:' => '\x15',
+  'deleteForward:' => '\x1b[3~',
+  _ => null,
+};

@@ -115,9 +115,8 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
       ),
     );
     _connection = connection;
-    _sent = '';
     _composing = false;
-    connection.setEditingState(_empty);
+    _clearMirror(connection);
     connection.show();
   }
 
@@ -126,6 +125,17 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     _connection = null;
     _sent = '';
     _composing = false;
+  }
+
+  /// Forgets the line the field was mirroring, and tells the platform so.
+  ///
+  /// The mirror exists only to be diffed against ([terminalEdit]). Once the
+  /// program has been told something the field never carried — a rub-out that
+  /// arrived as a selector — a diff against it would describe an edit to a line
+  /// that is no longer on screen.
+  void _clearMirror(TextInputConnection connection) {
+    _sent = '';
+    connection.setEditingState(_empty);
   }
 
   /// Drops the last character from the field, because `xterm` is about to send
@@ -252,8 +262,29 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     TextInputControl? newControl,
   ) {}
 
+  /// macOS asking for an edit the input method didn't make itself.
+  ///
+  /// **A client that ignores these loses the key.** Unlike text, a selector is
+  /// not applied to the field for us — `EditableText` turns them into intents
+  /// and edits itself, and this did nothing at all, so a Backspace that reached
+  /// the input lane vanished. Backspace now goes to the program directly
+  /// ([terminalKeyLane]); this catches the cases where the platform sends the
+  /// selector instead of the key.
+  ///
+  /// Not while composing: a candidate window edits its own preedit, and a
+  /// rub-out sent to the program as well would take a character the user can
+  /// still see off the line.
   @override
-  void performSelector(String selectorName) {}
+  void performSelector(String selectorName) {
+    final connection = _connection;
+    if (connection == null || _composing) return;
+    final input = terminalSelectorInput(selectorName);
+    if (input == null) return;
+    // The field no longer describes the line — the program has just been told
+    // something the field wasn't.
+    _clearMirror(connection);
+    widget.onInput(input);
+  }
 
   @override
   void insertContent(KeyboardInsertedContent content) {}
