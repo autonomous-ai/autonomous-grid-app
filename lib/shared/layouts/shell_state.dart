@@ -205,6 +205,14 @@ enum ShellSection {
     'Debug',
     thinIcon: LucideIcons.terminal300,
     devOnly: true,
+  ),
+  // The pulse line, not a bar chart: this screen is the live stream of events
+  // leaving the app, not a report about them.
+  tracking(
+    LucideIcons.activity,
+    'Tracking',
+    thinIcon: LucideIcons.activity300,
+    devOnly: true,
   );
 
   const ShellSection(
@@ -358,7 +366,7 @@ const kSettingsGroups = [
     // dev only for now, so this whole group is invisible in a shipped build.
     ShellSection.messages,
   ]),
-  SettingsGroup('Developer', [ShellSection.debug]),
+  SettingsGroup('Developer', [ShellSection.debug, ShellSection.tracking]),
   // Where a chat goes when it leaves the sidebar. Its own run at the bottom:
   // it's the one row here that manages content rather than configuration.
   SettingsGroup('Archived', [ShellSection.archived]),

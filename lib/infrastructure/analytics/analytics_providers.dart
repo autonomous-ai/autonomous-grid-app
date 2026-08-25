@@ -8,10 +8,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../features/auth/logic/session_controller.dart';
 import '../logging/app_log.dart';
+import 'analytics.dart';
 import 'analytics_client.dart';
 import 'analytics_config.dart';
 import 'analytics_event.dart';
 import 'analytics_identity.dart';
+import 'analytics_log.dart';
 import 'analytics_service.dart';
 
 /// The ids every event carries, from `~/.grid/app/analytics.json`. Overridden
@@ -66,6 +68,9 @@ final analyticsProvider = Provider<Analytics>((ref) {
     context: ref.read(analyticsContextProvider.future),
     user: () => _signedInUser(ref),
     log: ref.read(appLogProvider),
+    // The Tracking tab's live view of the queue. Read as a notifier, not
+    // watched: a new row must not rebuild the service that wrote it.
+    recorder: ref.read(analyticsLogProvider.notifier),
   );
   // Best-effort: a provider container torn down mid-flush is the app already
   // going away, and `close` is time-boxed anyway.
@@ -84,3 +89,47 @@ final analyticsProvider = Provider<Analytics>((ref) {
   final sub = credentials.user['google_sub'];
   return (id: sub is String ? sub : null, email: credentials.userEmail);
 }
+
+/// What the Tracking tab shows about the stream itself: where events go, why
+/// they might not be going, and the two ids they are filed under.
+///
+/// Its own provider rather than fields read off the service, because it has to
+/// answer even when there is no service — a muted app hands out a
+/// [NoopAnalytics], and "why is nothing being sent" is exactly the question
+/// asked in that state.
+class AnalyticsStatus {
+  const AnalyticsStatus({
+    required this.endpoint,
+    required this.offReason,
+    required this.deviceId,
+    required this.sessionId,
+  });
+
+  final Uri endpoint;
+
+  /// Why nothing is being sent, or null when the stream is live.
+  final String? offReason;
+
+  final String deviceId;
+
+  /// Empty until the first event of this launch has been tracked.
+  final String sessionId;
+
+  bool get enabled => offReason == null;
+}
+
+/// The stream's current state, read on demand. Invalidate to re-read after
+/// changing `~/.grid/app/analytics.json` by hand.
+final analyticsStatusProvider = Provider<AnalyticsStatus>((ref) {
+  final config = AnalyticsConfig.resolve();
+  final store = ref.watch(analyticsIdentityStoreProvider);
+  final ids = store.peek();
+  return AnalyticsStatus(
+    endpoint: config.endpoint,
+    offReason: store.optedOut
+        ? 'Turned off in ~/.grid/app/analytics.json.'
+        : config.offReason,
+    deviceId: ids.pseudoId,
+    sessionId: ids.sessionId,
+  );
+});

@@ -1,4 +1,4 @@
-import 'analytics_service.dart';
+import 'analytics.dart';
 
 /// The events this app sends, one method each.
 ///

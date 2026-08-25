@@ -46,6 +46,14 @@ class AnalyticsIdentityStore {
   /// Whether the user turned tracking off in `~/.grid/app/analytics.json`.
   bool get optedOut => _load().optedOut;
 
+  /// The ids as they stand, without starting a visit or moving the clock —
+  /// what the Tracking tab reads. `sessionId` is empty until the first event of
+  /// a launch has been tracked.
+  ({String pseudoId, String sessionId}) peek() {
+    final state = _load();
+    return (pseudoId: state.pseudoId, sessionId: state.sessionId);
+  }
+
   /// The ids for an event happening at [now], rotating the visit after a quiet
   /// spell and persisting sparingly (see [_persistEvery]).
   ({String pseudoId, String sessionId}) touch(DateTime now) {

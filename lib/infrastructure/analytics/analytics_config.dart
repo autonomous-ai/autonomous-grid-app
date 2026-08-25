@@ -18,7 +18,7 @@ class AnalyticsConfig {
   const AnalyticsConfig({
     required this.endpoint,
     required this.writeKey,
-    required this.enabled,
+    this.offReason,
   });
 
   /// The full `…/api/v1/event_tracking` URL one event is POSTed to. Autonomous
@@ -30,11 +30,17 @@ class AnalyticsConfig {
   /// the web client does and what the server reads.
   final String writeKey;
 
-  /// False when the environment muted the app, when there is no key to send
-  /// with, or under `flutter test`. The user's own opt-out is checked
-  /// separately, by `analyticsProvider` — this answer must be reachable
-  /// *without* reading `~/.grid`, so a test run touches no grid home at all.
-  final bool enabled;
+  /// Why nothing is being sent, or null when the stream is live.
+  ///
+  /// A sentence rather than a bool because the Tracking tab shows it: "no
+  /// events" with no reason beside it is the state a developer wastes an hour
+  /// on. The user's own opt-out isn't here — it is checked by
+  /// `analyticsProvider`, so this answer stays reachable *without* reading
+  /// `~/.grid` and a test run touches no grid home at all.
+  final String? offReason;
+
+  /// Whether events are queued and sent at all.
+  bool get enabled => offReason == null;
 
   /// Env var / `--dart-define` names. The URL and key overrides are dev-only
   /// (like [AppEnvironment]) so a shipped build always reports to production;
@@ -67,8 +73,15 @@ class AnalyticsConfig {
     return AnalyticsConfig(
       endpoint: Uri.parse('$base/$_path'),
       writeKey: key,
-      enabled: key.isNotEmpty && !_muted && !_underTest,
+      offReason: _offReason(key),
     );
+  }
+
+  static String? _offReason(String key) {
+    if (key.isEmpty) return 'This build carries no analytics key.';
+    if (_muted) return '$disableEnvKey is set in this environment.';
+    if (_underTest) return 'Running under flutter test.';
+    return null;
   }
 
   /// True when `GRID_ANALYTICS_DISABLED` is set to anything truthy.

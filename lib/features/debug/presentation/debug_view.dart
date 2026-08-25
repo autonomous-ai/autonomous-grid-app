@@ -11,11 +11,12 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
-import '../../../shared/widgets/pill_choice.dart';
 import '../../../shared/widgets/section_scaffold.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../onboarding/preflight_providers.dart';
 import '../../onboarding/preflight_report.dart';
+import 'debug_filter_bar.dart';
+import 'debug_toolbar_button.dart';
 import 'log_tile.dart';
 
 /// The status/kind lens the list is filtered to. Named so an empty result can
@@ -94,10 +95,18 @@ class _DebugViewState extends ConsumerState<DebugView> {
             onChanged: (value) => setState(() => _query = value),
           ),
           const SizedBox(height: 12),
-          _FilterBar(
-            logs: logs,
-            selected: _filter,
-            onSelect: (f) => setState(() => _filter = f),
+          DebugFilterBar(
+            lenses: [
+              for (final f in _LogFilter.values)
+                FilterLens(
+                  label: f.label,
+                  count: logs.where(f.matches).length,
+                  selected: f == _filter,
+                  onTap: () => setState(() => _filter = f),
+                  danger: f == _LogFilter.failed,
+                  hideWhenEmpty: f == _LogFilter.failed,
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           Expanded(child: _list(logs.isEmpty, visible)),
@@ -153,7 +162,7 @@ class _Toolbar extends ConsumerWidget {
         const Spacer(),
         const _OpenLogsButton(),
         const SizedBox(width: 8),
-        _ToolbarButton(
+        DebugToolbarButton(
           icon: Icons.delete_outline_rounded,
           label: 'Clear',
           onPressed: total == 0
@@ -200,159 +209,6 @@ class _SearchField extends StatelessWidget {
   }
 }
 
-/// Status/kind lenses with live counts, so "is anything red?" is answered
-/// before the list is even read. Failed hides itself when the count is zero —
-/// an always-there "Failed 0" pill trains the eye to ignore it.
-class _FilterBar extends StatelessWidget {
-  const _FilterBar({
-    required this.logs,
-    required this.selected,
-    required this.onSelect,
-  });
-
-  final List<GridCommandLog> logs;
-  final _LogFilter selected;
-  final ValueChanged<_LogFilter> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = [
-      for (final f in _LogFilter.values)
-        if (f != _LogFilter.failed ||
-            selected == _LogFilter.failed ||
-            logs.any((l) => l.status == CliCallStatus.failed))
-          f,
-    ];
-    return Row(
-      children: [
-        for (final f in visible)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: PillChoice(
-              selected: f == selected,
-              onTap: () => onSelect(f),
-              label: _FilterLabel(
-                label: f.label,
-                count: logs.where(f.matches).length,
-                danger: f == _LogFilter.failed,
-                selected: f == selected,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// A pill's text plus a dimmer trailing count — the count reads as metadata, not
-/// as part of the label.
-class _FilterLabel extends StatelessWidget {
-  const _FilterLabel({
-    required this.label,
-    required this.count,
-    required this.danger,
-    required this.selected,
-  });
-
-  final String label;
-  final int count;
-  final bool danger;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppPalette tokens — follow theme flips.
-    // On a selected (accent) pill the count sits on white; otherwise it's a
-    // faint trailing figure, red when it's the failed lens carrying a hit.
-    final countColor = selected
-        ? Colors.white70
-        : danger && count > 0
-        ? Theme.of(context).colorScheme.error
-        : AppPalette.textFaint;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label),
-        const SizedBox(width: 6),
-        Text(
-          '$count',
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: AppFont.medium,
-            color: countColor,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// A lifted pill action for the Debug toolbar — matches the button shape used
-/// across the reference tabs (fill + shadow, no border, radius 11).
-class _ToolbarButton extends StatefulWidget {
-  const _ToolbarButton({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onPressed;
-
-  @override
-  State<_ToolbarButton> createState() => _ToolbarButtonState();
-}
-
-class _ToolbarButtonState extends State<_ToolbarButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context); // reads AppGlass/AppPalette tokens.
-    final enabled = widget.onPressed != null;
-    // Glyph climbs to full color on hover; drops back and dims when disabled.
-    final fg = !enabled
-        ? AppPalette.textFaint
-        : _hovered
-        ? AppPalette.textPrimary
-        : AppPalette.textSecondary;
-    return Material(
-      color: AppGlass.surfaceFill,
-      borderRadius: BorderRadius.circular(11),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(11),
-        onTap: widget.onPressed,
-        onHover: (v) => setState(() => _hovered = v),
-        child: Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(11),
-            boxShadow: AppGlass.cardShadow,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(widget.icon, size: 16, color: fg),
-              const SizedBox(width: 8),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Opens `~/.grid/logs` in the file manager.
 ///
 /// The list above is only this session's commands, held in memory — the files on
@@ -389,7 +245,7 @@ class _OpenLogsButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return _ToolbarButton(
+    return DebugToolbarButton(
       icon: Icons.folder_open_rounded,
       label: 'Open logs',
       onPressed: () => _open(context, ref),

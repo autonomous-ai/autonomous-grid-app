@@ -1,51 +1,14 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 
 import '../logging/app_log.dart';
+import 'analytics.dart';
 import 'analytics_client.dart';
 import 'analytics_config.dart';
 import 'analytics_event.dart';
 import 'analytics_identity.dart';
-
-/// The app's behavioural-event sink.
-///
-/// Every call site talks to this, never to the transport underneath, so
-/// tracking can be muted (opt-out, a test run, a build with no key) by handing
-/// out a [NoopAnalytics] instead of by checking a flag at each call site.
-///
-/// Nothing here throws and nothing here is awaited by the UI: an analytics
-/// problem must never be something the user finds out about.
-abstract interface class Analytics {
-  /// Queue one event. [name] must be `snake_case`
-  /// (`analyticsEventNamePattern`) or it is dropped with a warning in the app
-  /// log — the backend would accept it silently and leave the stream
-  /// unqueryable.
-  ///
-  /// [params] is free-form, but it is a *product* record, not a debug dump:
-  /// never put message text, prompts, file contents or absolute paths in it.
-  void track(String name, {Map<String, Object?> params});
-
-  /// Send whatever is queued now, instead of waiting on the retry timer.
-  Future<void> flush();
-
-  /// Final, time-boxed drain, then release the connection. Called when the app
-  /// quits; the instance is spent afterwards.
-  Future<void> close();
-}
-
-/// Does nothing, for a muted app and for tests.
-class NoopAnalytics implements Analytics {
-  const NoopAnalytics();
-
-  @override
-  void track(String name, {Map<String, Object?> params = const {}}) {}
-
-  @override
-  Future<void> flush() async {}
-
-  @override
-  Future<void> close() async {}
-}
+import 'analytics_log.dart';
 
 /// Who is signed in, asked fresh at track time — a session that starts signed
 /// out and ends signed in must not report the whole visit as anonymous.
@@ -70,12 +33,14 @@ class QueuedAnalytics implements Analytics {
     required Future<AnalyticsContext> context,
     required AnalyticsUserLookup user,
     AppLog log = const NoopAppLog(),
+    AnalyticsLog recorder = const NoopAnalyticsLog(),
     DateTime Function() clock = DateTime.now,
   }) : _client = client,
        _identity = identity,
        _context = context,
        _user = user,
        _log = log,
+       _recorder = recorder,
        _clock = clock;
 
   final AnalyticsClient _client;
@@ -83,9 +48,13 @@ class QueuedAnalytics implements Analytics {
   final Future<AnalyticsContext> _context;
   final AnalyticsUserLookup _user;
   final AppLog _log;
+  final AnalyticsLog _recorder;
   final DateTime Function() _clock;
 
-  final Queue<AnalyticsEvent> _queue = Queue<AnalyticsEvent>();
+  /// Each queued event beside the id of its row in the Tracking tab, so the
+  /// row can be settled without the wire model carrying a debug field.
+  final Queue<({AnalyticsEvent event, int logId})> _queue =
+      Queue<({AnalyticsEvent event, int logId})>();
 
   AnalyticsContext? _resolvedContext;
   Future<void>? _draining;
@@ -97,19 +66,25 @@ class QueuedAnalytics implements Analytics {
   @override
   void track(String name, {Map<String, Object?> params = const {}}) {
     if (_closed) return;
+    final now = _clock();
     if (!analyticsEventNamePattern.hasMatch(name)) {
-      _log.warn(
-        'analytic',
-        'Ignored event "$name" — names must be snake_case, 3-64 chars',
+      const reason = 'names must be snake_case, 3-64 characters';
+      // Recorded before it is refused, so the Tracking tab shows the mistake
+      // rather than nothing at all — an event that never lands is exactly what
+      // somebody would open that tab to explain.
+      _recorder.settled(
+        _recorder.queued(name, params, now),
+        AnalyticsEventStatus.dropped,
+        note: reason,
       );
+      _log.warn('analytic', 'Ignored event "$name" — $reason');
       return;
     }
     try {
-      final now = _clock();
       final ids = _identity.touch(now);
       final user = _user();
-      _queue.add(
-        AnalyticsEvent(
+      _queue.add((
+        event: AnalyticsEvent(
           name: name,
           params: params,
           at: now,
@@ -120,7 +95,8 @@ class QueuedAnalytics implements Analytics {
             userEmail: user.email,
           ),
         ),
-      );
+        logId: _recorder.queued(name, params, now),
+      ));
       _trim();
       unawaited(_pump());
     } on Object catch (error) {
@@ -148,7 +124,11 @@ class QueuedAnalytics implements Analytics {
   void _trim() {
     if (_queue.length <= AnalyticsLimits.queueCap) return;
     while (_queue.length > AnalyticsLimits.queueCap) {
-      _queue.removeFirst();
+      _recorder.settled(
+        _queue.removeFirst().logId,
+        AnalyticsEventStatus.dropped,
+        note: 'the queue was full',
+      );
     }
     if (_warnedFull) return;
     _warnedFull = true;
@@ -171,14 +151,22 @@ class QueuedAnalytics implements Analytics {
       (Object _) => AnalyticsContext.unknown,
     );
     while (_queue.isNotEmpty && !_closed) {
-      final event = _queue.first;
+      final queued = _queue.first;
+      final event = queued.event;
       final AnalyticsSendResult result;
       try {
-        result = await _client.send(analyticsPayload(event, context));
+        final payload = analyticsPayload(event, context);
+        _recorder.attempted(queued.logId, jsonEncode(payload));
+        result = await _client.send(payload);
       } on Object catch (error, stackTrace) {
         // The client's contract says it never throws; if it ever does, the
         // queue must not be left spinning on the same event forever.
         _queue.removeFirst();
+        _recorder.settled(
+          queued.logId,
+          AnalyticsEventStatus.dropped,
+          note: '$error',
+        );
         _log.failure(
           'analytic',
           'Send failed for "${event.name}"',
@@ -190,10 +178,16 @@ class QueuedAnalytics implements Analytics {
       switch (result) {
         case AnalyticsSendResult.sent:
           _queue.removeFirst();
+          _recorder.settled(queued.logId, AnalyticsEventStatus.sent);
           _retryDelay = AnalyticsLimits.retryDelay;
           _warnedFull = false;
         case AnalyticsSendResult.rejected:
           _queue.removeFirst();
+          _recorder.settled(
+            queued.logId,
+            AnalyticsEventStatus.refused,
+            note: 'the server refused it',
+          );
           _log.warn(
             'analytic',
             'Server refused "${event.name}" — the event was dropped',
