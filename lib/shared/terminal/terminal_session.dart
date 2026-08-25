@@ -234,8 +234,19 @@ class TerminalSession {
   /// neither the terminal nor the chat. Reusing the session keeps the element,
   /// the focus and the scroll position, and there is nothing left to race.
   ///
-  /// The screen is cleared, scrollback included: what was above belonged to the
-  /// program being replaced, and leaving it would read as one conversation.
+  /// **Nothing is cleared, and no escape is written by hand.** Clearing the
+  /// screen and the scrollback (`ESC[H ESC[2J ESC[3J`) is what a person would
+  /// type, and it took the app down 48 times in five minutes: `ESC[3J` trims the
+  /// scrollback out from under a program that has set a scroll region — Codex
+  /// sets one to pin its composer — so the next line feed inserted at
+  /// `absoluteMarginBottom + 1`, past the end of a buffer that had just shrunk,
+  /// and `xterm` asserted `attached` on a line it had already dropped. Thrown
+  /// from `Terminal.write`, which is the pty's output stream, so it fired again
+  /// on every byte the CLI printed.
+  ///
+  /// One blank line instead, the same mark [restart] leaves. The conversation
+  /// above stays readable, which is what a terminal does when one program ends
+  /// and another starts — and what a user looking for their history wants.
   void relaunch({
     required ShellCommand command,
     required Map<String, String> environment,
@@ -251,7 +262,7 @@ class TerminalSession {
     // [start] refuses to run while one is running, and the shell it was told to
     // kill has not reported back yet.
     _shell = const ShellIdle();
-    terminal.write('\x1b[H\x1b[2J\x1b[3J');
+    terminal.write('\r\n');
     start(onError: onError);
   }
 
