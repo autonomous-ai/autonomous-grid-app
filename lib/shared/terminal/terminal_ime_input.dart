@@ -67,13 +67,6 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   /// against the field's own history.
   String _sent = '';
 
-  /// Whether the letters on the program's current line are ones this put there.
-  ///
-  /// False again the moment a key goes to the terminal instead — Enter runs the
-  /// line, an arrow moves the cursor — because from then on a rub-out belongs to
-  /// the program, not to the field.
-  bool _ownsLine = false;
-
   /// Whether the platform is holding preedit text — a candidate window is up
   /// and the user has not chosen yet.
   ///
@@ -123,7 +116,6 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     );
     _connection = connection;
     _sent = '';
-    _ownsLine = false;
     _composing = false;
     connection.setEditingState(_empty);
     connection.show();
@@ -133,8 +125,29 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     _connection?.close();
     _connection = null;
     _sent = '';
-    _ownsLine = false;
     _composing = false;
+  }
+
+  /// Drops the last character from the field, because `xterm` is about to send
+  /// the program the rub-out for it.
+  ///
+  /// The field has to follow or the input method keeps rewriting a letter the
+  /// program no longer has: backspace in the middle of `chà`, then a tone key,
+  /// and the diff would rub out a letter that had already gone.
+  ///
+  /// Counted in graphemes, for the same reason [terminalEdit] counts them:
+  /// one press is one letter, and `ẻ` can be two code points.
+  void _rubOut() {
+    final connection = _connection;
+    if (connection == null || _sent.isEmpty) return;
+    final kept = _sent.characters.skipLast(1).toString();
+    _sent = kept;
+    connection.setEditingState(
+      TextEditingValue(
+        text: kept,
+        selection: TextSelection.collapsed(offset: kept.length),
+      ),
+    );
   }
 
   /// Called by `TerminalView` before it does anything of its own with the key.
@@ -157,16 +170,15 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
           keyboard.isControlPressed ||
           keyboard.isMetaPressed ||
           keyboard.isAltPressed,
-      ownsLine: _ownsLine,
       composing: _composing,
     );
     if (lane == TerminalKeyLane.input) {
       return KeyEventResult.skipRemainingHandlers;
     }
-    // The program is about to act on the line itself, so what is on it stops
-    // being this widget's to edit. The field is left alone — writing to it here
-    // is what used to race the next keystroke.
-    if (!isModifierKey(event.logicalKey)) _ownsLine = false;
+    // `xterm` is about to spell this key for the program. Backspace is the one
+    // it spells that also changes the line the field is mirroring, so the field
+    // follows it down; everything else leaves the line alone or ends the word.
+    if (event.logicalKey == LogicalKeyboardKey.backspace) _rubOut();
     return KeyEventResult.ignored;
   }
 
@@ -190,7 +202,6 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     final edit = terminalEdit(_sent, value.text);
     _sent = value.text;
     if (edit.isEmpty) return;
-    _ownsLine = true;
     widget.onInput(edit);
   }
 

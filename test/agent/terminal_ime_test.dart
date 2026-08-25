@@ -61,13 +61,11 @@ void main() {
       LogicalKeyboardKey key, {
       String? character,
       bool modified = false,
-      bool ownsLine = false,
       bool composing = false,
     }) => terminalKeyLane(
       key: key,
       character: character,
       modified: modified,
-      ownsLine: ownsLine,
       composing: composing,
     );
 
@@ -117,14 +115,15 @@ void main() {
       );
     });
 
-    test('Backspace goes wherever the text is: to the field while the letters '
-        'on the line are ones this put there, so the two agree on what is on '
-        'it, and to the program once the program has taken the line back', () {
-      expect(
-        lane(LogicalKeyboardKey.backspace, ownsLine: true),
-        TerminalKeyLane.input,
-      );
+    test('Backspace is the terminal\'s, always — routed to the input method it '
+        'was dropped on the floor, because on desktop Flutter never lets the '
+        'platform edit anything and xterm had been told not to', () {
       expect(lane(LogicalKeyboardKey.backspace), TerminalKeyLane.terminal);
+      // Even with a candidate window up: there is nowhere else for it to go.
+      expect(
+        lane(LogicalKeyboardKey.backspace, composing: true),
+        TerminalKeyLane.terminal,
+      );
     });
   });
 
@@ -138,7 +137,6 @@ void main() {
           key: LogicalKeyboardKey.enter,
           character: '\r',
           modified: false,
-          ownsLine: true,
           composing: true,
         ),
         TerminalKeyLane.input,
@@ -148,7 +146,6 @@ void main() {
           key: LogicalKeyboardKey.arrowDown,
           character: null,
           modified: false,
-          ownsLine: true,
           composing: true,
         ),
         TerminalKeyLane.input,
@@ -162,7 +159,6 @@ void main() {
           key: LogicalKeyboardKey.keyC,
           character: 'c',
           modified: true,
-          ownsLine: true,
           composing: true,
         ),
         TerminalKeyLane.terminal,

@@ -37,12 +37,14 @@ enum TerminalKeyLane {
 /// every `ctrl`/`alt`/`⌘` chord spell differently depending on the buffer the
 /// program is using, and the input method has no use for any of them.
 ///
-/// Backspace is the one key that belongs to both, decided by [ownsLine]: while
-/// the letters on the program's line are ones this put there, the input method
-/// has to see the rub-out too, or the field and the program disagree about what
-/// is on the line and the next letter is sent into the wrong place. Once the
-/// program has taken the line back — it ran it on Enter, or a key moved the
-/// cursor — the rub-out is the program's own.
+/// **Backspace is the terminal's**, and finding that out cost a release. It
+/// looks like text — it edits the line — so it was routed to the input method,
+/// and there it vanished: on desktop Flutter does not let the platform edit
+/// anything. `EditableText` does its own deleting in Dart, and macOS hands the
+/// key down as a `deleteBackward:` selector for the framework to act on
+/// (`TextInputClient.performSelector`). With the key declined here, `xterm`
+/// never sent `\x7f` and nothing else did either. Whatever else changes, a key
+/// that is not *inserting text* belongs to the terminal.
 ///
 /// [composing] is the other whole-keyboard case, and it is the one Vietnamese
 /// never reaches: Telex is *modeless* — it commits each letter and then
@@ -52,19 +54,18 @@ TerminalKeyLane terminalKeyLane({
   required LogicalKeyboardKey key,
   required String? character,
   required bool modified,
-  required bool ownsLine,
   required bool composing,
 }) {
   if (modified) return TerminalKeyLane.terminal;
+  // Before the candidate-window rule, not after: this key has to reach the
+  // program whatever else is going on, and there is nowhere else for it to go.
+  if (key == LogicalKeyboardKey.backspace) return TerminalKeyLane.terminal;
   // While an input method is showing candidates, every key belongs to it:
   // Enter commits the choice, Escape abandons it, space and the digits pick
   // between them and the arrows walk the list. Handing any of those to the
   // program as well would run a command the user was only choosing a word
   // with.
   if (composing) return TerminalKeyLane.input;
-  if (key == LogicalKeyboardKey.backspace) {
-    return ownsLine ? TerminalKeyLane.input : TerminalKeyLane.terminal;
-  }
   if (character == null || character.isEmpty) return TerminalKeyLane.terminal;
   // Enter arrives carrying `\r`, Tab `\t`, Escape `\x1b`. They are keys, not
   // text, and the terminal spells them.
