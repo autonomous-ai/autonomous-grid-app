@@ -301,7 +301,10 @@ class _ScreenState extends State<_Screen> {
           textStyle: TerminalStyle(
             fontSize: 12.5,
             fontFamily: AppFont.mono,
-            fontFamilyFallback: AppFont.monoFallback,
+            fontFamilyFallback: [
+              ...AppFont.monoFallback,
+              ...kTerminalSymbolFallback,
+            ],
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           onSecondaryTapDown: (details, _) =>

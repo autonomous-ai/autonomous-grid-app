@@ -7,6 +7,7 @@ import 'package:flutter_pty/flutter_pty.dart';
 import 'package:xterm/xterm.dart';
 
 import '../../infrastructure/cli/host_environment.dart';
+import '../theme/app_theme.dart';
 import 'terminal_shell.dart';
 
 /// What the shell behind a terminal is doing.
@@ -154,6 +155,15 @@ class TerminalSession {
           ..._environment,
           'TERM': 'xterm-256color',
           'TERM_PROGRAM': 'Grid',
+          // What colour this terminal is *on*, which is the only way a TUI can
+          // know. Read out of `claude` 2.1.243: it takes the last `;`-separated
+          // field as the background's ANSI index and answers `r <= 6 || r === 8
+          // ? "dark" : "light"` — and returns nothing at all when the variable
+          // is unset, which is how Claude Code came to draw its dark theme on
+          // the app's white window and put a black slab across the user's own
+          // message. 0 is black, 15 is white; the foreground half is the
+          // opposite and nothing reads it.
+          'COLORFGBG': AppTheme.isDark ? '15;0' : '0;15',
         },
         columns: terminal.viewWidth,
         rows: terminal.viewHeight,

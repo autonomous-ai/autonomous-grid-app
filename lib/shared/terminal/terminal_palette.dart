@@ -3,6 +3,29 @@ import 'package:xterm/xterm.dart';
 
 import '../../../shared/theme/app_theme.dart';
 
+/// The faces a terminal falls back to for glyphs no code font carries — behind
+/// [AppFont.monoFallback], never in front of it.
+///
+/// A terminal outside this app reaches the whole system font book, and Flutter
+/// reaches exactly the list it is given. Measured with `fc-list` on macOS 15:
+/// `⏺` (U+23FA), which Claude Code prints before every answer it gives, is in
+/// **none** of the five faces behind [AppFont.mono] — not the system monospace,
+/// not Menlo, Monaco or Courier New. On this machine it lives only in Apple
+/// Color Emoji, STIX Two Math and LastResort, so the chat drew a tofu box where
+/// the terminal beside it drew a circle.
+///
+/// Emoji faces are not monospaced and a glyph taken from one can run wider than
+/// its cell. That is what the terminal the user is comparing against does too,
+/// and a character drawn a little wide reads as the character; a tofu box reads
+/// as a broken app. Names for the other two platforms are harmless where they
+/// don't exist — an unmatched family is skipped.
+const List<String> kTerminalSymbolFallback = [
+  'Apple Symbols',
+  'Apple Color Emoji',
+  'Noto Color Emoji',
+  'Segoe UI Emoji',
+];
+
 /// The colours a terminal draws with, in the app's current brightness.
 ///
 /// Built here rather than taking `TerminalThemes.defaultTheme` because that one
