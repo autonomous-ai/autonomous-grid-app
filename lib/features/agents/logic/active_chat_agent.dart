@@ -5,6 +5,7 @@ import 'adapters/claude_chat_sender.dart';
 import 'adapters/codex_chat_sender.dart';
 import 'adapters/hermes_chat_sender.dart';
 import '../../chat/logic/chat_scope.dart';
+import '../../chat/logic/chat_sessions_controller.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
@@ -28,29 +29,30 @@ final chatAgentChoiceProvider = Provider.family<String, String?>((
       ref.watch(chatPrefsProvider.select((p) => p.chatAgent));
 });
 
-/// The agent that answers [projectId]'s chats — the choice above when it's
-/// installed *and* the open grid can run it, else any agent that clears both
-/// bars so chat still has one, else the catalog default.
+/// The agent a stored choice actually resolves to — [choice] when it names an
+/// agent that is installed *and* the open grid can run, else any agent that
+/// clears both bars so chat still has one, else the catalog default.
 ///
 /// Resolving rather than *storing* the answer is the whole point: the user's
-/// pick stays where it was made (the project, or [ChatPrefs]) untouched, so a
-/// grid that can't run Codex borrows the chat for as long as it's open and hands
-/// it back on the next grid that can. Writing the fallback back down would spend
-/// their choice to describe a grid they were passing through.
+/// pick stays where it was made (the chat, the project, or [ChatPrefs])
+/// untouched, so a grid that can't run Codex borrows the chat for as long as
+/// it's open and hands it back on the next grid that can. Writing the fallback
+/// back down would spend their choice to describe a grid they were passing
+/// through.
 ///
 /// Both bars are honest ones: an agent the user has since removed can't answer,
 /// and neither can one this grid serves no model for (see [agentRunsOnGrid]).
 ///
-/// Keyed by project so a turn can be dispatched with the agent of *its own*
-/// chat: a follow-up queued in one project goes out minutes later, by which time
-/// the user may be reading another, and it must still be answered by the agent
-/// the project it was typed in runs.
-final chatAgentForProjectProvider = Provider.family<AgentTool, String?>((
+/// Keyed by the choice rather than by where it was read from, so the one
+/// resolution serves all three readers — a chat that fixed its own agent, a
+/// project, and the app's standing pick — instead of each growing a copy that
+/// drifts.
+final resolvedChatAgentProvider = Provider.family<AgentTool, String?>((
   ref,
-  projectId,
+  choice,
 ) {
   // The chosen agent, if it's one we know and it can answer here.
-  final chosen = agentToolById(ref.watch(chatAgentChoiceProvider(projectId)));
+  final chosen = agentToolById(choice);
   if (chosen != null && canAnswerChatsHere(ref, chosen)) return chosen;
   // The choice isn't available — fall back to any agent that can answer.
   for (final tool in AgentTool.values) {
@@ -59,24 +61,83 @@ final chatAgentForProjectProvider = Provider.family<AgentTool, String?>((
   return kChatAgent;
 });
 
-/// The agent answering the chat **on screen** — [chatAgentForProjectProvider]
-/// for the project that chat belongs to.
+/// The agent that answers [projectId]'s chats — its standing pick, resolved.
+///
+/// Keyed by project so a turn can be dispatched with the agent of *its own*
+/// chat: a follow-up queued in one project goes out minutes later, by which time
+/// the user may be reading another, and it must still be answered by the agent
+/// the project it was typed in runs.
+///
+/// This is the pick a **new** chat there will start on. A chat already under way
+/// answers with the agent it fixed at its first message — see
+/// [openChatAgentChoiceProvider], and `Conversation.agent` for why a session
+/// keeps its own.
+final chatAgentForProjectProvider = Provider.family<AgentTool, String?>(
+  (ref, projectId) => ref.watch(
+    resolvedChatAgentProvider(ref.watch(chatAgentChoiceProvider(projectId))),
+  ),
+);
+
+/// The agent the chat **on screen** fixed when it started, or null while it
+/// hasn't started one (a blank compose, or a chat saved before sessions pinned
+/// theirs).
+final openChatAgentPinProvider = Provider<String?>(
+  (ref) => ref.watch(chatSessionsProvider.select((s) => s.active?.agent)),
+);
+
+/// Whether the chat on screen has settled its agent — the picker shows it as a
+/// fact rather than offering a menu.
+///
+/// True from the moment a chat starts, which is one of two things: it was born
+/// with its agent written down, or it has a message in it. The second half is
+/// what covers a chat saved before this existed — it is plainly under way, and
+/// its next message pins the agent it is already answering with.
+final chatAgentLockedProvider = Provider<bool>(
+  (ref) => ref.watch(
+    chatSessionsProvider.select((s) {
+      final chat = s.active;
+      return chat != null && (chat.agent != null || chat.messages.isNotEmpty);
+    }),
+  ),
+);
+
+/// The choice in force for the chat **on screen**: its own, once it has fixed
+/// one, else the standing pick of the project it sits in (or the app's).
+final openChatAgentChoiceProvider = Provider<String?>(
+  (ref) =>
+      ref.watch(openChatAgentPinProvider) ??
+      ref.watch(chatAgentChoiceProvider(ref.watch(openChatProjectIdProvider))),
+);
+
+/// The agent answering the chat **on screen**.
 final activeChatAgentProvider = Provider<AgentTool>(
+  (ref) => ref.watch(
+    resolvedChatAgentProvider(ref.watch(openChatAgentChoiceProvider)),
+  ),
+);
+
+/// The agent the **next** chat in the open scope will start on — the project's
+/// standing pick, or the app's.
+///
+/// Sibling to [activeChatAgentProvider] and deliberately not the same question.
+/// Anything describing the *setting* — the Agents screen's "Answers new chats",
+/// which is also where tapping a card writes the pick — has to read this one, or
+/// a chat that fixed a different agent would leave the screen unable to show the
+/// choice its own tap just saved.
+final scopeChatAgentProvider = Provider<AgentTool>(
   (ref) => ref.watch(
     chatAgentForProjectProvider(ref.watch(openChatProjectIdProvider)),
   ),
 );
 
-/// The agent the user picked for the open chat and this grid can't run — null
-/// whenever their pick is the one answering.
+/// The agent the open chat is meant to run and this grid can't — null whenever
+/// its choice is the one answering.
 ///
 /// Only reported for an agent that is actually *installed*: an uninstalled pick
 /// has a plainer problem, and the Agents screen already says so. Drives the
 /// chat's notice, so a silent hand-over never reads as the agent behaving oddly.
 final blockedChatAgentProvider = Provider<AgentTool?>((ref) {
-  final chosen = agentToolById(
-    ref.watch(chatAgentChoiceProvider(ref.watch(openChatProjectIdProvider))),
-  );
+  final chosen = agentToolById(ref.watch(openChatAgentChoiceProvider));
   if (chosen == null || !ref.watch(agentInstalledProvider(chosen))) return null;
   return ref.watch(agentRunsOnGridProvider(chosen)) ? null : chosen;
 });

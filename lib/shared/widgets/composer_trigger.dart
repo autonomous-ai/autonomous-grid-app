@@ -12,6 +12,11 @@ import '../theme/app_theme.dart';
 ///
 /// One widget so the three controls can't drift apart in height, radius or weight
 /// the way three hand-rolled pills did — one filled, one rimmed, one flat.
+///
+/// A null [onTap] is the same pill with **nothing to open**: the caret goes and
+/// the label dims to secondary, so it reads as the choice in force rather than a
+/// control that ignores clicks. The chat's agent uses it — fixed for the life of
+/// a session, and still worth naming.
 class ComposerTrigger extends StatelessWidget {
   const ComposerTrigger({
     super.key,
@@ -36,7 +41,8 @@ class ComposerTrigger extends StatelessWidget {
   /// read. Null (the norm) leaves the pill rimless.
   final Color? borderColor;
 
-  final VoidCallback onTap;
+  /// Opens the menu. Null when there is no menu to open — see the class doc.
+  final VoidCallback? onTap;
 
   /// Narrower than this and the label goes: 20px of padding, a ~14px mark, its
   /// 5px gap and a 16px caret leave under 25px for words, which is two letters
@@ -61,11 +67,18 @@ class ComposerTrigger extends StatelessWidget {
     // An unbounded box is a roomy one: the composer caps these with a
     // `ConstrainedBox`, so a finite width here is the real allowance.
     final showLabel = !available.isFinite || available >= _labelFloor;
-    final showCaret = !available.isFinite || available >= _caretFloor;
+    // No menu, no caret: the arrow is the promise that clicking does something.
+    final showCaret =
+        onTap != null && (!available.isFinite || available >= _caretFloor);
     final button = OutlinedButton(
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
         foregroundColor: AppPalette.textPrimary,
+        // Material's own disabled colour is a 38% wash of the foreground, which
+        // on this app's dark page is under the 4.5:1 floor (§11). A pill that
+        // can't be opened is still a fact the user has to read, so it dims to
+        // the token meant for exactly that and no further.
+        disabledForegroundColor: AppPalette.textSecondary,
         backgroundColor: Colors.transparent,
         side: border == null
             ? BorderSide.none

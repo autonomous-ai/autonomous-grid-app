@@ -21,6 +21,7 @@ class Conversation {
     required this.updatedAt,
     this.messages = const [],
     this.projectId,
+    this.agent,
     this.titleLocked = false,
     this.titleFromModel = false,
     this.archivedAt,
@@ -51,6 +52,28 @@ class Conversation {
   /// null for a chat that belongs to no project. It decides which files the
   /// assistant may read while answering — see `Project`.
   final String? projectId;
+
+  /// The `AgentTool` id this chat runs on — fixed when the session started, and
+  /// never changed after.
+  ///
+  /// The choice is stored raw, the way a project's is (see `Project.agent`), so
+  /// an id this build no longer knows resolves the same way theirs does rather
+  /// than dead-ending the chat; `chatAgentChoiceProvider` and its neighbours own
+  /// the resolving.
+  ///
+  /// **Why the chat holds it rather than reading the picker.** The picker's
+  /// value belongs to the *project*, or to the app — one setting several chats
+  /// share. Picking Codex in a new chat used to re-point every chat in the same
+  /// scope at Codex, including one Claude Code was still holding a session for:
+  /// the transcript stayed, the conversation behind it did not. A session is one
+  /// agent's from the first message to the last, so the agent is written down
+  /// where the session is.
+  ///
+  /// Null for a chat that hasn't started one — a blank compose — and for every
+  /// chat saved before this field existed. Those keep following the picker until
+  /// their next message, which pins them (see `_ChatSessions._activeOrNew` and
+  /// `rememberAgentSession`).
+  final String? agent;
 
   /// The user named this chat by hand, so nothing may rename it again.
   ///
@@ -195,6 +218,10 @@ class Conversation {
     // its project by being deleted, not re-homed, so there's no clear path to
     // express and the plain `?? this` idiom is exactly right.
     String? projectId,
+    // Only ever *set*, and only once in practice: the agent a session started
+    // with is the agent it finishes with. There is no clear path because there
+    // is no gesture that un-fixes it — the way to another agent is a new chat.
+    String? agent,
     bool? titleLocked,
     // Only ever *set*: a name a model wrote does not stop being one. It is
     // cleared by nothing, because nothing puts a chat back to the line it was
@@ -238,6 +265,7 @@ class Conversation {
     updatedAt: updatedAt ?? this.updatedAt,
     messages: messages ?? this.messages,
     projectId: projectId ?? this.projectId,
+    agent: agent ?? this.agent,
     titleLocked: titleLocked ?? this.titleLocked,
     titleFromModel: titleFromModel ?? this.titleFromModel,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
@@ -255,6 +283,12 @@ class Conversation {
     'title': title,
     'model': model,
     'projectId': projectId,
+    // Written only when set, so a chat that never fixed an agent — every chat
+    // saved before this field existed — is stored exactly as it was. An empty
+    // string is "not set" on the way in ([Conversation.fromJson]), so it must be
+    // one on the way out too, or a chat would read back differently than it was
+    // written.
+    if (agent?.isNotEmpty ?? false) 'agent': agent,
     'titleLocked': titleLocked,
     // Written only when true, so a chat still wearing its derived name is saved
     // byte-identically to what every build before this wrote.
@@ -307,6 +341,13 @@ class Conversation {
           json['projectId'] is String &&
               (json['projectId'] as String).isNotEmpty
           ? json['projectId'] as String
+          : null,
+      // Absent means "not fixed yet", which is what every chat saved before
+      // this existed is: it follows the picker until its next message pins it.
+      // An empty string reads as absent for the same reason `projectId` does —
+      // it names no agent, and resolving it would be resolving nothing.
+      agent: json['agent'] is String && (json['agent'] as String).isNotEmpty
+          ? json['agent'] as String
           : null,
       // Defaults to false, so every chat saved before this field existed stays
       // open to the agent's naming — which is what it had all along.

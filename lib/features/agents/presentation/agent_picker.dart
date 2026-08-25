@@ -26,6 +26,15 @@ import '../logic/agent_status.dart';
 /// An agent this grid can't run is offered but marked, so the choice is honest
 /// rather than silently handed back (the handover bar explains the swap). Shown
 /// only when an agent is the one answering (the composer gates it on that).
+///
+/// **Only until the chat starts.** From its first message a chat is a session
+/// one agent is holding — a CLI with a conversation in it, or an ACP connection
+/// — and the pill stops being a menu and becomes the name of who is answering
+/// ([chatAgentLockedProvider]). Handing a session over mid-conversation was
+/// never something this menu could do: the transcript stayed and the
+/// conversation behind it did not, because the new agent has never read a word
+/// of it. The way to another agent is a new chat, which is the gesture that
+/// actually produces one.
 class AgentPicker extends ConsumerStatefulWidget {
   const AgentPicker({super.key});
 
@@ -256,12 +265,31 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
     return null;
   }
 
+  /// The trigger's tooltip once the chat has fixed its agent — a fact, and the
+  /// reason it is one, so a pill that no longer opens doesn't read as broken.
+  String _lockedTooltip(bool autoChosen, AgentTool active) => autoChosen
+      ? 'Auto answers this chat · the grid picks the best assistant for each '
+            'question'
+      : '${active.name} answers this chat · an agent is fixed when the chat '
+            'starts. Start a new chat to use another.';
+
   @override
   Widget build(BuildContext context) {
     // `appMenuStyle` reads palette tokens; follow theme flips.
     AppTheme.watch(context);
     final active = ref.watch(activeChatAgentProvider);
     final autoChosen = ref.watch(isAutoAgentChosenProvider);
+    // A chat under way names its agent and offers nothing. Returned before the
+    // list is built at all: the rows, their notes and the panel's measured size
+    // are all work for a menu that cannot open.
+    if (ref.watch(chatAgentLockedProvider)) {
+      return _AgentTrigger(
+        active: active,
+        autoChosen: autoChosen,
+        tooltip: _lockedTooltip(autoChosen, active),
+        onTap: null,
+      );
+    }
     final installed = [
       for (final tool in AgentTool.values)
         if (ref.watch(agentInstalledProvider(tool))) tool,
@@ -322,12 +350,10 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
           },
         _ScopeNote(note: scopeNote),
       ],
-      builder: (context, controller, _) => ComposerTrigger(
-        label: autoChosen ? 'Auto' : active.name,
+      builder: (context, controller, _) => _AgentTrigger(
+        active: active,
+        autoChosen: autoChosen,
         tooltip: _triggerTooltip(autoChosen, active, project?.name),
-        leading: autoChosen
-            ? Icon(Icons.auto_awesome, size: 14, color: AppPalette.accent)
-            : AgentMark(tool: active, size: 14),
         onTap: () => controller.isOpen
             ? controller.close()
             : controller.open(
@@ -351,6 +377,45 @@ class _AgentPickerState extends ConsumerState<AgentPicker> {
                 ),
               ),
       ),
+    );
+  }
+}
+
+/// The pill itself: the agent's mark, its name, and a caret only while there is
+/// a menu behind it.
+///
+/// One widget for both states so the locked pill and the menu's trigger can't
+/// drift apart in mark, label or width — the two sit in the same slot, and a
+/// chat that starts must not resize the composer's toolbar under the cursor.
+class _AgentTrigger extends StatelessWidget {
+  const _AgentTrigger({
+    required this.active,
+    required this.autoChosen,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  /// The agent answering, drawn even under Auto — where the label is "Auto"
+  /// instead, because under Auto nobody is answering *between* turns.
+  final AgentTool active;
+  final bool autoChosen;
+  final String tooltip;
+
+  /// Opens the menu, or null once this chat has fixed its agent.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    // Reads `AppPalette.accent`; a token is resolved at paint time and follows
+    // no ancestor's watch.
+    AppTheme.watch(context);
+    return ComposerTrigger(
+      label: autoChosen ? 'Auto' : active.name,
+      tooltip: tooltip,
+      leading: autoChosen
+          ? Icon(Icons.auto_awesome, size: 14, color: AppPalette.accent)
+          : AgentMark(tool: active, size: 14),
+      onTap: onTap,
     );
   }
 }

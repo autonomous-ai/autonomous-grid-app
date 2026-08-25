@@ -41,7 +41,7 @@ mixin _ChatGoals on _ChatSessions {
       condition: condition,
       status: GoalStatus.active,
       startedAt: DateTime.now(),
-      agent: ref.read(chatAgentForProjectProvider(chat.projectId)),
+      agent: ref.read(resolvedChatAgentProvider(_agentChoiceFor(chat))),
       // The turn that opens the goal is the one being sent right now, so it is
       // the message after the ones already here.
       startedAfter: chat.messages.length + 1,

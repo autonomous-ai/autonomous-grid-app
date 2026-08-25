@@ -115,6 +115,12 @@ class ParsedSession {
     updatedAt: updatedAt,
     messages: messages,
     projectId: projectId,
+    // The tool that wrote the transcript is the tool that carries it on. An
+    // imported chat has a session on disk and an id to resume it with, and both
+    // belong to one agent — reopening it under whichever agent the picker
+    // happened to be showing would start a stranger in a conversation it has
+    // never read.
+    agent: agent.id,
     // The tool named this session itself, or it was derived from the user's
     // own first line. Either way nothing should rename it later: the agent's
     // naming pass runs off a chat's *first* exchange, and re-running it on a

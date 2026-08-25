@@ -16,14 +16,14 @@ mixin _ChatSend on _ChatSessions {
   /// this runs inside the chat controller, and a question about the open chat's
   /// agent asked the obvious way — `activeChatAgentProvider` — is a provider
   /// that reads *this* controller back. Riverpod calls that a circular
-  /// dependency and throws, which killed every send before it began. The
-  /// project's own agent provider takes the id as an argument and depends on
-  /// nothing here, so it is safe to ask; the early return keeps the ordinary
-  /// text turn from asking at all.
-  bool _agentReadsImages(String? projectId, {required bool hasImages}) {
+  /// dependency and throws, which killed every send before it began.
+  /// [_agentChoiceFor] takes the conversation it already has in hand and
+  /// resolves through providers that depend on nothing here, so it is safe to
+  /// ask; the early return keeps the ordinary text turn from asking at all.
+  bool _agentReadsImages(Conversation chat, {required bool hasImages}) {
     if (!hasImages) return false;
     return agentReadsImagesForChat(
-      agent: ref.read(chatAgentForProjectProvider(projectId)),
+      agent: ref.read(resolvedChatAgentProvider(_agentChoiceFor(chat))),
       hermesVisionModel: ref.read(hermesVisionModelProvider).value,
       developerMode: AppEnvironment.isDeveloperMode,
     );
@@ -97,9 +97,7 @@ mixin _ChatSend on _ChatSessions {
     // itself is chosen below, once the message is on screen. [effectiveModel] is
     // what actually goes on the wire; the conversation keeps the model the user
     // picked, so leaving Auto doesn't leave `auto` behind in their composer.
-    final autoChosen = ref.read(
-      isAutoAgentChosenForProjectProvider(target.projectId),
-    );
+    final autoChosen = autoAgentChosen(_agentChoiceFor(target));
     // Only swap to `auto` on a grid that actually serves it — a grid with no
     // auto-routing would refuse `auto` outright. Where it isn't served the
     // composer's own model stands, and the candidate pool below is narrowed to
@@ -125,8 +123,7 @@ mixin _ChatSend on _ChatSessions {
       hasAttachments: attachments.isNotEmpty,
       agentInstalled: ref.read(anyAgentInstalledProvider),
       agentReadsImages: _agentReadsImages(
-        (into == null ? state.active : _find(into))?.projectId ??
-            state.draftProjectId,
+        target,
         hasImages: attachments.isNotEmpty,
       ),
     );
@@ -177,6 +174,12 @@ mixin _ChatSend on _ChatSessions {
       model: model,
       updatedAt: DateTime.now(),
       messages: [...target.messages, userTurn],
+      // The agent this chat runs, written down for good. A chat minted just
+      // now already carries it ([_activeOrNew]); this is what pins one saved
+      // before the field existed, on the first message it sends after the
+      // update — [_agentChoiceFor] hands back what it already had whenever it
+      // has one, so a session is never re-pointed by a later send.
+      agent: _agentChoiceFor(target),
     );
     // A chat is named once — from its first message, until the agent replaces
     // that with a name for what it's actually about. Re-deriving on every turn
@@ -261,9 +264,7 @@ mixin _ChatSend on _ChatSessions {
       updatedAt: DateTime.now(),
       messages: messages,
     );
-    final autoChosen = ref.read(
-      isAutoAgentChosenForProjectProvider(conversation.projectId),
-    );
+    final autoChosen = autoAgentChosen(_agentChoiceFor(conversation));
     final effectiveModel = (autoChosen && ref.read(gridServesAutoModelProvider))
         ? kAutoModelId
         : model;
@@ -272,7 +273,7 @@ mixin _ChatSend on _ChatSessions {
       hasAttachments: retryable.attachments.isNotEmpty,
       agentInstalled: ref.read(anyAgentInstalledProvider),
       agentReadsImages: _agentReadsImages(
-        conversation.projectId,
+        conversation,
         hasImages: retryable.attachments.isNotEmpty,
       ),
     );
@@ -366,7 +367,7 @@ mixin _ChatSend on _ChatSessions {
     AgentTool agent =
         pinnedByGoal ??
         continuedAgent ??
-        ref.read(chatAgentForProjectProvider(conversation.projectId));
+        ref.read(resolvedChatAgentProvider(_agentChoiceFor(conversation)));
     if (autoChosen &&
         viaAgent &&
         continuedAgent == null &&

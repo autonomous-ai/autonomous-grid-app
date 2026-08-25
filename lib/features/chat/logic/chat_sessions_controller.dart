@@ -26,6 +26,7 @@ import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agents/logic/adapters/claude_chat_sender.dart';
 import '../../agents/logic/agent_steering.dart';
+import '../../agents/logic/auto_agent.dart';
 import '../../agents/logic/auto_agent_router.dart';
 import '../../network/logic/node_display.dart' show kAutoModelId;
 import '../../auth/logic/session_controller.dart';
@@ -174,8 +175,14 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 
   ChatStore get _store => ref.read(chatStoreProvider);
 
-  /// The open conversation, or a fresh (unsaved) one seeded with [model] and the
-  /// project the user started it in.
+  /// The open conversation, or a fresh (unsaved) one seeded with [model], the
+  /// project the user started it in, and the agent showing in the picker.
+  ///
+  /// **The agent is written down here, at birth.** This is the last moment the
+  /// picker's answer and the chat's are the same one: from the next frame the
+  /// chat is a session — a CLI holding a conversation, or an ACP connection —
+  /// and the picker belongs to the *project*, where another chat can change it.
+  /// See [Conversation.agent].
   Conversation _activeOrNew(String model) {
     final active = state.active;
     if (active != null) return active;
@@ -187,8 +194,24 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
       createdAt: now,
       updatedAt: now,
       projectId: state.draftProjectId,
+      agent: ref.read(chatAgentChoiceProvider(state.draftProjectId)),
     );
   }
+
+  /// The agent choice in force for [conversation] — the one it fixed when it
+  /// started, else the standing pick of the project it sits in (or the app's).
+  ///
+  /// The raw stored choice, not an [AgentTool]: `resolvedChatAgentProvider` is
+  /// what turns it into an agent that can answer here, and asking it in two
+  /// steps is what lets a caller test the choice for Auto ([autoAgentChosen])
+  /// without first resolving Auto away into whichever agent happens to be first.
+  ///
+  /// Never `activeChatAgentProvider`, which reads this controller back:
+  /// Riverpod calls that a circular dependency and throws, and it used to kill
+  /// every send before it began.
+  String? _agentChoiceFor(Conversation conversation) =>
+      conversation.agent ??
+      ref.read(chatAgentChoiceProvider(conversation.projectId));
 
   /// The chat `/goal` and `/loop` act on: the one that is open, or the compose
   /// the user is standing in, started here and now.
@@ -674,7 +697,9 @@ class ChatSessionsController extends _ChatSessions
     // refusing: "/schedule" on launch is an ordinary thing to do, and the chat
     // is the destination, not a precondition.
     final chat = _startedChat(model);
-    final runner = taskRunnerFor(ref.read(activeChatAgentProvider));
+    final runner = taskRunnerFor(
+      ref.read(resolvedChatAgentProvider(_agentChoiceFor(chat))),
+    );
     final result = await ref
         .read(scheduledJobsProvider.notifier)
         .create(
@@ -867,9 +892,18 @@ class ChatSessionsController extends _ChatSessions
   }) {
     final current = _find(chatId);
     if (current == null) return;
-    if (current.resumeFor(agent.id)?.sessionId == sessionId) return;
+    // The CLI that just opened a session for this chat *is* this chat's agent
+    // from here on. Backfilled rather than assumed: a chat saved before agents
+    // were written down has been running one all along, and it is this call —
+    // not a message, which a terminal chat never commits — that first names it.
+    final pinned = current.agent ?? agent.id;
+    if (current.resumeFor(agent.id)?.sessionId == sessionId &&
+        current.agent == pinned) {
+      return;
+    }
     _saveAndReplace(
       current.copyWith(
+        agent: pinned,
         resume: current.resumeWith(
           AgentResumePoint(
             agent: agent.id,

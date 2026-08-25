@@ -11,11 +11,10 @@ import 'agent_catalog.dart';
 /// round-trip to the grid's model in front of every turn before the turn starts.
 ///
 /// Gating it here rather than only hiding the row is what keeps a *stored* Auto
-/// choice from going on routing in a shipped build: see
-/// `isAutoAgentChosenForProjectProvider`, which reads this, and
-/// `chatAgentForProjectProvider`, which resolves the unknown id to a real agent.
-/// The choice itself is left on disk untouched, so a developer build gives it
-/// straight back.
+/// choice from going on routing in a shipped build: see [autoAgentChosen], which
+/// reads this, and `resolvedChatAgentProvider`, which resolves the unknown id to
+/// a real agent. The choice itself is left on disk untouched, so a developer
+/// build gives it straight back.
 bool get autoAgentIsOffered => AppEnvironment.isDeveloperMode;
 
 /// The sentinel id stored as the chat agent when the user picks **Auto** — the
@@ -31,6 +30,14 @@ const String kAutoAgentId = 'auto';
 /// Whether [id] is the Auto choice — the stored `chatAgent` string, which is a
 /// real [AgentTool] id in every other case.
 bool isAutoAgentId(String? id) => id == kAutoAgentId;
+
+/// Whether a stored choice actually routes: it names Auto **and** this build
+/// offers Auto at all.
+///
+/// Both bars in one place, so a shipped build that hid the row can't go on
+/// routing through a choice left on disk — see [autoAgentIsOffered].
+bool autoAgentChosen(String? choice) =>
+    autoAgentIsOffered && isAutoAgentId(choice);
 
 /// The one-line summary the Auto picker shows for the Auto row.
 const String kAutoAgentTagline =

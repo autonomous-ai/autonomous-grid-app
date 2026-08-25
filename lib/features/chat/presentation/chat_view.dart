@@ -1392,9 +1392,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           // nothing types into `_message` while it is taken.
                           if (inTerminal) {
                             return AgentTerminalControls(
-                              agentPicker: agentInstalled
-                                  ? const AgentPicker()
-                                  : null,
                               onRestart: () => unawaited(
                                 ref
                                     .read(agentTerminalsProvider.notifier)

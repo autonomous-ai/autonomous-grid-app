@@ -32,6 +32,11 @@ class _FixedPrefs extends ChatPrefsController {
 /// [project] is the project the chat on screen sits in — null for a loose chat,
 /// which is what most of these are about. Stubbed at [openChatProjectIdProvider]
 /// so no test builds the chat sessions controller (and reads a real `~/.grid`).
+///
+/// [pinned] is the agent the chat on screen fixed when it started — null for a
+/// chat that hasn't started one, which is what most of these are about. Stubbed
+/// for the same reason the project is: it is read off the chat sessions
+/// controller, and no test here may build one.
 ProviderContainer _container({
   required String chosen,
   required bool hermes,
@@ -39,6 +44,7 @@ ProviderContainer _container({
   bool claude = false,
   Set<AgentTool> blocked = const {},
   Project? project,
+  String? pinned,
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -46,6 +52,7 @@ ProviderContainer _container({
         () => _FixedPrefs(ChatPrefs(chatAgent: chosen)),
       ),
       openChatProjectIdProvider.overrideWithValue(project?.id),
+      openChatAgentPinProvider.overrideWithValue(pinned),
       if (project != null)
         projectByIdProvider(project.id).overrideWith((ref) => project),
       hermesInstalledProvider.overrideWithValue(hermes),
@@ -180,6 +187,56 @@ void main() {
         blocked: const {AgentTool.codex},
       );
       expect(container.read(blockedChatAgentProvider), isNull);
+    });
+  });
+
+  group('a chat that has started keeps the agent it started with', () {
+    test("the chat's own agent outranks the picker's standing choice", () {
+      // The picker was moved to Hermes — in a *new* chat, or in another chat
+      // sharing the same scope. A session Codex is already holding must not be
+      // handed to an agent that has never read a word of it.
+      final container = _container(
+        chosen: 'hermes',
+        hermes: true,
+        codex: true,
+        pinned: 'codex',
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.codex);
+    });
+
+    test('the next chat still starts on the standing choice', () {
+      // The other half of the same rule: pinning one chat must not re-point the
+      // setting, or the Agents screen and the picker would report a choice the
+      // user never made.
+      final container = _container(
+        chosen: 'hermes',
+        hermes: true,
+        codex: true,
+        pinned: 'codex',
+      );
+      expect(container.read(scopeChatAgentProvider), AgentTool.hermes);
+    });
+
+    test("a pinned agent this grid can't run still hands the chat over", () {
+      // A pin is a preference, not a promise: an agent the grid cannot run
+      // answers nothing, so the chat is borrowed by one that can — the same
+      // fallback a project's pick gets, and the handover bar says so.
+      final container = _container(
+        chosen: 'hermes',
+        hermes: true,
+        codex: true,
+        pinned: 'codex',
+        blocked: {AgentTool.codex},
+      );
+      expect(container.read(activeChatAgentProvider), AgentTool.hermes);
+      expect(container.read(blockedChatAgentProvider), AgentTool.codex);
+    });
+
+    test('a chat with no agent of its own follows the picker', () {
+      // Every chat saved before sessions wrote their agent down. It keeps the
+      // behaviour it had until its next message pins one.
+      final container = _container(chosen: 'codex', hermes: true, codex: true);
+      expect(container.read(activeChatAgentProvider), AgentTool.codex);
     });
   });
 

@@ -15,13 +15,17 @@ import '../logic/agent_status.dart';
 import 'agent_browser_row.dart';
 import 'hermes_vision_block.dart';
 
-/// The assistants this computer can run, one of which answers your chats.
+/// The assistants this computer can run, one of which starts your next chat.
 ///
 /// This is a status list, not a gallery: quiet rows read once in a while to check
-/// a version, pull an update, or hand the chat to a different agent. So it wears
-/// the same surface as Plugins and Scheduled — except the agent answering chats,
-/// which wears the brand (a gold rim and a filled "Answers your chats" badge) so
-/// it's obvious at a glance which one is live.
+/// a version, pull an update, or point new chats at a different agent. So it
+/// wears the same surface as Plugins and Scheduled — except the agent chats start
+/// on, which wears the brand (a gold rim and a filled "Answers new chats" badge)
+/// so it's obvious at a glance which one is live.
+///
+/// It cannot move a chat that is already running: a chat fixes its agent when it
+/// starts, because the conversation lives in that agent's own session (see
+/// `Conversation.agent`).
 ///
 /// Only agents the app can install are listed. A "coming soon" row costs a
 /// first-time user the same read as a working one and gives nothing back.
@@ -94,19 +98,25 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
 
     // The agent answering chats right now wears the brand: a gold rim and a faint
     // gold wash lift it out of the quiet list so it's obvious which one is live.
-    final isActive = installed && tool == ref.watch(activeChatAgentProvider);
+    //
+    // The *scope's* agent, not the open chat's: this card's own tap writes the
+    // scope pick, and a chat that fixed a different agent when it started would
+    // otherwise leave the screen unable to show the choice the tap just saved.
+    final isActive = installed && tool == ref.watch(scopeChatAgentProvider);
     final baseFill = _hovered
         ? AppGlass.surfaceHoverFill
         : AppGlass.surfaceFill;
 
-    // Tapping the card hands the chat to this agent — the whole row is the
-    // affordance, so the user never has to hunt for a specific button. It lands
-    // where the open chat's choice lives (its project, or the app's standing
-    // one), so this screen and the composer's picker can't disagree about who
-    // answers. Only when there's a switch to make: an installed agent this grid
-    // can run that isn't already the one answering. The Update button carries its
-    // own tap, so it never triggers this. Uninstalled/unavailable/active cards
-    // aren't tappable.
+    // Tapping the card hands your **next** chat to this agent — the whole row is
+    // the affordance, so the user never has to hunt for a specific button. It
+    // lands where the choice lives (the open chat's project, or the app's
+    // standing one), so this screen and the composer's picker can't disagree
+    // about who a new chat starts on. A chat already under way is not
+    // re-pointed: it fixed its agent when it started, and the session behind it
+    // belongs to that agent alone (see `Conversation.agent`). Only when there's
+    // a switch to make: an installed agent this grid can run that isn't already
+    // the one chosen. The Update button carries its own tap, so it never
+    // triggers this. Uninstalled/unavailable/active cards aren't tappable.
     final canSwitch = installed && runsHere && !isActive;
 
     return MouseRegion(
@@ -285,15 +295,15 @@ class _StatusChip extends ConsumerWidget {
     // The version is a nice-to-have: an agent that won't say which build it is
     // still answers chats, so the chip must not wait on it.
     final version = ref.watch(agentVersionProvider(tool)).asData?.value;
-    final answering = tool == ref.watch(activeChatAgentProvider);
+    final answering = tool == ref.watch(scopeChatAgentProvider);
     return _Chip(
       label: [
-        if (answering) 'Answers your chats' else 'Installed',
+        if (answering) 'Answers new chats' else 'Installed',
         if (version != null) 'v$version',
       ].join(' · '),
       color: AppPalette.brandBolt,
       // The live agent breathes — it's the one doing the work right now — and
-      // wears a filled brand pill so "Answers your chats" reads as its state.
+      // wears a filled brand pill so "Answers new chats" reads as its state.
       pulsing: answering,
       filled: answering,
     );

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../chat/logic/chat_scope.dart';
 import '../../network/logic/node_display.dart' show kAutoModelId;
 import '../../playground/logic/one_shot_target.dart';
 import '../../playground/logic/playground_models.dart';
@@ -12,25 +11,18 @@ import 'agent_catalog.dart';
 import 'agent_model_support.dart';
 import 'auto_agent.dart';
 
-/// Whether the chats in [projectId] are set to **Auto** — the stored choice is
-/// the [kAutoAgentId] sentinel rather than a real agent id, *and* this build
-/// offers Auto ([autoAgentIsOffered]).
+/// Whether the chat **on screen** is set to **Auto** — its choice is the
+/// [kAutoAgentId] sentinel rather than a real agent id, *and* this build offers
+/// Auto ([autoAgentIsOffered]).
 ///
-/// Read at send time to decide whether to route, and by the picker to show Auto
-/// as the current choice. Both bars, in one place: a shipped build that hid the
-/// row but left this true would go on routing every turn through a choice the
-/// user could no longer see, let alone change.
-final isAutoAgentChosenForProjectProvider = Provider.family<bool, String?>(
-  (ref, projectId) =>
-      autoAgentIsOffered &&
-      isAutoAgentId(ref.watch(chatAgentChoiceProvider(projectId))),
-);
-
-/// Whether the chat **on screen** is set to Auto.
+/// Read off the chat's own choice, not its project's: a chat that started under
+/// Auto goes on routing, and one that fixed a named agent must not — the picker
+/// would say Codex while the grid re-picked somebody else per question. Send
+/// asks the same question of the conversation it is sending into
+/// ([autoAgentChosen]), which is the same rule for a turn that goes out long
+/// after the user has moved on.
 final isAutoAgentChosenProvider = Provider<bool>(
-  (ref) => ref.watch(
-    isAutoAgentChosenForProjectProvider(ref.watch(openChatProjectIdProvider)),
-  ),
+  (ref) => autoAgentChosen(ref.watch(openChatAgentChoiceProvider)),
 );
 
 /// The agents Auto may choose between for a turn that will be sent with
