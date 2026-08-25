@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/choice_row.dart';
 import '../../models/presentation/serve_local_card.dart';
@@ -95,6 +97,9 @@ class _LocalRowState extends ConsumerState<_LocalRow> {
   /// opens and closes the form. Setting up is deliberately not a toggle: folding
   /// a running install away would hide the only progress there is.
   void _press(bool needsSetup, NodeSetupState setup) {
+    // The funnel wants "the user chose this way", not every toggle — so only on
+    // the press that opens it (a setup press opens it too, via [_setUp]).
+    if (!_open) ref.read(analyticsProvider).addEngineOption('local');
     if (needsSetup && setup is NodeSetupIdle) {
       _setUp();
       return;
@@ -182,7 +187,10 @@ class _ApiKeyRowState extends ConsumerState<_ApiKeyRow> {
       line: apiKeyCardLine(available),
       action: ChoiceRowAction.open,
       expanded: _open,
-      onPressed: () => setState(() => _open = !_open),
+      onPressed: () {
+        if (!_open) ref.read(analyticsProvider).addEngineOption('api_key');
+        setState(() => _open = !_open);
+      },
       child: _open
           ? _RowBody(
               child: ApiEngineForm(
@@ -232,7 +240,10 @@ class _OwnServerRowState extends ConsumerState<_OwnServerRow> {
           : 'Point Grid at an engine you already run here',
       action: ChoiceRowAction.open,
       expanded: _open,
-      onPressed: () => setState(() => _open = !_open),
+      onPressed: () {
+        if (!_open) ref.read(analyticsProvider).addEngineOption('own_server');
+        setState(() => _open = !_open);
+      },
       child: _open
           ? _RowBody(child: ExternalServers(network: widget.network))
           : null,

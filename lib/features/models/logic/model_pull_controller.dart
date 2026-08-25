@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/providers.dart';
@@ -103,6 +105,9 @@ class ModelPullController extends Notifier<ModelPullState> {
       return;
     }
 
+    final analytics = ref.read(analyticsProvider);
+    analytics.modelDownloadStarted(model: specs.first);
+
     _cancelled = false;
     for (var i = 0; i < specs.length; i++) {
       final spec = specs[i];
@@ -128,6 +133,7 @@ class ModelPullController extends Notifier<ModelPullState> {
                     'your internet connection, then try again. Downloading '
                     'again picks up where this stopped.',
         );
+        analytics.modelDownloadFailed('pull_failed', model: spec);
         return;
       }
     }
@@ -142,11 +148,13 @@ class ModelPullController extends Notifier<ModelPullState> {
 
     if (targets.isEmpty || allLanded) {
       state = ModelPullDone(_doneLabel(targets, specs));
+      analytics.modelDownloadCompleted(model: specs.first);
     } else {
       state = const ModelPullFailed(
         "The download finished but the model isn't on this computer. "
         'Try downloading it again.',
       );
+      analytics.modelDownloadFailed('not_landed', model: specs.first);
     }
   }
 
@@ -211,7 +219,11 @@ class ModelPullController extends Notifier<ModelPullState> {
   /// SIGTERMs the `grid pull` process so the transfer actually stops rather than
   /// finishing in the background. No-op when nothing is downloading.
   Future<void> cancel() async {
-    if (state is! ModelPulling) return;
+    final pulling = state;
+    if (pulling is! ModelPulling) return;
+    ref
+        .read(analyticsProvider)
+        .modelDownloadCancelled(model: pulling.spec);
     _cancelled = true;
     final sub = _sub;
     _sub = null;
