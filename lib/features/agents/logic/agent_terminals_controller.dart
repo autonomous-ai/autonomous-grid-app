@@ -13,6 +13,7 @@ import 'adapters/claude_tool.dart';
 import 'adapters/codex_tool.dart';
 import 'adapters/hermes_tool.dart';
 import 'agent_catalog.dart';
+import 'agent_model_support.dart';
 
 /// The binary behind one agent, or null when it isn't installed on this machine.
 ///
@@ -74,6 +75,12 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// thing that ever gives it back.
   final Map<String, String> _mcpTokens = {};
 
+  /// Which agent each live session is actually running, so [ensure] can tell a
+  /// chat that has merely rebuilt from one whose agent has been switched under
+  /// it. The session itself can't answer that — it holds an argv, and
+  /// `TerminalSession` is the Terminal tab's too.
+  final Map<String, AgentTool> _running = {};
+
   @override
   AgentTerminalsState build() {
     ref.onDispose(_disposeAll);
@@ -103,7 +110,25 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     // `503 No providers available for this model`, ten times over.
     // [AgentTerminalView] asks again as soon as it has one.
     if (model.trim().isEmpty) return;
-    if (_sessions.containsKey(chatId) || !_opening.add(chatId)) return;
+    final live = _sessions[chatId];
+    // Already this agent — a rebuild, not a switch.
+    if (live != null && _running[chatId] == tool) return;
+    // The agent has been switched, but the model has not caught up yet:
+    // switching moves it (`_retargetModel`) a frame later, and starting Codex
+    // on `claude:opus` spends a session on a refusal the grid is right to make.
+    // The next build arrives with the pair settled and starts it then.
+    //
+    // TODO(BE): when the pair can *never* settle, this waits for ever and the
+    // picker lies. The agent menu lets a user pick an agent it has already
+    // labelled "No model on this grid it can answer with"
+    // (`agentHasModelHereProvider`); `_retargetModel` then finds nothing to
+    // move to, so the chat goes on showing — and typing into — the agent that
+    // was running before, under a picker naming the new one. It is not a
+    // regression (a switch never reached a running terminal at all before
+    // this), but it wants the view to say "Codex can't answer on this grid"
+    // where it currently shows the wrong CLI.
+    if (live != null && !agentSupportsModel(tool, model)) return;
+    if (!_opening.add(chatId)) return;
     try {
       final executable = ref.read(agentExecutableProvider(tool));
       if (executable == null) return;
@@ -117,23 +142,39 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       // The chat was closed while its grid was being prepared.
       if (!ref.mounted) return;
 
+      final command = agentTerminalCommand(
+        tool: tool,
+        executable: executable,
+        model: model,
+        workdir: workdir,
+        approval: approval,
+        mcpConfigPath: setup.mcpConfig,
+        config: setup.config,
+      );
+      _running[chatId] = tool;
+      // Handed back only now: a setup that failed above leaves the CLI that is
+      // still running with the tools it had.
+      _revokeTools(chatId);
+      if (setup.mcpToken case final token?) _mcpTokens[chatId] = token;
+      // An agent switched under a chat that already has a terminal takes over
+      // that terminal rather than replacing it — see [TerminalSession.relaunch]
+      // for the crash that replacing it caused.
+      if (_sessions[chatId] case final session?) {
+        session.relaunch(
+          command: command,
+          environment: setup.environment,
+          onError: _logStartFailure,
+        );
+        return;
+      }
       final session = TerminalSession(
         id: chatId,
         workdir: workdir,
-        command: agentTerminalCommand(
-          tool: tool,
-          executable: executable,
-          model: model,
-          workdir: workdir,
-          approval: approval,
-          mcpConfigPath: setup.mcpConfig,
-          config: setup.config,
-        ),
+        command: command,
         environment: setup.environment,
         onChanged: _publish,
       );
       _sessions[chatId] = session;
-      if (setup.mcpToken case final token?) _mcpTokens[chatId] = token;
       session.start(onError: _logStartFailure);
       _publish();
     } finally {
@@ -151,6 +192,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
 
   /// Ends the terminal that belonged to [chatId], if there was one.
   void end(String chatId) {
+    _running.remove(chatId);
     final gone = _sessions.remove(chatId);
     if (gone == null) return;
     _revokeTools(chatId);
@@ -166,19 +208,17 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     ref.read(gridMcpServerProvider).revoke(token);
   }
 
-  /// Throws the chat's CLI away and starts it again on the settings it has
-  /// *now* — the agent, the model and the access mode the chat's controls are
-  /// showing.
+  /// Starts the chat's agent again from scratch, on the settings it has now.
   ///
-  /// [restart] cannot do this and must not be made to: it re-runs the argv the
-  /// session was built with, which is right for a CLI that exited on its own and
-  /// wrong for a picker that has been moved since. The argv is built once, in
-  /// [ensure], so the only way a new `--model` reaches the CLI is a new session.
+  /// The escape hatch for a CLI that has wedged, and the one way to pick up
+  /// something a running session was born with and cannot be told about — a
+  /// connector signed in since it opened, an access mode changed since. It
+  /// forgets which agent is running so [ensure] takes its relaunch path even
+  /// though nothing about the request has changed.
   ///
-  /// **The scrollback goes with it**, because it belonged to the CLI that is
-  /// being replaced. That is the honest cost of switching model mid-chat and the
-  /// reason this is a button the user presses rather than something a picker
-  /// does by itself.
+  /// **It begins a new conversation**, because the CLI is a new process and the
+  /// screen above belonged to the one it replaces. That is why this is a button
+  /// the user presses rather than something a rebuild does by itself.
   Future<void> reopen({
     required String chatId,
     required AgentTool tool,
@@ -187,7 +227,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     required AgentApprovalMode approval,
     required NetworkCredential network,
   }) async {
-    end(chatId);
+    _running.remove(chatId);
     await ensure(
       chatId: chatId,
       tool: tool,

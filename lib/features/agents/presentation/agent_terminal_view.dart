@@ -44,8 +44,14 @@ class AgentTerminalView extends ConsumerStatefulWidget {
   /// The folder the CLI opens in — the chat's project, or the app's workspace.
   final String workdir;
 
-  /// What the chat lets the agent do unattended. It reaches the CLI as its own
-  /// flags, so the picker means here exactly what it means in a terminal.
+  /// What the chat lets the agent do unattended, as the flags its CLI starts
+  /// with.
+  ///
+  /// The chat still holds this, but nothing under a terminal offers to change
+  /// it: the running CLI shows its own gate and takes the answer from the
+  /// keyboard (Claude Code cycles it on shift+tab), and a second control beside
+  /// that one would be stale as soon as the real one was used. It reaches a new
+  /// process on the next Restart.
   final AgentApprovalMode approval;
 
   final NetworkCredential network;
@@ -64,15 +70,22 @@ class _AgentTerminalViewState extends ConsumerState<AgentTerminalView> {
   @override
   void didUpdateWidget(AgentTerminalView old) {
     super.didUpdateWidget(old);
-    // A different chat in the same slot needs its own session; the same chat
-    // keeps the one it has, model and mode included — those reach the CLI when
-    // it starts, and a running agent cannot be re-flagged mid-session any more
-    // than one in a terminal could.
-    if (old.chatId != widget.chatId) return _open();
-    // The model picker settles a frame or two after the chat opens, and a
-    // session cannot start before it does — the model is the `--model` the CLI
-    // runs on. So the first build with a model is also an opening.
-    if (old.model.trim().isEmpty && widget.model.trim().isNotEmpty) _open();
+    // Ask again whenever one of the three things a session is built from moves,
+    // and let [AgentTerminalsController.ensure] decide what that means: a
+    // different chat needs its own session, a different agent takes over this
+    // one, and the same agent on a different model is left alone — the model is
+    // the CLI's to change from here, on `/model`.
+    //
+    // The model still matters to *this* call, twice over. A session cannot
+    // start before the picker has settled a frame or two after the chat opens,
+    // because the model is the `--model` the CLI runs on; and switching agent
+    // moves the model a frame later, which is the build that finally has a pair
+    // `ensure` will start.
+    if (old.chatId != widget.chatId ||
+        old.tool != widget.tool ||
+        old.model.trim() != widget.model.trim()) {
+      _open();
+    }
   }
 
   /// Opening is asynchronous and must not run inside `build` (§2), so it is

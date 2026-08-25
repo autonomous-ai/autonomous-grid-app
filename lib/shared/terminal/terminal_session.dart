@@ -57,10 +57,11 @@ class TerminalSession {
   TerminalSession({
     required this.id,
     required this.workdir,
-    this.command,
-    this.environment = const {},
+    ShellCommand? command,
+    Map<String, String> environment = const {},
     this.onChanged,
-  });
+  }) : _command = command,
+       _environment = environment;
 
   /// The id of the panel tab this terminal belongs to.
   final String id;
@@ -76,14 +77,16 @@ class TerminalSession {
   /// point of that lane is that the user drives the agent's own interface, and
   /// the only difference from a Terminal tab is which program is on the other
   /// end of the pty.
-  final ShellCommand? command;
+  ShellCommand? _command;
+  ShellCommand? get command => _command;
 
   /// Variables layered over the app's own for this session — the grid a chat
   /// answers on, and the key to reach it. Empty for a plain shell.
   ///
   /// Applied *under* `TERM`, so a caller cannot accidentally hand the program a
   /// terminal type that turns off colour and the cursor.
-  final Map<String, String> environment;
+  Map<String, String> _environment;
+  Map<String, String> get environment => _environment;
 
   /// Fires when [shell] moves, so the controller can republish its state.
   final VoidCallback? onChanged;
@@ -121,7 +124,7 @@ class TerminalSession {
     }
 
     final command =
-        this.command ??
+        _command ??
         resolveShell(
           environment: Platform.environment,
           operatingSystem: Platform.operatingSystem,
@@ -148,7 +151,7 @@ class TerminalSession {
           // its name and its message pipe are no part of the session opening
           // here (see [withoutInheritedAgentSession]).
           ...withoutInheritedAgentSession(Platform.environment),
-          ...environment,
+          ..._environment,
           'TERM': 'xterm-256color',
           'TERM_PROGRAM': 'Grid',
         },
@@ -166,7 +169,7 @@ class TerminalSession {
           .transform(const Utf8Decoder(allowMalformed: true))
           .listen(terminal.write);
 
-      unawaited(pty.exitCode.then(_onExit));
+      unawaited(pty.exitCode.then((code) => _onExit(pty, code)));
 
       terminal.onOutput = (data) =>
           pty.write(const Utf8Encoder().convert(data));
@@ -206,6 +209,39 @@ class TerminalSession {
     _output = null;
     _pty = null;
     terminal.write('\r\n');
+    start(onError: onError);
+  }
+
+  /// Kills what is running and starts [command] in its place, on this same
+  /// screen.
+  ///
+  /// **Not [dispose] followed by a new session, and that is the whole point.**
+  /// Replacing the session object swaps the widget under the chat for
+  /// "Starting…" and back, so the terminal's whole subtree is torn down and
+  /// rebuilt mid-frame — and `xterm`'s `TerminalView` keeps three `GlobalKey`s
+  /// in its state. Changing the model and pressing Restart brought the app down
+  /// on `_elements.contains(element)` from deep inside the framework, naming
+  /// neither the terminal nor the chat. Reusing the session keeps the element,
+  /// the focus and the scroll position, and there is nothing left to race.
+  ///
+  /// The screen is cleared, scrollback included: what was above belonged to the
+  /// program being replaced, and leaving it would read as one conversation.
+  void relaunch({
+    required ShellCommand command,
+    required Map<String, String> environment,
+    required void Function(Object error, StackTrace stack) onError,
+  }) {
+    _output?.cancel();
+    _output = null;
+    final pty = _pty;
+    _pty = null;
+    if (pty != null) _endTree(pty);
+    _command = command;
+    _environment = environment;
+    // [start] refuses to run while one is running, and the shell it was told to
+    // kill has not reported back yet.
+    _shell = const ShellIdle();
+    terminal.write('\x1b[H\x1b[2J\x1b[3J');
     start(onError: onError);
   }
 
@@ -250,9 +286,13 @@ class TerminalSession {
     );
   }
 
-  void _onExit(int code) {
-    // Nothing to say if we're the ones who ended it.
-    if (_pty == null) return;
+  void _onExit(Pty pty, int code) {
+    // Not the program on screen any more: either we ended it, or a [relaunch]
+    // has already put another one in its place. Compared by identity rather
+    // than by "is there a pty at all" — the null check alone let a killed
+    // program's exit code land on its successor and print "[Terminal closed]"
+    // over a session that had just started.
+    if (!identical(_pty, pty)) return;
     _shell = ShellExited(code: code);
     terminal.write(
       code == 0
