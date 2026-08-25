@@ -12,6 +12,8 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
+import '../../agents/logic/active_chat_agent.dart';
+import '../../agents/presentation/agent_mark.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/logic/project_folder_status.dart';
 import '../../projects/presentation/create_project_dialog.dart';
@@ -561,6 +563,10 @@ class _ChatRow extends ConsumerWidget {
     // What the hover preview names as the chat's home. A chat whose project was
     // removed reads as loose here for the same reason the rail lists it there.
     final project = ref.watch(projectByIdProvider(chat.projectId));
+    // Which assistant this conversation belongs to — read off the chat itself,
+    // never off the picker: the rail lists chats started by all of them at once,
+    // and the picker only ever describes the next one.
+    final agent = agentOfChat(chat);
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its
@@ -632,7 +638,18 @@ class _ChatRow extends ConsumerWidget {
           // action, not only a thing buried in the open chat's menu, because the
           // chats worth pinning are the long-running ones you keep coming *back*
           // to from the rail — not the one already on screen.
-          trailingWidth: working ? 24 : 50,
+          //
+          // The agent's mark leads the pair — a fact, not a button, so it takes
+          // the inner slot and leaves pin and archive exactly where the hand
+          // already reaches for them. It is the one thing here the rail could
+          // not otherwise say: two chats with the same opening line are a
+          // different conversation each if a different assistant is holding
+          // them. Absent on a chat with no agent behind it (the grid answered
+          // it directly), and the slot narrows to match rather than leaving a
+          // gap the titles could have used.
+          trailingWidth: working
+              ? 24
+              : (agent == null ? 50 : 50 + _agentMarkSize + _agentMarkGap),
           trailingAlwaysVisible: working,
           trailing: working
               ? const _ChatActivityCue()
@@ -640,6 +657,16 @@ class _ChatRow extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (agent != null) ...[
+                      // Named for screen readers: a logo says which assistant
+                      // to anyone who recognises it and nothing at all to
+                      // anyone who doesn't.
+                      Semantics(
+                        label: agent.name,
+                        child: AgentMark(tool: agent, size: _agentMarkSize),
+                      ),
+                      const SizedBox(width: _agentMarkGap),
+                    ],
                     _RowActionButton(
                       icon: chat.pinned
                           ? LucideIcons.pinOff300
@@ -662,6 +689,15 @@ class _ChatRow extends ConsumerWidget {
     );
   }
 }
+
+/// The agent mark on a chat row: smaller than the 24px action buttons beside it
+/// because it is read, not aimed at, and a logo the same size as a button reads
+/// as a third thing to click.
+const double _agentMarkSize = 14;
+
+/// The air between the mark and the pin. Wider than the 2px between the two
+/// buttons, which is what separates the fact from the pair of actions.
+const double _agentMarkGap = 6;
 
 /// The live cue on a chat row while a reply is coming in — a spinning ring so a
 /// background chat reads as still working, not stalled. Sits where the archive

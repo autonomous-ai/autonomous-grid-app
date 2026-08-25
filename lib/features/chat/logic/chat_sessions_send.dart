@@ -151,7 +151,7 @@ mixin _ChatSend on _ChatSessions {
     // handover bar says so. A message they typed themselves is a fresh question
     // and is routed like any other.
     final continuedAgent = (continuing && autoChosen)
-        ? _agentOfLastReply(target)
+        ? agentOfLastReply(target)
         : null;
 
     // Append the user turn and persist it up front, so an interrupted reply
@@ -419,22 +419,6 @@ mixin _ChatSend on _ChatSessions {
     // rather than something it forbids in advance.
     dispatch();
     return done.future;
-  }
-
-  /// The agent that wrote [chat]'s most recent reply, or null when the last one
-  /// came from the grid itself (no agent stamp) or from an agent this build no
-  /// longer ships.
-  ///
-  /// Read off the transcript rather than remembered in a field: the stamp is
-  /// already persisted with the reply, so approving a plan still continues the
-  /// right agent after a restart, and a chat that has never had an agent reply
-  /// falls back to being routed like any other.
-  AgentTool? _agentOfLastReply(Conversation chat) {
-    for (final message in chat.messages.reversed) {
-      if (message.role != ChatRole.assistant) continue;
-      return agentToolById(message.agent);
-    }
-    return null;
   }
 
   /// Send [conversation]'s turn to its [ChatSender] and fold the reply back in.

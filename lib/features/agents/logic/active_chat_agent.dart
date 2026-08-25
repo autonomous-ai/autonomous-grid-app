@@ -6,6 +6,7 @@ import 'adapters/codex_chat_sender.dart';
 import 'adapters/hermes_chat_sender.dart';
 import '../../chat/logic/chat_scope.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
+import '../../chat/logic/conversation.dart';
 import '../../playground/logic/chat_sender.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
@@ -129,6 +130,42 @@ final scopeChatAgentProvider = Provider<AgentTool>(
     chatAgentForProjectProvider(ref.watch(openChatProjectIdProvider)),
   ),
 );
+
+/// The agent behind [chat], for anything that only needs to **name** it.
+///
+/// Three answers, in order of how directly each was written down: the agent the
+/// chat fixed when it started ([Conversation.agent]); the one that signed its
+/// last reply; the one holding a session it can resume. The second and third
+/// are what a chat saved before agents were written down has left — and they
+/// are not redundant with each other, because a chat shown as a terminal
+/// commits no replies at all while a chat Hermes answered keeps no session.
+///
+/// Null when none of them answers: a chat the grid replied to directly, with no
+/// agent between it and the relay.
+///
+/// Not a stand-in for [activeChatAgentProvider]: this reports what a chat *is*,
+/// with no view on whether that agent is installed or runnable on the grid that
+/// happens to be open. Right for a row in a list, wrong for dispatching a turn.
+AgentTool? agentOfChat(Conversation chat) =>
+    agentToolById(chat.agent) ??
+    agentOfLastReply(chat) ??
+    (chat.resume.isEmpty ? null : agentToolById(chat.resume.first.agent));
+
+/// The agent that wrote [chat]'s most recent reply, or null when the last one
+/// came from the grid itself (no agent stamp) or from an agent this build no
+/// longer ships.
+///
+/// Read off the transcript rather than remembered in a field: the stamp is
+/// already persisted with the reply, so approving a plan still continues the
+/// right agent after a restart, and a chat that has never had an agent reply
+/// falls back to being routed like any other.
+AgentTool? agentOfLastReply(Conversation chat) {
+  for (final message in chat.messages.reversed) {
+    if (message.role != ChatRole.assistant) continue;
+    return agentToolById(message.agent);
+  }
+  return null;
+}
 
 /// The agent the open chat is meant to run and this grid can't — null whenever
 /// its choice is the one answering.
