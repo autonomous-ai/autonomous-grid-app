@@ -8,6 +8,7 @@ import '../../../features/chat/presentation/import_sessions_view.dart';
 import '../../../features/connectors/presentation/connectors_view.dart';
 import '../../../features/data_sync/presentation/data_sync_view.dart';
 import '../../../features/debug/presentation/debug_view.dart';
+import '../../../features/debug/presentation/tracking_view.dart';
 import '../../../features/git/presentation/git_view.dart';
 import '../../../features/messaging/presentation/messages_view.dart';
 import '../../../features/network/presentation/how_to_use_view.dart';
@@ -55,6 +56,7 @@ class SectionView extends StatelessWidget {
       ShellSection.importChats => const ImportSessionsView(),
       ShellSection.archived => const ArchivedChatsView(),
       ShellSection.debug => const DebugView(),
+      ShellSection.tracking => const TrackingView(),
     };
 
     return AnimatedSwitcher(

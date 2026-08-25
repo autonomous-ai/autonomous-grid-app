@@ -9,9 +9,12 @@ import 'app/grid_app.dart';
 import 'app/notification_scope.dart';
 import 'app/panel_scope.dart';
 import 'app/single_instance.dart';
+import 'core/agent_homes.dart';
+import 'infrastructure/mcp/grid_agent_scripts.dart';
 import 'core/grid_paths.dart';
 import 'features/app_update/logic/app_updater_service.dart';
 import 'features/agents/presentation/chrome_connect_scope.dart';
+import 'features/agents/presentation/hermes_grid_scope.dart';
 import 'features/connectors/presentation/connector_refresh_scope.dart';
 import 'features/skills/presentation/grid_skills_scope.dart';
 import 'infrastructure/logging/app_log.dart';
@@ -30,6 +33,20 @@ Future<void> main() async {
   );
   _installErrorHandlers(appLog);
   appLog.info('app', 'Grid starting');
+
+  // Grid's own Hermes profile, before anything can spawn a `hermes`. Every
+  // spawn carries HERMES_HOME (see HostEnvironment.hermesEnvironment), and the
+  // profile has to exist — with its links back to the files a running cron or
+  // gateway daemon already holds — before the first one goes out.
+  await ensureGridHermesProfile(
+    GridPaths.userHome,
+    log: (message) => appLog.warn('agent', message),
+  );
+
+  // The scripts Grid's guides name. In `~/.grid`, not in an agent's home —
+  // they were the last thing keeping this app inside `~/.claude/skills` and
+  // `~/.codex/skills` once the cards became MCP guides.
+  await ensureGridAgentScripts(log: (message) => appLog.warn('agent', message));
 
   // Boot the libmpv backend powering inline chat video/audio playback.
   MediaKit.ensureInitialized();
@@ -125,10 +142,15 @@ Future<void> main() async {
       // So is the browser: the Chrome connection is the agent's, and it has to
       // exist before the turn that wants it, not after somebody goes looking
       // for a button.
+      // And the grid the assistant runs unattended work on: a task fires at 8am
+      // out of Hermes's own config, so that config has to follow the app's grid
+      // whether or not the Scheduled screen was ever opened.
       child: const ConnectorRefreshScope(
         child: GridSkillsScope(
           child: ChromeConnectScope(
-            child: PanelScope(child: NotificationScope(child: GridApp())),
+            child: HermesGridScope(
+              child: PanelScope(child: NotificationScope(child: GridApp())),
+            ),
           ),
         ),
       ),

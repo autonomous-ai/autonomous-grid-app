@@ -134,6 +134,13 @@ class HermesAcpTurnEnded extends HermesAcpEvent {
 /// with a different fix (see `friendlyAgentLostContact`).
 const String kAcpLostContact = "Grid couldn't reach the assistant's process";
 
+/// One picture riding on a turn, in the shape ACP puts on the wire.
+///
+/// Base64 rather than a path: the agent runs as its own process and a file the
+/// app can read is not always one it can — an attachment pasted from the
+/// clipboard has never been a file at all.
+typedef HermesAcpImage = ({String base64, String mimeType});
+
 /// A handle to one running prompt turn: its parsed events, a future that
 /// completes when the turn ends, and a kill switch for that turn.
 class HermesAcpRun {
@@ -209,7 +216,14 @@ abstract interface class HermesAcpSession {
 
   /// Runs one user turn. Only one turn is in flight at a time — the caller
   /// awaits [HermesAcpRun.done] before the next.
-  HermesAcpRun prompt(String text);
+  ///
+  /// [images] ride beside the text as ACP image blocks. Hermes turns them into
+  /// OpenAI `image_url` parts, and — when the model holding the conversation
+  /// can't read images — replaces each one with a description written by its
+  /// own auxiliary vision model rather than failing the turn
+  /// (`run_agent.py:_prepare_messages_for_non_vision_model`). Which model that
+  /// is, is what `HermesVisionPolicy` sets.
+  HermesAcpRun prompt(String text, {List<HermesAcpImage> images = const []});
 
   /// Hand the turn in flight something the user typed while it was working.
   ///
@@ -365,7 +379,7 @@ class _HermesAcpSession implements HermesAcpSession {
   }
 
   @override
-  HermesAcpRun prompt(String text) {
+  HermesAcpRun prompt(String text, {List<HermesAcpImage> images = const []}) {
     if (_closed || _process == null || _sessionId == null) {
       return HermesAcpRun(
         events: const Stream.empty(),
@@ -388,6 +402,12 @@ class _HermesAcpSession implements HermesAcpSession {
         'sessionId': _sessionId,
         'prompt': [
           {'type': 'text', 'text': text},
+          // After the text, so the sentence the user wrote is what the model
+          // reads first. `mimeType` is the ACP wire spelling of the field
+          // Hermes reads as `mime_type` (`acp_adapter/server.py`); getting it
+          // wrong drops the picture and answers about nothing.
+          for (final image in images)
+            {'type': 'image', 'data': image.base64, 'mimeType': image.mimeType},
         ],
       },
     });

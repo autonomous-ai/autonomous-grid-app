@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/file_attachments.dart';
+import 'package:grid_app/features/playground/logic/image_budget.dart';
 
 void main() {
   late Directory dir;
@@ -27,7 +28,7 @@ void main() {
 
       final added = await readAttachments(
         [path],
-        imageBudget: 4,
+        imageBytesBudget: kImagePayloadBudget,
         fileBudget: 5,
       );
 
@@ -47,7 +48,7 @@ void main() {
 
       final added = await readAttachments(
         [path],
-        imageBudget: 4,
+        imageBytesBudget: kImagePayloadBudget,
         fileBudget: 5,
       );
 
@@ -59,7 +60,7 @@ void main() {
         'inside it', () async {
       final added = await readAttachments(
         [dir.path],
-        imageBudget: 4,
+        imageBytesBudget: kImagePayloadBudget,
         fileBudget: 5,
       );
 
@@ -74,7 +75,7 @@ void main() {
 
       final added = await readAttachments(
         [path],
-        imageBudget: 4,
+        imageBytesBudget: kImagePayloadBudget,
         fileBudget: 5,
       );
 
@@ -84,13 +85,64 @@ void main() {
       expect(added.files.single.isReadable, isFalse);
     });
 
+    test('a message takes as many pictures as fit the wire, so a fifth '
+        'screenshot is not turned away for being the fifth', () async {
+      final shots = <String>[];
+      for (var i = 0; i < 8; i++) {
+        final path = '${dir.path}/shot$i.png';
+        await File(path).writeAsBytes([1, 2, 3]);
+        shots.add(path);
+      }
+
+      final added = await readAttachments(
+        shots,
+        imageBytesBudget: kImagePayloadBudget,
+        fileBudget: 5,
+      );
+
+      expect(added.images.length, 8);
+      expect(added.overflow, isEmpty);
+    });
+
+    test('a picture with no budget left to spend is reported rather than '
+        'quietly left off the message', () async {
+      final path = '${dir.path}/shot.png';
+      await File(path).writeAsBytes([1, 2, 3]);
+
+      final added = await readAttachments(
+        [path],
+        imageBytesBudget: 0,
+        fileBudget: 5,
+      );
+
+      expect(added.images, isEmpty);
+      expect(added.overflow, ['shot.png']);
+    });
+
+    test('a picture crowded out by a nearly full message is reported as '
+        'overflow, not as a picture the user has to crop', () async {
+      final path = '${dir.path}/shot.png';
+      await File(path).writeAsBytes([1, 2, 3, 4, 5]);
+
+      final added = await readAttachments(
+        [path],
+        // Room left, but less than these five bytes — and nothing here decodes
+        // a fake PNG, so shrinking cannot rescue it either.
+        imageBytesBudget: 2,
+        fileBudget: 5,
+      );
+
+      expect(added.overflow, ['shot.png']);
+      expect(added.oversized, isEmpty);
+    });
+
     test('what does not fit is reported, not silently dropped', () async {
       final first = await write('one.txt', 'one');
       final second = await write('two.txt', 'two');
 
       final added = await readAttachments(
         [first, second],
-        imageBudget: 4,
+        imageBytesBudget: kImagePayloadBudget,
         fileBudget: 1,
       );
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -6,7 +7,10 @@ import 'package:flutter/gestures.dart' show Drag;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/app_environment.dart';
 import '../../../core/composer_text.dart';
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/chat_drop.dart';
@@ -17,6 +21,7 @@ import '../../../shared/widgets/typing_dots.dart';
 import '../../agents/logic/agent_chat_scope.dart';
 import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
+import '../../agents/logic/hermes_vision_controller.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
@@ -28,6 +33,8 @@ import '../../agents/presentation/approval_picker.dart';
 import '../../agents/presentation/agent_working_bubble.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_file.dart';
+import '../../playground/logic/image_budget.dart';
+import '../../playground/logic/image_shrink.dart';
 import '../../../infrastructure/panel/panel_message.dart' show PanelScrollPhase;
 import '../../panel/logic/panel_scroll.dart';
 import '../../playground/logic/playground_models.dart';
@@ -38,7 +45,6 @@ import '../../playground/presentation/message_content.dart';
 import '../../playground/presentation/no_model_yet.dart';
 import '../../playground/presentation/transcript_view.dart';
 import '../logic/commands/chat_command.dart';
-import '../logic/commands/spoken_command.dart';
 import 'command_slash_menu.dart';
 import 'composer_status.dart';
 import '../../skills/presentation/save_skill_bar.dart';
@@ -378,52 +384,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     return null;
   }
 
-  /// Acts on a sentence that asked for a command, and says whether it did.
-  ///
-  /// Two endings, and the difference is whether there is anything left to run.
-  /// A sentence read as a command is run — that is the whole point of saying it
-  /// out loud, and asking for a second keystroke on every repeat was friction
-  /// paid on the many for the few. What still stops here is the reading with a
-  /// hole in it: a loop with a rhythm and no work, a task with no hour. Those
-  /// are **written into the composer as the command they would be**, with a
-  /// line naming the missing piece.
-  bool _offerSpokenCommand(String message) {
-    final spoken = readSpokenCommand(message);
-    if (spoken == null) return false;
-    if (spoken.certain) {
-      // Straight to [_runCommand], which is what the typed path does: it empties
-      // the composer, and it *names* the attachments a command leaves behind
-      // instead of dropping them without a word.
-      unawaited(_runCommand(spoken.call));
-      return true;
-    }
-    // Their own words survive it: the reading only fires on a sentence that
-    // *opens* with the ask, so what is replaced is "lặp lại" — the words `/loop`
-    // stands for — and everything they actually said rides on as the argument.
-    final line = spokenCommandLine(spoken.call);
-    _message.text = line;
-    _message.selection = TextSelection.collapsed(offset: line.length);
-    ToastScope.show(
-      context,
-      ToastSpec(
-        message: _missingPieceHint(spoken.call.command),
-        severity: ToastSeverity.success,
-      ),
-    );
-    return true;
-  }
-
-  /// What the composer is still waiting for, named rather than left to guess.
-  ///
-  /// The reading itself is settled by the time this is reached — the line is
-  /// already in the composer — so the only useful thing to say is which part of
-  /// it the user has to add before it can run.
-  String _missingPieceHint(ChatCommand command) => switch (command) {
-    ChatCommand.loop => 'Read that as a loop — say what to repeat, then send.',
-    ChatCommand.schedule => 'Read that as a task — add a time, then send.',
-    _ => 'Read that as a command — send it, or edit it first.',
-  };
-
   void _send(PlaygroundModality modality) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
@@ -435,10 +395,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _runCommand(command);
       return;
     }
-    // The same instruction said in words. Nobody dictates a leading slash, so
-    // without this "lặp lại mỗi 30 phút kiểm tra deploy" went to the assistant
-    // as a sentence and set nothing — see [readSpokenCommand].
-    if (_offerSpokenCommand(message)) return;
+    // Everything else goes to the assistant as the sentence it is, including
+    // "repeat every 30 minutes and check the deploy". Reading a command out of
+    // words was a phrase list that guessed both ways, and the assistant has to
+    // read the sentence anyway to answer it: what it was asking for comes back
+    // in a `grid-ask` block (see [parseAgentAsk]).
     ref
         .read(chatSessionsProvider.notifier)
         .send(
@@ -516,15 +477,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     if (!mounted) return;
     switch (paste) {
       case PastedImage(:final bytes, :final filename):
-        if (_attachments.length >= maxChatImages) {
-          _sayOverflow([filename]);
-          return;
-        }
-        setState(
-          () => _attachments.add(
-            MediaAttachment(filename: filename, bytes: bytes),
-          ),
-        );
+        await _attachImageBytes([(filename: filename, bytes: bytes)]);
       case PastedFiles(:final paths):
         await _attachPaths(paths);
       case PastedText(:final text):
@@ -547,18 +500,54 @@ class _ChatViewState extends ConsumerState<ChatView> {
     ];
     if (onDisk.isNotEmpty) await _attachPaths(onDisk);
 
+    final fromWeb = <({String filename, Uint8List bytes})>[];
     for (final item in items) {
       if (item.path.trim().isNotEmpty) continue;
       if (!isImageFilename(item.name)) continue;
-      if (_attachments.length >= maxChatImages) continue;
-      final bytes = await item.readAsBytes();
-      if (!mounted) return;
-      setState(
-        () => _attachments.add(
-          MediaAttachment(filename: item.name, bytes: bytes),
-        ),
-      );
+      fromWeb.add((filename: item.name, bytes: await item.readAsBytes()));
     }
+    if (!mounted) return;
+    await _attachImageBytes(fromWeb);
+  }
+
+  /// Attaches [pictures] that arrived as bytes rather than as files on disk — a
+  /// pasted screenshot, images dragged out of a web page.
+  ///
+  /// Each is shrunk to what one message may carry: a 5K screenshot is on its
+  /// own bigger than the whole request body the relay accepts, and the refusal
+  /// that came back for it ("Request body exceeds 20000000 bytes") was not
+  /// something anybody could act on. What still didn't fit is said once at the
+  /// end, not once per picture.
+  Future<void> _attachImageBytes(
+    List<({String filename, Uint8List bytes})> pictures,
+  ) async {
+    final overflow = <String>[];
+    final oversized = <String>[];
+
+    for (final picture in pictures) {
+      final left = imageBudgetLeft(_attachments);
+      if (left <= 0) {
+        overflow.add(picture.filename);
+        continue;
+      }
+      final room = imageBudgetForNext(left);
+      final fitted = await fitImageToBudget(
+        MediaAttachment(filename: picture.filename, bytes: picture.bytes),
+        budgetBytes: room,
+      );
+      if (!mounted) return;
+      if (fitted == null) {
+        // Too big for what is left of this message is the message being full,
+        // not the picture being wrong — see [readAttachments].
+        (room < kMaxAttachmentBytes ? overflow : oversized).add(
+          picture.filename,
+        );
+        continue;
+      }
+      setState(() => _attachments.add(fitted));
+    }
+    _sayOverflow(overflow);
+    _sayOversized(oversized);
   }
 
   /// Sort [paths] into what the message can carry: pictures as thumbnails,
@@ -568,7 +557,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   Future<void> _attachPaths(Iterable<String> paths) async {
     final added = await readAttachments(
       paths,
-      imageBudget: maxChatImages - _attachments.length,
+      imageBytesBudget: imageBudgetLeft(_attachments),
       fileBudget: maxChatFiles - _files.length,
     );
     if (!mounted) return;
@@ -582,6 +571,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _insertIntoMessage(pathsForMessage(added.paths));
     }
     _sayOverflow(added.overflow);
+    _sayOversized(added.oversized);
   }
 
   /// Put [paths] on the message because somebody asked for them by name.
@@ -646,6 +636,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
   /// nothing look like a bug in the app.
   void _sayOverflow(List<String> overflow) {
     final message = attachmentOverflowMessage(overflow);
+    if (message == null) return;
+    ToastScope.show(
+      context,
+      ToastSpec(message: message, severity: ToastSeverity.warning),
+    );
+  }
+
+  void _sayOversized(List<String> oversized) {
+    final message = oversizedAttachmentMessage(oversized);
     if (message == null) return;
     ToastScope.show(
       context,
@@ -850,7 +849,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _panelDrag = drag;
     // The panel reports at least every 50ms while a finger is down, so silence
     // this long is a stroke that is not coming back.
-    _panelDragWatch = Timer(const Duration(milliseconds: 600), _cancelPanelDrag);
+    _panelDragWatch = Timer(
+      const Duration(milliseconds: 600),
+      _cancelPanelDrag,
+    );
     return drag;
   }
 
@@ -1036,10 +1038,20 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // (text-only) agent — so the in-flight bubble must show the media progress
     // bar, not "the agent is working".
     final agentInstalled = ref.watch(anyAgentInstalledProvider);
+    // Whether the assistant answering this chat can read the picture itself, so
+    // the turn need not be handed to the chat model that can't. See
+    // [agentReadsImagesForChat] — Hermes only, and only once it has been given a
+    // model for images.
+    final agentReadsImages = agentReadsImagesForChat(
+      agent: ref.watch(activeChatAgentProvider),
+      hermesVisionModel: ref.watch(hermesVisionModelProvider).asData?.value,
+      developerMode: AppEnvironment.isDeveloperMode,
+    );
     final agentMode = agentAnswersTurn(
       modality: modality,
       hasAttachments: _attachments.isNotEmpty,
       agentInstalled: agentInstalled,
+      agentReadsImages: agentReadsImages,
     );
     final needsImage = modality == PlaygroundModality.video;
     // An image pasted into a chat whose model can't read images. Locked until
@@ -1051,7 +1063,10 @@ class _ChatViewState extends ConsumerState<ChatView> {
         !noModel &&
         modality == PlaygroundModality.text &&
         _attachments.isNotEmpty &&
-        (selectedModel == null || !selectedModel.vision);
+        (selectedModel == null || !selectedModel.vision) &&
+        // Unless the assistant reads it instead of the chat model. The lock is
+        // about who receives the picture, not about who is named in the pill.
+        !agentReadsImages;
     // Nothing to send to while this grid has no model: the composer stays for
     // its model pill (the way out), but Send would have nowhere to go.
     final messages = active?.messages ?? const <ChatMessage>[];
@@ -1131,9 +1146,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   child: noModel
                       ? NoModelYet(
                           canManage: widget.network.canManageProvider,
-                          onGoToEngines: () => ref
-                              .read(shellSectionProvider.notifier)
-                              .select(ShellSection.engines),
+                          onGoToEngines: () {
+                            ref
+                                .read(analyticsProvider)
+                                .enginesOpened('start_engine_btn');
+                            ref
+                                .read(shellSectionProvider.notifier)
+                                .select(ShellSection.engines);
+                          },
                         )
                       : isNewChat
                       ? ChatStarters(
@@ -1155,8 +1175,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 // content key — it never changes in place.
                                 scrollId: messages[i],
                                 cacheId: messages[i],
-                                builder: (_) =>
-                                    ChatBubble(message: messages[i]),
+                                // A turn the app sent to keep a goal or a loop
+                                // going is drawn as a line saying so, not as a
+                                // bubble in the user's voice — see
+                                // [AppSentTurnRow].
+                                builder: (_) => messages[i].sentBy.isFromApp
+                                    ? AppSentTurnRow(message: messages[i])
+                                    : ChatBubble(message: messages[i]),
                               ),
                               // The turn that handed a goal over, marked once
                               // under the user's own message.
@@ -1331,32 +1356,22 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 error: error,
                                 // Retry reuses the committed turn, including
                                 // its picture, after the user picks a model
-                                // that can answer it. Agent failures keep their
-                                // one-click handover beside that universal exit.
+                                // that can answer it.
                                 errorAction: error == null
                                     ? null
-                                    : Wrap(
-                                        spacing: 4,
-                                        runSpacing: 4,
-                                        children: [
-                                          TextButton(
-                                            onPressed: () => unawaited(
-                                              ref
-                                                  .read(
-                                                    chatSessionsProvider
-                                                        .notifier,
-                                                  )
-                                                  .retry(
-                                                    network: widget.network,
-                                                    model: _model.text.trim(),
-                                                    modality: modality,
-                                                  ),
-                                            ),
-                                            child: const Text('Retry'),
-                                          ),
-                                          if (agentMode)
-                                            const SwitchAgentButton(),
-                                        ],
+                                    : TextButton(
+                                        onPressed: () => unawaited(
+                                          ref
+                                              .read(
+                                                chatSessionsProvider.notifier,
+                                              )
+                                              .retry(
+                                                network: widget.network,
+                                                model: _model.text.trim(),
+                                                modality: modality,
+                                              ),
+                                        ),
+                                        child: const Text('Retry'),
                                       ),
                                 // Only the agent can touch this computer — a
                                 // picture is made by the grid, so there'd be

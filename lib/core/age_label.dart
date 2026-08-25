@@ -1,4 +1,4 @@
-/// How long ago a chat was last touched, in the fewest characters that still
+/// How long ago something happened, in the fewest characters that still
 /// read as a duration: "now", "5m", "3h", "2d", "1w", "3mo", "1y".
 ///
 /// Short because of where it sits — pinned to the right of a title in a small
@@ -6,9 +6,14 @@
 /// coarse buckets are the point: on a sidebar preview the question is "recent
 /// or old", not the minute it happened.
 ///
-/// A timestamp in the future (a clock that stepped back, a chat written by a
+/// A timestamp in the future (a clock that stepped back, a row written by a
 /// machine running ahead) reads as "now" rather than a negative age.
-String chatAgeLabel(DateTime at, DateTime now) {
+///
+/// Lives in `core/` rather than under the feature that first needed it: chat's
+/// hover card, the backup tile and the invitations menu all ask the same
+/// question, and two of them were already importing it across a feature
+/// boundary (§1). One copy, so three screens cannot start rounding differently.
+String ageLabel(DateTime at, DateTime now) {
   final d = now.difference(at);
   if (d.inMinutes < 1) return 'now';
   if (d.inMinutes < 60) return '${d.inMinutes}m';

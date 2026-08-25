@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/state/models/engine_run.dart';
@@ -291,6 +293,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       await buildArgs(),
       grid: network,
       model: model,
+      engine: 'built_in',
       rebuildForPortConflict: buildArgs,
     );
   }
@@ -319,6 +322,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       ],
       grid: network,
       model: model,
+      engine: 'own_server',
     );
   }
 
@@ -374,6 +378,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       ],
       grid: network,
       model: models.isEmpty ? provider.kind : models.join(', '),
+      engine: 'api:${provider.kind}',
       environment: environment.isEmpty ? null : environment,
     );
   }
@@ -403,6 +408,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   Future<void> _start(
     List<String> args, {
     required String grid,
+    required String engine,
     String? model,
     bool retried = false,
     Map<String, String>? environment,
@@ -411,6 +417,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ProviderRunFailed('grid executable not found.');
+      ref.read(analyticsProvider).engineStartFailed('cli_missing');
       return;
     }
 
@@ -473,6 +480,12 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         starting: false,
         model: model,
       );
+      // The engine is serving on the grid now — the node has joined. Only here,
+      // not on the earlier `starting: true` state (that is the attempt) and not
+      // in [reconcile] (that adopts a run from a previous launch).
+      ref
+          .read(analyticsProvider)
+          .engineStarted(model: model ?? '', engine: engine);
       _bumpUnion();
       _syncGridSoon();
       return;
@@ -490,6 +503,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       return _start(
         args,
         grid: grid,
+        engine: engine,
         model: model,
         retried: true,
         environment: environment,
@@ -503,6 +517,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       return _start(
         await rebuildForPortConflict(),
         grid: grid,
+        engine: engine,
         model: model,
         retried: true,
         environment: environment,
@@ -512,6 +527,13 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     // Both sides of this: upstream's humanized message, and the model the
     // failure card needs to name which engine broke.
     state = ProviderRunFailed(_humanizeJoinFailure(failure), model: model);
+    // A short code, never the raw line — it can carry a host or a path. The
+    // one dead-end worth naming apart is sharing on a grid you only consume.
+    final reason =
+        (lowerFailure.contains('provider') || lowerFailure.contains('scope'))
+        ? 'not_provider'
+        : 'failed';
+    ref.read(analyticsProvider).engineStartFailed(reason);
   }
 
   /// Turn a raw `grid join` failure into a line a user can act on. The commonest

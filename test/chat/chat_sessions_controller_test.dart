@@ -1369,20 +1369,20 @@ group('turn settle reads the grid\'s usage log', () {
       final sentA = c.send(
         network: _credential(),
         model: 'qwen',
-        message: 'giá vàng hôm nay',
+        message: 'the gold price today',
       );
       await pumpEventQueue();
       final aId = read().activeId!;
       expect(answering.controllers.containsKey(aId), isTrue);
       expect(read().agentRunningIn(aId), isTrue);
 
-      // Chat B (tin thế giới) is sent into the same project while A is still
+      // Chat B (world news) is sent into the same project while A is still
       // generating. It reaches the agent straight away.
       c.newChat(projectId: project.id);
       final sentB = c.send(
         network: _credential(),
         model: 'qwen',
-        message: 'tin thế giới',
+        message: 'world news',
       );
       await pumpEventQueue();
       final bId = read().activeId!;
@@ -1421,7 +1421,7 @@ group('turn settle reads the grid\'s usage log', () {
       answering.emit(
         bId,
         const ChatSendSuccess(
-          ChatMessage(role: ChatRole.assistant, text: 'tin thế giới: ...'),
+          ChatMessage(role: ChatRole.assistant, text: 'world news: ...'),
         ),
       );
       await answering.close(bId);
@@ -1437,7 +1437,7 @@ group('turn settle reads the grid\'s usage log', () {
       final a = s.conversations.firstWhere((x) => x.id == aId);
       final b = s.conversations.firstWhere((x) => x.id == bId);
       expect(a.messages.last.text, 'giá vàng: ...');
-      expect(b.messages.last.text, 'tin thế giới: ...');
+      expect(b.messages.last.text, 'world news: ...');
     });
 
     test('two projects answer at the same time — a chat about one folder never '
@@ -2093,7 +2093,7 @@ group('turn settle reads the grid\'s usage log', () {
       final h = _harness(
         tmp,
         agentInstalled: true,
-        agentName: 'Kiểm tra thư mục dự án Flutter',
+        agentName: 'Checking the Flutter project folder',
         updates: [
           const ChatSendAgentSession('sess-1'),
           const ChatSendSuccess(
@@ -2111,7 +2111,7 @@ group('turn settle reads the grid\'s usage log', () {
       final state = h.container.read(chatSessionsProvider);
       final conv = state.conversations.single;
       expect(h.agentTitle.asked, ['sess-1']);
-      expect(conv.title, 'Kiểm tra thư mục dự án Flutter');
+      expect(conv.title, 'Checking the Flutter project folder');
       // Renaming doesn't move the chat or steal the open one.
       expect(state.activeId, conv.id);
       // And the name is on disk, not just on screen.
@@ -2174,7 +2174,7 @@ group('turn settle reads the grid\'s usage log', () {
     final h = _harness(
       tmp,
       agentInstalled: true,
-      modelName: 'Ngân sách quý 4',
+      modelName: 'Q4 budget',
       updates: [
         const ChatSendAgentSession('sess-1'),
         const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
@@ -2187,7 +2187,7 @@ group('turn settle reads the grid\'s usage log', () {
     await pumpEventQueue();
 
     final conv = h.container.read(chatSessionsProvider).conversations.single;
-    expect(conv.title, 'Ngân sách quý 4');
+    expect(conv.title, 'Q4 budget');
     // Both turns of the opening exchange, since the ask alone is the vague half.
     expect(h.titleWriter.asked, [2]);
     expect(
@@ -2201,7 +2201,7 @@ group('turn settle reads the grid\'s usage log', () {
     final h = _harness(
       tmp,
       agentInstalled: true,
-      agentName: 'Đọc thư mục dự án',
+      agentName: 'Reading the project folder',
       modelName: 'Never asked for',
       updates: [
         const ChatSendAgentSession('sess-1'),
@@ -2216,7 +2216,7 @@ group('turn settle reads the grid\'s usage log', () {
 
     expect(
       h.container.read(chatSessionsProvider).conversations.single.title,
-      'Đọc thư mục dự án',
+      'Reading the project folder',
     );
     expect(h.titleWriter.asked, isEmpty);
   });
@@ -2246,7 +2246,7 @@ group('turn settle reads the grid\'s usage log', () {
     );
 
     // A model can answer by the time the next turn lands.
-    h.titleWriter.title = 'Bài đăng ra mắt';
+    h.titleWriter.title = 'Launch post';
     await controller.send(
       network: _credential(),
       model: 'qwen',
@@ -2255,7 +2255,7 @@ group('turn settle reads the grid\'s usage log', () {
     await pumpEventQueue();
 
     final conv = h.container.read(chatSessionsProvider).conversations.single;
-    expect(conv.title, 'Bài đăng ra mắt');
+    expect(conv.title, 'Launch post');
     expect(conv.titleFromModel, isTrue);
     // Asked once per turn while the chat had no name of its own — and the
     // agent, which names a session only off its opening exchange, was not
@@ -2270,7 +2270,7 @@ group('turn settle reads the grid\'s usage log', () {
       final h = _harness(
         tmp,
         agentInstalled: true,
-        modelName: 'Bài đăng ra mắt',
+        modelName: 'Launch post',
         updates: [
           const ChatSendAgentSession('sess-1'),
           const ChatSendSuccess(
@@ -2291,7 +2291,7 @@ group('turn settle reads the grid\'s usage log', () {
 
       expect(
         h.container.read(chatSessionsProvider).conversations.single.title,
-        'Bài đăng ra mắt',
+        'Launch post',
       );
       // Named once. A second ask would spend a request to rename a chat the user
       // has by now read in the rail.
@@ -2304,7 +2304,7 @@ group('turn settle reads the grid\'s usage log', () {
     final h = _harness(
       tmp,
       agentInstalled: true,
-      modelName: 'Bài đăng ra mắt',
+      modelName: 'Launch post',
       updates: [
         const ChatSendAgentSession('sess-1'),
         const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
@@ -2317,7 +2317,7 @@ group('turn settle reads the grid\'s usage log', () {
     await pumpEventQueue();
 
     final reloaded = (await ChatStore(directory: tmp).loadAll()).single;
-    expect(reloaded.title, 'Bài đăng ra mắt');
+    expect(reloaded.title, 'Launch post');
     expect(reloaded.titleFromModel, isTrue);
   });
 
@@ -2325,7 +2325,7 @@ group('turn settle reads the grid\'s usage log', () {
     final h = _harness(
       tmp,
       agentInstalled: true,
-      modelName: 'Ngân sách quý 4',
+      modelName: 'Q4 budget',
       updates: [
         const ChatSendAgentSession('sess-1'),
         const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
@@ -2335,12 +2335,12 @@ group('turn settle reads the grid\'s usage log', () {
 
     await controller.send(network: _credential(), model: 'qwen', message: 'hi');
     final id = h.container.read(chatSessionsProvider).conversations.single.id;
-    controller.renameConversation(id, 'Kế hoạch tuần');
+    controller.renameConversation(id, 'The week plan');
     await pumpEventQueue();
 
     expect(
       h.container.read(chatSessionsProvider).conversations.single.title,
-      'Kế hoạch tuần',
+      'The week plan',
     );
   });
 
@@ -2349,7 +2349,7 @@ group('turn settle reads the grid\'s usage log', () {
     final h = _harness(
       tmp,
       agentInstalled: true,
-      agentName: 'Đọc thư mục dự án',
+      agentName: 'Reading the project folder',
       updates: [
         const ChatSendAgentSession('sess-1'),
         const ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'a')),
@@ -2366,7 +2366,7 @@ group('turn settle reads the grid\'s usage log', () {
     expect(h.agentTitle.asked, ['sess-1']);
     // ...and the second turn didn't re-derive it back to 'hi'.
     final conv = h.container.read(chatSessionsProvider).conversations.single;
-    expect(conv.title, 'Đọc thư mục dự án');
+    expect(conv.title, 'Reading the project folder');
     expect(
       (await ChatStore(directory: tmp).loadAll()).single.title,
       conv.title,
@@ -2378,7 +2378,7 @@ group('turn settle reads the grid\'s usage log', () {
     final h = _harness(
       tmp,
       agentInstalled: true,
-      agentName: 'Đọc thư mục dự án',
+      agentName: 'Reading the project folder',
       // Held, so the name is still in flight while the user renames — the real
       // wait is seconds long, which is ample time to open the "…" menu.
       holdAgentName: true,
@@ -2391,18 +2391,18 @@ group('turn settle reads the grid\'s usage log', () {
 
     await controller.send(network: _credential(), model: 'm', message: 'hi');
     final id = h.container.read(chatSessionsProvider).conversations.single.id;
-    controller.renameConversation(id, 'Ngân sách quý 4');
+    controller.renameConversation(id, 'Q4 budget');
     // Only now does the agent's name arrive — onto a chat the user has named.
     h.agentTitle.release();
     await pumpEventQueue();
 
     final conv = h.container.read(chatSessionsProvider).conversations.single;
-    expect(conv.title, 'Ngân sách quý 4');
+    expect(conv.title, 'Q4 budget');
     expect(conv.titleLocked, isTrue);
     // On disk too, so reopening the app doesn't restore the agent's name.
     expect(
       (await ChatStore(directory: tmp).loadAll()).single.title,
-      'Ngân sách quý 4',
+      'Q4 budget',
     );
   });
 
@@ -2412,7 +2412,7 @@ group('turn settle reads the grid\'s usage log', () {
     store.save(
       Conversation(
         id: 'c1',
-        title: 'Ngân sách quý 4',
+        title: 'Q4 budget',
         model: 'm',
         createdAt: DateTime(2026, 7, 1),
         updatedAt: DateTime(2026, 7, 1),

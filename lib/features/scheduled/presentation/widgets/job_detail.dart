@@ -9,6 +9,8 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/error_box.dart';
 import '../../../../shared/widgets/toast.dart';
+import '../../../agents/logic/adapters/hermes_grid_link.dart';
+import '../../../auth/logic/session_controller.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../../network/logic/node_display.dart';
 import '../../../playground/logic/chat_message.dart';

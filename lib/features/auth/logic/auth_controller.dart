@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
@@ -36,6 +38,7 @@ class AuthController extends Notifier<AuthState> {
 
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
+      ref.read(analyticsProvider).signInFailed('cli_missing');
       state = const AuthFailure('grid executable not found.');
       return;
     }
@@ -68,6 +71,7 @@ class AuthController extends Notifier<AuthState> {
     } on TimeoutException {
       await _lineSub?.cancel();
       _process?.kill();
+      ref.read(analyticsProvider).signInFailed('timeout');
       state = const AuthFailure('Sign-in timed out — please try again.');
       return;
     }
@@ -78,12 +82,22 @@ class AuthController extends Notifier<AuthState> {
       // Clear any lingering "session expired" flag so RootView, which now treats
       // needsLogin as signed-out, lets the freshly authenticated user back in.
       ref.read(sessionExpiryProvider.notifier).reset();
+      // After the invalidate above, so the event carries the account that just
+      // signed in rather than the empty one it replaced.
+      ref.read(analyticsProvider).signedIn();
       state = const AuthSuccess();
       // The starter-grid provision for a brand-new account fires when the
       // signed-in shell mounts (HomeShell), which also covers re-opening the app
       // on a grid-less account — so there's nothing to kick off here.
       return;
     }
+    // A code, not the sentence the user is about to read: the friendly line is
+    // rewritten whenever the copy is, and the raw stderr behind it can carry a
+    // host name or a path. A user's own `cancel()` lands here too — it kills the
+    // process, which then exits non-zero — so it is reported as what it was.
+    ref
+        .read(analyticsProvider)
+        .signInFailed(state is AuthIdle ? 'cancelled' : 'failed');
     state = AuthFailure(_friendlyLoginError(errorLines));
   }
 
@@ -132,6 +146,8 @@ class AuthController extends Notifier<AuthState> {
     } else {
       ref.read(gridHomeStoreProvider).clearCredentials();
     }
+    // Before the invalidate, so the event still knows who signed out.
+    ref.read(analyticsProvider).signedOut();
     ref.invalidate(sessionProvider);
     state = const AuthIdle();
   }

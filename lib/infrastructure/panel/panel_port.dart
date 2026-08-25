@@ -21,6 +21,7 @@ import 'dart:io';
 
 import 'panel_link.dart';
 import 'panel_silence.dart';
+import 'panel_stranger.dart';
 
 /// The panel's **native** USB interface — Espressif's USB-Serial-JTAG.
 ///
@@ -190,6 +191,16 @@ class PanelPort implements PanelTransport {
   bool _running = false;
   String? _port;
 
+  /// Ports [disown] has let go, and when each may be tried again.
+  ///
+  /// Keyed by path rather than held as one flag because the answer is about a
+  /// *device*, not about this app's mood: a machine can have a Grid panel on one
+  /// port and another product's board on a second, and one being foreign says
+  /// nothing about the other. Kept in memory only — a cooldown that outlived the
+  /// process would be a cache of a fact that changes whenever somebody moves a
+  /// cable.
+  final _disowned = <String, DateTime>{};
+
   @override
   Stream<List<int>> get incoming => _incoming.stream;
 
@@ -228,6 +239,27 @@ class PanelPort implements PanelTransport {
     }
   }
 
+  /// This port is another product's device — detach, and leave it alone for
+  /// [kPanelStrangerCooldown].
+  ///
+  /// Not [close]: the app keeps looking. The user may have a real panel on
+  /// another port, or may plug one into this socket in a minute, and a panel is
+  /// found by walking every USB serial device there is.
+  ///
+  /// **Letting go is usually a one-time act.** A tty is exclusive on macOS, so
+  /// the moment this releases it the other product's daemon takes it and later
+  /// probes fail to *open* it rather than stealing it back. The cooldown
+  /// therefore only decides how quickly this would notice the device on that
+  /// socket being swapped for a panel.
+  @override
+  void disown(String why) {
+    final port = _port;
+    if (port == null) return;
+    _disowned[port] = DateTime.now().add(kPanelStrangerCooldown);
+    _detach('$why — leaving $port alone for '
+        '${kPanelStrangerCooldown.inSeconds}s');
+  }
+
   /// Stop looking, and let the port go. Safe to call twice, and safe to call
   /// alongside [PanelLink.close], which also calls it.
   @override
@@ -248,11 +280,42 @@ class PanelPort implements PanelTransport {
     final port = await _locate();
     if (port == null || !_running) return _retryLater();
 
+    // A port this app has already concluded is somebody else's. Reopening it
+    // before the cooldown is up is worse than doing nothing: two readers on one
+    // tty do not deadlock, they interleave, so taking it back would shred the
+    // frames of whichever app is legitimately using it — and of this one, if a
+    // panel ever did appear there.
+    final until = _disowned[port];
+    if (until != null) {
+      if (DateTime.now().isBefore(until)) return _retryLater();
+      // The cooldown lapsed. Forgotten rather than re-armed, so the next attempt
+      // judges the device on its bytes instead of on what used to be plugged in.
+      _disowned.remove(port);
+    }
+
     // Raw mode before a single byte is read. Left cooked, the line discipline
     // translates CR/LF and acts on control characters — and a PCM chunk is full
     // of bytes that look like control characters. The corruption is silent: the
     // frames still arrive, they just fail their CRC.
-    final raw = await Process.run('stty', ['-f', port, 'raw', '-echo']);
+    //
+    // BY ABSOLUTE PATH, and wrapped, for the same reason `ioreg` is one function
+    // up: a GUI app launched from Finder gets launchd's PATH, not a shell's, and
+    // a bare name is a bet on what that contains. `ioreg` lost that bet on a
+    // freshly set-up Mac (2026-08-20) and, being uncaught, took `_attach` down
+    // with it — the retry was never armed, so the panel was never looked for
+    // again for the life of the process. `stty` sits one line further along the
+    // same path and was left holding the same bet; a machine missing /usr/sbin
+    // is a fair candidate for missing /bin.
+    //
+    // The signature is what makes this worth pre-empting: no port, no log line,
+    // and a panel spinning on its boot screen forever with the cable plugged in.
+    final ProcessResult raw;
+    try {
+      raw = await Process.run('/bin/stty', ['-f', port, 'raw', '-echo']);
+    } on ProcessException catch (e) {
+      _log('could not run stty for $port: ${e.message}');
+      return _retryLater();
+    }
     if (raw.exitCode != 0) {
       _log('stty failed on $port: ${raw.stderr}');
       return _retryLater();

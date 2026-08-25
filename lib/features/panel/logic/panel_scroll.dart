@@ -34,8 +34,9 @@ typedef PanelScrollTick = ({
 /// so the controller cannot reach in and move the list. It says how far the
 /// finger went; the view that has a list decides what that means for it, and a
 /// view with nothing to scroll ignores it without anybody arranging that.
-final panelScrollProvider =
-    NotifierProvider<PanelScroll, PanelScrollTick>(PanelScroll.new);
+final panelScrollProvider = NotifierProvider<PanelScroll, PanelScrollTick>(
+  PanelScroll.new,
+);
 
 class PanelScroll extends Notifier<PanelScrollTick> {
   @override

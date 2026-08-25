@@ -13,6 +13,7 @@ import '../logic/agent_grid_support.dart';
 import '../logic/agent_install_controller.dart';
 import '../logic/agent_status.dart';
 import 'agent_browser_row.dart';
+import 'hermes_vision_block.dart';
 
 /// The assistants this computer can run, one of which answers your chats.
 ///
@@ -190,6 +191,14 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                 // and the active card is the one that isn't.
                 if (tool == AgentTool.claude && isActive)
                   const AgentBrowserRow(),
+                // Hermes alone, and for the same two reasons as the row above:
+                // it is the only agent whose image model the app can point
+                // anywhere, and a card that is also a tap target for switching
+                // agents must not carry a control on the ones you would tap.
+                // Draws nothing outside a developer build — see
+                // [HermesVisionBlock].
+                if (tool == AgentTool.hermes && isActive)
+                  const HermesVisionBlock(),
                 _Error(tool: tool),
               ],
             ),

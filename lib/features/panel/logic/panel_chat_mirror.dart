@@ -1,6 +1,32 @@
 import 'dart:convert';
 
+import '../../../infrastructure/panel/panel_frame.dart';
 import '../../../infrastructure/panel/panel_message.dart';
+
+/// As many of [tiles] as fit one frame, longest prefix first.
+///
+/// The whole list goes out as a single message and a frame's payload is capped
+/// at [kPanelMaxPayload]; over that, [encodePanelFrame] throws — deliberately,
+/// since a caller building an oversized message has a bug. This is that
+/// caller's side of the deal, and the bug it is answering was real: titles
+/// stopped being clipped in the store on 2026-08-20 so that renaming a chat
+/// could offer the whole name back, and the next morning thirty-odd tiles of
+/// full sentences went 11724 bytes into an 8192-byte frame, thrown straight out
+/// of the mirror with nothing catching it.
+///
+/// Dropped from the end, because the list arrives in the order the sidebar
+/// draws it: what falls off the panel is what the user would have had to scroll
+/// furthest to reach.
+List<PanelChat> panelTilesThatFit(List<PanelChat> tiles) {
+  var kept = tiles;
+  while (kept.isNotEmpty && !_fits(kept)) {
+    kept = kept.sublist(0, kept.length - 1);
+  }
+  return kept;
+}
+
+bool _fits(List<PanelChat> tiles) =>
+    utf8.encode(PanelOutbound.chats(tiles)).length <= kPanelMaxPayload;
 
 /// Keeps the panel's tiles in step with the app's chat list, and remembers
 /// what it has already said.

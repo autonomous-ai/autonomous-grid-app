@@ -183,20 +183,6 @@ void main() {
     });
   });
 
-  group('the agent a failed turn can be handed to', () {
-    test('is the other installed agent this grid can run', () {
-      final container = _container(chosen: 'codex', hermes: true, codex: true);
-      expect(container.read(alternativeChatAgentProvider), AgentTool.hermes);
-    });
-
-    test('is nothing when no other agent could do better', () {
-      // Nothing to offer — the button stands down rather than promising a swap
-      // that would change nothing.
-      final container = _container(chosen: 'codex', hermes: false, codex: true);
-      expect(container.read(alternativeChatAgentProvider), isNull);
-    });
-  });
-
   group('the sender follows the agent a turn was resolved for', () {
     /// The sender chat routing would use for whichever agent answers here.
     ChatSender senderFor(ProviderContainer container) => container.read(

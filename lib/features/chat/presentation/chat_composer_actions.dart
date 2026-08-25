@@ -182,7 +182,8 @@ class _AttachButton extends StatelessWidget {
     // going quiet.
     tooltip: canAttach
         ? 'Attach a picture or a document'
-        : 'Up to $maxChatImages pictures and $maxChatFiles files',
+        : 'Up to ${kImagePayloadBudget ~/ 1000000} MB of pictures and '
+              '$maxChatFiles files',
     onPressed: canAttach ? onAttach : null,
   );
 }

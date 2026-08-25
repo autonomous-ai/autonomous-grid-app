@@ -8,6 +8,7 @@ import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/create_network_controller.dart';
+import '../logic/grid_access_types.dart';
 import 'grid_type_picker.dart';
 
 /// Modal to create a managed (hosted) grid via the control-plane API.
@@ -46,10 +47,10 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
     super.dispose();
   }
 
-  void _submit() {
+  void _submit(ManagedNetworkType type) {
     ref
         .read(createNetworkControllerProvider.notifier)
-        .submit(name: _name.text, type: _type);
+        .submit(name: _name.text, type: type);
   }
 
   @override
@@ -77,6 +78,16 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
     final submitting = state is CreateNetworkSubmitting;
     final error = state is CreateNetworkFailed ? state.message : null;
 
+    // The domain rule is only offered when the server says this account can use
+    // it; while that answer is loading, or if it fails, the option is absent.
+    final domain = ref.watch(gridDomainProvider).value;
+    final types = accessTypesFor(canRestrictToDomain: domain != null);
+    // A rule that stopped being offered must not stay selected — the picker
+    // would show nothing chosen while `_type` still sent `domain-restricted`.
+    final selected = types.contains(_type)
+        ? _type
+        : ManagedNetworkType.fallback;
+
     return AlertDialog(
       title: const Text('Create grid'),
       content: SizedBox(
@@ -92,7 +103,7 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
               enabled: !submitting,
               maxLength: 64,
               textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _submit(),
+              onSubmitted: (_) => _submit(selected),
               style: kFieldTextStyle,
               decoration: const InputDecoration(
                 hintText: 'my-team-grid',
@@ -100,15 +111,16 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
               ),
             ),
             const SizedBox(height: 14),
-            const FieldLabel('Type'),
             GridTypePicker(
-              value: _type,
+              value: selected,
+              types: types,
+              domain: domain,
               enabled: !submitting,
               onChanged: (value) => setState(() => _type = value),
             ),
             const SizedBox(height: 8),
             Text(
-              _type.description,
+              accessDescriptionFor(selected, domain: domain),
               style: TextStyle(
                 color: AppPalette.textSecondary,
                 fontSize: 12,
@@ -134,7 +146,7 @@ class _CreateNetworkDialogState extends ConsumerState<CreateNetworkDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: submitting ? null : _submit,
+          onPressed: submitting ? null : () => _submit(selected),
           child: submitting
               ? const AppSpinner.onAccent()
               : const Text('Create'),

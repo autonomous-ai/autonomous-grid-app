@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../infrastructure/analytics/analytics_events.dart';
+import '../../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/detail_widgets.dart';
@@ -31,8 +33,10 @@ class GridPickList extends ConsumerWidget {
     // question and opening the door are one act, and the door has to stay open
     // afterwards — the grid can go away again later without the app throwing
     // the user back out to this screen.
-    void pick(NetworkCredential network) =>
-        ref.read(gridChoiceGateProvider.notifier).choose(network);
+    void pick(NetworkCredential network) {
+      ref.read(analyticsProvider).gridChoice('existing');
+      ref.read(gridChoiceGateProvider.notifier).choose(network);
+    }
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: _maxHeight),

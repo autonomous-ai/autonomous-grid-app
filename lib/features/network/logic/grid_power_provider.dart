@@ -17,6 +17,8 @@ class GridPower {
     required this.onlineNodes,
     required this.models,
     this.vramGb,
+    this.vramUsedGb,
+    this.gpuUtilPct,
     this.parallel,
     this.throughputTokS,
     this.answered,
@@ -35,6 +37,24 @@ class GridPower {
   /// Never 0: absent and "zero GB" are different claims, and only one of them is
   /// honest here.
   final double? vramGb;
+
+  /// GPU memory currently in use across the same online nodes [vramGb] sums, in
+  /// GB. Null when no node reports it — a pool total on its own says what the
+  /// grid *has*, this is the half that says how much of it is already spoken
+  /// for, and the ring in the top bar draws the two against each other.
+  ///
+  /// Summed under the same rule as [vramGb], subscription seats excluded: a
+  /// used figure counted over a different set of machines than the total would
+  /// produce a ratio that is quietly wrong rather than obviously missing.
+  final double? vramUsedGb;
+
+  /// Mean GPU utilisation across the online nodes that report it, 0–100. Null
+  /// when none does.
+  ///
+  /// The fallback the memory ring falls back *to*: a relay that sends no
+  /// `vram_used_mb` can still say how hard the cards are working, and a ring
+  /// with nothing to draw is a hole in the capsule.
+  final double? gpuUtilPct;
 
   /// How many requests the grid can serve concurrently — the relay's own
   /// `stats.concurrent_capacity` when it reports one, otherwise the sum of each
@@ -73,6 +93,8 @@ class GridPower {
       other.onlineNodes == onlineNodes &&
       other.models == models &&
       other.vramGb == vramGb &&
+      other.vramUsedGb == vramUsedGb &&
+      other.gpuUtilPct == gpuUtilPct &&
       other.parallel == parallel &&
       other.throughputTokS == throughputTokS &&
       other.answered == answered;
@@ -82,6 +104,8 @@ class GridPower {
     onlineNodes,
     models,
     vramGb,
+    vramUsedGb,
+    gpuUtilPct,
     parallel,
     throughputTokS,
     answered,
@@ -146,6 +170,9 @@ GridPower gridPowerFrom(
   ];
 
   double? vram;
+  double? vramUsed;
+  var gpuUtilSum = 0.0;
+  var gpuUtilNodes = 0;
   int? summedConcurrency;
   double? throughput;
   // Null until some node actually reports a rollup, so a grid of older relays
@@ -159,6 +186,22 @@ GridPower gridPowerFrom(
   for (final node in online) {
     final gb = nodeVramGb(node);
     if (gb != null) vram = (vram ?? 0) + gb;
+
+    // Both live figures follow the pool's own membership rule: whatever
+    // `nodeVramGb` refused (a subscription seat, a machine advertising no
+    // memory) contributes neither a used share nor a utilisation reading, so
+    // the ratio drawn in the bar is over one consistent set of machines.
+    if (gb != null) {
+      final usedMb = node.vramUsedMb;
+      if (usedMb != null && usedMb > 0) {
+        vramUsed = (vramUsed ?? 0) + usedMb / 1024;
+      }
+      final util = node.gpuUtilPct;
+      if (util != null && util >= 0) {
+        gpuUtilSum += util;
+        gpuUtilNodes++;
+      }
+    }
 
     final concurrency = node.maxConcurrency;
     if (concurrency != null && concurrency > 0) {
@@ -184,6 +227,13 @@ GridPower gridPowerFrom(
     onlineNodes: online.length,
     models: models,
     vramGb: vram,
+    // Never above the pool it is a share of: a node reporting more used than it
+    // advertises as total (a driver rounding, a seat counted twice) would draw a
+    // ring past full, which reads as a bug rather than as load.
+    vramUsedGb: vram == null || vramUsed == null
+        ? null
+        : (vramUsed > vram ? vram : vramUsed),
+    gpuUtilPct: gpuUtilNodes == 0 ? null : gpuUtilSum / gpuUtilNodes,
     parallel: (capacity != null && capacity > 0) ? capacity : summedConcurrency,
     throughputTokS: throughput,
     // The grid's own rollup first — see the note on [gridAnswered]. The node sum
@@ -331,6 +381,47 @@ String formatVram(double gb) {
   }
   return '${_trim(gb)} GB';
 }
+
+/// GPU memory a node currently has in use, in GB, or null when it doesn't say.
+///
+/// Gated on [nodeVramGb] rather than read straight off the node: a machine that
+/// brings no memory to the pool contributes no used share either, and a
+/// subscription seat reporting its host's RAM would otherwise appear to be
+/// consuming grid memory it never had.
+double? nodeVramUsedGb(OverviewNode node) {
+  if (nodeVramGb(node) == null) return null;
+  final usedMb = node.vramUsedMb;
+  if (usedMb == null || usedMb <= 0) return null;
+  return usedMb / 1024;
+}
+
+/// "1.3 / 2.1 TB" — memory in use against the pool it is drawn from, sharing one
+/// unit between them.
+///
+/// The unit is written once, at the end, and chosen from the *total*: a grid
+/// with 2.1 TB in it whose used share happens to be under a terabyte still reads
+/// in terabytes, because two figures either side of a slash are being compared,
+/// and a comparison written in two different units is a puzzle.
+String formatVramShare(double usedGb, double totalGb) {
+  if (totalGb >= 1024) {
+    return '${_trim(usedGb / 1024)} / ${_trim(totalGb / 1024)} TB';
+  }
+  // One rule for both halves, decided by the total: "97.3 / 192 GB" reads as two
+  // figures measured to different precisions, which is a claim about the
+  // machine rather than about the column they had to fit in.
+  final decimals = totalGb < 100;
+  return '${_trimShare(usedGb, decimals)} / ${_trimShare(totalGb, decimals)} GB';
+}
+
+/// A figure inside a share, where two of them and a unit have to fit one column.
+///
+/// Drops the decimal from three digits up: "276.9 / 382.4" spends ten characters
+/// on a tenth of a gigabyte nobody is acting on, and those characters are what
+/// the machine's name loses. Under 100 the decimal stays — on a 63.7 GB card it
+/// is a twentieth of the total, not a rounding. Both halves follow whichever
+/// rule the total falls under, never one each.
+String _trimShare(double v, bool decimals) =>
+    decimals ? _trim(v) : v.round().toString();
 
 /// Formats throughput as a rounded rate — the underlying figure is an estimate,
 /// so decimals would imply precision the relay doesn't have.

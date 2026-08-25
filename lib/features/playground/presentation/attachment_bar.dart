@@ -32,7 +32,11 @@ class AttachmentBar extends StatelessWidget {
   });
 
   final List<MediaAttachment> attachments;
-  final int maxCount;
+
+  /// How many pictures this request takes, or null where nothing counts them —
+  /// a vision chat is bounded by the bytes a request body holds, so the tile
+  /// stays until the pictures themselves run the budget out.
+  final int? maxCount;
 
   /// Optional one-line prompt telling the user why an image is needed (e.g.
   /// video needs a starting image). Omitted in the Chat composer, where the
@@ -56,7 +60,8 @@ class AttachmentBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final full = attachments.length >= maxCount;
+    final limit = maxCount;
+    final full = limit != null && attachments.length >= limit;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

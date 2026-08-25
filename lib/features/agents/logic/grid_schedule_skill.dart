@@ -23,20 +23,23 @@ const String kGridScheduleSkillName = 'grid-schedule';
 GridSkillFiles gridScheduleSkillFiles(Directory skillDir) =>
     const GridSkillFiles(card: kGridScheduleSkillMd);
 
-/// The card. The front-matter names what the user asks for ("every morning",
-/// "keep checking") rather than the CLI, because the agent meets this while
-/// being asked for a repeating task — it does not yet know a `hermes cron`
-/// exists, which is the whole reason it needs the card.
+/// The card. The front-matter names what the user is *asking for* rather than
+/// the CLI, because the agent meets this while being asked for a repeating task
+/// — it does not yet know a `hermes cron` exists, which is the whole reason it
+/// needs the card. It names that by intent and not by example phrases: a list
+/// of them only ever covers the language it was written in, and the people
+/// using this write in several.
 const String kGridScheduleSkillMd = '''
 ---
 name: grid-schedule
 description: >-
-  Set up work that runs later or over and over — every morning, every 30
-  minutes, once tonight, a watcher that keeps checking something. Use whenever
-  the user asks for a scheduled, recurring or automatic task, says "every N
-  minutes", "each morning", "remind me at", or wants something to keep running
-  after this conversation ends. Also use to list, pause, run now, or delete
-  tasks that are already scheduled.
+  Set up work that runs later, or over and over: at a clock time, on a cadence,
+  once tonight, or a watcher that keeps checking something. Use whenever the
+  user asks for a scheduled, recurring or automatic task, asks to be reminded
+  at some point, or wants something to keep running after this conversation
+  ends — in whatever language they wrote it in, and however they phrased the
+  timing. It is the intent that decides, never a list of trigger words. Also
+  use to list, pause, run now, or delete tasks that are already scheduled.
 ---
 
 # Scheduling work on this computer
@@ -55,6 +58,13 @@ answer is delivered back into the app.
 
 The command is `hermes`. If the shell cannot find it, use
 `~/.grid/bin/hermes` — Grid installs it there.
+
+**Creating one because the user just asked you to?** Relay it instead — a
+`grid-ask` block holding `/schedule <when> <what>`, described in the `grid-ask`
+card. Grid then files the job with this chat as the destination and you as the
+runner, which the command below leaves for you to get right. Everything here is
+for the rest: managing tasks that already exist, and creating one when there is
+no chat to answer into.
 
 ## Create a job
 
@@ -104,7 +114,7 @@ To keep the work with the assistant the user is talking to, schedule a script
 instead and let it call that assistant:
 
 ```
-~/.hermes/scripts/<name>.sh          # the script (chmod +x)
+\$HERMES_HOME/scripts/<name>.sh      # the script (chmod +x)
 hermes cron create "<schedule>" --script <name>.sh --no-agent \\
   --name "<short name>" --deliver local
 ```
@@ -114,7 +124,8 @@ verbatim — so print the answer and nothing else. Three things the script must
 do itself, each measured on 2026-08-19 rather than assumed:
 
 - **`cd` to where the work is.** In script mode the job starts in
-  `~/.hermes/scripts`, and `--workdir` does not move it.
+  `\$HERMES_HOME/scripts` (Grid runs Hermes under its own profile, so this is
+  not `~/.hermes/scripts`), and `--workdir` does not move it.
 - **Set `PATH` with absolute directories.** The scheduler is a daemon; it has
   none of the login shell's PATH, so `claude` / `codex` / `node` are not found
   unless the script names their folders.

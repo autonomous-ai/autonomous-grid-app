@@ -10,6 +10,7 @@ import '../../../shared/widgets/composer_keys.dart';
 import '../../../shared/widgets/context_chip.dart';
 import '../../../shared/widgets/liquid_glass.dart';
 import '../../playground/logic/chat_file.dart';
+import '../../playground/logic/image_budget.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/logic/recording_controller.dart';
 import '../../playground/presentation/attachment_bar.dart';
@@ -240,7 +241,7 @@ class ComposerSection extends StatelessWidget {
                   // stays live until the message is full of pictures *and* files.
                   canAttach:
                       _isText &&
-                      (attachments.length < maxChatImages ||
+                      (imageBudgetLeft(attachments) > 0 ||
                           files.length < maxChatFiles),
                   sending: sending,
                   canSend: canSend,

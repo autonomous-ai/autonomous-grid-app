@@ -22,6 +22,15 @@ class _FakeTransport implements PanelTransport {
   @override
   void send(List<int> bytes) => sent.add(bytes);
 
+  /// Ports let go because the device on them belongs to another product, with
+  /// the reason the link gave. Recorded rather than ignored: "the link let the
+  /// port go" and "the link said nothing" look identical from the outside, and
+  /// telling them apart is the whole point of the tests that use this.
+  final disowned = <String>[];
+
+  @override
+  void disown(String why) => disowned.add(why);
+
   @override
   Future<void> close() async {
     closed = true;
@@ -36,7 +45,7 @@ void main() {
   group('parsing what the panel says', () {
     test('hello carries the firmware, protocol and MAC', () {
       final msg = PanelInbound.parse(
-        '{"t":"hello","fw":"0.1.0","proto":6,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","product":"grid","fw":"0.1.0","proto":7,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       expect(msg, isA<PanelHello>());
       final hello = msg as PanelHello;
@@ -51,7 +60,7 @@ void main() {
         // The app carries the firmware image and can offer to fix this, so a
         // mismatch has to arrive as a state rather than as a parse failure.
         final hello =
-            PanelInbound.parse('{"t":"hello","fw":"9.0.0","proto":99,"mac":""}')
+            PanelInbound.parse('{"t":"hello","product":"grid","fw":"9.0.0","proto":99,"mac":""}')
                 as PanelHello;
         expect(hello.isCompatible, isFalse);
         expect(hello.protocol, 99);
@@ -134,7 +143,7 @@ void main() {
       link.messages.listen(received.add);
 
       transport.deliver(utf8.encode('ESP-ROM:esp32s3\r\nrst:0x1\r\n'));
-      transport.deliver(encodePanelJson('{"t":"hello","proto":6}'));
+      transport.deliver(encodePanelJson('{"t":"hello","product":"grid","proto":7}'));
       await pumpEventQueue();
 
       expect(received.single, isA<PanelHello>());
@@ -191,6 +200,46 @@ void main() {
       expect(item['busy'], true);
       expect(item['recap'], 'Ran the tests');
       expect(item.containsKey('model'), isFalse); // absent, not null
+    });
+
+    test('a greeting from another product is not forwarded, and the port is '
+        'let go — there is no session to have with somebody else\'s device', () async {
+      // The board is shared: Grid Panel and the Harness dial are the same
+      // Waveshare 466x466 ESP32-S3 and enumerate with the same USB id, so this
+      // app can and did open a dial's port. Answering it with a `welcome` is
+      // what let it then write Grid firmware into someone's dial.
+      final transport = _FakeTransport();
+      final link = PanelLink(transport);
+      final received = <PanelInbound>[];
+      link.messages.listen(received.add);
+
+      transport.deliver(
+        encodePanelJson('{"t":"hello","product":"harness","fw":"0.0.39"}'),
+      );
+      await pumpEventQueue();
+
+      expect(received, isEmpty, reason: 'the controller must never see it');
+      expect(transport.sent, isEmpty, reason: 'not even a refusal');
+      expect(transport.disowned.single, contains('another product'));
+    });
+
+    test('a greeting with no product at all is treated as foreign, because '
+        'the firmware that predates the field is the capturable one', () async {
+      // ABSENCE MEANS NO. Reading a missing `product` as "probably mine" would
+      // put the whole hole back exactly where it is deepest: every board
+      // flashed before 2026-08-25 omits it, and those are the boards either
+      // product can still take. Such a panel is recovered by flashing it over
+      // USB by hand, once.
+      final transport = _FakeTransport();
+      final link = PanelLink(transport);
+      final received = <PanelInbound>[];
+      link.messages.listen(received.add);
+
+      transport.deliver(encodePanelJson('{"t":"hello","fw":"0.1.27"}'));
+      await pumpEventQueue();
+
+      expect(received, isEmpty);
+      expect(transport.disowned, hasLength(1));
     });
 
     test('closing releases the transport and forgets any half-frame', () async {

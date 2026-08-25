@@ -5,12 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/composer_text.dart';
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../../shared/widgets/toast.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../../shared/widgets/modality_mark.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
@@ -18,6 +21,8 @@ import '../logic/chat_controller.dart';
 import '../logic/chat_message.dart';
 import '../logic/local_test_state.dart';
 import '../logic/playground_models.dart';
+import '../logic/image_budget.dart';
+import '../logic/image_shrink.dart';
 import '../logic/playground_request.dart';
 import 'attachment_bar.dart';
 import 'chat_bubble.dart';
@@ -126,12 +131,13 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     if (_attachments.isNotEmpty) setState(_attachments.clear);
   }
 
-  /// How many pictures this mode takes: one to animate, three to edit, and a
-  /// vision chat's own limit for a plain message.
-  int _imageLimit(PlaygroundModality modality) => switch (modality) {
+  /// How many pictures this mode takes: one to animate, three to edit — and no
+  /// number at all for a plain message, where what runs out is the room in the
+  /// request body rather than a count (see [imageBudgetLeft]).
+  int? _imageLimit(PlaygroundModality modality) => switch (modality) {
     PlaygroundModality.video => 1,
     PlaygroundModality.image => 3,
-    PlaygroundModality.text => maxChatImages,
+    PlaygroundModality.text => null,
   };
 
   /// ⌘V / Ctrl+V: a screenshot becomes an attachment, copied images become
@@ -143,7 +149,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
     final modality = _modalityFor(ref.read(playgroundModelsProvider));
     switch (paste) {
       case PastedImage(:final bytes, :final filename):
-        _attachImage(
+        await _attachImage(
           MediaAttachment(filename: filename, bytes: bytes),
           modality,
         );
@@ -166,19 +172,61 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
   ) async {
     for (final path in paths) {
       if (!isImageFilename(path)) continue;
-      final bytes = await File(path).readAsBytes();
+      final file = File(path);
+      // Refused unopened past the cap: shrinking decodes the picture first, and
+      // reading a 200 MB file to find that out would stop the window.
+      if (await file.length() > kMaxImageFileBytes) {
+        if (!mounted) return;
+        _sayOversized(fileNameOf(path));
+        continue;
+      }
+      final bytes = await file.readAsBytes();
       if (!mounted) return;
-      _attachImage(
+      await _attachImage(
         MediaAttachment(filename: fileNameOf(path), bytes: bytes),
         modality,
       );
     }
   }
 
-  void _attachImage(MediaAttachment image, PlaygroundModality modality) {
-    if (_attachments.length >= _imageLimit(modality)) return;
-    setState(() => _attachments.add(image));
+  /// Attaches one picture, shrunk to what a request may carry.
+  ///
+  /// The same ceiling the Chat tab attaches under: a picture rides in the
+  /// request body as base64 text, and one 5K screenshot is bigger on its own
+  /// than the whole body the relay accepts.
+  Future<void> _attachImage(
+    MediaAttachment image,
+    PlaygroundModality modality,
+  ) async {
+    final limit = _imageLimit(modality);
+    if (limit != null && _attachments.length >= limit) return;
+    final left = imageBudgetLeft(_attachments);
+    if (left <= 0) {
+      _say(pictureBudgetFullMessage(image.filename));
+      return;
+    }
+    final fitted = await fitImageToBudget(
+      image,
+      budgetBytes: imageBudgetForNext(left),
+    );
+    if (!mounted) return;
+    if (fitted == null) {
+      _sayOversized(image.filename);
+      return;
+    }
+    setState(() => _attachments.add(fitted));
   }
+
+  void _sayOversized(String filename) {
+    final message = oversizedAttachmentMessage([filename]);
+    if (message == null) return;
+    _say(message);
+  }
+
+  void _say(String message) => ToastScope.show(
+    context,
+    ToastSpec(message: message, severity: ToastSeverity.warning),
+  );
 
   /// Drops pasted text in at the cursor, exactly where the field would have.
   void _insertText(String insert) {
@@ -260,6 +308,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
       return NoModelYet(
         canManage: network.canManageProvider,
         onGoToEngines: () {
+          ref.read(analyticsProvider).enginesOpened('start_engine_btn');
           Navigator.of(context).pop();
           ref.read(shellSectionProvider.notifier).select(ShellSection.engines);
         },

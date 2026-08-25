@@ -9,6 +9,18 @@ import 'project.dart';
 /// the projects list each carried their own hand-typed copy.
 const projectFolderMissingMessage = "This folder isn't there any more.";
 
+/// The same thing said where it *stops* something — a turn that can't be sent
+/// because the folder it would run in is gone.
+///
+/// Names the path and the way out. The failure the user saw before this existed
+/// was "Couldn't start Claude Code on this computer", which is what a spawn into
+/// a missing working directory reports: true, useless, and pointing at the agent
+/// rather than at the folder that actually went away.
+String projectFolderGoneMessage(String path) =>
+    "This project's folder isn't there any more: $path\n"
+    'Point the project at another folder from its "…" menu, or start the chat '
+    'outside the project.';
+
 /// How long one folder gets to answer. A path on a share that has gone away
 /// doesn't answer at all, and one dead mount must not hold up the answer for the
 /// folders that are right here.
@@ -54,6 +66,17 @@ final missingProjectFoldersProvider = FutureProvider.autoDispose<Set<String>>((
 /// only have gone missing while the user was somewhere else.
 void revalidateProjectFolders(WidgetRef ref) =>
     ref.invalidate(missingProjectFoldersProvider);
+
+/// Whether [path] is gone, asked once for a single folder — what the send path
+/// checks before starting an agent in it.
+///
+/// Same probe and the same rule as the badge above, silence included: a share
+/// that has stopped answering must not turn into "your folder is gone" on the
+/// one screen where that sentence blocks the turn.
+Future<bool> projectFolderMissing(Ref ref, String path) async {
+  final (_, onDisk) = await _probeOne(path, ref.read(folderProbeProvider));
+  return !onDisk;
+}
 
 /// Which of [paths] came back missing, all asked at once — a folder on a slow
 /// share shouldn't queue behind the ones on the internal disk.

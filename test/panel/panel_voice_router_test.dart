@@ -43,10 +43,10 @@ void main() {
     test('the sentence goes in verbatim and the model is told not to translate '
         'it, because the turn it starts will be read in that language', () {
       final prompt = buildPanelRoutePrompt(
-        'mở lại cái retry guard',
+        'reopen the retry guard',
         candidates,
       );
-      expect(prompt, contains('mở lại cái retry guard'));
+      expect(prompt, contains('reopen the retry guard'));
       expect(prompt, contains('do NOT translate'));
     });
 

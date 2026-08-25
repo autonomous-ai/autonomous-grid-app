@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:yaml_edit/yaml_edit.dart';
 
+import '../../../../core/agent_homes.dart';
 import '../../../../core/grid_paths.dart';
 import '../connector_runtime.dart';
 import '../connector_token.dart';
@@ -49,7 +50,9 @@ class HermesConnectorServers extends MarkedMapProjection {
   String get _hermesHome {
     final override = _home ?? Platform.environment['HERMES_HOME'];
     if (override != null && override.isNotEmpty) return override;
-    return '${GridPaths.userHome}/.hermes';
+    // Grid's own profile, not the user's root — the same home every `hermes`
+    // the app spawns is given (see HostEnvironment.hermesEnvironment).
+    return AgentHomes.hermesProfile(GridPaths.userHome);
   }
 
   File get configFile => File('$_hermesHome/config.yaml');

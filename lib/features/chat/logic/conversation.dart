@@ -442,6 +442,13 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
   if (message.took != null) 'took_ms': message.took!.inMilliseconds,
   if (message.firstToken != null)
     'first_token_ms': message.firstToken!.inMilliseconds,
+  if (message.sentAt != null)
+    'sent_at': message.sentAt!.toUtc().toIso8601String(),
+  // Written only for the turns the app sent, so an ordinary chat's file is
+  // byte-identical to what every build before this wrote — and so a transcript
+  // saved by an older one reads back as the user's own words, which is what it
+  // was (see [TurnOrigin]).
+  if (message.sentBy.isFromApp) 'sent_by': message.sentBy.name,
 };
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
@@ -511,7 +518,21 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
     firstToken: json['first_token_ms'] is num
         ? Duration(milliseconds: (json['first_token_ms'] as num).toInt())
         : null,
+    sentAt: _parseNullableDate(json['sent_at']),
+    sentBy: _parseOrigin(json['sent_by']),
   );
+}
+
+/// The origin [raw] names, defaulting to the person.
+///
+/// A key nobody wrote, and a key written by a build that knows an origin this
+/// one doesn't, both read as [TurnOrigin.user]: the turn is drawn as it always
+/// was rather than as a line the reader can't open.
+TurnOrigin _parseOrigin(Object? raw) {
+  for (final origin in TurnOrigin.values) {
+    if (origin.name == raw) return origin;
+  }
+  return TurnOrigin.user;
 }
 
 MediaKind _parseKind(Object? raw) {

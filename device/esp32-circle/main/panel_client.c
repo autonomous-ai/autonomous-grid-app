@@ -76,6 +76,9 @@ static EXT_RAM_BSS_ATTR char s_ids[MAX_TILES][ID_MAX];
 // volatile: written on one task and read on another (the handshake task decides a session ended, the
 // link task and the UI read the result), and not worth a mutex — a stale read costs one loop period.
 static volatile bool s_connected;     // `welcome` seen, session believed live
+// The last `welcome` named THIS product. Separate from s_connected because a protocol mismatch clears
+// that one while the app reflashes the panel over the same cable — see on_welcome().
+static volatile bool s_product_ok;
 static uint32_t s_bad;
 static uint32_t s_unknown;
 static char     s_machine_id[64];
@@ -183,6 +186,10 @@ static void send_hello(void)
     cJSON *m = cJSON_CreateObject();
     if (!m) return;
     cJSON_AddStringToObject(m, "t", "hello");
+    // WHICH PRODUCT IS GREETING. First field after the type because it is the one that decides whether
+    // the rest is addressed to the reader at all — see PANEL_PRODUCT. An app that does not recognise it
+    // is supposed to answer nothing and let go of the port.
+    cJSON_AddStringToObject(m, "product", PANEL_PRODUCT);
     // From the image, not from a constant — see panel_fw_version(). grid-app compares this against the
     // version inside the .bin it is holding, so a second source for it is a permanent false mismatch.
     cJSON_AddStringToObject(m, "fw", panel_fw_version());
@@ -443,6 +450,10 @@ static void session_lost(const char *why)
     // the way a project tile would be.
     if (!s_connected && s_reported_mismatch == 0) return;
     s_connected = false;
+    // Cleared with the rest of it. The gate on `fw.offer` is only worth having if it expires: leaving it
+    // armed would mean that once the user's own app had greeted, ANY app on the port could write flash
+    // for as long as the board stayed up — including one that arrived after this cable came out.
+    s_product_ok = false;
     s_reported_mismatch = 0;
     s_last_rx_us = 0;   // no session, nothing to time out; the next inbound message re-arms it
     s_machine_id[0] = s_machine_name[0] = '\0';
@@ -517,6 +528,29 @@ static void apply_tile(const cJSON *j)
 
 static void on_welcome(const cJSON *root)
 {
+    // WHOSE APP IS THIS? Answered first, before the protocol number, because a foreign app's protocol
+    // number is not a mismatch to report — it is a number from another lineage that means nothing here,
+    // and reporting it would put "Panel needs an update" on the screen over a perfectly healthy panel.
+    //
+    // A POSITIVE match, so ABSENCE MEANS NO: reading a missing field as "probably mine" puts the whole
+    // hole back, because the app that predates the field is exactly the one that can still capture this
+    // board. This board is also the Harness dial and its daemon can open this port too (PANEL_PRODUCT).
+    //
+    // What it gates is s_product_ok, and through it `fw.offer` — NOT s_connected. The two are separate
+    // on purpose: a protocol mismatch deliberately leaves s_connected false while the app reflashes the
+    // panel over that very disagreement, so gating firmware on a live session would disable the one
+    // path that repairs a stale panel.
+    //
+    // Silent. There is no answer to send someone else's app, and nothing on the glass to change: the
+    // user's own app may be one retry away and a warning screen would outlive it. ESP_LOGD, not W, for
+    // the same reason — a foreign daemon greets on a timer, and this must not become the log.
+    const char *product = jstr(root, "product");
+    if (strcmp(product, PANEL_PRODUCT) != 0) {
+        s_product_ok = false;
+        ESP_LOGD(TAG, "welcome from product \"%s\", not " PANEL_PRODUCT " — ignored", product);
+        return;
+    }
+    s_product_ok = true;
     const int proto = jint(root, "proto");
     const cJSON *machine = cJSON_GetObjectItemCaseSensitive(root, "machine");
     char id[sizeof(s_machine_id)], name[sizeof(s_machine_name)];
@@ -611,6 +645,13 @@ static void on_chats(const cJSON *root)
         for (int j = 0; j < n; j++) if (strcmp(cur, s_ids[j]) == 0) { present = true; break; }
         if (!present) ui_tile_remove(cur);
     }
+    // ...and now the ORDER, which the two steps above do not touch: the walk matches tiles by id and the
+    // append lands at the end, so without this the ring keeps whatever order the tiles first arrived in.
+    // The app's list is the sidebar's — pinned first, most recently spoken in first — and it resends the
+    // whole thing whenever that moves, which is the only reason there is anything here to apply.
+    _Static_assert(ID_MAX == 48, "ui_tiles_reorder spells the id width out — keep it equal to ID_MAX");
+    ui_tiles_reorder(s_ids, n);
+
     // The list is built: drop the boot spinner and land on a project (or stay on the empty page).
     ui_land_after_reload();
     display_unlock();
@@ -862,7 +903,16 @@ static void handle_json(const uint8_t *payload, size_t len)
         // here: any state kept about a declined offer. panel-protocol.md §2 says the app re-offers on the next
         // `hello`, which is fifteen seconds away, so remembering one would only be a second opinion that
         // could disagree with the app's.
-        fw_on_offer(jstr(root, "version"), jint(root, "size"), jstr(root, "sha256"));
+        //
+        // GATED ON THE PRODUCT, and this is the gate that matters most on this side. Everything else a
+        // foreign app could send draws something wrong on a screen; this one writes to flash and reboots.
+        // s_product_ok is false until a `welcome` names PANEL_PRODUCT, so an app that never greeted, or
+        // greeted as something else, cannot reach fw_on_offer at all.
+        if (!s_product_ok) {
+            ESP_LOGW(TAG, "fw.offer before any " PANEL_PRODUCT " welcome — refused");
+        } else {
+            fw_on_offer(jstr(root, "version"), jint(root, "size"), jstr(root, "sha256"));
+        }
     } else if (strcmp(t, "scrolltest") == 0) {
         ui_scroll_benchmark(jint(root, "passes"));   // development instrument — see ui_scroll_benchmark
     // ⚠️ NO `screenshot` CASE, and it is worth knowing why rather than rediscovering it. The predecessor

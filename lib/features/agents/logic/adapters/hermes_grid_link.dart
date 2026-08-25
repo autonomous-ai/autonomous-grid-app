@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/relay_identity.dart';
 import '../../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../../infrastructure/cli/hermes_cron_rearm.dart';
 import '../../../../infrastructure/cli/hermes_cron_service.dart';
@@ -92,6 +93,17 @@ String pointingKey(NetworkCredential network, String model) {
 /// config nobody had written. So it lives here, called by all of them.
 final hermesGridLinkProvider = Provider<HermesGridLink>(HermesGridLink.new);
 
+/// The grid an unattended run actually reaches ([HermesGridLink.configuredGrid]),
+/// so a screen can say so when it differs from the grid on screen.
+///
+/// Re-read whenever the app re-points Hermes ([hermesConfiguredProvider]) — that
+/// is the one event that changes the answer from inside the app; a hand-edited
+/// config is picked up on the next launch.
+final hermesPointedGridProvider = FutureProvider<String?>((ref) {
+  ref.watch(hermesConfiguredProvider);
+  return ref.watch(hermesGridLinkProvider).configuredGrid();
+});
+
 class HermesGridLink {
   HermesGridLink(this._ref, {HermesConfigFile? config})
     : _config = config ?? HermesConfigFile();
@@ -126,6 +138,10 @@ class HermesGridLink {
       network.relayBaseUrl,
       network.relayApiKey,
       [model],
+      // The Hermes *Grid* runs, so this lands in Grid's profile. Without it the
+      // app would repin the model and toolsets of the user's own `hermes` every
+      // time a chat turn or a scheduled task went out.
+      gridsOwnHermes: true,
     );
     if (result is ApplyError) {
       return "Couldn't point Hermes at this grid: ${result.message}";
@@ -196,6 +212,25 @@ class HermesGridLink {
     if (model is! String) return null;
     final trimmed = model.trim();
     return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// The grid `~/.hermes` answers with, as a network id — null when its config
+  /// names no grid relay (a hand-written endpoint, or nothing at all).
+  ///
+  /// Read off the disk every time, never remembered: the config outlives the
+  /// app. The scheduler is a daemon of Hermes's own, so tonight's task runs
+  /// against whatever was written here in some earlier session — which is not
+  /// always the grid the window is showing, and was invisible until this.
+  /// A config too broken to parse counts as naming no grid, rather than
+  /// throwing: the only caller wants a name to put in a sentence, and Riverpod
+  /// answers a thrown future by calling this ten more times.
+  Future<String?> configuredGrid() async {
+    try {
+      final base = await _config.valueAt(['model', 'base_url']);
+      return base is String ? gridIdFromRelayBase(base) : null;
+    } on Object {
+      return null;
+    }
   }
 
   /// Whether Hermes already has a model it can actually answer with. Lets a

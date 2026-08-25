@@ -106,7 +106,10 @@ extern const lv_font_t geist_sem_24;  // largest display: tile agent name + over
 // it cannot disagree about how many there can be. The UI keeps only a thin shell per project and
 // materialises the heavy content for the active tile ± a window.
 #define MAX_EVENTS   1      // tile shows only the latest event (the most recent summary)
-#define TODO_VISIBLE_ROWS 4 // todo checklist shows this many rows; the rest scroll (keeps status on screen)
+#define TODO_COUNT_W  62    // room reserved on a todo row for its "n/total" counter
+#define TODO_VISIBLE_ROWS 2 // most a plan may draw at once — see ui_tile_set_todos, which shows the work in
+                            // hand and not the plan around it. Only reached by an agent that runs two
+                            // items at once; the ordinary answer is one row.
 #define AGENTS_VISIBLE_ROWS 3 // sub-agent list shows this many rows; the rest scroll (coexists with the tool line)
 #define BUSY_DOTS    3      // "processing" indicator = this many blinking dots (a loading animation)
 #define PREVIEW_BYTES 220   // tile teaser length (bytes, UTF-8 safe) — one card has room for a longer
@@ -355,6 +358,24 @@ static void open_reader_text(const char *full); // swipe-up → open the full-te
 static void open_agent_detail(const char *proj_id); // notification tap → focus that agent AND open its detail
 static void reader_close(lv_event_t *e); // swipe-down at top → back to projects (defined below)
 static void voice_overlay_set(bool on);  // voice: dark overlay + free/restore tile content (RAM headroom)
+static void notif_pill_tap(lv_event_t *e);       // the bell → open the drawer (defined below)
+static void switch_close(void);                  // close the picker without picking (defined below)
+
+// ---- agent switcher ----
+// A picker over the MOST RECENT agents, opened by PULLING DOWN from the top of an agent tile. Swiping the
+// carousel is the only other way across, and it is one tile at a time: with a few dozen chats, reaching the
+// one you want means passing every one you don't. The list is the app's own order — see switch_rebuild.
+//
+// It took the pull-down from the notification drawer, and the drawer moved to a tap on the bell. The two
+// had been fighting for the same 44px band at the top of the face: whichever control sat there was inside
+// the drawer's gesture, and a bell that only needs a tap has no business owning a whole edge of a round
+// screen while the thing you reach for constantly needs a button.
+#define SWITCH_LIST_MAX 10
+static lv_obj_t *s_switch_screen;               // full-screen overlay on the top layer, hidden by default
+static lv_obj_t *s_switch_list;                 // the scrollable column of rows inside it
+// The ids currently drawn, indexed by the row's user_data. Fixed storage rather than a strdup per row:
+// the array's life IS the picker's, and rows are rebuilt on every open.
+static char s_switch_ids[SWITCH_LIST_MAX][ID_MAX];
 
 typedef struct {
     char id[48];
@@ -1504,16 +1525,22 @@ void ui_init(void)
     // Notification pill (top-mid): a "🔔 N" unread badge on the projects screen. Pure indicator (open the
     // drawer by pulling down from the top edge — see touch.c). Created before s_dim so the dim overlay
     // still darkens it.
+    // THE BELL IS A BUTTON NOW. It used to be a read-only badge and the drawer opened by pulling down from
+    // the top; the pull-down became the agent switcher, which is reached far more often than a list of
+    // finished turns, so the drawer moved onto the badge that was already announcing it.
     s_notif_pill = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_notif_pill);
-    lv_obj_clear_flag(s_notif_pill, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(s_notif_pill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_notif_pill, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_notif_pill, notif_pill_tap, LV_EVENT_CLICKED, NULL);
     lv_obj_set_size(s_notif_pill, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(s_notif_pill, lv_color_hex(0x006fff), 0);   // Figma blue 🔔 badge
     lv_obj_set_style_bg_opa(s_notif_pill, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_notif_pill, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_pad_hor(s_notif_pill, 13, 0);
     lv_obj_set_style_pad_ver(s_notif_pill, 4, 0);
-    lv_obj_align(s_notif_pill, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_align(s_notif_pill, LV_ALIGN_TOP_MID, 0, 22);   // where the switcher's mark briefly sat
+    lv_obj_set_style_bg_opa(s_notif_pill, LV_OPA_80, LV_STATE_PRESSED);   // it presses now, so it says so
     lv_obj_set_flex_flow(s_notif_pill, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_notif_pill, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(s_notif_pill, 6, 0);
@@ -1603,7 +1630,7 @@ void ui_init(void)
     lv_obj_remove_flag(s_dim, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(s_dim, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Voice-mode overlay (Figma "Gọi voice, có lớp overlay"): a dark full-screen layer shown while
+    // Voice-mode overlay (the Figma frame with the dimmed voice call): a dark full-screen layer shown while
     // recording/uploading, sitting BEHIND the mic/dots/pulse voice indicator. voice_overlay_set() shows it
     // AND frees all tile content while it's up, so the PCM capture keeps its internal-RAM headroom.
     s_voice_overlay = lv_obj_create(lv_layer_top());
@@ -2702,6 +2729,14 @@ bool ui_action_row_hit(uint16_t x, uint16_t y)
         for (uint32_t i = 0; i < n; i++)
             if (lv_obj_hit_test(lv_obj_get_child(s_agent_acts, i), &p)) return true;
     }
+    // The notification bell. Claiming it here is not an optimisation — it is the ONLY reason it can be
+    // tapped at all: it sits at the very top of the face, inside the band touch.c reads as a pull-down,
+    // and a captured press goes to the control instead of to the gesture. Without this the bell would be
+    // a button you cannot press, standing in the middle of the swipe that opens the switcher.
+    //
+    // Not while the drawer is already open, when everything on the screen belongs to it.
+    if (!s_notif_open && s_notif_pill && !lv_obj_has_flag(s_notif_pill, LV_OBJ_FLAG_HIDDEN) &&
+        lv_obj_hit_test(s_notif_pill, &p)) return true;
     return false;
 }
 
@@ -2834,6 +2869,7 @@ static inline int32_t ctl_row_y(void)
 // Total vertical band the floating chip row occupies above the name.
 static inline int32_t ctl_band_h(void) { return ctl_pill_h() + CTL_NAME_GAP; }
 
+
 // Is the row actually on screen for this agent? It is hidden on local machines and when the feature is off,
 // and the working layout has to reserve its band only when it is really there.
 static inline bool ctl_row_shown(tile_t *p)
@@ -2850,6 +2886,10 @@ static inline bool ctl_row_shown(tile_t *p)
 // to pass its own hit test.
 static void header_ext_draw_cb(lv_event_t *e)
 {
+    // This number is the reach of everything hanging above the header, and anything further out than it is
+    // clipped away — drawn nowhere and tappable nowhere, with no warning. A switcher mark briefly lived a
+    // band higher and was invisible for exactly this reason. Add a line above the header and this has to
+    // grow with it.
     lv_event_set_ext_draw_size(e, ctl_band_h());
 }
 
@@ -3192,6 +3232,7 @@ static void build_shell(tile_t *p)
     model_chip_paint(p);
     effort_chip_paint(p);
     p->ctl_row = ctl;
+
     // ALWAYS SHOWN. The reference gated this row on the machine being a REMOTE (adapter) one, because that
     // is where its runtime model/effort profile applied. There is one machine here and no profile, and
     // `agent` + `model` come with every project (docs/panel-protocol.md, the project shape), so the gate
@@ -3459,6 +3500,73 @@ void ui_tile_remove(const char *chat_id)
     display_unlock();
 }
 
+// Put the tiles in the order the app sent, in place.
+//
+// THE CAROUSEL USED TO IGNORE ORDER ENTIRELY. The reconcile in panel_client.c matches incoming tiles by
+// id — update in place, or append — so a tile's position was the order it FIRST appeared and nothing
+// afterwards could change it. The app has reordered its list all along (`_commit` re-sorts newest-first,
+// pinned first, and the panel is built from the same `liveConversations` the sidebar uses) and the mirror
+// has always resent the whole list when the order moved, saying so in as many words. This end simply
+// dropped it. The visible cost: a chat you just spoke in stayed where it was, and a NEW chat — first in
+// the app — arrived at the far end of the ring.
+//
+// Caller holds the lock (this runs inside the reconcile's single display_lock, whose whole point is that
+// the poll lands as one transition rather than a wobble).
+void ui_tiles_reorder(const char ids[][48], int n)
+{
+    if (!ids || n < 0) return;
+    // Most pushes carry the order already on the glass — a tile whose recap changed, a model swapped. Do
+    // nothing then, so the common case costs one walk of the ids and no teardown at all.
+    if (n == s_tile_count) {
+        bool same = true;
+        for (int i = 0; i < n; i++)
+            if (strcmp(s_tiles[i].id, ids[i]) != 0) { same = false; break; }
+        if (same) return;
+    }
+
+    // The chat in front of the user, remembered BY ID — its index is exactly what is about to change.
+    int cc = carousel_col();
+    int cr = ring_of_col(cc);
+    char keep[48] = "";
+    if (cr >= RING_LEAD && cr < ring_agents_end()) {
+        int ai = agent_of_ring(cr);
+        if (ai >= 0 && ai < s_tile_count) snprintf(keep, sizeof keep, "%s", s_tiles[ai].id);
+    }
+
+    // Selection sort against the app's list. Whole-struct swaps, so a tile carries its materialised LVGL
+    // subtree, its live turn and its PSRAM strings to the new slot — nothing is rebuilt to move it.
+    // Anything the app did not name (there should be none; the reconcile removes them first) is pushed to
+    // the tail keeping its relative order, rather than being stranded in the middle.
+    for (int i = 0; i < n && i < s_tile_count; i++) {
+        int j = -1;
+        for (int k = i; k < s_tile_count; k++)
+            if (strcmp(s_tiles[k].id, ids[i]) == 0) { j = k; break; }
+        if (j < 0 || j == i) continue;
+        tile_t t = s_tiles[i]; s_tiles[i] = s_tiles[j]; s_tiles[j] = t;
+    }
+
+    // Re-anchor so the same CHAT stays centred, not the same position. Cheaper than the add/remove path:
+    // the ring length did not change, so only this one index moved.
+    int ni = keep[0] ? find_proj(keep) : -1;
+    if (ni >= 0) {
+        int col = col_for_ring_near(cc, ring_of_agent(ni));
+        carousel_goto(col, LV_ANIM_OFF);
+        // ...and hand the watched tile its new column DIRECTLY, instead of letting update_content_window
+        // free it for sitting at one that no longer maps to it. It is the tile a live turn is drawing
+        // into, and its tool line, sub-agent rows and todo list are LVGL-only — materialize_content
+        // rebuilds the recap card and the Working… row from the model, but those three have no model
+        // behind them and would blank until the next `turn.parts`. Reordering happens *because* a turn
+        // started here, so that is precisely the moment it would show.
+        tile_t *p = &s_tiles[ni];
+        if (p->content_live && p->tile) {
+            lv_obj_set_x(p->tile, col * carousel_w());
+            p->tile_col = col;
+        }
+    }
+    apply_active_from_col();   // s_active_idx follows the ring; the focus it stages is deduped by id
+    update_content_window();   // frees the neighbours that no longer map to their column, builds the rest
+}
+
 void ui_tile_clear_all(void)
 {
     display_lock();
@@ -3693,7 +3801,8 @@ bool ui_reader_is_open(void)
 int ui_notif_pull_zone_px(void)
 {
     // 44 on a project tile so the chip row above it still gets taps; the wider 90 everywhere else,
-    // including Settings, whose top holds nothing to protect.
+    // including Settings, whose top holds nothing to protect. The bell sits inside this band on every one
+    // of them and is exempt by ui_action_row_hit — a press that starts on it is a tap, not a pull.
     return on_project_page() ? 44 : 90;
 }
 
@@ -3728,6 +3837,155 @@ void ui_focus_tile(const char *chat_id)
         rebuild_page_dots();
     }
     display_unlock();
+}
+
+// ---- the agent switcher's picker ----
+
+bool ui_switch_is_open(void)
+{
+    return s_switch_screen && !lv_obj_has_flag(s_switch_screen, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void switch_close(void)
+{
+    if (s_switch_screen) lv_obj_add_flag(s_switch_screen, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void switch_bg_tap(lv_event_t *e) { (void)e; switch_close(); }
+
+// Picking is the same move a swipe makes, and it has to stay that way: ui_focus_tile centres the tile, and
+// apply_active_from_col is what STAGES the focus message so the window follows. Skipping the second would
+// leave the panel looking at one chat and the desktop at another — the two screens are one desk.
+static void switch_row_tap(lv_event_t *e)
+{
+    // current_target, not target: the row is what carries the index, and a click that landed on one of its
+    // labels bubbles up with target still pointing at the label.
+    int idx = (int)(intptr_t)lv_obj_get_user_data(lv_event_get_current_target(e));
+    if (idx < 0 || idx >= SWITCH_LIST_MAX) return;
+    char id[ID_MAX];
+    snprintf(id, sizeof id, "%s", s_switch_ids[idx]);   // copy: closing rebuilds nothing, but a pick might
+    switch_close();
+    if (!id[0]) return;
+    ui_focus_tile(id);
+    display_lock();
+    apply_active_from_col();
+    display_unlock();
+}
+
+// Fill the picker from the FIRST tiles in the list.
+//
+// That is already "the agents you touched most recently" and not an approximation of it: the tile order is
+// grid-app's own chat order, pushed whole whenever it moves — pinned first, then most recently spoken in.
+// Sorting here would invent a second opinion about recency out of data this device does not have, and it
+// would disagree with the sidebar the moment a chat was pinned. Caller holds the lock.
+static void switch_rebuild(void)
+{
+    if (!s_switch_list) return;
+    lv_obj_clean(s_switch_list);
+    memset(s_switch_ids, 0, sizeof(s_switch_ids));
+    int n = s_tile_count < SWITCH_LIST_MAX ? s_tile_count : SWITCH_LIST_MAX;
+    for (int i = 0; i < n; i++) {
+        tile_t *t = &s_tiles[i];
+        snprintf(s_switch_ids[i], ID_MAX, "%s", t->id);
+        // ...and nothing is "here" when the page behind the picker is the Overview or Settings, which name
+        // no agent. Marking one anyway would point at whichever tile was last centred.
+        bool here = (i == s_active_idx) && !s_overview_active && !s_settings_active;
+
+        lv_obj_t *row = lv_button_create(s_switch_list);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_color(row, COL_CARD, 0);
+        lv_obj_set_style_bg_opa(row, here ? LV_OPA_COVER : LV_OPA_60, 0);
+        lv_obj_set_style_radius(row, 16, 0);
+        lv_obj_set_style_border_width(row, here ? 1 : 0, 0);
+        lv_obj_set_style_border_color(row, COL_ACCENT, 0);
+        lv_obj_set_style_shadow_width(row, 0, 0);
+        lv_obj_set_style_pad_hor(row, 16, 0);
+        lv_obj_set_style_pad_ver(row, 10, 0);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(row, 2, 0);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_user_data(row, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(row, switch_row_tap, LV_EVENT_CLICKED, NULL);
+
+        // The chat's own name, then the project under it — the same two lines the tile leads with, so the
+        // list reads as the tiles it is a shortcut through. A working agent says so in green.
+        // A size up on both lines, and centred. 24 -> med 28 for the name: 29 is what "+5" asks for and no
+        // such face is built, so it takes the nearest one — which is also the weight every other title on
+        // this panel wears (the tile's own name is med 38, the reader's med 32). The subtitle lands on
+        // reg 25 exactly.
+        lv_obj_t *nm = lv_label_create(row);
+        lv_obj_set_style_text_font(nm, &geist_med_28, 0);
+        lv_obj_set_style_text_color(nm, t->busy_model ? COL_VOICE : COL_FG, 0);
+        lv_obj_set_width(nm, lv_pct(100));
+        lv_obj_set_style_text_align(nm, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
+        lv_label_set_text(nm, t->name[0] ? t->name : "Untitled");
+        if (t->project[0]) {
+            lv_obj_t *pr = lv_label_create(row);
+            lv_obj_set_style_text_font(pr, &geist_reg_25, 0);
+            lv_obj_set_style_text_color(pr, COL_MUTED, 0);
+            lv_obj_set_width(pr, lv_pct(100));
+            lv_obj_set_style_text_align(pr, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_long_mode(pr, LV_LABEL_LONG_DOT);
+            lv_label_set_text(pr, t->project);
+        }
+    }
+    if (n == 0) make_label(s_switch_list, "No agents yet", COL_MUTED, &geist_med_28);
+}
+
+static void switch_build(void)
+{
+    if (s_switch_screen) return;
+    s_switch_screen = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(s_switch_screen);
+    lv_obj_set_size(s_switch_screen, lv_pct(100), lv_pct(100));
+    lv_obj_set_pos(s_switch_screen, 0, 0);
+    lv_obj_set_style_bg_color(s_switch_screen, COL_BG, 0);
+    lv_obj_set_style_bg_opa(s_switch_screen, LV_OPA_COVER, 0);
+    lv_obj_add_flag(s_switch_screen, LV_OBJ_FLAG_CLICKABLE);     // empty-area tap closes it
+    lv_obj_add_event_cb(s_switch_screen, switch_bg_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(s_switch_screen, LV_OBJ_FLAG_HIDDEN);
+
+    // NO CLOSE BUTTON. A tap on the empty area closes it, and on this face there is always empty area to
+    // tap: the list is SAFE_CONTENT_W wide inside a 466px circle, so ~40px of backdrop runs down each side
+    // however many rows there are, plus whatever is left above and below.
+    //
+    // The rows live in a column that is CENTRED rather than pinned to the top, which is only possible now
+    // that nothing sits above them. Height is content-driven with a ceiling, so a short list sits in the
+    // middle of the face instead of hanging from a fixed box, and a full one clamps and scrolls.
+    s_switch_list = lv_obj_create(s_switch_screen);
+    lv_obj_remove_style_all(s_switch_list);
+    lv_obj_set_width(s_switch_list, SAFE_CONTENT_W);
+    lv_obj_set_height(s_switch_list, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(s_switch_list, 360, 0);   // 360 keeps the end rows inside the round face
+    lv_obj_center(s_switch_list);
+    lv_obj_set_flex_flow(s_switch_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_switch_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(s_switch_list, 8, 0);
+    lv_obj_set_scroll_dir(s_switch_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_switch_list, LV_SCROLLBAR_MODE_OFF);
+}
+
+// The bell's tap. A plain wrapper so the pill can stay a bare object rather than growing a second
+// meaning: everything about WHEN the drawer may open already lives in ui_notif_open.
+static void notif_pill_tap(lv_event_t *e) { (void)e; ui_notif_open(); }
+
+void ui_switch_open(void)
+{
+    // From ANY carousel page, not only an agent tile: the gesture it inherited opened the drawer on the
+    // Overview and on Settings too, and a list of recent agents is if anything more useful from the home
+    // page than from one of the agents themselves.
+    if (voice_active() || display_is_asleep() || lv_screen_active() != scr_projects) return;
+    display_lock();
+    switch_build();
+    switch_rebuild();
+    lv_obj_clear_flag(s_switch_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_switch_screen);
+    lv_obj_scroll_to_y(s_switch_list, 0, LV_ANIM_OFF);
+    display_unlock();
+    ESP_LOGI(TAG, "agent switcher: %d recent", s_tile_count < SWITCH_LIST_MAX ? s_tile_count : SWITCH_LIST_MAX);
 }
 
 // "Home" gesture (bottom-edge swipe-up, from touch.c): jump to the Overview tile (ring 0) from ANY screen.
@@ -3838,7 +4096,7 @@ static void notif_badge_apply(void)
     if (!s_notif_pill) return;
     int n = notif_count();
     bool show = n > 0 && !display_is_asleep() && lv_screen_active() == scr_projects
-                && !s_notif_open;   // shown on the Overview home too
+                && !s_notif_open && !ui_switch_is_open();   // shown on the Overview home too
     set_hidden(s_notif_pill, !show);
     if (show && s_notif_pill_lbl) { char b[8]; snprintf(b, sizeof b, "%d", n); lv_label_set_text(s_notif_pill_lbl, b); }
 }
@@ -4070,7 +4328,7 @@ static bool cp_in_font(uint32_t cp)
 {
     if (cp == '\n' || cp == '\t') return true;
     if (cp >= 0x20 && cp <= 0x7E) return true;        // ASCII
-    if (cp >= 0xA0 && cp <= 0x24F) return true;       // Latin-1 + Extended-A/B (đ ơ ư …)
+    if (cp >= 0xA0 && cp <= 0x24F) return true;       // Latin-1 + Extended-A/B
     if (cp >= 0x1E00 && cp <= 0x1EFF) return true;    // Latin Extended Additional (Vietnamese)
     if (cp >= 0x2013 && cp <= 0x2026) return true;    // – — ' ' " " …
     if (cp == 0x203A || cp == 0x2713 || cp == 0x2717) return true; // › ✓ ✗
@@ -4442,9 +4700,21 @@ void ui_tile_set_agents(const char *chat_id, const struct cJSON *agents_)
     display_unlock();
 }
 
-// The plan, from `turn.parts.todos[]` — an array of `{text, status}`. Windows to TODO_VISIBLE_ROWS rows
-// and scrolls the rest, auto-scrolling the running item into view; the recap card is hidden while it
-// shows. NULL/empty clears it and restores the card.
+// The plan, from `turn.parts.todos[]` — an array of `{text, status}`. Draws THE WORK IN HAND, not the plan
+// around it: the running item, and a `n/total` counter so the rest is still accounted for. The recap card
+// is hidden while it shows; NULL/empty clears it and restores the card.
+//
+// It used to draw every item into a 4-row scroller with a permanent scrollbar. A plan is regularly a few
+// dozen items long, and what that produced on a 466px face was a wall of text sliding under a bar — the
+// one line that mattered somewhere inside it. The list is not lost: it is on the desktop, in full, where
+// there is room to read it. What the panel is for is the glance.
+//
+// WHEN NOTHING IS RUNNING, THE FIRST PENDING ITEM STANDS IN, and that is not a nicety. There are real
+// moments with no running item — the plan just written, the beat between one item finishing and the next
+// starting, everything done — and drawing nothing through them would make the box vanish and come back on
+// every transition. A checklist that blinks out each time the agent moves on is worse to watch than the
+// wall it replaced. Standing in reads correctly too: it is the thing about to be worked on. Only when
+// nothing is left to do does this draw nothing, and by then the turn is ending anyway.
 //
 // ⚠️ A TODO'S `status` IS ITS OWN THREE-VALUE VOCABULARY — pending · running · done — and it is NOT a
 // step's four. **An unrecognised todo status is drawn as `pending`, never as done**, which is the exact
@@ -4467,17 +4737,36 @@ void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
     if (p->todo) { lv_obj_delete(p->todo); p->todo = NULL; p->todo_active = NULL; }
 
     int n = (todos && cJSON_IsArray(todos)) ? cJSON_GetArraySize(todos) : 0;
-    if (n <= 0) {                                   // no list → bring the event card back, but only if the
-        // turn isn't still processing (p->busy). During processing we keep the card hidden so ONLY the
-        // "Working… (elapsed · tokens)" row shows; clear_busy un-hides it when the turn ends.
+
+    // WHICH ITEMS, decided before a single object is built. Running ones win; the first unfinished item
+    // stands in when none is running; nothing at all means the plan is done.
+    //
+    // "not done" rather than "pending" for the stand-in, on purpose: this file's rule is that an
+    // unrecognised todo status settles to pending, never to done (see the note above the function), and
+    // asking the question this way keeps that true for a value from a newer app instead of quietly
+    // skipping it.
+    int show[TODO_VISIBLE_ROWS];
+    int shown = 0, standin = -1;
+    for (int k = 0; k < n; k++) {
+        const cJSON *it = cJSON_GetArrayItem(todos, k);
+        const cJSON *sj = it ? cJSON_GetObjectItemCaseSensitive(it, "status") : NULL;
+        const char *st = cJSON_IsString(sj) ? sj->valuestring : "";
+        if (strcmp(st, "running") == 0) {
+            if (shown < TODO_VISIBLE_ROWS) show[shown++] = k;
+        } else if (standin < 0 && strcmp(st, "done") != 0) {
+            standin = k;
+        }
+    }
+    if (shown == 0 && standin >= 0) show[shown++] = standin;
+
+    if (shown == 0) {                               // no plan, or every item finished → bring the event
+        // card back, but only if the turn isn't still processing (p->busy). During processing we keep the
+        // card hidden so ONLY the "Working… (elapsed · tokens)" row shows; clear_busy un-hides it when the
+        // turn ends.
         if (p->list && !p->busy) lv_obj_clear_flag(p->list, LV_OBJ_FLAG_HIDDEN);
         display_unlock();
         return;
     }
-
-    // Show ALL items (no windowing) inside a scrollable box; remember the in_progress row so we can
-    // auto-scroll it into view after building.
-    int start = 0, end = n;
 
     if (p->list) lv_obj_add_flag(p->list, LV_OBJ_FLAG_HIDDEN);   // hide event card while the list shows
     if (p->tool_line) lv_obj_add_flag(p->tool_line, LV_OBJ_FLAG_HIDDEN);   // todos own the space now
@@ -4485,31 +4774,26 @@ void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
     p->todo = lv_obj_create(p->body);
     lv_obj_remove_style_all(p->todo);
     lv_obj_set_width(p->todo, SAFE_CONTENT_W);
-    lv_obj_set_height(p->todo, LV_SIZE_CONTENT);   // measured after building; capped below if too tall
+    lv_obj_set_height(p->todo, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(p->todo, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(p->todo, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);  // rows centered horizontally
+    lv_obj_set_flex_align(p->todo, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(p->todo, 7, 0);
-    // CLICKABLE so a press lands ON the box (not through it to the tileview) → LVGL scrolls THIS box
-    // vertically instead of letting the tileview eat the drag. SCROLL_CHAIN off so a vertical drag never
-    // bubbles up to the horizontal tileview.
-    lv_obj_add_flag(p->todo, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);   // vertical scroll through all items
-    lv_obj_clear_flag(p->todo, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
-    lv_obj_set_scroll_dir(p->todo, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(p->todo, LV_SCROLLBAR_MODE_ON);   // always visible → confirms the scroll region
+    // A PLAIN COLUMN NOW. At most TODO_VISIBLE_ROWS rows are ever built, so they always fit: the scroll
+    // region, the permanent scrollbar, the CLICKABLE flag that kept the drag off the tileview, the chain
+    // guard, the measure-and-pin-to-N-rows pass and the scroll-the-running-row-into-view call all existed
+    // to manage a list that no longer exists here.
+    lv_obj_clear_flag(p->todo, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_move_to_index(p->todo, 0);               // top of the body, above the (hidden) card + working row
 
-    lv_obj_t *active_row = NULL;
     static char clean[64];
-    for (int k = start; k < end; k++) {
+    for (int r = 0; r < shown; r++) {
+        int k = show[r];
         const cJSON *it = cJSON_GetArrayItem(todos, k);
         const cJSON *cj = it ? cJSON_GetObjectItemCaseSensitive(it, "text") : NULL;
         const cJSON *sj = it ? cJSON_GetObjectItemCaseSensitive(it, "status") : NULL;
         const char *ct = cJSON_IsString(cj) ? cj->valuestring : "";
         const char *st = cJSON_IsString(sj) ? sj->valuestring : "";
-        // Only the two words that are recognised do anything. Everything else — a missing status, a value
-        // from a newer app — falls through to PENDING.
-        bool run  = strcmp(st, "running") == 0;
-        bool done = strcmp(st, "done") == 0;
+        bool run = strcmp(st, "running") == 0;
 
         lv_obj_t *row = lv_obj_create(p->todo);
         lv_obj_remove_style_all(row);
@@ -4520,18 +4804,16 @@ void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(row, 8, 0);
 
-        // Glyph: green dot = done, orange (pulsed) = running, grey ring = pending.
+        // Orange (pulsed) = running, grey ring = waiting. There is no green branch any more: a row only
+        // gets drawn because it is running or standing in for one, and a finished item is never either.
         lv_obj_t *g = lv_obj_create(row);
         lv_obj_remove_style_all(g);
         lv_obj_clear_flag(g, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_size(g, 12, 12);
         lv_obj_set_style_radius(g, LV_RADIUS_CIRCLE, 0);
-        if (done) {
-            lv_obj_set_style_bg_color(g, COL_GREEN, 0); lv_obj_set_style_bg_opa(g, LV_OPA_COVER, 0);
-        } else if (run) {
+        if (run) {
             lv_obj_set_style_bg_color(g, COL_ORANGE, 0); lv_obj_set_style_bg_opa(g, LV_OPA_COVER, 0);
-            p->todo_active = g;
-            active_row = row;
+            p->todo_active = g;                   // busy_dots_tick pulses this one
         } else {
             lv_obj_set_style_bg_opa(g, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(g, 2, 0); lv_obj_set_style_border_color(g, COL_MUTED, 0);
@@ -4540,25 +4822,28 @@ void ui_tile_set_todos(const char *chat_id, const struct cJSON *todos_)
         utf8_filter(ct, clean, sizeof(clean));
         lv_obj_t *lbl = lv_label_create(row);
         // Content-width so the glyph+text sizes to the item and the whole row can be centered as a unit;
-        // bounded by max_width with a trailing "…" for long items. One line.
+        // bounded by max_width with a trailing "…" for long items. One line. The bound leaves room for the
+        // counter, which would otherwise be pushed off the row by a long item.
         lv_obj_set_width(lbl, LV_SIZE_CONTENT);
-        lv_obj_set_style_max_width(lbl, SAFE_CONTENT_W - 40, 0);
+        lv_obj_set_style_max_width(lbl, SAFE_CONTENT_W - 40 - TODO_COUNT_W, 0);
         lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_font(lbl, &geist_reg_25, 0);
-        lv_obj_set_style_text_color(lbl, run ? COL_ORANGE : done ? COL_MUTED : COL_FG, 0);
+        lv_obj_set_style_text_color(lbl, run ? COL_ORANGE : COL_FG, 0);
         lv_label_set_text(lbl, clean);
+
+        // "3/12" — what the one row costs, bought back in a label. Without it a plan of thirty and a plan
+        // of three look identical from a foot away, and the item on screen says nothing about how much of
+        // the work is behind it. Skipped for a one-item plan, where it would only ever read "1/1".
+        if (n > 1) {
+            lv_obj_t *cnt = lv_label_create(row);
+            lv_obj_set_style_text_font(cnt, &geist_reg_20, 0);
+            lv_obj_set_style_text_color(cnt, COL_MUTED, 0);
+            char c[16];
+            snprintf(c, sizeof c, "%d/%d", k + 1, n);
+            lv_label_set_text(cnt, c);
+        }
     }
-    // Show at most 3 rows; the rest scroll inside the box. Measure a row's real height (each is one
-    // line) and pin the box to exactly 3 rows so the Working status + time/tokens stay on screen below.
-    lv_obj_update_layout(p->todo);
-    if (lv_obj_get_child_count(p->todo) > TODO_VISIBLE_ROWS) {
-        lv_coord_t rowh = lv_obj_get_height(lv_obj_get_child(p->todo, 0));
-        lv_obj_set_height(p->todo, rowh * TODO_VISIBLE_ROWS + 7 * (TODO_VISIBLE_ROWS - 1) + 2);
-    }
-    // Keep the in_progress item visible when the list scrolls (the user can still scroll freely; the
-    // next update re-centers on the active task).
-    if (active_row) lv_obj_scroll_to_view(active_row, LV_ANIM_OFF);
     display_unlock();
 }
 
@@ -5232,6 +5517,11 @@ static void voice_start_impl(voice_cmd_t cmd)
     // the transcript itself and ask. An empty string would be a project id, one that matches nothing.
     voice_start(route ? NULL : pid, cmd);
 }
+
+// Double-tap on an agent tile / its reader (touch.c). The Overview and the tiles' own action rows call
+// voice_start_impl directly with the command they mean; this is the gesture's way in, and it means the
+// plain kind — a Goal or a Loop is a deliberate thing you pick, not something a gesture should guess.
+void ui_voice_start(void) { voice_start_impl(VOICE_CMD_NONE); }
 
 void ui_voice_stop(void)
 {

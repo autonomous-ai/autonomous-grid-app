@@ -6,7 +6,7 @@
 /// `<|endoftext|>`. The server is meant to stop at the first one and strip the
 /// rest; when it doesn't, they arrive as ordinary text and the app draws them,
 /// which is how a reply came to end in
-/// `(chờ risposta)<|endoftext|><|im_start|><|im_start|><|im_start|>user`.
+/// `(waiting risposta)<|endoftext|><|im_start|><|im_start|><|im_start|>user`.
 ///
 /// Measured on this machine, 2026-08-18: `~/.grid/app/chats/1787050443254773.json`,
 /// a turn served by `DeepSeek-V4-Flash-0731` over the grid. The tokens are in a

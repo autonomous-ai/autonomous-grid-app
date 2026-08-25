@@ -1,3 +1,4 @@
+import '../../core/agent_homes.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -31,7 +32,7 @@ class HermesAuthStore {
 
   final String _home;
 
-  File get _file => File('$_home/.hermes/auth.json');
+  File get _file => File('${AgentHomes.hermesProfile(_home)}/auth.json');
 
   /// Drop every pooled credential minted for a grid other than the one at
   /// [keepBase], and any pool left empty by that. Returns how many rows went —

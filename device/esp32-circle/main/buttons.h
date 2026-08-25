@@ -11,8 +11,8 @@
 // tap would cost the one recovery a person holding the device still has.
 //
 // Named for what it does. The reference firmware called this ptt.c, from a time when the button was
-// push-to-talk; voice moved to a gesture and then, in 2026-08, to the on-screen action buttons, while
-// its own header still described the old behaviour and the code did something else.
+// push-to-talk; voice is started by the on-screen action buttons and, on an agent tile, by a double-tap,
+// while its own header still described the old behaviour and the code did something else.
 #pragma once
 
 // Start the button poll task. Call after ui_init (BOOT reaches into the screens) and after power_init

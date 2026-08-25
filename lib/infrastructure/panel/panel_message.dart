@@ -12,13 +12,36 @@ library;
 
 import 'dart:convert';
 
+/// Which product this app is, named in every `welcome` and demanded of every
+/// `hello`.
+///
+/// The second half of the fix whose first half is [kPanelMagic]. The magic
+/// already makes Grid and Harness mutually unintelligible with no cooperation
+/// from either team, so this exists for the three things the magic cannot do:
+///
+///  1. It survives anyone later re-unifying the magic, or forking one firmware
+///     while keeping its magic.
+///  2. It turns the log from *"could not parse anything"* into *"this board
+///     belongs to another product"* — the difference between a diagnosis and a
+///     shrug.
+///  3. It is the half a **third** product would also have to satisfy.
+///
+/// The rule at the receiving end is a **positive match**, and **absence must
+/// mean no**: see [PanelHello.isOurs]. Reading a missing field as "probably
+/// mine" puts the whole hole straight back, because the firmware that predates
+/// the field is exactly the firmware the other product can still capture.
+const String kPanelProduct = 'grid';
+
 /// The message-layer version, sent in `hello` and answered in `welcome`.
 ///
 /// Separate from the framing version on purpose: adding a message is a change
 /// here, while changing the envelope is a change there, and conflating them
 /// forces a firmware reflash for what is only a new field.
 ///
-/// **6 since 2026-08-20**, when `scroll` grew a phase and a release velocity —
+/// **7 since 2026-08-25**, when `hello` and `welcome` each began naming the
+/// product they belong to and each end began demanding it — see [kPanelProduct].
+/// The same day as the framing magic changed in `panel_frame.dart`, and for the
+/// same reason. 6 since 2026-08-20, when `scroll` grew a phase and a release velocity —
 /// without them a stroke could only be a distance, and a flick and a crawl of the
 /// same length moved the list the same way. 5 was earlier the same day, when the
 /// panel became a touchpad: `scroll` reports a finger's movement so the window's
@@ -33,7 +56,7 @@ import 'dart:convert';
 /// — two numbers, hand-kept, in two languages. Bumping only the firmware's is
 /// exactly what happened first, and the panel then reported protocol 2 to an app
 /// still claiming 1, which is the mismatch this constant exists to catch.
-const int kPanelProtocolVersion = 6;
+const int kPanelProtocolVersion = 7;
 
 /// How long tile changes are gathered before the list is rebuilt.
 ///
@@ -79,6 +102,7 @@ sealed class PanelInbound {
 
     return switch (type) {
       'hello' => PanelHello(
+        product: _str(decoded['product']) ?? '',
         firmware: _str(decoded['fw']) ?? '',
         protocol: _int(decoded['proto']) ?? 0,
         mac: _str(decoded['mac']) ?? '',
@@ -137,7 +161,17 @@ class PanelHello extends PanelInbound {
     required this.firmware,
     required this.protocol,
     required this.mac,
+    this.product = '',
   });
+
+  /// Which product said this — `grid` for a Grid Panel, `harness` for the
+  /// Harness dial, empty for firmware built before [kPanelProduct] existed.
+  ///
+  /// Defaulted rather than required because a greeting that omits it is a real
+  /// state on the wire, not a programming error: it is what every panel flashed
+  /// before 2026-08-25 sends. [isOurs] is where that state is judged, and it
+  /// judges it *no*.
+  final String product;
 
   final String firmware;
   final int protocol;
@@ -146,10 +180,27 @@ class PanelHello extends PanelInbound {
   /// so the app can tell one panel from another before a byte is exchanged.
   final String mac;
 
+  /// Whether this greeting came from a Grid Panel at all.
+  ///
+  /// **A positive match, so absence means no.** The one case that makes this
+  /// worth stating: firmware predating [kPanelProduct] omits the field, and
+  /// that firmware is *precisely* the firmware another product can still
+  /// capture — so treating a missing field as "probably ours" would leave the
+  /// hole open exactly where it is deepest. Such a panel is recovered by
+  /// flashing it over USB by hand, once; there is no way to reach it over a
+  /// cable whose framing it no longer shares.
+  ///
+  /// Nothing else in this class may be acted on when this is false — not the
+  /// version, not the protocol, and above all not [firmware], which is what
+  /// decides whether to write to somebody else's flash.
+  bool get isOurs => product == kPanelProduct;
+
   /// Whether this build can talk to that firmware.
   ///
   /// A mismatch is a real state to show, not an error to swallow: the app
-  /// carries the firmware image and can offer to fix it.
+  /// carries the firmware image and can offer to fix it. Only meaningful when
+  /// [isOurs] — another product's protocol number is from another lineage and
+  /// comparing it says nothing.
   bool get isCompatible => protocol == kPanelProtocolVersion;
 }
 
@@ -606,6 +657,11 @@ abstract final class PanelOutbound {
     required String voiceLang,
   }) => jsonEncode({
     't': 'welcome',
+    // Which app is answering. The panel matches it positively before it reads
+    // anything else here, and refuses `fw.offer` from an app that never named
+    // itself — so this field is what makes this build able to update a panel at
+    // all, not a courtesy.
+    'product': kPanelProduct,
     'proto': kPanelProtocolVersion,
     'app': appVersion,
     'machine': {'id': machineId, 'name': machineName},

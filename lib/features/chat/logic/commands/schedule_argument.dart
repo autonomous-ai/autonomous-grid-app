@@ -15,13 +15,9 @@ const String kScheduleUsage =
 /// The hour a part of the day means when no clock was named — "every morning"
 /// is 8, not the midnight a bare cadence would have given.
 const Map<String, int> kSpokenDayParts = {
-  'sáng': 8,
   'morning': 8,
-  'trưa': 12,
   'noon': 12,
-  'chiều': 15,
   'afternoon': 15,
-  'tối': 20,
   'evening': 20,
 };
 
@@ -56,9 +52,9 @@ ScheduleRequest? parseScheduleArgument(String argument) {
 /// The leading words that say *when*, and everything after them — the task.
 ///
 /// Eats one timing phrase at a time from the front until none matches, so
-/// "nhắc tôi 8h sáng mai gọi khách" gives ("nhắc tôi 8h sáng mai", "gọi
-/// khách") and the interval in "mỗi 30 phút kiểm tra deploy" leaves no stray
-/// "phút" on the front of the task.
+/// "remind me at 8 tomorrow morning to call the client" gives ("remind me at 8
+/// tomorrow morning", "call the client") and the interval in "every 30 minutes
+/// check the deploy" leaves no stray "minutes" on the front of the task.
 (String timing, String task) _splitTiming(String line) {
   var rest = line;
   final timing = StringBuffer();
@@ -76,37 +72,30 @@ ScheduleRequest? parseScheduleArgument(String argument) {
 /// The phrases a "when" is built out of, longest-first inside each shape so a
 /// partial match never leaves half a phrase behind.
 final List<RegExp> _timingPhrases = [
-  // "nhắc tôi", "schedule", "remind me" — the ask itself.
-  RegExp(r'^(nhắc (tôi|anh|em)|lên lịch|đặt lịch|schedule|remind me)\s*'),
-  // "mỗi 30 phút", "every 2 hours", "mỗi giờ".
+  // "schedule", "remind me" — the ask itself.
+  RegExp(r'^(schedule|remind me)\s*'),
+  // "every 30 minutes", "every 2 hours", "each hour".
   RegExp(
-    // The single-letter units only count behind a number — otherwise the "s"
-    // of "sáng" is one, and "mỗi sáng 8h" loses its first letters to it.
-    r'^(mỗi|hàng|every|each)\s*'
-    r'(?:(\d+)\s*(giây|phút|giờ|seconds?|minutes?|mins?|hours?|[smh])'
-    r'|(giây|phút|giờ|second|minute|hour))'
+    // The single-letter units only count behind a number, so a word that starts
+    // with one cannot be eaten as a unit and lose the task its first letters.
+    r'^(every|each)\s*'
+    r'(?:(\d+)\s*(seconds?|minutes?|mins?|hours?|[smh])'
+    r'|(second|minute|hour))'
     '$kAfterWord'
     r'\s*',
     unicode: true,
   ),
-  // "every weekday", "mỗi sáng", "hàng ngày", "every monday".
+  // "every weekday", "every morning", "every monday".
   RegExp(
-    r'^(mỗi|hàng|every|each)\s+(ngày làm việc|ngày|sáng|trưa|chiều|tối|tuần'
-    r'|thứ \w+|day|morning|noon|afternoon|evening|week|weekdays?'
+    r'^(every|each)\s+(day|morning|noon|afternoon|evening|week|weekdays?'
     r'|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b\s*',
   ),
-  // "lúc 8h30", "at 9", "8:30", "8pm".
-  RegExp(
-    r'^(vào lúc|lúc|at)?\s*\d{1,2}\s*(:|h|giờ)?\s*(\d{2})?\s*'
-    r'(am|pm|sáng|chiều|tối)?\s*',
-  ),
-  // "sáng mai", "tomorrow morning" — a part of the day on its own.
-  RegExp(
-    r'^(sáng|trưa|chiều|tối|morning|noon|afternoon|evening)\s*'
-    r'(mai|nay|tomorrow|today)?\s*',
-  ),
-  // The comma or "thì" joining the when to the what.
-  RegExp(r'^(thì|,|-|:)\s*'),
+  // "at 9", "8:30", "8pm".
+  RegExp(r'^(at)?\s*\d{1,2}\s*(:|h)?\s*(\d{2})?\s*(am|pm)?\s*'),
+  // "tomorrow morning" — a part of the day on its own.
+  RegExp(r'^(morning|noon|afternoon|evening)\s*(tomorrow|today)?\s*'),
+  // The comma joining the when to the what.
+  RegExp(r'^(,|-|:)\s*'),
 ];
 
 /// The repeat-through-the-day cadence the timing names, or null when it names a
@@ -115,18 +104,16 @@ final List<RegExp> _timingPhrases = [
 JobCadence? _interval(String timing) {
   final match = RegExp(
     '$kBeforeWord'
-    r'(?:mỗi|every|each)\s*'
-    r'(?:(\d+)\s*(phút|minutes?|mins?|giờ|hours?|[hm])'
-    r'|(phút|minute|giờ|hour))'
+    r'(?:every|each)\s*'
+    r'(?:(\d+)\s*(minutes?|mins?|hours?|[hm])'
+    r'|(minute|hour))'
     '$kAfterWord',
     unicode: true,
   ).firstMatch(timing);
   if (match == null) return null;
   final unit = match.group(2) ?? match.group(3)!;
   final count = int.tryParse(match.group(1) ?? '1') ?? 1;
-  final minutes = unit.startsWith('h') || unit.startsWith('giờ')
-      ? count * 60
-      : count;
+  final minutes = unit.startsWith('h') ? count * 60 : count;
   if (minutes <= 30) return JobCadence.every30Min;
   if (minutes <= 60) return JobCadence.hourly;
   if (minutes <= 120) return JobCadence.every2Hours;
@@ -136,17 +123,14 @@ JobCadence? _interval(String timing) {
 }
 
 JobCadence _dayCadence(String timing) =>
-    RegExp(
-      r'\b(ngày làm việc|weekdays?|thứ hai đến thứ sáu)\b',
-    ).hasMatch(timing)
+    RegExp(r'\b(weekdays?|monday to friday)\b').hasMatch(timing)
     ? JobCadence.weekdays
     : JobCadence.everyDay;
 
-/// The clock the timing words name — `8h`, `8:30`, `8 giờ`, `at 9`, `8pm`.
+/// The clock the timing words name — `8h`, `8:30`, `at 9`, `8pm`.
 ({int hour, int minute})? _clock(String timing) {
   final match = RegExp(
-    r'\b(?:vào lúc|lúc|at)?\s*(\d{1,2})\s*(?::|h|giờ)?\s*(\d{2})?\s*'
-    r'(am|pm|sáng|chiều|tối)?',
+    r'\b(?:at)?\s*(\d{1,2})\s*(?::|h)?\s*(\d{2})?\s*(am|pm)?',
   ).firstMatch(timing);
   final hour = int.tryParse(match?.group(1) ?? '');
   if (match == null || hour == null) return null;
@@ -158,10 +142,8 @@ JobCadence _dayCadence(String timing) =>
 
 /// A 12-hour reading pushed into the 24-hour clock the schedule keeps.
 int _toDayHour(int hour, String? meridiem) {
-  final afternoon =
-      meridiem == 'pm' || meridiem == 'chiều' || meridiem == 'tối';
-  if (afternoon && hour < 12) return hour + 12;
-  if ((meridiem == 'am' || meridiem == 'sáng') && hour == 12) return 0;
+  if (meridiem == 'pm' && hour < 12) return hour + 12;
+  if (meridiem == 'am' && hour == 12) return 0;
   return hour.clamp(0, 23);
 }
 

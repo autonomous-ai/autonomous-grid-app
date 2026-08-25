@@ -26,6 +26,8 @@ class TranscriptSideNote extends StatelessWidget {
     required this.icon,
     required this.label,
     this.alignment = Alignment.centerLeft,
+    this.trailing,
+    this.onTap,
   });
 
   final IconData icon;
@@ -37,31 +39,56 @@ class TranscriptSideNote extends StatelessWidget {
   /// left for something the assistant or the app did.
   final Alignment alignment;
 
+  /// One small mark after the label — a chevron on a note that opens. Null on a
+  /// plain note, which is most of them.
+  final Widget? trailing;
+
+  /// What tapping the note does, or null when it is only a note.
+  ///
+  /// The tap target is the note itself rather than the row it sits on: this
+  /// spans the whole transcript, and a full-width target here would swallow
+  /// clicks either side of a line a few words long.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final note = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: AppPalette.textFaint),
+        const SizedBox(width: 6),
+        // Bounded even though it is short: a narrow window is still a
+        // window, and this one sits inside a Row that would otherwise
+        // measure it against infinity.
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: AppPalette.textFaint),
+          ),
+        ),
+        if (trailing != null) ...[const SizedBox(width: 4), trailing!],
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
       child: Align(
         alignment: alignment,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: AppPalette.textFaint),
-            const SizedBox(width: 6),
-            // Bounded even though it is short: a narrow window is still a
-            // window, and this one sits inside a Row that would otherwise
-            // measure it against infinity.
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: AppPalette.textFaint),
+        child: onTap == null
+            ? note
+            : InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
+                  child: note,
+                ),
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

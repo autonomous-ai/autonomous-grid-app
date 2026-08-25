@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -8,24 +10,40 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
-import '../logic/grid_access.dart';
+import '../../auth/logic/session_controller.dart';
+import '../logic/change_grid_type_controller.dart';
+import '../logic/grid_access_types.dart';
 import '../logic/invite_email.dart';
 import '../logic/member_providers.dart';
+import 'general_access_row.dart';
+import 'invite_role_picker.dart';
+import 'share_banner.dart';
 import 'share_grid_people.dart';
 
 /// Everything about who can reach a grid, in one modal — invite someone, see
-/// who is already on it, and read how the grid is reachable in general.
+/// who is already on it, and read (or change) how the grid is reachable in
+/// general.
 ///
-/// Replaces the old one-field `AddMemberDialog`, and is opened from both places
-/// that used it: the grid's own header and the sidebar's account menu. One
-/// dialog rather than two, so the words and the rules can't drift — and the
-/// title names the grid, which the account-menu route had no other way of
-/// saying.
+/// Opened from both places the old `AddMemberDialog` was: the grid's own header
+/// and the sidebar's account menu. One dialog rather than two, so the words and
+/// the rules can't drift — and the title names the grid, which the account-menu
+/// route had no other way of saying.
 ///
-/// Modelled on Google Drive's share sheet because that shape is the one
-/// non-technical users already know: add at the top, the list of people in the
-/// middle, the blanket rule at the bottom. **The bottom section is a sentence,
-/// not a control** — see [_GeneralAccess].
+/// **Modelled on Google Docs' share sheet**, which is the shape non-technical
+/// users already know: a full-width address field, the people below it, the
+/// blanket rule at the bottom, and one primary button that closes the sheet.
+/// Three of its habits are load-bearing here:
+///
+/// - the address field is the only boxed control, so it is where the eye lands;
+/// - a menu lists **labels and a tick**, and the sentence explaining a choice
+///   lives in the row that opened it, at dialog width. Grid learned this the
+///   hard way: its access menu printed "…can use this grid — includi…";
+/// - the role for a person is a noun ("User", "Host"), not a clause.
+///
+/// One thing is deliberately un-Google: changing the access rule is confirmed
+/// before it runs. Docs can flip a document's sharing instantly and harmlessly;
+/// changing a grid's rule restarts it under everyone using it, cuts off whoever
+/// the new rule excludes, and — for the open rule — stops the grid billing.
 class ShareGridDialog extends ConsumerStatefulWidget {
   const ShareGridDialog({super.key, required this.network});
 
@@ -42,48 +60,141 @@ class ShareGridDialog extends ConsumerStatefulWidget {
   ConsumerState<ShareGridDialog> createState() => _ShareGridDialogState();
 }
 
+/// The sheet's width, and the inset every block inside it pays.
+///
+/// `contentPadding` is zero so the banner and the footer's hairline can run
+/// edge to edge; everything else insets itself by [_sheetInset]. The footer
+/// takes the same width explicitly, because `AlertDialog` hands its actions to
+/// an `OverflowBar` that would let a `Row` stretch to the window and drag the
+/// whole dialog wide with it.
+const double _sheetWidth = 512;
+const double _sheetInset = 24;
+
 class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
   final _email = TextEditingController();
+  final _emailFocus = FocusNode();
   bool _inviting = false;
-  String? _error;
+
+  /// What the control plane said no to — a 403, a seat cap, a network error.
+  /// Cleared the moment the address is edited, since it was about the old one.
+  String? _serverError;
+
+  /// What `inviteEmailError` says about the text in the field, once the user
+  /// has finished a first attempt at it. Null until [_showErrors].
+  String? _localError;
+
+  /// Whether validation is allowed to speak yet.
+  ///
+  /// False while the address is being typed for the first time: every half-typed
+  /// address is invalid, so live checking from keystroke one would sit there
+  /// scolding someone who is doing nothing wrong. It flips on the first blur or
+  /// the first Invite — after that the verdict updates on every keystroke, so it
+  /// disappears the instant the address becomes usable.
+  bool _showErrors = false;
+
+  /// The one message the field shows. A server refusal outranks a syntax
+  /// complaint: it is the newer fact, and it is about an address the client
+  /// already accepted.
+  String? get _error => _serverError ?? _localError;
+
+  /// What the invited person will be able to do. Defaults to the widest grant —
+  /// see [ManagedMemberRole.fallback].
+  ManagedMemberRole _role = ManagedMemberRole.fallback;
+
+  /// The roles this viewer may hand out. Never offer a grant they do not hold:
+  /// the control plane refuses it (403 `role_above_caller`), and a choice that
+  /// 403s after the fact reads as a bug rather than as a rule.
+  List<ManagedMemberRole> get _grantable =>
+      invitableRolesFor(widget.network.roles);
+
+  /// [_role], clamped to what this viewer may actually grant.
+  ///
+  /// A getter rather than a correction written into [_role] during `build`:
+  /// mutating state there is a side effect in a method that may run twice, and
+  /// the clamp has to hold for the send too — one place, read by both.
+  ManagedMemberRole get _effectiveRole =>
+      _grantable.contains(_role) ? _role : _grantable.first;
 
   String get _networkId => widget.network.networkId;
 
   @override
+  void initState() {
+    super.initState();
+    // The access controller outlives the sheet, so a rule picked and then
+    // abandoned — Esc, Done, a click outside — would still be sitting there
+    // "not saved yet" the next time anyone opens this dialog, on any grid.
+    //
+    // Post-frame, not inline: touching a provider during `initState` mutates
+    // state while the tree is building.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = ref.read(changeGridTypeControllerProvider);
+      // Applying is left alone: that request is in flight and owns its own
+      // state until it lands.
+      if (state is ChangeGridTypeConfirming || state is ChangeGridTypeFailed) {
+        ref.read(changeGridTypeControllerProvider.notifier).cancel();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _email.dispose();
+    _emailFocus.dispose();
     super.dispose();
+  }
+
+  /// Re-runs the address check, once [_showErrors] has let it speak.
+  void _revalidate() {
+    if (!_showErrors) return;
+    final next = inviteEmailError(_email.text.trim());
+    if (next != _localError) setState(() => _localError = next);
+  }
+
+  /// Leaving the field is a finished attempt — but only if there is something
+  /// in it. Blurring an empty box is someone clicking elsewhere, not someone
+  /// failing to type an address.
+  void _onFocusChange(bool hasFocus) {
+    if (hasFocus || _email.text.trim().isEmpty) return;
+    setState(() {
+      _showErrors = true;
+      _localError = inviteEmailError(_email.text.trim());
+    });
   }
 
   Future<void> _invite() async {
     final email = _email.text.trim();
+    // Checked here, not only on the server: a 422 comes back as one flat
+    // "Invalid email", while `inviteEmailError` names the half that is broken.
+    // The request is never sent when the client already knows the answer.
     final invalid = inviteEmailError(email);
     if (invalid != null) {
-      setState(() => _error = invalid);
+      setState(() {
+        _showErrors = true;
+        _localError = invalid;
+        _serverError = null;
+      });
+      _emailFocus.requestFocus();
       return;
     }
 
     setState(() {
       _inviting = true;
-      _error = null;
+      _serverError = null;
+      _localError = null;
     });
 
-    // Always `both` while the role picker is hidden: it is the choice the
-    // picker defaulted to, and the widest one — a person invited to use the
-    // grid and to share a machine with it can do either or neither, whereas
-    // guessing narrower would silently withhold something the inviter meant to
-    // give. Restore the picker and this reads `_role.wire` again.
     final error = await ref.read(addMemberActionProvider)(
       networkId: _networkId,
       email: email,
-      roles: [ManagedMemberRole.both.wire],
+      roles: [_effectiveRole.wire],
     );
 
     if (!mounted) return;
     if (error != null) {
       setState(() {
         _inviting = false;
-        _error = error;
+        _serverError = error;
       });
       return;
     }
@@ -95,6 +206,10 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
     setState(() {
       _inviting = false;
       _email.clear();
+      // The next address starts clean: the field is empty again, and an empty
+      // field has not been got wrong yet.
+      _showErrors = false;
+      _localError = null;
     });
     ToastScope.show(
       context,
@@ -102,180 +217,397 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
     );
   }
 
+  /// Sends the access rule the owner picked, then tells them it landed.
+  Future<void> _applyAccessChange(ManagedNetworkType target) async {
+    final domain = ref.read(gridDomainProvider).value;
+    final failure = await ref
+        .read(changeGridTypeControllerProvider.notifier)
+        .apply(networkId: _networkId, target: target);
+    if (!mounted || failure != null) return;
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message:
+            'This grid is now “${accessLabelFor(target, domain: domain)}”.',
+        severity: ToastSeverity.success,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final change = ref.watch(changeGridTypeControllerProvider);
+    final domain = ref.watch(gridDomainProvider).value;
+
     return AlertDialog(
       // Deliberately **not** `scrollable: true` — the same trap
       // [ConnectorDetailsDialog] carries a note about, and this dialog walked
       // straight into it. That flag wraps the content in an `IntrinsicWidth`,
       // which asks every child for its natural height; the people list is a
-      // `ListView` and cannot answer, and `AppSelectField` is a `LayoutBuilder`
-      // that cannot either. The result was a relayout that re-entered the
-      // mouse tracker's device-update phase every frame — the app froze on
+      // `ListView` and cannot answer. The result was a relayout that re-entered
+      // the mouse tracker's device-update phase every frame — the app froze on
       // open, spewing `!_debugDuringDeviceUpdate`.
       //
       // The one part that can outgrow the window scrolls on its own instead;
       // see [SharePeopleList.maxHeight].
-      title: Text('Share “${widget.network.name}”'),
+      titlePadding: const EdgeInsets.fromLTRB(24, 20, 14, 0),
+      title: Row(
+        children: [
+          Expanded(child: Text('Share “${widget.network.name}”')),
+          // A tooltip on a glyph, the app's own help affordance — not a
+          // button. Docs' ⟨?⟩ opens a help centre; there is nothing here for a
+          // click to go to, and a control that does nothing when pressed is
+          // worse than a mark that never invited the press.
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Tooltip(
+              message:
+                  'People you add can use the models on this grid. Whether '
+                  'anyone else can reach it is set under General access.',
+              child: Icon(
+                LucideIcons.circleHelp300,
+                size: 16,
+                color: AppPalette.textFaint,
+              ),
+            ),
+          ),
+        ],
+      ),
+      // Zero, so the banner and the footer's hairline run the full width of the
+      // sheet the way Docs draws them. Every block below pays its own inset.
+      contentPadding: EdgeInsets.zero,
       content: SizedBox(
-        width: 460,
+        width: _sheetWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // [FieldLabel] + a hand-built field rather than [LabeledField],
-            // which stacks its own label above its own box: inside a Row the
-            // button would then centre against label *and* field and sit too
-            // high. This is the split the label was extracted for.
-            const FieldLabel('Add people'),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
+            if (_bannerFor(change, domain) case final banner?)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+                child: banner,
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _InviteField(
                     controller: _email,
+                    focusNode: _emailFocus,
                     enabled: !_inviting,
-                    autofocus: true,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.done,
-                    // Enter still sends. The button is what says so now — a
-                    // line of prose explaining how to submit a form is a
-                    // missing button with extra steps.
-                    onSubmitted: (_) => _invite(),
-                    // Validation fires on submit, never per keystroke: every
-                    // half-typed address is invalid, so live checking would sit
-                    // there scolding from the first character. But once a
-                    // verdict is on screen it clears the moment the user starts
-                    // fixing it — an error that outlives the mistake reads as
-                    // the app being stuck. Guarded, so the common case (no
-                    // error) costs no rebuild.
-                    onChanged: (_) {
-                      if (_error != null) setState(() => _error = null);
+                    hasError: _error != null,
+                    onSubmitted: _invite,
+                    onFocusChange: _onFocusChange,
+                    onChanged: () {
+                      // The refusal was about the address that has just been
+                      // edited, so it is out of date the moment a key lands.
+                      if (_serverError != null) {
+                        setState(() => _serverError = null);
+                      }
+                      _revalidate();
                     },
-                    style: const TextStyle(fontSize: 14, height: 1.4),
-                    // The field sits on the dialog's raised surface, not the
-                    // page, so the page-tuned default fill would measure
-                    // 1.023:1 against it in dark and vanish. See
-                    // [labeledFieldDecoration].
-                    decoration: labeledFieldDecoration(
-                      'teammate@example.com',
-                      fill: AppCard.inset,
-                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                // Rebuilt on every keystroke, but only this subtree — the
-                // button has to dim while the field is empty (that dimming is
-                // the affordance the prose line was standing in for) and
-                // `setState` on the dialog would rebuild the members list under
-                // it for nothing.
-                ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: _email,
-                  builder: (context, value, _) => FilledButton(
-                    onPressed: _inviting || value.text.trim().isEmpty
-                        ? null
-                        : _invite,
-                    child: _inviting
-                        ? const AppSpinner.onAccent()
-                        : const Text('Invite'),
+                  // The role and the send button appear only once there is
+                  // something to send — Docs' own behaviour, and what gives the
+                  // address field the whole width it needs.
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _email,
+                    builder: (context, value, _) {
+                      if (value.text.trim().isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return _InviteActions(
+                        role: _effectiveRole,
+                        roles: _grantable,
+                        inviting: _inviting,
+                        onRoleChanged: (role) => setState(() => _role = role),
+                        onInvite: _invite,
+                      );
+                    },
                   ),
-                ),
-              ],
+                  if (_error case final message?) ...[
+                    const SizedBox(height: 12),
+                    ErrorBox(message: message, maxHeight: 96),
+                  ],
+                  const _Heading('People with access'),
+                  // Removing is the owner's alone — see
+                  // [SharePeopleList.canRemove]. `widget.network.isOwner` is
+                  // about *this viewer*, not about the people in the rows.
+                  SharePeopleList(
+                    networkId: _networkId,
+                    canRemove: widget.network.isOwner,
+                    grantable: _grantable,
+                  ),
+                  const _Heading('General access'),
+                  GeneralAccessRow(network: widget.network),
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              ErrorBox(message: _error!, maxHeight: 96),
-            ],
-            const _Heading('People with access'),
-            // Removing is the owner's alone — see [SharePeopleList.canRemove].
-            // `widget.network.isOwner` is about *this viewer*, not about the
-            // people in the rows.
-            SharePeopleList(
-              networkId: _networkId,
-              canRemove: widget.network.isOwner,
-            ),
-            const _Heading('General access'),
-            _GeneralAccess(network: widget.network),
+            Divider(height: 1, thickness: 1, color: AppPalette.divider),
           ],
         ),
       ),
-      // No footer at all. Google's two buttons don't survive the translation:
-      // "Copy link" has nothing behind it here (Grid invites by email; there
-      // is no link), and "Done" confirmed nothing — every action in this
-      // dialog already took effect the moment it was pressed. A button that
-      // only closes a window is a button the window's own dismiss already is.
-      //
-      // Esc and a click outside still close it — `showDialog` gives both.
-      //
-      // TODO(BE): Google's "Copy link" has no counterpart until there is an
-      // invite link — a token someone can be sent that joins them to the grid.
-      // Membership is by email only today, so there is nothing to copy.
-      // `.claude/share-grid-plan.md` §7.
+      actionsPadding: const EdgeInsets.fromLTRB(24, 14, 24, 18),
+      actions: [
+        SizedBox(
+          width: _sheetWidth - _sheetInset * 2,
+          child: _Footer(
+            change: change,
+            // Live, for the reason [GeneralAccessRow] reads it live: this is
+            // the sentence "this grid is still X", and after ONE change lands
+            // the snapshot is a rule the grid left. Change to "My domain", save
+            // it, then pick "Anyone" — the footer would swear the grid was
+            // still "Invite only". The one line whose whole job is to be true
+            // about right now cannot read from a value fixed when the sheet
+            // opened.
+            current: ManagedNetworkType.fromWire(
+              (ref.watch(sessionProvider).byName(_networkId) ?? widget.network)
+                  .networkType,
+            ),
+            domain: domain,
+            onApply: _applyAccessChange,
+          ),
+        ),
+      ],
     );
   }
+
+  /// The strip under the title: what is about to happen, or what is happening.
+  ///
+  /// Nothing else earns this slot. An invite failure belongs beside the field
+  /// that caused it, and a failed rule change beside the rule.
+  Widget? _bannerFor(ChangeGridTypeState state, String? domain) =>
+      switch (state) {
+        ChangeGridTypeConfirming(:final target) => ShareBanner(
+          tone: ShareBannerTone.warning,
+          icon: LucideIcons.triangleAlert300,
+          message: accessChangeWarning(target, domain: domain),
+        ),
+        ChangeGridTypeApplying() => ShareBanner(
+          icon: LucideIcons.refreshCw300,
+          message:
+              '${widget.network.name} is restarting on the new rule. '
+              'Everyone on it reconnects in a few seconds.',
+        ),
+        _ => null,
+      };
 }
 
-/// The blanket rule: who can reach this grid without being on the list above.
-///
-/// One sentence, no control. The three modes are real — they are exactly how
-/// the control plane labels a grid — but `network_type` is set at
-/// `POST /managed-networks` and the only PATCH the app has takes `name`, so
-/// there is nothing to send. A picker here could be changed and never saved,
-/// which cost the dialog a yellow "not saved" line whose whole job was to
-/// contradict the field above it. See `.claude/share-grid-plan.md` §2.1.
-///
-/// It stays *visible* rather than being dropped: whether a grid is invite-only
-/// or open to anyone signed in is the fact that decides how carefully you pick
-/// who to add, and it is not readable anywhere else in this dialog.
-///
-/// TODO(BE): restore a picker here once `PATCH /v1/grid/networks/{id}` accepts
-/// `network_type`. Until then the app cannot fake it — access is enforced by
-/// the relay, and `~/.grid/credentials.toml` is a local cache the CLI owns, so
-/// writing a mode into it would change this sentence and nothing else.
-/// `.claude/share-grid-plan.md` §2.1.
-class _GeneralAccess extends ConsumerWidget {
-  const _GeneralAccess({required this.network});
+/// The address field: full width, and the only boxed control in the sheet.
+class _InviteField extends StatelessWidget {
+  const _InviteField({
+    required this.controller,
+    required this.focusNode,
+    required this.enabled,
+    required this.hasError,
+    required this.onSubmitted,
+    required this.onChanged,
+    required this.onFocusChange,
+  });
 
-  final NetworkCredential network;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool enabled;
+  final bool hasError;
+  final VoidCallback onSubmitted;
+  final VoidCallback onChanged;
+
+  /// Leaving the field counts as a finished attempt — see `_onFocusChange`.
+  final ValueChanged<bool> onFocusChange;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return Text(
-      _accessSummary(gridAccessFor(network.networkType)),
-      style: TextStyle(
-        color: AppPalette.textSecondary,
-        fontSize: 12.5,
-        height: 1.4,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const FieldLabel('Add people'),
+        Focus(
+          onFocusChange: onFocusChange,
+          child: TextField(
+            controller: controller,
+            focusNode: focusNode,
+            enabled: enabled,
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => onSubmitted(),
+            onChanged: (_) => onChanged(),
+            style: const TextStyle(fontSize: 14, height: 1.4),
+            decoration: _decoration(hasError),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The app's field, plus the one hairline the design system's "no borders"
+  /// rule has to give way for.
+  ///
+  /// Measured: `AppCard.inset` on this dialog's own surface is **1.065:1** in
+  /// dark and **1.073:1** in light — a fill that cannot separate a layer, which
+  /// §2 says is exactly when a border or a shadow has to. A shadow would read
+  /// as a raised block; this box is recessed, so it takes the rim instead, and
+  /// [AppCard.insetHair] is the token already made for it. Scoped to this one
+  /// field on purpose — it is the sheet's entry point, and Docs boxes the same
+  /// one for the same reason.
+  InputDecoration _decoration(bool hasError) {
+    final base = labeledFieldDecoration(
+      'Add people by email',
+      fill: AppCard.inset,
+      hasError: hasError,
+    );
+    if (hasError) return base;
+    return base.copyWith(
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppCard.insetHair),
       ),
     );
   }
 }
 
-/// What the mode permits, in one line.
-///
-/// [GridAccess.domain] says the same as [GridAccess.restricted] on purpose. It
-/// used to claim "anyone with an @autonomous.ai email can use this grid", which
-/// was **wrong** — an invention read off the wire value's name rather than off
-/// anything the product does. A `private-domain` grid is the organisation's own
-/// grid; the domain names *whose* grid it is, not who may walk into it.
-/// Membership is still the list above, exactly as for a private grid, which is
-/// also why `NetworkCredential.isPublic` has always resolved it to Private.
-///
-/// Deliberately short, but not shortened past the truth: `permissioned-
-/// providers` opens *using* the grid to anyone while still gating who may
-/// share a computer to it, so that one keeps its second clause. Collapsing it
-/// to "anyone can use this grid" would read as "anyone can put a machine on
-/// it", which is a different and much larger promise.
-String _accessSummary(GridAccess access) => switch (access) {
-  GridAccess.restricted ||
-  GridAccess.domain => 'Only the people listed above can use this grid.',
-  GridAccess.anyone =>
-    'Anyone signed in to Grid can use this grid. Only the people listed '
-        'above can share a computer with it.',
-};
+/// The role for this invite and the button that sends it — shown only once an
+/// address has been typed.
+class _InviteActions extends StatelessWidget {
+  const _InviteActions({
+    required this.role,
+    required this.roles,
+    required this.inviting,
+    required this.onRoleChanged,
+    required this.onInvite,
+  });
 
-/// A section title inside the dialog.
+  final ManagedMemberRole role;
+  final List<ManagedMemberRole> roles;
+  final bool inviting;
+  final ValueChanged<ManagedMemberRole> onRoleChanged;
+  final VoidCallback onInvite;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              InviteRolePicker(
+                value: role,
+                roles: roles,
+                enabled: !inviting,
+                onChanged: onRoleChanged,
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: inviting ? null : onInvite,
+                child: inviting
+                    ? const AppSpinner.onAccent()
+                    : const Text('Invite'),
+              ),
+            ],
+          ),
+          // Under the role rather than beside it: a sentence squeezed into
+          // what is left of the row wraps to three ragged lines caught between
+          // two controls, and it explains the control on its left, so it reads
+          // better hanging under it.
+          Padding(
+            padding: const EdgeInsets.only(left: 10, top: 6, right: 4),
+            child: Text(
+              role.description,
+              style: TextStyle(
+                color: AppPalette.textSecondary,
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The sheet's bottom bar.
+///
+/// Docs closes with a single **Done** that saves nothing — every action above
+/// took effect when it was pressed. Grid keeps that, and grows a Save only for
+/// the one thing here that is *not* immediate: the access rule, which is
+/// confirmed before it restarts the grid.
+class _Footer extends StatelessWidget {
+  const _Footer({
+    required this.change,
+    required this.current,
+    required this.domain,
+    required this.onApply,
+  });
+
+  final ChangeGridTypeState change;
+
+  /// The rule the grid is actually on — what the footer says while the row
+  /// above shows the rule being considered.
+  final ManagedNetworkType? current;
+
+  final String? domain;
+  final ValueChanged<ManagedNetworkType> onApply;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Consumer(
+      builder: (context, ref, _) => Row(
+        children: [
+          Expanded(child: _status(context)),
+          ...switch (change) {
+            ChangeGridTypeConfirming(:final target) => [
+              TextButton(
+                onPressed: () => ref
+                    .read(changeGridTypeControllerProvider.notifier)
+                    .cancel(),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: () => onApply(target),
+                child: const Text('Save'),
+              ),
+            ],
+            ChangeGridTypeApplying() => [
+              const FilledButton(onPressed: null, child: AppSpinner.onAccent()),
+            ],
+            _ => [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Done'),
+              ),
+            ],
+          },
+        ],
+      ),
+    );
+  }
+
+  /// While a change is pending the row above shows the rule that was PICKED, so
+  /// this is the only place left that can say what the grid is on right now.
+  Widget _status(BuildContext context) {
+    if (change is! ChangeGridTypeConfirming) return const SizedBox.shrink();
+    if (current case final saved?) {
+      return Text(
+        'Not saved yet — this grid is still '
+        '“${accessLabelFor(saved, domain: domain)}”.',
+        style: TextStyle(color: AppPalette.textSecondary, fontSize: 12.5),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+/// A section title inside the sheet.
 class _Heading extends StatelessWidget {
   const _Heading(this.text);
   final String text;
@@ -284,7 +616,7 @@ class _Heading extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 22, bottom: 10),
+      padding: const EdgeInsets.only(top: 22, bottom: 8),
       child: Text(
         text,
         style: TextStyle(

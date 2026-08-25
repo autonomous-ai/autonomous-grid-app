@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/app_environment.dart';
+import '../../infrastructure/analytics/analytics_events.dart';
+import '../../infrastructure/analytics/analytics_providers.dart';
 
 /// The two halves of the app, chosen at the top of the sidebar.
 ///
@@ -203,6 +205,14 @@ enum ShellSection {
     'Debug',
     thinIcon: LucideIcons.terminal300,
     devOnly: true,
+  ),
+  // The pulse line, not a bar chart: this screen is the live stream of events
+  // leaving the app, not a report about them.
+  tracking(
+    LucideIcons.activity,
+    'Tracking',
+    thinIcon: LucideIcons.activity300,
+    devOnly: true,
   );
 
   const ShellSection(
@@ -247,13 +257,18 @@ enum ShellSection {
 /// and the composer already switches it per chat — so it sits in Settings with
 /// the rest of what shapes the answer.
 ///
-/// [ShellSection.engines] leads, and it is the one row here that isn't a
-/// convenience: running a model is what the product *is*, and it used to be
-/// three clicks deep behind the account menu ▸ Settings, on a screen that took
-/// the whole window. Every other way in was a dead end reacting to a failure —
-/// "Start an engine" on an empty chat, the failed-download pill — so a user who
-/// simply wanted to host had nowhere to click.
-const kSidebarSections = [ShellSection.engines, ShellSection.scheduled];
+/// [ShellSection.engines] used to lead this list, on the reasoning that running
+/// a model is what the product *is* and it had been three clicks deep behind the
+/// account menu ▸ Settings. That reasoning still holds; the row does not. Its
+/// door is now [GridCtaPair] on the top bar, permanently on screen instead of
+/// one row among several, and keeping the row as well would have been a second
+/// door into one screen — the thing the panel's own "Run a model here" button
+/// was already guilty of. The rail keeps only what is a *place* you browse.
+///
+/// What went with the row has to be somewhere: "you are here" is the half's
+/// selected wash, and the serving mark is the dot it wears while this computer
+/// is hosting.
+const kSidebarSections = [ShellSection.scheduled];
 
 /// What the sidebar's **Office** group opens to, in order.
 ///
@@ -351,7 +366,7 @@ const kSettingsGroups = [
     // dev only for now, so this whole group is invisible in a shipped build.
     ShellSection.messages,
   ]),
-  SettingsGroup('Developer', [ShellSection.debug]),
+  SettingsGroup('Developer', [ShellSection.debug, ShellSection.tracking]),
   // Where a chat goes when it leaves the sidebar. Its own run at the bottom:
   // it's the one row here that manages content rather than configuration.
   SettingsGroup('Archived', [ShellSection.archived]),
@@ -420,6 +435,9 @@ class ShellSectionNotifier extends Notifier<ShellSection> {
   /// window from either half, and "Back to app" has to return to the one the
   /// user left.
   void select(ShellSection section) {
+    // The enum's own name, not its label: labels are rewritten often, and a
+    // renamed label would read as a brand-new screen in the funnel.
+    if (section != state) ref.read(analyticsProvider).screenView(section.name);
     if (section.isSettings) {
       if (!state.isSettings) previous = state;
       state = section;

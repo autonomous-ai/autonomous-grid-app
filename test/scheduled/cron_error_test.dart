@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/scheduled/logic/cron_error.dart';
+import 'package:grid_app/shared/copy/setup_hints.dart';
 
 void main() {
   group('describeCronRunError', () {
@@ -43,7 +44,7 @@ void main() {
     test('turns a "no model configured" run into a plain message with a next '
         'step, so the user never faces the raw RuntimeError and env dump', () {
       const raw =
-          "RuntimeError: Cron job 'tin mới nhất hôm nay' has no model "
+          "RuntimeError: Cron job 'latest news today' has no model "
           "configured (job.model=None, HERMES_MODEL='', config.yaml "
           'model.default missing or empty). Set a per-job model via `cronjob '
           'action=update job_id=73ee873b963f model=<name>` or set a default '
@@ -77,6 +78,54 @@ void main() {
       // user pauses a task that would have answered tomorrow.
       expect(result.summary, contains('try again'));
       expect(result.hint, isNotNull);
+    });
+
+    test('blames the grid, not the model, when the relay had no provider to '
+        'hand the run to — and names the grid the task actually runs on', () {
+      const raw =
+          'RuntimeError: HTTP 503: {"detail":"No providers available for this '
+          'model"}';
+
+      final result = describeCronRunError(
+        raw,
+        taskGrid: 'hp-1-1',
+        currentGrid: 'hp-1-1',
+      );
+
+      expect(result.summary, isNot(contains('RuntimeError')));
+      expect(result.summary, isNot(contains('503')));
+      expect(result.summary, contains('hp-1-1'));
+      // The fix is somebody sharing a model, so the hint has to send the user
+      // where sharing is set up — the shared sentence, not a second wording.
+      expect(result.hint, contains(kModelEnginesPlace));
+    });
+
+    test('says so when the task is pointed at a different grid than the one on '
+        'screen — the failure that reads like a model problem and is not', () {
+      final result = describeCronRunError(
+        'RuntimeError: HTTP 503: {"detail":"No providers available for this '
+        'model"}',
+        taskGrid: 'hp-1-1',
+        currentGrid: 'autonomous.ai',
+      );
+
+      expect(result.summary, contains('hp-1-1'));
+      expect(result.hint, contains('autonomous.ai'));
+      // Sending them to share a model here would be the wrong fix: this grid
+      // has models, the task is simply not on it.
+      expect(result.hint, isNot(contains(kModelEnginesPlace)));
+    });
+
+    test('still explains a no-provider failure when the grid is unknown, '
+        'rather than naming a grid it cannot know', () {
+      final result = describeCronRunError(
+        'RuntimeError: HTTP 503: {"detail":"No providers available for this '
+        'model"}',
+      );
+
+      expect(result.summary, contains('sharing AI'));
+      expect(result.summary, isNot(contains('"')));
+      expect(result.hint, contains(kModelEnginesPlace));
     });
 
     test(

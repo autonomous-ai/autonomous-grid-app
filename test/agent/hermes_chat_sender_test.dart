@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -21,7 +22,7 @@ import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 NetworkCredential _credential() => const NetworkCredential(
   networkId: 'grid-1',
   name: 'Test grid',
-  networkType: 'permissioned-providers',
+  networkType: 'permissionless',
   lanSignalingUrl: 'https://grid.example/grid-1',
   accessToken: 'secret-token',
   refreshToken: '',
@@ -115,6 +116,10 @@ class _FakeAcpSession implements HermesAcpSession {
   final List<List<HermesAcpEvent>> _turns;
   final prompts = <String>[];
 
+  /// The pictures each turn carried, so a test can prove an attachment reached
+  /// Hermes rather than being dropped on the way.
+  final sentImages = <HermesAcpImage>[];
+
   /// What was handed to a turn already running, in order.
   final steers = <String>[];
   int _turn = 0;
@@ -133,8 +138,9 @@ class _FakeAcpSession implements HermesAcpSession {
   bool get isClosed => _closed;
 
   @override
-  HermesAcpRun prompt(String text) {
+  HermesAcpRun prompt(String text, {List<HermesAcpImage> images = const []}) {
     prompts.add(text);
+    sentImages.addAll(images);
     final events = _turn < _turns.length
         ? _turns[_turn]
         : const <HermesAcpEvent>[];
@@ -195,7 +201,7 @@ class _LiveAcpSession implements HermesAcpSession {
   bool get isClosed => false;
 
   @override
-  HermesAcpRun prompt(String text) =>
+  HermesAcpRun prompt(String text, {List<HermesAcpImage> images = const []}) =>
       HermesAcpRun(events: events.stream, done: _done.future, kill: _end);
 
   @override
@@ -326,7 +332,10 @@ void main() {
     expect(steps, hasLength(1));
     expect(steps.single.status, AgentActivityStatus.done);
     // Pointed Hermes at the grid.
-    expect(File('${tmp.path}/.hermes/config.yaml').existsSync(), isTrue);
+    expect(
+      File('${AgentHomes.hermesProfile(tmp.path)}/config.yaml').existsSync(),
+      isTrue,
+    );
   });
 
   test(

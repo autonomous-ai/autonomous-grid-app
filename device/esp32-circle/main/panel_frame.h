@@ -10,7 +10,7 @@
 //
 // Wire format, little-endian throughout:
 //
-//   A5 5A | ver:u8 | type:u8 | len:u16 | payload[len] | crc16:u16
+//   A5 47 | ver:u8 | type:u8 | len:u16 | payload[len] | crc16:u16
 //
 // The magic is what the reader scans for after losing its place; the CRC is
 // what separates a real frame from two bytes of noise that happened to look
@@ -27,8 +27,30 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// PRODUCT-SCOPED, and that is the whole point of the second byte.
+//
+// This board is also the Harness dial: same Waveshare 466x466 round ESP32-S3, so the same USB identity
+// (303a:1001, the SoC's own USB-Serial-JTAG, whose descriptor is in ROM). Harness's cable_frame.c was
+// ported from this file, so until 2026-08-25 both products framed with A5 5A and greeted with the same
+// three fields — nothing on the wire told them apart. Each side then decided "should I update this
+// device?" from a VERSION NUMBER, which orders builds within one lineage and means nothing across two.
+//
+// What that did: grid-app saw a Harness dial, found its version "other than the bundled one", and
+// flashed Grid firmware into it within seconds. Going the other way it is worse — once Harness's
+// published version climbs past Grid's, each side reflashes what the other just wrote, ~3 MB and a
+// reboot every 15 seconds, about 700 MB an hour into a flash rated in erase cycles.
+//
+// So the magic is the product. 0x47 is 'G'; Harness uses 0x48, 'H'. A decoder scanning for its own
+// magic never matches the other's frames, so it never gets a `hello`, never learns a version, and
+// never offers firmware — no cooperation from the other product required. A `product` field in the
+// header would NOT do this: the other decoder still matches the magic, reads that byte as `ver`,
+// derives a nonsense `len` and swallows a chunk of stream. Failing at byte one is a clean discard.
+//
+// 0xA5 stays the lead byte because it is outside ASCII, and that matters on this wire specifically:
+// the ROM, the second-stage bootloader and the panic handler all write plain text to it, and a magic
+// that can occur in that text resyncs the decoder onto garbage.
 #define PANEL_MAGIC_0 0xA5
-#define PANEL_MAGIC_1 0x5A
+#define PANEL_MAGIC_1 0x47
 
 // Bumped only when the ENVELOPE changes. The message vocabulary inside carries
 // its own version in the `hello` handshake, so adding a message is not a

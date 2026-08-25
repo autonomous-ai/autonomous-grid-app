@@ -1,5 +1,6 @@
 import '../../playground/logic/chat_message.dart';
 import 'commands/chat_loop.dart';
+import 'commands/agent_ask_block.dart';
 import 'commands/loop_pace_block.dart';
 import 'conversation.dart';
 
@@ -38,18 +39,42 @@ const String kUnbackedLoopClaimNote =
 bool claimsLoopWithoutOne(String reply, ChatLoop? loop) =>
     loop == null && parseLoopPaceBlock(reply) != null;
 
-/// [message] with its `grid-loop` blocks gone from the text *and* the parts.
+/// [message] with the blocks it wrote for the app gone from the text *and* the
+/// parts.
 ///
 /// Both, or the block disappears from the stored answer and stays on screen:
 /// the rendered reply is built from [ChatMessage.parts], and the text is what
 /// is saved, re-sent as history and exported.
-ChatMessage withoutLoopBlock(ChatMessage message) => message.copyWith(
-  text: stripLoopPaceBlock(message.text),
+///
+/// Both fences, because both are the assistant talking to the app and neither
+/// is worth reading: `grid-loop` paces a running loop, `grid-ask` relays what
+/// the user asked for.
+ChatMessage withoutAppBlocks(ChatMessage message) => message.copyWith(
+  text: stripAgentAsk(stripLoopPaceBlock(message.text)),
   parts: [
     for (final part in message.parts)
-      part is TurnText ? TurnText(stripLoopPaceBlock(part.text)) : part,
+      part is TurnText
+          ? TurnText(stripAgentAsk(stripLoopPaceBlock(part.text)))
+          : part,
   ],
 );
+
+/// [chat] with the blocks written for the app taken off its last reply, and
+/// nothing else
+/// changed.
+///
+/// changed.
+///
+/// A block is how the assistant talks to the app; once the app has acted on it,
+/// leaving it in the transcript shows the user a line of JSON they never asked
+/// to read — and re-sends it as history on every turn after.
+Conversation withoutAppBlocksOnLastReply(Conversation chat) {
+  final messages = [...chat.messages];
+  final last = messages.lastIndexWhere((m) => m.role == ChatRole.assistant);
+  if (last == -1) return chat;
+  messages[last] = withoutAppBlocks(messages[last]);
+  return chat.copyWith(messages: messages);
+}
 
 /// [chat] with the unbacked block taken off its last reply and
 /// [kUnbackedLoopClaimNote] after it, or [chat] unchanged when the last reply
@@ -59,7 +84,7 @@ Conversation noteUnbackedLoopClaim(Conversation chat) {
   final last = messages.lastIndexWhere((m) => m.role == ChatRole.assistant);
   if (last == -1) return chat;
   if (!claimsLoopWithoutOne(messages[last].text, chat.loop)) return chat;
-  messages[last] = withoutLoopBlock(messages[last]);
+  messages[last] = withoutAppBlocks(messages[last]);
   messages.add(
     const ChatMessage(role: ChatRole.assistant, text: kUnbackedLoopClaimNote),
   );

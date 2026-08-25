@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -11,7 +12,7 @@ void main() {
 
   setUp(() async {
     home = await Directory.systemTemp.createTemp('grid_mcp_test');
-    config = File('${home.path}/.hermes/config.yaml');
+    config = File('${AgentHomes.hermesProfile(home.path)}/config.yaml');
     subject = HermesMcpConfig(home: home.path);
   });
   tearDown(() => home.delete(recursive: true));

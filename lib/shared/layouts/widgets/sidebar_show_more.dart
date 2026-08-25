@@ -3,37 +3,64 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import 'sidebar_item.dart';
 
-/// How many rows a sidebar section shows before the rest sit behind "Show more".
+/// How many rows a *nested* sidebar section shows before the rest sit behind
+/// "Show more".
 ///
 /// Small on purpose: the rail is a way back to the chat you were just in, and a
 /// section that opens at twenty rows buries the three that matter under
 /// seventeen that don't.
 ///
-/// One number for every section in the rail — the project list, a project's
-/// chats, and the loose chats — so the rail never grows a second,
-/// differently-sized page.
+/// One number for both of them — the project list, and the chats inside a
+/// project — so those two can't grow differently-sized pages. The loose chats
+/// are the exception and page at [kSidebarChatsFirstPage]; see there for why
+/// that one list earns a longer opening.
 const int kSidebarFirstPage = 5;
+
+/// How many chats the rail's "Chats" section shows before the rest sit behind
+/// "Show more".
+///
+/// Four times [kSidebarFirstPage], because nothing else in the rail stands in
+/// for this list. A project's chats are one click away inside a folder you can
+/// already see, so cutting that list short costs you nothing you can't find;
+/// a chat that belongs to no project is in this list or nowhere. Opening it at
+/// five made "Show more" the row a person clicked most.
+///
+/// It doubles as the threshold, which is the point of stating it as the first
+/// page rather than as a separate rule: a section is truncated only when it has
+/// more rows than it shows, so nineteen loose chats are simply all drawn and
+/// "Show more" is never built.
+const int kSidebarChatsFirstPage = 20;
 
 /// How many more rows each click of "Show more" reveals.
 ///
-/// **Bigger than the first page, deliberately.** The two answer different
-/// questions. The first page is what the rail volunteers, so it stays short;
+/// **Bigger than [kSidebarFirstPage], deliberately.** The two answer different
+/// questions. That first page is what the rail volunteers, so it stays short;
 /// a click is someone saying "I don't see it, show me more", and answering that
 /// five at a time makes them click four times to reach a chat from last week.
 /// Whoever asked has already told you they want a longer list.
+///
+/// One step for every section, including the one that opens at
+/// [kSidebarChatsFirstPage] and so reveals *fewer* rows per click than it began
+/// with: what a click is worth doesn't change with how much the rail chose to
+/// show before it.
 const int kSidebarNextPage = 10;
 
 /// How many rows a section shows once it has been paged open [pages] times:
-/// [kSidebarFirstPage], then [kSidebarNextPage] more for every click after.
+/// [firstPage], then [kSidebarNextPage] more for every click after.
 ///
 /// A function rather than the arithmetic at each call site, so the three
-/// sections can't drift apart and so the count is always clamped to what's
-/// actually there: a section expanded past a list that later shrank (a chat
-/// archived, a project removed) must not keep claiming there's more to see.
-int sidebarPageCount(int pages, int total) {
+/// sections can't drift apart on the *step* even where they deliberately differ
+/// on the opening page, and so the count is always clamped to what's actually
+/// there: a section expanded past a list that later shrank (a chat archived, a
+/// project removed) must not keep claiming there's more to see.
+int sidebarPageCount(
+  int pages,
+  int total, {
+  int firstPage = kSidebarFirstPage,
+}) {
   final shown = pages <= 1
-      ? kSidebarFirstPage
-      : kSidebarFirstPage + kSidebarNextPage * (pages - 1);
+      ? firstPage
+      : firstPage + kSidebarNextPage * (pages - 1);
   return shown < total ? shown : total;
 }
 

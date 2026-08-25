@@ -81,20 +81,6 @@ final blockedChatAgentProvider = Provider<AgentTool?>((ref) {
   return ref.watch(agentRunsOnGridProvider(chosen)) ? null : chosen;
 });
 
-/// An agent other than the one answering that could take this chat right now —
-/// installed, and runnable on the open grid.
-///
-/// What a one-click "use something else" offers. Null when there's nothing to
-/// offer, so the button stands down rather than promising a swap that would
-/// change nothing.
-final alternativeChatAgentProvider = Provider<AgentTool?>((ref) {
-  final active = ref.watch(activeChatAgentProvider);
-  for (final tool in AgentTool.values) {
-    if (tool != active && canAnswerChatsHere(ref, tool)) return tool;
-  }
-  return null;
-});
-
 /// Whether the open grid serves a model [tool] could actually answer with — the
 /// model half of "can this agent take the chat here", beside
 /// [agentRunsOnGridProvider]'s grid half.
@@ -127,9 +113,9 @@ final chatModelAgentProvider = Provider<AgentTool?>(
 /// Installed on this computer, and runnable on the grid that's open.
 ///
 /// The one definition of "this agent could take a chat here", shared rather than
-/// restated: the fallback above, the "use something else" offer and the Auto
-/// agent's candidate pool all ask it, and a second copy is a pool that quietly
-/// stops agreeing with the agent the chat actually resolved to.
+/// restated: the fallback above and the Auto agent's candidate pool both ask it,
+/// and a second copy is a pool that quietly stops agreeing with the agent the
+/// chat actually resolved to.
 bool canAnswerChatsHere(Ref ref, AgentTool tool) =>
     ref.watch(agentInstalledProvider(tool)) &&
     ref.watch(agentRunsOnGridProvider(tool));

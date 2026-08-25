@@ -37,14 +37,14 @@ ProviderContainer _container(HermesSessionService? sessions) {
 
 void main() {
   test('keeps asking until the agent has named the session', () async {
-    final sessions = _FakeSessions([null, null, 'Kiểm tra thư mục dự án']);
+    final sessions = _FakeSessions([null, null, 'Checking the project folder']);
     final container = _container(sessions);
 
     final title = await container
         .read(agentSessionTitleProvider)
         .waitFor('sess-1');
 
-    expect(title, 'Kiểm tra thư mục dự án');
+    expect(title, 'Checking the project folder');
     expect(sessions.asked, ['sess-1', 'sess-1', 'sess-1']);
   });
 
@@ -76,9 +76,9 @@ void main() {
       expect(
         parseSessionTitle(
           '{"id": "sess-1", "source": "acp", '
-          '"title": "Kiểm tra thư mục dự án Flutter Grid"}',
+          '"title": "Checking the Flutter Grid project folder"}',
         ),
-        'Kiểm tra thư mục dự án Flutter Grid',
+        'Checking the Flutter Grid project folder',
       );
     });
 

@@ -1,3 +1,4 @@
+import 'package:grid_app/core/agent_homes.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -243,7 +244,9 @@ void main() {
     test("an agent's own folder is writable — the tabs *are* those folders, so "
         'a row the screen shows must be editable from it', () async {
       final author = SkillAuthor(home: home.path);
-      final notes = Directory('${home.path}/.hermes/skills/my-skills/notes');
+      final notes = Directory(
+        '${AgentHomes.hermesProfile(home.path)}/skills/my-skills/notes',
+      );
       await notes.create(recursive: true);
 
       final edited = await author.edit(

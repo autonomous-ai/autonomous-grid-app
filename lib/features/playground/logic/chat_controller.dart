@@ -79,6 +79,7 @@ class ChatController extends Notifier<ChatState> {
       node: node,
       took: clock.elapsed,
       firstToken: firstToken,
+      sentAt: DateTime.now(),
     );
 
     // Fold updates through a stored subscription rather than `await for`, so

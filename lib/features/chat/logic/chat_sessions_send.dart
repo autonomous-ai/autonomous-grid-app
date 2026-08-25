@@ -5,6 +5,30 @@ part of 'chat_sessions_controller.dart';
 /// Keyed by conversation throughout, so several chats can be answering at once
 /// and a reply never lands in the transcript the user has since switched to.
 mixin _ChatSend on _ChatSessions {
+  /// Whether the assistant answering can read a picture itself, so a turn
+  /// carrying one need not go to the chat model that can't.
+  ///
+  /// Read here rather than passed in from the composer: the same send is reached
+  /// from Retry and from a queued follow-up, and a value carried from a screen
+  /// would be missing on both.
+  ///
+  /// Asked only of a turn that actually carries a picture. Not an optimisation:
+  /// this runs inside the chat controller, and a question about the open chat's
+  /// agent asked the obvious way — `activeChatAgentProvider` — is a provider
+  /// that reads *this* controller back. Riverpod calls that a circular
+  /// dependency and throws, which killed every send before it began. The
+  /// project's own agent provider takes the id as an argument and depends on
+  /// nothing here, so it is safe to ask; the early return keeps the ordinary
+  /// text turn from asking at all.
+  bool _agentReadsImages(String? projectId, {required bool hasImages}) {
+    if (!hasImages) return false;
+    return agentReadsImagesForChat(
+      agent: ref.read(chatAgentForProjectProvider(projectId)),
+      hermesVisionModel: ref.read(hermesVisionModelProvider).value,
+      developerMode: AppEnvironment.isDeveloperMode,
+    );
+  }
+
   /// Send [message] in the open chat — or, when [into] names one, in that chat
   /// without bringing it to the front (how a queued follow-up goes out).
   ///
@@ -29,6 +53,7 @@ mixin _ChatSend on _ChatSessions {
     String? into,
     bool continuing = false,
     String? agentCommand,
+    TurnOrigin origin = TurnOrigin.user,
   }) async {
     final text = message.trim();
     if (text.isEmpty) return;
@@ -84,14 +109,26 @@ mixin _ChatSend on _ChatSessions {
         : model;
 
     // Plain text goes through the agent (it can use tools and keeps the
-    // conversation's context); pictures — generating one, or a turn that carries
-    // attachments — go straight to the grid's chat API, which is the only one
-    // that can see or make them. Decided here, before anything is committed,
-    // because it also decides whether the turn is worth routing at all.
+    // conversation's context); making a picture goes straight to the grid's
+    // chat API, which is the only one that can. A turn *carrying* a picture goes
+    // to whichever of the two can read it — see [agentReadsImagesForChat].
+    // Decided here, before anything is committed, because it also decides
+    // whether the turn is worth routing at all.
+    //
+    // **This is the decision that routes the send.** The composer computes the
+    // same answer to know whether to unlock, but what it computes only draws a
+    // button; a change made there alone leaves the picture going to the API
+    // exactly as before, and the failure arrives from the engine, three layers
+    // down, as "this model can't read images".
     final viaAgent = agentAnswersTurn(
       modality: modality,
       hasAttachments: attachments.isNotEmpty,
       agentInstalled: ref.read(anyAgentInstalledProvider),
+      agentReadsImages: _agentReadsImages(
+        (into == null ? state.active : _find(into))?.projectId ??
+            state.draftProjectId,
+        hasImages: attachments.isNotEmpty,
+      ),
     );
 
     // What this chat lets the agent do — its own choice when it has one, else
@@ -130,6 +167,7 @@ mixin _ChatSend on _ChatSessions {
       files: files,
       contexts: contexts,
       outputsDir: ref.read(mediaOutputsDirProvider),
+      origin: origin,
     );
     // The chat remembers the model the *user* chose, never the one Auto swapped
     // in: the composer is restored from it, so writing `auto` here would replace
@@ -224,6 +262,10 @@ mixin _ChatSend on _ChatSessions {
       modality: modality,
       hasAttachments: retryable.attachments.isNotEmpty,
       agentInstalled: ref.read(anyAgentInstalledProvider),
+      agentReadsImages: _agentReadsImages(
+        conversation.projectId,
+        hasImages: retryable.attachments.isNotEmpty,
+      ),
     );
     final approval = approvalFor(
       conversation,
@@ -469,9 +511,9 @@ mixin _ChatSend on _ChatSessions {
     // working bubble can show it changing while a long task runs.
     ref.read(turnModelUsageProvider.notifier).begin(id, network, turnId);
 
-    // Who answered, with what, where, and how long it took — the footer's four
-    // facts, stamped onto whatever the turn produced (a whole reply, or the
-    // part-answer a failure left behind).
+    // Who answered, with what, where, when, and how long it took — stamped onto
+    // whatever the turn produced (a whole reply, or the part-answer a failure
+    // left behind).
     ChatMessage stamp(ChatMessage reply) => reply.copyWith(
       // And how the turn went, so the finished transcript keeps the order the
       // user watched it in. Here rather than in each sender: this is the one
@@ -489,6 +531,7 @@ mixin _ChatSend on _ChatSessions {
       modelShares: ref.read(turnModelUsageProvider)[id] ?? const [],
       took: clock.elapsed,
       firstToken: firstToken,
+      sentAt: DateTime.now(),
     );
 
     // The wire's answer to "which model", which is not always the composer's:
@@ -497,7 +540,9 @@ mixin _ChatSend on _ChatSessions {
     // everything above reads [model] to name the pick on screen, to find the
     // machine behind it and to work out which agents can answer with it, and
     // none of those questions is answered by a pinned model list.
-    final updates = _senderFor(viaAgent, agent).send(
+    //
+    // Started only if there is a folder to start it in — see [_intoFolder].
+    Stream<ChatSendUpdate> startSender() => _senderFor(viaAgent, agent).send(
       turnId: turnId,
       network: network,
       model: wireModelFor(conversation, model),
@@ -528,6 +573,8 @@ mixin _ChatSend on _ChatSessions {
       // isn't its own agent's, in its own folder.
       resume: conversation.resume,
     );
+
+    final updates = _intoFolder(workdir, startSender);
 
     String? agentSessionId;
     _subs[id] = updates.listen(
@@ -707,6 +754,32 @@ mixin _ChatSend on _ChatSessions {
       onError: (Object _) => _finish(id),
       cancelOnError: true,
     );
+  }
+
+  /// [send]'s updates, or a single failure when the folder the turn would run in
+  /// isn't on this computer any more.
+  ///
+  /// The folder is the agent's working directory, so a project pointed at a
+  /// folder that has been deleted or moved in Finder fails at `Process.start`,
+  /// before the agent exists to say anything. What that reported was
+  /// "Couldn't start Claude Code on this computer" — the app blaming the agent
+  /// for a folder the user removed, with nothing about which folder or what to
+  /// do. Asked here rather than in each sender because all three spawn into this
+  /// same directory, and asked *lazily* (the sender is a callback) so nothing is
+  /// spawned at all.
+  ///
+  /// Only a folder that is genuinely gone stops the turn: [projectFolderMissing]
+  /// counts a slow share's silence as present, so a stat that times out sends
+  /// the turn rather than refusing it.
+  Stream<ChatSendUpdate> _intoFolder(
+    String? workdir,
+    Stream<ChatSendUpdate> Function() send,
+  ) async* {
+    if (workdir != null && await projectFolderMissing(ref, workdir)) {
+      yield ChatSendFailure(projectFolderGoneMessage(workdir));
+      return;
+    }
+    yield* send();
   }
 
   /// How the turn in chat [id] went — its passages and steps in order, with
@@ -956,6 +1029,7 @@ mixin _ChatSend on _ChatSessions {
           ChatMessage(
             role: ChatRole.assistant,
             text: partial,
+            sentAt: DateTime.now(),
             // The steps it ran before it was stopped are half the account of
             // what happened — a turn cut off after six commands and one cut off
             // before it did anything are different turns, and the transcript is

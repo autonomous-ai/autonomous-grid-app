@@ -1,5 +1,3 @@
-// import 'dart:math' as math;  // HIDDEN with workflow control
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -11,7 +9,6 @@ import '../../../features/chat/logic/chat_rail.dart';
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/logic/preview_panel.dart';
 import '../../../features/chat/presentation/chat_header.dart';
-// import '../../../features/chat/presentation/workflow_flow_line.dart';  // HIDDEN: workflow header control disabled (per-turn routing suffices); re-enable later
 import '../../../features/code/logic/code_projects_controller.dart';
 import '../../../features/code/logic/code_side_panel.dart';
 import '../../../features/code/logic/project_status_controller.dart';
@@ -21,9 +18,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_spinner.dart';
 import '../../widgets/panel_toggle.dart';
 import '../shell_state.dart';
-import 'grid_power_pill.dart';
+import 'grid_cta_pair.dart';
 import 'top_bar_pill.dart';
-import 'working_now_pill.dart';
 
 /// The slim strip above the open section: on the left, the conversation you're
 /// reading; on the right, which grid is active and what it has behind it
@@ -102,13 +98,17 @@ class AppTopBar extends ConsumerWidget {
                     },
                   ),
                 ),
-                // Leftmost of the pills, furthest from the panel toggles: it is
-                // the only one about work the user started, and the only one
-                // they may want to act on.
-                const WorkingNowPill(),
                 const _ModelDownloadPill(),
-                const GridPowerPill(),
-                // const _WorkflowBubbleToggle(),  // HIDDEN: routing setup done; per-turn mode suffices. Re-enable when a control is wanted.
+                // What you can do to this grid, then what you can open beside
+                // this conversation. Two groups, and only two — the grid's
+                // figures used to sit between them and they are on
+                // [AppStatusRail] now.
+                //
+                // That is what makes this bar legible again: everything left on
+                // it is either the conversation's own chrome or a control, and
+                // nothing here is a number to be read.
+                const GridCtaPair(),
+                const _ControlsDivider(),
                 const _ProjectRailToggle(),
                 const _BottomPanelToggle(),
                 const _SidePanelToggle(),
@@ -121,116 +121,56 @@ class AppTopBar extends ConsumerWidget {
   }
 }
 
-/// Shows and hides the orchestration overview — the strip above the
-/// conversation saying how this chat is routed and how far its turn has got.
+/// The rule between two groups on the bar.
 ///
-/// Right beside [GridPowerPill] rather than with the panel toggles: it isn't a
-/// panel around the conversation, it's a small indicator of its own, and it
-/// belongs next to the grid summary it reports on.
+/// The groups are otherwise separated by whitespace alone, and whitespace is
+/// not enough here: every pill already carries its own inner padding, so the
+/// gap between two capsules looks the same as the gap inside one. A hairline
+/// says the two things either side of it answer different questions.
 ///
-/// Only while the open chat is routed, the same way every other toggle in this
-/// row waits for something to move: the strip itself draws nothing for a chat
-/// on the grid's ordinary pick, so on those this button would report the state
-/// of something the user cannot see either way.
-// class _WorkflowBubbleToggle extends ConsumerStatefulWidget {
-//   const _WorkflowBubbleToggle();
-//
-//   @override
-//   ConsumerState<_WorkflowBubbleToggle> createState() =>
-//       _WorkflowBubbleToggleState();
-// }
-//
-// class _WorkflowBubbleToggleState extends ConsumerState<_WorkflowBubbleToggle> {
-//   /// Anchors the orchestration popover to the button, so it hangs off the same
-//   /// relative (LayerLink + CompositedTransformFollower) machinery the grid
-//   /// power/stat popovers use — a floating panel, not an element pushed into
-//   /// the conversation.
-//   final _link = LayerLink();
-//   final _controller = OverlayPortalController();
-//   final _tapGroup = Object();
-//
-//   @override
-//   void initState() {
-//     super.initState();
-//   }
-//
-//   void _toggle() {
-//     if (_controller.isShowing) {
-//       _controller.hide();
-//     } else {
-//       _controller.show();
-//     }
-//   }
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     AppTheme.watch(context);
-//     // When the chat stops being routed (or closes), unmount the portal so it
-//     // never comes back already-showing. Riverpod requires listens inside build.
-//     ref.listen(chatSessionsProvider, (_, next) {
-//       if (next.active?.routingGroup == null && _controller.isShowing) {
-//         _controller.hide();
-//       }
-//     });
-//     final routed = ref.watch(
-//       chatSessionsProvider.select((s) => s.active?.routingGroup != null),
-//     );
-//     if (!ref.watch(chatIsOpenProvider) || !routed) {
-//       return const SizedBox.shrink();
-//     }
-//     final open = _controller.isShowing;
-//     return TapRegion(
-//       groupId: _tapGroup,
-//       onTapOutside: (_) {
-//         if (_controller.isShowing) _controller.hide();
-//       },
-//       child: CompositedTransformTarget(
-//         link: _link,
-//         child: OverlayPortal(
-//           controller: _controller,
-//           overlayChildBuilder: (context) => _WorkflowPopover(
-//             link: _link,
-//             tapGroupId: _tapGroup,
-//           ),
-//           child: PanelToggle(
-//             icon: LucideIcons.workflow,
-//             open: open,
-//             label: 'orchestration overview',
-//             onPressed: _toggle,
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }
-//
-// /// The floating orchestration panel, hung under the workflow button.
-// class _WorkflowPopover extends StatelessWidget {
-//   const _WorkflowPopover({required this.link, required this.tapGroupId});
-//
-//   final LayerLink link;
-//   final Object tapGroupId;
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     AppTheme.watch(context);
-//     final windowWidth = MediaQuery.sizeOf(context).width;
-//     final width = math.min(620.0, windowWidth - 16);
-//     return Positioned(
-//       width: width,
-//       child: CompositedTransformFollower(
-//         link: link,
-//         targetAnchor: Alignment.bottomRight,
-//         followerAnchor: Alignment.topRight,
-//         offset: const Offset(-8, 8),
-//         child: TapRegion(
-//           groupId: tapGroupId,
-//           child: const WorkflowFlowPanel(),
-//         ),
-//       ),
-//     );
-//   }
-// }
+/// [AppPalette.guide] rather than [AppPalette.divider]: this stands on the page
+/// (the bar has no fill of its own), where the divider weight reads as a smudge
+/// rather than as a line — the same reason the sidebar's tree guide has its own
+/// token.
+class _BarDivider extends StatelessWidget {
+  const _BarDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: SizedBox(
+        width: 1,
+        height: 18,
+        child: ColoredBox(color: AppPalette.guide),
+      ),
+    );
+  }
+}
+
+/// The rule between the grid's own surfaces and the window's panel toggles.
+///
+/// Drawn only when there is something on *both* sides — a line with one side is
+/// a mark, not a separator. The toggles are conditional in their own right — a
+/// chat with no grid has no panel to open, a project with no repository has
+/// nothing to browse — so this asks the same questions they do.
+class _ControlsDivider extends ConsumerWidget {
+  const _ControlsDivider();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(selectedNetworkProvider) == null) {
+      return const SizedBox.shrink();
+    }
+    final hasToggle =
+        _chatWithGrid(ref) ||
+        (ref.watch(codeProjectIsOpenProvider) &&
+            ref.watch(openProjectHasCodeProvider));
+    if (!hasToggle) return const SizedBox.shrink();
+    return const _BarDivider();
+  }
+}
 
 /// Shows and hides the project rail beside a chat — the top-bar counterpart to
 /// the panel itself, so a narrow window (where the rail can't sit alongside and

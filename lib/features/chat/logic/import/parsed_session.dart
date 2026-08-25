@@ -302,12 +302,16 @@ class StepDraft {
 
 /// One turn under construction: what was said and what was run, in order.
 class TurnDraft {
-  TurnDraft(this.role, {this.model});
+  TurnDraft(this.role, {this.model, this.sentAt});
 
   final ChatRole role;
 
   /// The model that answered, on an assistant turn.
   String? model;
+
+  /// The source event's time. Later pieces replace it when a turn is merged,
+  /// so the finished message says when its final visible piece landed.
+  DateTime? sentAt;
 
   /// Prose passages ([String]) and steps ([StepDraft]), interleaved in the
   /// order they happened — which is the order the chat replays them in.
@@ -361,6 +365,7 @@ List<TurnDraft> mergeDrafts(List<TurnDraft> drafts) {
     // The later half of a merged turn carries the stamps — an early line has no
     // model on it yet.
     last.model = draft.model ?? last.model;
+    last.sentAt = draft.sentAt ?? last.sentAt;
   }
   return out;
 }
@@ -385,7 +390,9 @@ List<TurnDraft> mergeDrafts(List<TurnDraft> drafts) {
     final prose = clipImported(draft.prose);
     if (prose.length != draft.prose.length) clipped++;
     if (draft.role == ChatRole.user) {
-      out.add(ChatMessage(role: ChatRole.user, text: prose));
+      out.add(
+        ChatMessage(role: ChatRole.user, text: prose, sentAt: draft.sentAt),
+      );
       continue;
     }
     out.add(
@@ -395,6 +402,7 @@ List<TurnDraft> mergeDrafts(List<TurnDraft> drafts) {
         parts: draft.hasSteps ? draft.parts : const [],
         agent: agentId,
         model: draft.model,
+        sentAt: draft.sentAt,
       ),
     );
   }

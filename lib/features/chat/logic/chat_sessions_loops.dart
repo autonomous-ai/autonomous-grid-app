@@ -147,18 +147,24 @@ mixin _ChatLoops on _ChatSessions {
     _logLoopStopped(id, loop, 'the chat it belonged to was cleared or deleted');
   }
 
-  /// Put a note under a finished turn whose reply set up a repeat that nothing
-  /// is running (see [kUnbackedLoopClaimNote]).
+  /// Act on a finished turn whose reply talks about a repeat that does not
+  /// exist: start the one the user asked for, or say that nothing is repeating.
   ///
   /// Runs on every turn that settles, not only a loop's: a loop beat has a
-  /// running loop by definition, so the block there is read and taken off as
-  /// usual and this does nothing. It is the *ordinary* turn — the one where an
-  /// agent decided by itself to keep going — that ends with a promise the app
-  /// never made.
+  /// running loop by definition, so the block there is read and paced as usual
+  /// and this does nothing. It is the *ordinary* turn that matters here, and it
+  /// ends one of two ways — the assistant relaying a repeat the user asked for
+  /// in words the app could not parse ([loopStartAskedFor]), or an agent that
+  /// decided by itself to keep going ([kUnbackedLoopClaimNote]).
   @override
-  void _noteUnbackedLoopClaim(String id) {
+  void _settleLoopClaim(String id) {
     final chat = _find(id);
     if (chat == null) return;
+    final relayed = parseAgentAsk(_lastReplyOf(chat));
+    if (relayed != null) {
+      _runTheAskItRelayed(id, chat, relayed);
+      return;
+    }
     final noted = noteUnbackedLoopClaim(chat);
     if (identical(noted, chat)) return;
     ref
@@ -170,6 +176,29 @@ mixin _ChatLoops on _ChatSessions {
         );
     // No `updatedAt`: the turn that just landed already moved it.
     _saveAndReplace(noted);
+  }
+
+  /// Run the command the reply relayed, in the chat it was asked in.
+  ///
+  /// The assistant read a sentence the app's own reading could not, and said
+  /// back what was being asked for (see [parseAgentAsk]). It goes through the
+  /// same [runCommand] the composer uses, so a `/loop` started this way is the
+  /// same object as one typed, with the same bar and the same stop.
+  ///
+  /// The block comes off the reply first: the app has acted on it, and leaving
+  /// it in shows the user a line of JSON and re-sends it as history forever.
+  void _runTheAskItRelayed(String id, Conversation chat, ChatCommandCall call) {
+    ref
+        .read(appLogProvider)
+        .info(
+          'chat',
+          'chat $id: the reply relayed an ask — running '
+              '/${call.command.name} ${call.argument}',
+        );
+    _saveAndReplace(withoutAppBlocksOnLastReply(chat));
+    // Unawaited on purpose: this is the tail of a turn that has already ended,
+    // and a command that opens a card or asks the grid must not hold it open.
+    unawaited(runCommand(call, model: chat.model));
   }
 
   /// Say in the log that a loop stopped, and why.
@@ -255,6 +284,9 @@ mixin _ChatLoops on _ChatSessions {
         into: id,
         planFirst: false,
         continuing: true,
+        // Nobody typed this beat — the timer fired. Drawn as a line saying so
+        // rather than as a message the user never wrote (see [TurnOrigin]).
+        origin: TurnOrigin.loop,
       ),
     );
     if (_disposed) return;
@@ -399,7 +431,7 @@ mixin _ChatLoops on _ChatSessions {
       final message = messages[i];
       switch (message.role) {
         case ChatRole.assistant:
-          final clean = withoutLoopBlock(message);
+          final clean = withoutAppBlocks(message);
           if (clean.text == message.text) continue;
           messages[i] = clean;
           changed = true;

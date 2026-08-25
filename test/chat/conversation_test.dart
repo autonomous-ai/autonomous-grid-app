@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/chat/logic/chat_title.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
+import 'package:grid_app/features/chat/logic/import/parsed_session.dart';
 import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
 import 'package:grid_app/features/chat/logic/routing_group.dart';
 import 'package:grid_app/features/playground/logic/chat_message.dart';
@@ -194,6 +195,41 @@ void main() {
       );
     });
 
+    test('round-trips message times so reopened chats still say when each turn '
+        'was sent', () {
+      final sentAt = DateTime(2026, 8, 24, 21, 17);
+      final original = _conversation(
+        messages: [
+          ChatMessage(
+            role: ChatRole.user,
+            text: 'When was this?',
+            sentAt: sentAt,
+          ),
+        ],
+      );
+
+      final json = original.toJson();
+      final stored = (json['messages'] as List).single as Map<String, dynamic>;
+      final restored = Conversation.fromJson(json);
+
+      expect(stored['sent_at'], sentAt.toUtc().toIso8601String());
+      expect(restored.messages.single.sentAt, sentAt);
+    });
+
+    test('keeps legacy or malformed message times unknown instead of inventing '
+        'one when a chat is reopened', () {
+      final legacy = _conversation(
+        messages: const [ChatMessage(role: ChatRole.user, text: 'Old turn')],
+      ).toJson();
+      final malformed = _conversation().toJson()
+        ..['messages'] = [
+          {'role': 'assistant', 'text': 'Broken stamp', 'sent_at': 'later'},
+        ];
+
+      expect(Conversation.fromJson(legacy).messages.single.sentAt, isNull);
+      expect(Conversation.fromJson(malformed).messages.single.sentAt, isNull);
+    });
+
     test('a chat saved before turns were timed reloads without one, rather '
         'than claiming it was instant', () {
       final json = _conversation(
@@ -256,6 +292,59 @@ void main() {
       },
     );
 
+    test('remembers that the app sent a turn, so a reopened chat still draws '
+        'it as a line rather than as words the user never typed', () {
+      final json = _conversation(
+        messages: [
+          const ChatMessage(
+            role: ChatRole.user,
+            text: 'Keep working toward this goal…',
+            sentBy: TurnOrigin.goal,
+          ),
+          const ChatMessage(
+            role: ChatRole.user,
+            text: 'run the bench',
+            sentBy: TurnOrigin.loop,
+          ),
+        ],
+      ).toJson();
+
+      final restored = Conversation.fromJson(json);
+
+      expect(restored.messages.map((m) => m.sentBy), [
+        TurnOrigin.goal,
+        TurnOrigin.loop,
+      ]);
+    });
+
+    test('a turn the user typed writes no origin at all, so a chat saved '
+        'before this existed reads back as their own words', () {
+      final json = _conversation(
+        messages: [const ChatMessage(role: ChatRole.user, text: 'hello')],
+      ).toJson();
+      final stored = (json['messages'] as List).single as Map<String, dynamic>;
+
+      expect(stored.containsKey('sent_by'), isFalse);
+      expect(
+        Conversation.fromJson(json).messages.single.sentBy,
+        TurnOrigin.user,
+      );
+    });
+
+    test('an origin written by a newer build reads as the user, so an unknown '
+        'turn is drawn as a message instead of a line nothing can open', () {
+      final json = _conversation(
+        messages: [const ChatMessage(role: ChatRole.user, text: 'hello')],
+      ).toJson();
+      final stored = (json['messages'] as List).single as Map<String, dynamic>;
+      stored['sent_by'] = 'daydream';
+
+      expect(
+        Conversation.fromJson(json).messages.single.sentBy,
+        TurnOrigin.user,
+      );
+    });
+
     test('throws when the id is missing so the store can skip the file', () {
       expect(
         () => Conversation.fromJson(const {'title': 'x'}),
@@ -270,8 +359,24 @@ void main() {
     });
   });
 
+  test('an imported turn keeps the final source timestamp when adjacent event '
+      'pieces are merged', () {
+    final first = DateTime.utc(2026, 8, 24, 10);
+    final finished = DateTime.utc(2026, 8, 24, 10, 2);
+    final drafts = mergeDrafts([
+      TurnDraft(ChatRole.assistant, sentAt: first)..say('First'),
+      TurnDraft(ChatRole.assistant, sentAt: finished)..say('Second'),
+    ]);
+
+    final result = finishDrafts(drafts, agentId: 'codex');
+
+    expect(result.messages.single.sentAt, finished);
+  });
+
   group('deriveConversationTitle', () {
-    test('uses the first user line, clipped', () {
+    test('keeps the whole first user line — the rename field can only offer '
+        'back what was written down, and every place it is drawn clips it at '
+        'the width it actually has', () {
       final title = deriveConversationTitle([
         const ChatMessage(
           role: ChatRole.user,
@@ -280,9 +385,10 @@ void main() {
               'please',
         ),
       ]);
-      expect(title.length, lessThanOrEqualTo(41)); // 40 chars + ellipsis
-      expect(title, endsWith('…'));
-      expect(title, startsWith('Explain quantum tunnelling'));
+      expect(
+        title,
+        'Explain quantum tunnelling to me like I am five years old please',
+      );
     });
 
     test('skips assistant turns and blank lines', () {
@@ -295,6 +401,20 @@ void main() {
 
     test('falls back to the placeholder with no user text', () {
       expect(deriveConversationTitle(const []), kNewConversationTitle);
+    });
+
+    test('names the chat after what the user asked, not after the goal step '
+        'the app sent — the sidebar read "Keep working toward this goal…"', () {
+      final title = deriveConversationTitle([
+        const ChatMessage(
+          role: ChatRole.user,
+          text: 'Keep working toward this goal: make the tests pass',
+          sentBy: TurnOrigin.goal,
+        ),
+        const ChatMessage(role: ChatRole.user, text: 'speed up the reader'),
+      ]);
+
+      expect(title, 'Speed up the reader');
     });
 
     // The rows from issue #37: every one of them opened with the same
@@ -318,9 +438,12 @@ void main() {
         named('/goal study https://roo.dev/docs/quickstart'),
         'Study roo.dev/docs',
       );
+      // The openers are English only, so an ask written in another language
+      // keeps its own — a limit worth seeing in a test rather than finding in
+      // a sidebar.
       expect(
-        named('giúp mình sửa lại phần giá trên trang chủ'),
-        'Sửa lại phần giá trên trang chủ',
+        named('could you please fix the pricing on the home page'),
+        'Fix the pricing on the home page',
       );
     });
 
@@ -340,18 +463,18 @@ void main() {
       );
     });
 
-    test(
-      'cuts at a word boundary — a name cut mid-word reads as another word',
-      () {
-        final title = deriveConversationTitle([
-          const ChatMessage(
-            role: ChatRole.user,
-            text: 'Rewrite the onboarding checklist for the desktop app',
-          ),
-        ]);
-        expect(title, 'Rewrite the onboarding checklist for…');
-      },
-    );
+    test('is not cut on the way in, so renaming one offers the sentence back '
+        'rather than its first forty characters', () {
+      final title = deriveConversationTitle([
+        const ChatMessage(
+          role: ChatRole.user,
+          text: 'Rewrite the onboarding checklist for the desktop app',
+        ),
+      ]);
+
+      expect(title, 'Rewrite the onboarding checklist for the desktop app');
+      expect(editableChatTitle(title), title);
+    });
   });
 
   group('tidyChatTitle', () {
@@ -363,13 +486,37 @@ void main() {
       expect(tidyChatTitle('   '), '');
     });
 
-    test('clips a model that answered with a sentence rather than a name', () {
+    test('keeps a model that answered with a sentence whole — a long name is '
+        'the drawing\'s problem, not the store\'s', () {
       expect(
         tidyChatTitle(
           'This conversation is about rewriting the onboarding checklist',
         ),
-        'This conversation is about rewriting…',
+        'This conversation is about rewriting the onboarding checklist',
       );
+    });
+
+    test('a name that has to fit a fixed budget is still cut to one, at a '
+        'word boundary — that is what clipChatTitle is for now', () {
+      expect(
+        clipChatTitle('Rewrite the onboarding checklist for the desktop app'),
+        'Rewrite the onboarding checklist for…',
+      );
+      expect(clipChatTitle('Ford Territory'), 'Ford Territory');
+    });
+  });
+
+  group('editableChatTitle', () {
+    test("drops the clip mark so a rename doesn't keep someone else's "
+        'ellipsis', () {
+      expect(
+        editableChatTitle('Rewrite the onboarding checklist for…'),
+        'Rewrite the onboarding checklist for',
+      );
+    });
+
+    test('leaves a name that was never clipped exactly as it is', () {
+      expect(editableChatTitle('Ford Territory'), 'Ford Territory');
     });
   });
 

@@ -10,7 +10,7 @@
 /// The wire format, little-endian throughout:
 ///
 /// ```text
-/// A5 5A | ver:u8 | type:u8 | len:u16 | payload[len] | crc16:u16
+/// A5 47 | ver:u8 | type:u8 | len:u16 | payload[len] | crc16:u16
 /// ```
 ///
 /// [kPanelMagic] is what the reader scans for; the CRC is what separates a
@@ -28,7 +28,41 @@ import 'dart:typed_data';
 
 /// The two bytes every frame opens with, and the only thing the reader scans
 /// for when it has lost its place.
-const List<int> kPanelMagic = [0xA5, 0x5A];
+///
+/// **The second byte is the product, and that is what it is for.** This board
+/// is also the Harness dial — the same Waveshare 466×466 round ESP32-S3, so the
+/// same USB identity (`303a:1001`, the SoC's own USB-Serial-JTAG, whose
+/// descriptor lives in ROM and cannot be changed). Harness's framing was ported
+/// from this file, so until 2026-08-25 both products used `A5 5A` and greeted
+/// with the same three fields: **nothing on the wire told the two apart**. Each
+/// side then decided "should I update this device?" from a version number,
+/// which orders builds *within* one lineage and says nothing *across* two.
+///
+/// What that did, concretely: this app saw a Harness dial, found its version
+/// "other than the bundled one" — and [PanelFirmwareUpdater]'s rule is a
+/// comparison, not an ordering, so older counts — and wrote Grid firmware into
+/// someone's dial within seconds. The other direction is worse: once Harness's
+/// published version climbs past Grid's, each side reflashes what the other
+/// just wrote, ~3 MB and a reboot about every 15 seconds, roughly 700 MB an
+/// hour into a flash rated in erase cycles, with the board unusable throughout
+/// and neither side seeing anything wrong.
+///
+/// `0x47` is `'G'`; Harness took `0x48`, `'H'`. A decoder scanning for its own
+/// magic never matches the other product's frames, so it never obtains a
+/// `hello`, never learns a version, and therefore never offers firmware — with
+/// no cooperation from the other product required, which is why this is the
+/// layer that settles it rather than [kPanelProduct], which needs both sides to
+/// agree. A `product` byte in the *header* would not do this: the other decoder
+/// still matches the magic, reads that byte as `ver`, derives a nonsense `len`
+/// and swallows a chunk of stream before giving up. Failing at byte one is a
+/// clean discard, and [PanelFrameDecoder.discardedBytes] then tells the truth
+/// about what is on the wire.
+///
+/// `0xA5` stays the lead byte because it is outside ASCII, which matters on
+/// this wire specifically: the ROM, the bootloader and the panic handler all
+/// print plain text to it, and a magic that can occur in that text resyncs the
+/// reader onto garbage.
+const List<int> kPanelMagic = [0xA5, 0x47];
 
 /// The framing version this build speaks.
 ///

@@ -164,7 +164,7 @@ class ConnectorBridge {
   Future<void> _handle(HttpRequest request) async {
     final connector = _connectorOf(request.uri.path);
     if (connector == null) {
-      await _send(request, HttpStatus.notFound, {'error': 'unknown path'});
+      await _send(request, HttpStatus.ok, _error(null, -32600, 'Unknown path'));
       return;
     }
 
@@ -179,7 +179,11 @@ class ConnectorBridge {
       return;
     }
     if (request.method != 'POST') {
-      await _send(request, HttpStatus.methodNotAllowed, {'error': 'use POST'});
+      await _send(
+        request,
+        HttpStatus.ok,
+        _error(null, -32600, 'Use POST for MCP requests.'),
+      );
       return;
     }
 
@@ -187,17 +191,15 @@ class ConnectorBridge {
     try {
       payload = jsonDecode(await utf8.decoder.bind(request).join());
     } on Object {
-      await _send(request, HttpStatus.badRequest, {
-        'jsonrpc': '2.0',
-        'error': {'code': -32700, 'message': 'Parse error'},
-      });
+      await _send(request, HttpStatus.ok, _error(null, -32700, 'Parse error'));
       return;
     }
     if (payload is! Map) {
-      await _send(request, HttpStatus.badRequest, {
-        'jsonrpc': '2.0',
-        'error': {'code': -32600, 'message': 'Invalid request'},
-      });
+      await _send(
+        request,
+        HttpStatus.ok,
+        _error(null, -32600, 'Invalid request'),
+      );
       return;
     }
 
@@ -215,25 +217,37 @@ class ConnectorBridge {
     // any of the local handling below: this bridge has nothing to add to a
     // conversation between an agent and a real MCP server, and answering
     // `initialize` on its behalf would describe the wrong server's capabilities.
-    final proxied = await _proxy(connector, payload.cast<String, Object?>());
-    if (proxied != null) {
-      await _send(request, HttpStatus.ok, proxied);
-      return;
+    Map<String, Object?> reply;
+    try {
+      final proxied = await _proxy(connector, payload.cast<String, Object?>());
+      if (proxied != null) {
+        reply = proxied;
+      } else {
+        final result = await _dispatch(
+          connector: connector,
+          method: method is String ? method : '',
+          params: payload['params'] is Map
+              ? (payload['params'] as Map).cast<String, Object?>()
+              : const {},
+        );
+        reply = {'jsonrpc': '2.0', 'id': id, ...result};
+      }
+    } on Object catch (error) {
+      reply = _error(id, -32603, 'Grid could not complete the call: $error');
     }
-
-    final result = await _dispatch(
-      connector: connector,
-      method: method is String ? method : '',
-      params: payload['params'] is Map
-          ? (payload['params'] as Map).cast<String, Object?>()
-          : const {},
-    );
-    await _send(request, HttpStatus.ok, {
-      'jsonrpc': '2.0',
-      'id': id,
-      ...result,
-    });
+    await _send(request, HttpStatus.ok, reply);
   }
+
+  /// A protocol error carried by a successful HTTP exchange.
+  ///
+  /// Agent clients can retry HTTP 4xx/5xx and replay a connector action. A
+  /// JSON-RPC error is delivered to the model without making the transport look
+  /// broken.
+  Map<String, Object?> _error(Object? id, int code, String message) => {
+    'jsonrpc': '2.0',
+    'id': id,
+    'error': {'code': code, 'message': message},
+  };
 
   /// Forward to the connector's own MCP server, or null when that is not how
   /// this connector is reached.

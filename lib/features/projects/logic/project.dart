@@ -115,8 +115,13 @@ class Project {
     return trimmed.isEmpty ? null : trimmed;
   }
 
-  /// A copy with [name], [instructions], [memory], [pinned], [agent] or [model]
-  /// changed; id and path are the project's identity and never move.
+  /// A copy with [name], [path], [instructions], [memory], [pinned], [agent] or
+  /// [model] changed; the id is the project's identity and never moves.
+  ///
+  /// [path] moves the project to another folder — the one repair for a project
+  /// whose folder was deleted or moved in Finder (see
+  /// [ProjectsController.setPath]). Everything else about it, its chats
+  /// included, is keyed by the id and comes along.
   ///
   /// [clearAgent] / [clearModel] are how a choice goes *back* to the app's
   /// standing one: passing null through the `?? this.x` idiom reads as "leave it
@@ -124,6 +129,7 @@ class Project {
   /// Same shape as `ChatPrefs.clearUiFontFamily`, for the same reason.
   Project copyWith({
     String? name,
+    String? path,
     String? instructions,
     List<String>? memory,
     bool? pinned,
@@ -134,7 +140,7 @@ class Project {
   }) => Project(
     id: id,
     name: name ?? this.name,
-    path: path,
+    path: path ?? this.path,
     instructions: instructions ?? this.instructions,
     memory: memory ?? this.memory,
     pinned: pinned ?? this.pinned,
@@ -330,6 +336,24 @@ class ProjectsController extends Notifier<List<Project>> {
     _commit([
       for (final project in state)
         if (project.id == id) project.copyWith(name: trimmed) else project,
+    ]);
+  }
+
+  /// Point a project at another folder, keeping its name, rules, memory and every
+  /// chat that belongs to it.
+  ///
+  /// The one way back from a folder that was deleted or moved in Finder: without
+  /// it the project is stuck naming a path that isn't there, every turn it sends
+  /// dies before the agent starts (the folder is the agent's working directory),
+  /// and the only exit is to remove the project — which orphans its chats.
+  ///
+  /// A blank path is ignored, as is a project that isn't there any more.
+  void setPath(String id, String path) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return;
+    _commit([
+      for (final project in state)
+        if (project.id == id) project.copyWith(path: trimmed) else project,
     ]);
   }
 

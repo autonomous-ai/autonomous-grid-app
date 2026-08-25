@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../features/auth/logic/session_controller.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
@@ -11,6 +12,7 @@ import '../../../features/network/logic/member_usage_provider.dart';
 import '../../../features/network/logic/node_groups.dart';
 import '../../../features/network/logic/node_metrics.dart'
     show answeredWindowLabel, formatCount;
+import '../../../features/network/presentation/share_grid_dialog.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/api/models/member_usage.dart';
 import '../../theme/app_theme.dart';
@@ -87,15 +89,18 @@ class GridStatPanel extends StatelessWidget {
       width: panelWidth,
       child: CompositedTransformFollower(
         link: link,
-        targetAnchor: Alignment.bottomLeft,
-        followerAnchor: Alignment.topLeft,
-        offset: Offset(-_inset + _slide(windowWidth, panelWidth), 8),
+        // Upward. The figures these hang from are on the status rail at the
+        // bottom of the window now, so a panel dropped below its anchor would
+        // open off the bottom edge.
+        targetAnchor: Alignment.topLeft,
+        followerAnchor: Alignment.bottomLeft,
+        offset: Offset(-_inset + _slide(windowWidth, panelWidth), -8),
         child: MouseRegion(
           onEnter: (_) => onEnter(),
           onExit: (_) => onExit(),
           child: TapRegion(
             groupId: tapGroupId,
-            child: PillPanelSurface(child: child),
+            child: _Entrance(child: PillPanelSurface(child: child)),
           ),
         ),
       ),
@@ -120,6 +125,50 @@ class GridStatPanel extends StatelessWidget {
   }
 }
 
+/// The panel arriving: a short fade while it settles the last few pixels up from
+/// the rail it hangs off.
+///
+/// Six pixels and 160ms, which is under the threshold at which a movement reads
+/// as *travel* — the panel should look like it was already there and is coming
+/// into focus, not like it flew in. These open on hover, so whatever this costs
+/// is paid every time the pointer crosses the pill.
+///
+/// Only on the way in. There is no exit animation because there is nothing to
+/// animate: [OverlayPortal] takes the panel out of the tree the moment it hides,
+/// and holding it there to fade would keep a dead popover over the transcript.
+///
+/// Runs once per mount, so swapping figures under an open panel — members to
+/// nodes, name to memory — replaces the contents in place without re-playing
+/// this. That swap is a different motion and belongs to whatever is inside.
+class _Entrance extends StatelessWidget {
+  const _Entrance({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // Reduce Motion means no motion, not less of it — the fade goes too, since
+    // an opacity ramp is the part that reads as movement on a surface this size.
+    final instant = MediaQuery.of(context).disableAnimations;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: instant ? Duration.zero : AppMotion.swap,
+      curve: AppMotion.curve,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          // Positive, so it rises into place: the panel travels *away* from the
+          // rail it opens off, and a fall would read as arriving from the wrong
+          // side of its own anchor.
+          offset: Offset(0, (1 - t) * 6),
+          child: child,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
 /// Who is on this grid, by email, busiest reader first — the panel behind the
 /// pill's member count.
 ///
@@ -129,7 +178,13 @@ class GridStatPanel extends StatelessWidget {
 /// never sent a request appears with no figure and a consumer the roster has
 /// since dropped simply doesn't appear — the roster decides who is listed.
 class GridMembersList extends ConsumerStatefulWidget {
-  const GridMembersList({super.key});
+  const GridMembersList({super.key, required this.onDismiss});
+
+  /// Closes the panel this list is drawn in. Needed because the list now ends
+  /// in an action: a popover held open by the pointer has to get out of the way
+  /// once it has handed the user to a dialog, or it hangs behind the barrier
+  /// waiting for a hover that will never come back.
+  final VoidCallback onDismiss;
 
   @override
   ConsumerState<GridMembersList> createState() => _GridMembersListState();
@@ -168,9 +223,12 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
     final usageAsync = ref.watch(gridMemberUsageProvider);
     final usage = usageAsync.value;
     final usageLoading = usage == null && usageAsync.isLoading;
-    return ref
-        .watch(networkMembersProvider(grid.networkId))
-        .when(
+    final roster = ref.watch(networkMembersProvider(grid.networkId));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        roster.when(
           // The rows in the shape they will land in, rather than a sentence
           // that is one line tall and gets replaced by ten — the panel hangs off
           // a pill in the top bar, so a body that changes height mid-load moves
@@ -186,12 +244,6 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
               byEmail,
               emailOf: (m) => m.email,
             );
-            // The names, not the addresses: a work grid is a column of the same
-            // domain repeated, and the half that differs is the half in front
-            // of the `@`. Computed for the list rather than in the row, because
-            // whether a name still points at one person is a fact about the
-            // whole roster — see `memberHandles`.
-            final labels = memberHandles([for (final m in rows) m.email]);
             final hovered = memberUsageFor(byEmail, _hovered ?? '');
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -221,7 +273,6 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
                   // spends its width on the figure the list is ordered by.
                   itemBuilder: (context, i) => _MemberRow(
                     email: rows[i].email,
-                    label: labels[i],
                     isOwner: rows[i].isOwner,
                     usage: memberUsageFor(byEmail, rows[i].email),
                     usageLoading: usageLoading,
@@ -241,17 +292,47 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
               ],
             );
           },
-        );
+        ),
+        // The way to add the thirty-fourth person, under the thirty-three
+        // already there. This panel is opened to answer "who is on this grid?",
+        // and the commonest reason to ask is that somebody is *not* — which the
+        // list could state and then leave the user to go hunting through the
+        // account menu to act on.
+        //
+        // Outside the `when`, so it is already drawn while the roster is still
+        // coming: a row that appears on load would pull the panel's own bottom
+        // edge down past a pointer resting on it, which is the jump the
+        // skeleton above exists to prevent.
+        //
+        // Not on the error branch. That message is usually "Sign in to manage
+        // members", and an invite offered to someone the control plane will not
+        // answer for is a door onto a second refusal.
+        if (!roster.hasError)
+          _InviteFooter(
+            gridName: grid.name,
+            onTap: () {
+              // Act first, dismiss second — the same order [_PanelActions]
+              // keeps, and for the same reason: `onDismiss` unmounts the widget
+              // whose `context` the dialog is still being pushed from.
+              ShareGridDialog.show(context, grid);
+              widget.onDismiss();
+            },
+          ),
+      ],
+    );
   }
 }
 
-/// One member: an accent tile with their initial, their handle, their 24h input
-/// figure, and the full split on hover.
+/// One member: a coloured circle with their initial, their address, their 24h
+/// input figure, and the full split on hover.
 ///
-/// **The handle rather than the whole address.** On a work grid every row ended
-/// in the same `@autonomous.ai`, so the column spent a third of its width
-/// printing the one thing every line agreed on, and the names it was looked up
-/// for ellipsized.
+/// **The name, not the address.** It has been all three: `@dev` (short, but it
+/// started every row with the same character), then the whole
+/// `dev@autonomous.ai` with the domain trailing in the faint ink, and now just
+/// `dev`. On a work grid the domain is the same on nearly every row, so a
+/// column of them was a column of one repeated word — and it was what pushed
+/// the names towards the ellipsis in a panel this narrow. The address is still
+/// what the row *is* (see [email]); it is just not what the row prints.
 ///
 /// Input leads because reading is what a grid is asked to do — output follows
 /// from it, and requests count turns rather than work. The other three are a
@@ -260,7 +341,6 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
 class _MemberRow extends StatelessWidget {
   const _MemberRow({
     required this.email,
-    required this.label,
     required this.isOwner,
     required this.usage,
     required this.usageLoading,
@@ -271,11 +351,6 @@ class _MemberRow extends StatelessWidget {
   /// The address itself — what this row *is*, and the key everything else about
   /// it is looked up by (the usage map, the hover). Never what it prints.
   final String email;
-
-  /// What the row prints: the handle (`@dev`), or the whole address where that
-  /// handle would no longer point at one person. Decided for the list
-  /// as a whole by `memberHandles`, not here.
-  final String label;
 
   final bool isOwner;
 
@@ -303,8 +378,17 @@ class _MemberRow extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final row = _PanelRow(
-      label: label,
-      leading: _MemberInitial(email: email),
+      // The handle, `@dee`. The domain used to follow the name in faint ink; on
+      // a work grid every row repeats it, so a column of them was a column of
+      // one word — and the panel is narrow enough that the repeated half was
+      // what pushed the names towards the ellipsis. The address is still what
+      // the row *is* — see [email] — it is just not what the row prints.
+      //
+      // And no mark in front of it. A letter in a coloured circle is a stand-in
+      // for a face nobody here has uploaded, so every row carried the same
+      // information its own first character already carried, 22px further left.
+      // The names are what this list is read down; they now start at its edge.
+      label: memberHandle(email),
       strong: true,
       badge: isOwner ? 'owner' : null,
       // The **fresh** input leg, matching the hover's "input tokens" line and the
@@ -341,43 +425,89 @@ class _MemberRow extends StatelessWidget {
   }
 }
 
-/// The tile carrying a member's first initial, in front of their handle.
-class _MemberInitial extends StatelessWidget {
-  const _MemberInitial({required this.email});
+/// The panel's last row: the offer to put someone new on this grid.
+///
+/// Washed rather than filled, and a row rather than a button. The panel's own
+/// action language is a link (`_PanelLink`), and a solid button at the foot of a
+/// popover that opens on hover would read as the panel's purpose — this is the
+/// thing you reach for once, having read the list above it.
+///
+/// It names the grid because the panel does not: the heading says "33 MEMBERS",
+/// which is true of whichever grid is in scope, and an invite that does not say
+/// where it leads is the one mistake this dialog cannot recover from.
+class _InviteFooter extends StatefulWidget {
+  const _InviteFooter({required this.gridName, required this.onTap});
 
-  final String email;
+  final String gridName;
+  final VoidCallback onTap;
 
-  /// Sized to the row's own line, not to an avatar convention: at 22 the tile is
-  /// exactly the height of a 13pt line plus its padding, so the mark sets no
-  /// row height of its own.
-  static const double _size = 22;
+  @override
+  State<_InviteFooter> createState() => _InviteFooterState();
+}
 
-  /// The app's small-control step, not [AppControl.radius] (8): on a 22px box
-  /// that one rounds to within a hair of a circle, and the shape here has to
-  /// stay visibly a square with soft corners.
-  static const double _radius = 7;
+class _InviteFooterState extends State<_InviteFooter> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return Container(
-      width: _size,
-      height: _size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: AppPalette.avatarFill,
-        borderRadius: BorderRadius.circular(_radius),
-      ),
-      // Deliberately a step heavier than the row it sits in: white on a
-      // saturated fill reads thinner than the same weight on a flat surface, and
-      // at 11.5 the glyph needs it to hold its own inside the tile.
-      child: Text(
-        memberInitial(email),
-        style: const TextStyle(
-          fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-          color: Colors.white,
-        ),
+    // Measured, both themes: `accentOnSurface` on the wash composited over the
+    // panel's own `#202020` lands at 4.73:1 in dark and 4.94:1 in light. The
+    // washes are 1.12:1 against the panel — a tint, not a second surface, which
+    // is what keeps this a row rather than a button.
+    final ink = AppPalette.accentOnSurface;
+    return Padding(
+      padding: const EdgeInsets.only(top: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The panel's one rule. §2 allows a menu panel's rim and nothing else,
+          // but this parts a list from the action on it — without it the row
+          // reads as a thirty-fourth member, washed for no stated reason.
+          Divider(height: 1, thickness: 1, color: AppPalette.divider),
+          const SizedBox(height: 6),
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() => _hovered = false),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onTap,
+              child: AnimatedContainer(
+                duration: AppMotion.hover,
+                curve: AppMotion.curve,
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _hovered
+                      ? AppSurface.accentWashHover
+                      : AppSurface.accentWash,
+                  borderRadius: BorderRadius.circular(AppControl.radius),
+                ),
+                child: Row(
+                  children: [
+                    Icon(LucideIcons.userPlus300, size: 15, color: ink),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        'Invite people to ${widget.gridName}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: AppFont.medium,
+                          color: ink,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(LucideIcons.chevronRight300, size: 14, color: ink),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -392,8 +522,9 @@ class _MemberInitial extends StatelessWidget {
 /// body that is one line tall and then ten pulls the panel's own edges out from
 /// under that pointer, which closes the thing you were waiting for.
 ///
-/// Five rows, and their metrics are [_MemberRow]'s exactly — a 22px tile in a
-/// row padded by 4 — so nothing shifts sideways or down when the names arrive.
+/// Five rows, and their metrics are [_MemberRow]'s exactly — a bar the height of
+/// the handle in a row padded by 4 — so nothing shifts sideways or down when the
+/// names arrive.
 class _MembersSkeleton extends StatelessWidget {
   const _MembersSkeleton();
 
@@ -432,7 +563,7 @@ class _MembersSkeleton extends StatelessWidget {
   }
 }
 
-/// One placeholder member: the tile, the handle, the figure.
+/// One placeholder member: the handle and the figure.
 class _MemberSkeletonRow extends StatelessWidget {
   const _MemberSkeletonRow();
 
@@ -442,11 +573,9 @@ class _MemberSkeletonRow extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Skeleton(width: 22, height: 22, radius: 7),
-          SizedBox(width: 9),
           // Not full width: a column of bars all reaching the figure would read
           // as a grey slab rather than as a list of names of differing length.
-          Expanded(child: SkeletonLine(widthFactor: 0.55, height: 9)),
+          Expanded(child: SkeletonLine(widthFactor: 0.72, height: 9)),
           SizedBox(width: 9),
           _FigureSkeleton(),
         ],
@@ -939,6 +1068,11 @@ class _SpeedColumn extends StatelessWidget {
     AppTheme.watch(context);
     final figure = entryFigure(node);
     if (figure.isEmpty) return const SizedBox.shrink();
+    // The length the bar settles at, floored — computed here rather than inside
+    // the tween so the growth runs 0 → floored length. Flooring inside would
+    // put the bar at [_floor] on the first frame, which is a bar appearing
+    // rather than a bar growing.
+    final filled = share == null ? 0.0 : math.max(_floor, _width * share!);
     return Row(
       children: [
         if (share case final value?) ...[
@@ -965,12 +1099,32 @@ class _SpeedColumn extends StatelessWidget {
                       borderRadius: BorderRadius.circular(_height / 2),
                     ),
                   ),
-                  Container(
-                    width: math.max(_floor, _width * value),
-                    height: _height,
-                    decoration: BoxDecoration(
-                      color: _bandColor(speedBand(value)),
-                      borderRadius: BorderRadius.circular(_height / 2),
+                  // Grows from nothing to its length, and eases between
+                  // lengths when a poll moves the figure — the same builder
+                  // does both, because it animates whenever `end` changes and
+                  // `end` starts at zero.
+                  //
+                  // The panel is rebuilt by a poll every few seconds, and this
+                  // does *not* replay then: the element survives the rebuild,
+                  // so a machine holding its speed holds its bar still. It
+                  // replays when the panel is opened again, which is the only
+                  // time there is anything new to draw.
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: filled),
+                    duration: AppMotion.meter,
+                    curve: AppMotion.curve,
+                    builder: (context, width, _) => Container(
+                      width: width,
+                      height: _height,
+                      decoration: BoxDecoration(
+                        // The band of the value it is *arriving at*, never of
+                        // the width it happens to be passing through. A bar on
+                        // its way to green would otherwise be amber for the
+                        // first hundred milliseconds and blue for the next —
+                        // three claims about one machine, two of them false.
+                        color: _bandColor(speedBand(value)),
+                        borderRadius: BorderRadius.circular(_height / 2),
+                      ),
                     ),
                   ),
                 ],
@@ -1144,7 +1298,6 @@ class _PanelBody extends StatelessWidget {
 class _PanelRow extends StatelessWidget {
   const _PanelRow({
     required this.label,
-    this.leading,
     this.trailing,
     this.badge,
     this.strong = false,
@@ -1152,16 +1305,12 @@ class _PanelRow extends StatelessWidget {
 
   final String label;
 
-  /// A mark in front of the label — the members list's initial tile. Null on
-  /// every other panel: a node's row is already four lines and a model id is a
-  /// string, not a person.
-  final Widget? leading;
-
   /// Whether the label is the row's subject rather than one of its facts.
   ///
-  /// A member's handle is what the whole row is about and carries a coloured
-  /// mark beside it; at regular weight the two read as unrelated. A machine name
-  /// or a model id sits above its own detail lines and needs no such lift.
+  /// A member's handle is what the whole row is about, and with the mark that
+  /// used to sit beside it gone, weight is the only thing left saying so. A
+  /// machine name or a model id sits above its own detail lines and needs no
+  /// such lift.
   final bool strong;
 
   /// The right-hand column: a figure ([_PanelFigure]), or its skeleton while the
@@ -1189,7 +1338,6 @@ class _PanelRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          if (leading case final mark?) ...[mark, const SizedBox(width: 9)],
           Expanded(
             child: Text(
               label,

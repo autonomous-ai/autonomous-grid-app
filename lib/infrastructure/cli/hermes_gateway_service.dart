@@ -1,3 +1,4 @@
+import '../../core/agent_homes.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -83,7 +84,7 @@ class HermesGatewayServiceImpl implements HermesGatewayService {
   /// refresh. Same signal the scheduler's banner uses.
   static const _heartbeatMaxAge = Duration(seconds: 60);
 
-  EnvFile get _env => EnvFile(File('$_home/.hermes/.env'));
+  EnvFile get _env => EnvFile(File('${AgentHomes.hermesProfile(_home)}/.env'));
 
   @override
   Future<Map<String, String>> readEnv() => _env.read();
@@ -99,14 +100,16 @@ class HermesGatewayServiceImpl implements HermesGatewayService {
 
   @override
   Future<PlatformLinkStatus> readLink(String platformKey) async {
-    final file = File('$_home/.hermes/gateway_state.json');
+    final file = File('${AgentHomes.hermesProfile(_home)}/gateway_state.json');
     if (!file.existsSync()) return (state: '', error: null);
     return parsePlatformLinkStatus(await file.readAsString(), platformKey);
   }
 
   @override
   Future<bool> running() async {
-    final beat = File('$_home/.hermes/cron/ticker_heartbeat');
+    final beat = File(
+      '${AgentHomes.hermesProfile(_home)}/cron/ticker_heartbeat',
+    );
     if (!beat.existsSync()) return false;
     final seconds = double.tryParse((await beat.readAsString()).trim());
     if (seconds == null) return false;

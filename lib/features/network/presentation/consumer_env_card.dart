@@ -60,10 +60,6 @@ class _ConsumerEnvCardState extends ConsumerState<ConsumerEnvCard> {
         _EnvHeader(
           expanded: _expanded,
           onToggle: () => setState(() => _expanded = !_expanded),
-          // Consumers reach "How to use" from the prominent "Use this grid"
-          // card, so only owners/providers (who have no such card) need the
-          // shortcut here — avoids showing it twice on the consumer overview.
-          showHowToUse: network.canManageProvider,
         ),
         if (_expanded) ...[
           const SizedBox(height: 8),
@@ -93,19 +89,17 @@ class _ConsumerEnvCardState extends ConsumerState<ConsumerEnvCard> {
 /// The collapsible header for [ConsumerEnvCard]: a chevron + section label that
 /// toggles the raw credentials, with the "How to use" shortcut pinned at the
 /// trailing edge so it's reachable without expanding anything.
+///
+/// The shortcut used to be conditional, and the condition was always false:
+/// this card is only built for someone who *can't* manage the grid, and the
+/// flag asked whether they could. It was covering for the "Use this grid" card,
+/// which carried the guide link for consumers and no longer exists — so the one
+/// route left has to be unconditional.
 class _EnvHeader extends StatelessWidget {
-  const _EnvHeader({
-    required this.expanded,
-    required this.onToggle,
-    required this.showHowToUse,
-  });
+  const _EnvHeader({required this.expanded, required this.onToggle});
 
   final bool expanded;
   final VoidCallback onToggle;
-
-  /// Whether to show the "How to use" shortcut at the trailing edge. Off for
-  /// consumers, who already have it on the "Use this grid" card above.
-  final bool showHowToUse;
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +136,7 @@ class _EnvHeader extends StatelessWidget {
             ),
           ),
         ),
-        if (showHowToUse) const _HowToUseButton(),
+        const _HowToUseButton(),
       ],
     );
   }

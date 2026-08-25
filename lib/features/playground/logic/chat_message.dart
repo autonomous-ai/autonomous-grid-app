@@ -12,6 +12,32 @@ export 'chat_file.dart';
 /// Who authored a transcript message.
 enum ChatRole { user, assistant }
 
+/// Who put a user turn in the transcript: the person, or the app carrying on
+/// the instruction they left it with.
+///
+/// The transcript had no way to tell the two apart, so a goal's next step and a
+/// loop's beat both landed as an ordinary user bubble — a message nobody in the
+/// room had typed, appearing on screen while the user watched. Reported as
+/// looking like the app had been taken over, which for a chat that spends the
+/// user's tokens unattended is the worst reading available (§5).
+///
+/// Nothing on the wire changes with it: the text is still the turn as far as
+/// the agent, the history and [messageForModel] are concerned. Only the drawing
+/// does.
+enum TurnOrigin {
+  /// Typed by the person, or sent by them from the composer.
+  user,
+
+  /// The goal loop's next step, carrying the evaluator's reason.
+  goal,
+
+  /// One beat of a repeating prompt.
+  loop;
+
+  /// Whether the app sent this turn rather than the person.
+  bool get isFromApp => this != TurnOrigin.user;
+}
+
 /// A media file shown inline in the transcript — a generated image/video the
 /// relay returned (saved under `~/.grid/outputs`) or an image the user attached
 /// to a request. Rendered from its local [path]; [kind] picks the player.
@@ -41,9 +67,18 @@ class ChatMessage {
     this.orchestrationModels,
     this.took,
     this.firstToken,
+    this.sentAt,
+    this.sentBy = TurnOrigin.user,
   });
 
   final ChatRole role;
+
+  /// Who sent this turn — the person, or the app continuing their instruction.
+  ///
+  /// [TurnOrigin.user] on every assistant turn and on everything saved before
+  /// this field existed: a transcript from last week is the user's own words as
+  /// far as anything can tell, and guessing otherwise would relabel history.
+  final TurnOrigin sentBy;
   final String text;
   final List<ChatMedia> media;
 
@@ -147,6 +182,13 @@ class ChatMessage {
   /// replies saved before this was recorded.
   final Duration? firstToken;
 
+  /// When this turn was sent or finished, for the transcript's timestamp.
+  ///
+  /// Null on messages saved before timestamps existed and on synthetic turns
+  /// whose source cannot say when they happened. The UI omits the label rather
+  /// than pretending an old message was sent when the chat was reopened.
+  final DateTime? sentAt;
+
   ChatMessage copyWith({
     ChatRole? role,
     String? text,
@@ -163,6 +205,8 @@ class ChatMessage {
     List<ModelShare>? orchestrationModels,
     Duration? took,
     Duration? firstToken,
+    DateTime? sentAt,
+    TurnOrigin? sentBy,
   }) => ChatMessage(
     role: role ?? this.role,
     text: text ?? this.text,
@@ -179,6 +223,8 @@ class ChatMessage {
     orchestrationModels: orchestrationModels ?? this.orchestrationModels,
     took: took ?? this.took,
     firstToken: firstToken ?? this.firstToken,
+    sentAt: sentAt ?? this.sentAt,
+    sentBy: sentBy ?? this.sentBy,
   );
 }
 

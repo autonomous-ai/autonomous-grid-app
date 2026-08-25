@@ -3,9 +3,17 @@ import '../../../core/text_preview.dart';
 import '../../playground/logic/chat_message.dart';
 import 'conversation.dart';
 
-/// The longest a name runs before it's clipped with an ellipsis. The sidebar row
-/// clips again at whatever width it has, so this is a cap on the string rather
-/// than on what is read — which is why what matters has to come first.
+/// The longest a name runs before it's clipped with an ellipsis, for the places
+/// that need a cap on the *string* — a scheduled job's name, a device with a
+/// frame budget. **Not** for a chat's own title.
+///
+/// A title used to be cut to this on the way *in*, and the thirty characters
+/// past it were gone: the rename field could only ever offer back the stump,
+/// which is what it did on 2026-08-20: a title showing the first six words of
+/// the ask, with the rest of the sentence nowhere on the machine. Every place a
+/// title is drawn already clips it at the width it actually has (`maxLines: 1`,
+/// `TextOverflow.ellipsis`), which is a better cut than any number here, so the
+/// string is kept whole and the drawing does the clipping.
 const int kMaxChatTitleLength = 40;
 
 /// What is left of an opener before dropping it stops being worth it. Below
@@ -22,6 +30,10 @@ const int _minAfterOpener = 12;
 String deriveConversationTitle(List<ChatMessage> messages) {
   for (final message in messages) {
     if (message.role != ChatRole.user) continue;
+    // "the first thing the user asked", literally: a goal's next step and a
+    // loop's beat are the app repeating itself, and naming a chat after one
+    // gives the sidebar a row reading "Keep working toward this goal:…".
+    if (message.sentBy.isFromApp) continue;
     final title = chatTitleFromLine(firstLinePreview(message.text));
     if (title.isEmpty) continue;
     return title;
@@ -45,7 +57,7 @@ String chatTitleFromLine(String raw) {
   line = _shortUrls(line);
   line = _withoutTrailingPunctuation(_collapsed(line));
   if (line.isEmpty) return '';
-  return clipChatTitle(_capitalized(line));
+  return _capitalized(line);
 }
 
 /// What the model answered, as a name — the same shapes [unfenceReply] and
@@ -60,7 +72,7 @@ String tidyChatTitle(String raw) {
   line = unquoteLine(line.replaceFirst(_leadIn, '').trim());
   line = _withoutTrailingPunctuation(_collapsed(line));
   if (line.isEmpty) return '';
-  return clipChatTitle(_capitalized(line));
+  return _capitalized(line);
 }
 
 /// [text] cut to [kMaxChatTitleLength] at a word boundary — a name cut mid-word
@@ -75,6 +87,20 @@ String clipChatTitle(String text) {
       ? cut.substring(0, lastSpace)
       : cut;
   return '${kept.trimRight()}…';
+}
+
+/// [title] as the text to hand a rename field.
+///
+/// New titles are stored whole, so this has nothing to do for them. It stays
+/// for the ones named before that: their "…" is [clipChatTitle]'s mark for
+/// *where the name was cut*, not part of the name, and a field seeded with it
+/// invites the user to keep the ellipsis on purpose. What it cannot do is give
+/// those titles back the words that were dropped; nothing can, they were never
+/// written down.
+String editableChatTitle(String title) {
+  final trimmed = title.trimRight();
+  if (!trimmed.endsWith('…')) return trimmed;
+  return trimmed.substring(0, trimmed.length - 1).trimRight();
 }
 
 /// The lead-in a model writes in front of the answer it was asked for alone.
@@ -117,9 +143,9 @@ String _withoutOpener(String line) {
   return text;
 }
 
-/// Both languages this app is used in, because the noise is the same in both and
-/// a Vietnamese chat named "Giúp mình sửa lại đoạn…" is as blank as an English
-/// one named "Help me edit this…". Longest first, so "can you please" is dropped
+/// English only, and that is a real limit: the same noise in another language
+/// is not dropped, so a chat opened in one keeps "help me" — in that language —
+/// on the front of its name. Longest first, so "can you please" is dropped
 /// whole rather than leaving "please" behind.
 const List<String> _openers = [
   "i'd like you to",
@@ -148,18 +174,6 @@ const List<String> _openers = [
   'ok',
   'okay',
   'so',
-  'bạn hãy',
-  'bạn giúp',
-  'giúp tôi',
-  'giúp mình',
-  'giúp em',
-  'cho tôi',
-  'cho mình',
-  'tôi muốn bạn',
-  'tôi muốn',
-  'mình muốn',
-  'làm ơn',
-  'hãy',
 ];
 
 final _opener = RegExp(

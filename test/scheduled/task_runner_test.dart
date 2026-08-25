@@ -75,8 +75,8 @@ void main() {
           startsWith('grid-task-nightly-ui-review-'),
         );
         expect(
-          taskScriptName('Tin mới — 8h!', 'đọc tin'),
-          startsWith('grid-task-tin-m-i-8h-'),
+          taskScriptName('Café news — 8h!', 'read the news'),
+          startsWith('grid-task-caf-news-8h-'),
         );
       },
     );

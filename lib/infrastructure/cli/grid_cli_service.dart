@@ -1,6 +1,6 @@
 import 'parsers/download_progress.dart';
 
-/// Result of a one-shot lifecycle command (nguồn 2 in the contract).
+/// Result of a one-shot lifecycle command (source 2 in the contract).
 /// Success is `exitCode == 0`; on failure the CLI writes to stderr
 /// (cli.py:1076). We never parse stdout on success — read `~/.grid` instead.
 class CliResult {
@@ -52,7 +52,7 @@ class CliLine {
 /// A handle to a running, app-owned `grid` process. Used where we need both the
 /// live output (e.g. the device-login URL mid-stream) and the final exit code,
 /// and where we may need to kill it (e.g. `grid join` / an install on window
-/// close — loại 2 in the contract's process model).
+/// close — kind 2 in the contract's process model).
 class GridProcess {
   const GridProcess({
     required this.lines,

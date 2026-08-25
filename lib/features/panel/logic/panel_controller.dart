@@ -19,7 +19,6 @@ import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/auto_agent.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
-import '../../chat/logic/commands/spoken_command.dart';
 import '../../chat/logic/conversation.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
@@ -27,12 +26,14 @@ import '../../projects/logic/selected_project.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import 'panel_firmware_updater.dart';
 import 'panel_chat_mirror.dart';
+import 'panel_flash_damper.dart';
 import 'panel_question_mirror.dart';
 import 'panel_scroll.dart';
 import 'panel_summary_writer.dart';
 import 'panel_turn_mirror.dart';
 import 'panel_voice.dart';
 import 'panel_voice_router.dart';
+import '../../chat/logic/chat_title.dart';
 
 /// The app's side of the conversation with a Grid Panel.
 ///
@@ -168,7 +169,16 @@ class PanelController {
   /// still reporting the version it had, offering again would flash it again,
   /// forever. It also names the only cause — the device's `hello.fw` and the
   /// version inside the image it was given disagree — in the log.
+  ///
+  /// Narrower than [_damper], and kept beside it rather than folded into it,
+  /// because it answers a different question: this one is about a device whose
+  /// *reported* version is wrong, and produces the one log line that names that
+  /// cause. The damper is about how often this app may write at all.
   final _flashed = <String, String>{};
+
+  /// The cap on writing to a board, whatever the rest of this class believes
+  /// about who owns it.
+  final _damper = PanelFlashDamper();
 
   /// Image versions this session already tried to hand a panel and could not.
   ///
@@ -444,13 +454,37 @@ class PanelController {
 
   Timer? _chatsPending;
 
+  /// The tiles that fit one frame, and a line in the log naming what did not.
+  ///
+  /// Said out loud rather than trimmed quietly: a panel showing eleven of
+  /// thirteen chats looks exactly like a panel showing all of them, so the two
+  /// are only ever told apart here.
+  /// The last trim reported, so a steady state is said once instead of every
+  /// mirror. The mirror runs on every tile change — 1,351 identical warnings in
+  /// one afternoon (2026-08-21) was a quarter of the log file, and a log that
+  /// repeats itself that hard is one nobody reads the rest of.
+  String? _trimSaid;
+
+  List<PanelChat> _tilesThatFit(List<PanelChat> tiles) {
+    final kept = panelTilesThatFit(tiles);
+    final said = kept.length == tiles.length
+        ? null
+        : 'Tiles trimmed to fit one frame: sent ${kept.length} of '
+              '${tiles.length}';
+    if (said != null && said != _trimSaid) _log.warn('panel', said);
+    _trimSaid = said;
+    return kept;
+  }
+
   /// Tell the panel whatever has changed about the tiles themselves.
   void mirrorChats() {
-    final tiles = panelChatsFor(
-      projects: _ref.read(sortedProjectsProvider),
-      chats: _ref.read(chatSessionsProvider),
-      history: _ref.read(panelRecapsProvider),
-      defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
+    final tiles = _tilesThatFit(
+      panelChatsFor(
+        projects: _ref.read(sortedProjectsProvider),
+        chats: _ref.read(chatSessionsProvider),
+        history: _ref.read(panelRecapsProvider),
+        defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
+      ),
     );
     final messages = _tiles.onChange(tiles);
     if (messages.isNotEmpty) {
@@ -621,11 +655,13 @@ class PanelController {
   /// Send the tiles: every chat, in the order the app's own sidebar draws them,
   /// so the panel and the rail never disagree about what comes first.
   void _sendChats() {
-    final tiles = panelChatsFor(
-      projects: _ref.read(sortedProjectsProvider),
-      chats: _ref.read(chatSessionsProvider),
-      history: _ref.read(panelRecapsProvider),
-      defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
+    final tiles = _tilesThatFit(
+      panelChatsFor(
+        projects: _ref.read(sortedProjectsProvider),
+        chats: _ref.read(chatSessionsProvider),
+        history: _ref.read(panelRecapsProvider),
+        defaultAgent: _ref.read(chatPrefsProvider).chatAgent,
+      ),
     );
     _ref.read(panelLinkProvider).send(_tiles.all(tiles));
   }
@@ -724,17 +760,6 @@ class PanelController {
       // without this the reply streams into a chat nobody is looking at.
       _showInWindow(chat.projectId, chat.id);
       final sessions = _ref.read(chatSessionsProvider.notifier);
-      // The panel is the surface people actually *speak* to, so a spoken
-      // "lặp lại mỗi 30 phút…" has to reach the command here as much as in the
-      // composer. Only a certain reading: nobody at a panel can be shown a
-      // half-read line to fix, so anything less goes to the assistant as the
-      // sentence it was, which is what the panel did for every turn before.
-      final spoken = readSpokenCommand(text);
-      if (spoken != null && spoken.certain) {
-        _log.info('panel', 'Panel said ${spoken.call.command.slash}');
-        await sessions.runCommand(spoken.call, model: model);
-        return;
-      }
       await sessions.send(
         network: network,
         model: model,
@@ -1162,6 +1187,10 @@ class PanelController {
     onGaveUp: (version) {
       if (_mac.isNotEmpty) _refused[_mac] = version;
     },
+    // Fed from here rather than from the `fw.done` case, so the count and the
+    // version come from the handover that actually happened instead of from
+    // whatever this controller happens to be holding when the message lands.
+    onWrote: (version) => _damper.wrote(_mac, version, DateTime.now()),
   );
 
   /// Offer the firmware this build carries, when the panel is running another
@@ -1180,6 +1209,18 @@ class PanelController {
             '${image.version}, but a turn is running — not offering yet',
       );
       _deferredOffer = hello;
+      return;
+    }
+    // THE CAP, checked after the cheap disqualifiers and before anything is
+    // said to the panel. Last among the guards because it is the one that does
+    // not depend on this app being right about who owns the board — the others
+    // all assume the answer to that is yes.
+    final capped = _damper.refuse(hello.mac, image.version, DateTime.now());
+    if (capped != null) {
+      _log.warn(
+        'panel',
+        'Not writing ${image.version} to panel ${hello.mac}: $capped',
+      );
       return;
     }
     if (_refused[hello.mac] == image.version) {
@@ -1300,8 +1341,14 @@ PanelChat panelChatFor(
   String? defaultAgent,
 ]) => PanelChat(
   id: conversation.id,
-  name: conversation.title,
-  project: project.name,
+  // Clipped, unlike everywhere else a title is drawn. The panel is 466px of
+  // glass on the other end of a cable with an 8192-byte frame budget, and
+  // titles stopped being clipped in the store on 2026-08-20 so a rename could
+  // offer the whole name back. Thirty-odd tiles' worth of full sentences went
+  // straight past the budget the same day — `over the 8192-byte frame limit:
+  // 11724`, thrown out of the mirror where nothing was catching it.
+  name: clipChatTitle(conversation.title),
+  project: clipChatTitle(project.name),
   // WHO WILL ANSWER THE NEXT TURN, which is not always who answered the last
   // one. The pick the user made — on the project, or the app's standing choice
   // — wins, because a tile is a thing you speak into from the panel and the

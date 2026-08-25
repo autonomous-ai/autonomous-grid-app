@@ -642,7 +642,12 @@ String goalEndedNote(ChatGoal goal) {
     GoalStatus.impossible => 'Goal stopped — it cannot be met',
     GoalStatus.stalled => 'Goal paused',
     GoalStatus.paused => 'Goal held',
-    GoalStatus.dormant => 'Goal handed back — your next message is your own',
+    // The one ending nobody chose, so it is the one that has to say what to do
+    // about it. It said "your next message is your own" — true, and a dead end:
+    // a user read it, tried clicking it, and asked what it wanted from them
+    // (2026-08-21). Naming the command carries the same news — you have to set
+    // it again, so it is not running — and ends somewhere.
+    GoalStatus.dormant => 'Goal handed back — set it again with /goal',
     GoalStatus.blocked => 'Goal blocked',
     GoalStatus.usageLimited => 'Goal paused — out of usage',
     GoalStatus.budgetLimited => 'Goal paused — token budget spent',

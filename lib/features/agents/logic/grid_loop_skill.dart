@@ -20,19 +20,20 @@ const String kGridLoopSkillName = 'grid-loop';
 GridSkillFiles gridLoopSkillFiles(Directory skillDir) =>
     const GridSkillFiles(card: kGridLoopSkillMd);
 
-/// The card. The front-matter names the moment rather than the fence: the agent
-/// meets this while answering a task it is being asked to repeat, and "how long
-/// until I should look again" is the question it has, not "what is a
-/// `grid-loop` block".
+/// The card. The front-matter names the fence outright, and here that is right:
+/// the message this answers literally asks for a `grid-loop` block, so the
+/// trigger is a string the agent can see rather than an intent it has to read.
+/// Reading intent is [kGridAskSkillMd]'s job, and it was carved out of this one
+/// on 2026-08-21 — a card called `grid-loop` never opened for a goal.
 const String kGridLoopSkillMd = '''
 ---
 name: grid-loop
 description: >-
-  Decide when a repeating task in Grid's chat should run again, and when it
-  should stop. Use whenever the message you are answering asks for a
-  `grid-loop` block — a task on a loop, watching a deploy, a build, a PR, an
-  inbox — to say how long to wait before the next check, that nothing changed,
-  or that the job is finished and the loop can end.
+  Pacing a repeating task Grid is already running. Use when the message you are
+  answering asks you to end your reply with a `grid-loop` block: this says how
+  to choose the gap before the next run, how to mark a run that found nothing
+  new, and how to end the job. Asking Grid to *start* repeating, continuing or
+  scheduled work is a different card — `grid-ask`.
 ---
 
 # Pacing a repeating task
@@ -90,18 +91,8 @@ A `grid-loop` fence holding one JSON object. Three things it can say:
   again, not a reason to end. Stop only when the thing being watched has
   actually finished.
 
-## The block cannot start a loop
 
-It is read in one place only: at the end of a beat of a loop that is **already
-running**. In any other reply it is text nobody reads — the app does not scan
-ordinary answers for it. So when you are asked to set a repeating task up:
-
-- **Never write the block to create one, and never say you have.** "I've set a
-  `grid-loop` to re-run every hour" is a promise nothing behind it keeps, and
-  the user finds out in the morning, from a task that ran once.
-- **A loop for this chat** is the user typing `/loop <what to repeat>` in the
-  composer — say that, in those words. It runs while Grid is open.
-- **Work that has to survive the app closing** — overnight, tomorrow morning,
-  every 30 minutes all week — is not a loop at all. Schedule it with the
-  `grid-schedule` skill, which writes to a daemon that keeps running.
+When the user asks Grid to *start* one of these — repeating work, work that
+runs until something is true, work at a set time — that is a different block
+and a different card: `grid-ask`.
 ''';

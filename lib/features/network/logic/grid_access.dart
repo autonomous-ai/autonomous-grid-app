@@ -1,8 +1,10 @@
+import '../../../infrastructure/api/models/managed_network.dart';
+
 /// Who can reach a grid, in the three shapes the control plane actually ships.
 ///
 /// Derived from `network_type`, whose **wire names read backwards** — the same
-/// trap `NetworkCredential.isPublic` carries a warning about, so this maps by
-/// the same substrings rather than by equality:
+/// trap `NetworkCredential.isPublic` carries a warning about, and read the same
+/// way it is: against [kPublicNetworkTypes], exactly.
 ///
 /// - `permissioned-public`    → [restricted]: both providers and consumers are
 ///   whitelisted, so only invited people get in. The word "public" in the wire
@@ -20,19 +22,42 @@
 ///   whole company when it wasn't. The evidence was in the repo the whole
 ///   time: `NetworkCredential.isPublic` keys off `providers`, so this type has
 ///   always resolved to Private.
-/// - `permissioned-providers` → [anyone]: only providers are whitelisted, so
+/// - `permissionless` → [anyone]: only providers are whitelisted, so
 ///   anyone signed in can consume.
 ///
-/// Matched on substrings, and `domain` is checked first: an unknown future
-/// variant lands on the *narrowest* reading rather than silently opening a grid
-/// up. Guessing wrong here would tell someone their grid is invite-only while
-/// strangers use it.
+/// `domain` is still matched on a substring and checked first, and anything
+/// unrecognised lands on the *narrowest* reading: a variant nobody has taught
+/// this function must not silently open a grid up. Guessing wrong the other way
+/// would tell someone their grid is invite-only while strangers use it — which
+/// is what a substring match did on 2026-08-20, when the open grid's wire value
+/// was renamed and the substring it was matched by went with it.
 enum GridAccess { restricted, domain, anyone }
 
 /// [GridAccess] for a raw `network_type`.
 GridAccess gridAccessFor(String networkType) {
   final type = networkType.toLowerCase();
   if (type.contains('domain')) return GridAccess.domain;
-  if (type.contains('providers')) return GridAccess.anyone;
+  if (kPublicNetworkTypes.contains(type)) return GridAccess.anyone;
   return GridAccess.restricted;
+}
+
+/// The email domain a grid admits by domain alone, when the app can name it
+/// exactly — otherwise null.
+///
+/// Only one of the two domain types can be answered from what the app holds.
+/// The control plane keeps the gate in a different place per type
+/// (`domain_gate_for`, `grid_networks/store.py`):
+///
+/// - `private-domain` → the grid's **name** IS the domain. It is system-named
+///   and guarded by a unique index, so the name is the gate, and
+///   `credentials.toml` already carries it.
+/// - `domain-restricted` → `access_domain`, a column the app never receives:
+///   it is on `GET /managed-networks/{id}`, which the app does not call, and
+///   absent from `credentials.toml`. Null here rather than guessed — naming
+///   the *viewer's* domain on a grid gated to someone else's would be a
+///   confident lie about who can get in.
+String? gatedDomainFor({required String networkType, required String name}) {
+  if (!networkType.toLowerCase().contains('private-domain')) return null;
+  final domain = name.trim().toLowerCase();
+  return domain.isEmpty ? null : domain;
 }

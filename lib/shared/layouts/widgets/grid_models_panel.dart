@@ -88,6 +88,7 @@ class GridModelsList extends ConsumerWidget {
               itemCount: rest.length,
               itemBuilder: (context, i) => _ModelRow(
                 row: rest[i],
+                index: i,
                 // Bars here are drawn against the busiest of the *rest*, not
                 // against the grid: normalised to an 80% hero, four rows behind
                 // it would each be the same 4px stub and the column would say
@@ -433,6 +434,12 @@ class _TokenSplitBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    // Reduce Motion parks the legs at their length rather than easing to it:
+    // the bar is a value being drawn, so what the setting removes is the drawing
+    // and never the value.
+    final motion = MediaQuery.of(context).disableAnimations
+        ? Duration.zero
+        : AppMotion.meter;
     final legs = <(int, Color)>[
       (fresh, freshColor),
       (cached, cachedColor),
@@ -454,9 +461,36 @@ class _TokenSplitBar extends StatelessWidget {
               children: [
                 for (var i = 0; i < legs.length; i++)
                   if (widths[i] > 0)
-                    SizedBox(
-                      width: widths[i],
-                      child: ColoredBox(color: legs[i].$2),
+                    // Grows from nothing to its length, and eases between
+                    // lengths when a poll moves a figure — one builder does
+                    // both, because it animates whenever `end` changes and
+                    // `end` starts at zero. The same shape the node panel's
+                    // speed bars use, at the same duration, so two meters
+                    // opening off one capsule arrive at one tempo.
+                    //
+                    // All three legs run the same curve from zero, so the bar
+                    // wipes in from the left with its proportions already
+                    // right — it never passes through a split that isn't this
+                    // model's.
+                    //
+                    // It does *not* replay on a poll: the element survives the
+                    // rebuild, so a steady model holds a steady bar. It replays
+                    // when the panel is opened again, which is the only time
+                    // there is anything new to draw.
+                    TweenAnimationBuilder<double>(
+                      // Keyed by leg, not by position. A model whose cache goes
+                      // cold drops its middle leg, and without a key the leg
+                      // after it would inherit that element — and tween from
+                      // the *cached* width to the output one, drawing a split
+                      // this model never had.
+                      key: ValueKey<int>(i),
+                      tween: Tween<double>(begin: 0, end: widths[i]),
+                      duration: motion,
+                      curve: AppMotion.curve,
+                      builder: (context, width, _) => SizedBox(
+                        width: width,
+                        child: ColoredBox(color: legs[i].$2),
+                      ),
                     ),
               ],
             );
@@ -560,11 +594,15 @@ class _RestHeading extends StatelessWidget {
 class _ModelRow extends StatelessWidget {
   const _ModelRow({
     required this.row,
+    required this.index,
     required this.peak,
     required this.loading,
   });
 
   final ModelUsage row;
+
+  /// Where this row sits in the list — only the fill's stagger uses it.
+  final int index;
 
   /// The largest output among the rows this one is listed with — the bar's
   /// denominator. Zero where nothing in the list generated anything, which
@@ -624,7 +662,7 @@ class _ModelRow extends StatelessWidget {
             width: barWidth,
             child: loading || !measured
                 ? const SizedBox.shrink()
-                : _RowBar(fraction: fraction),
+                : _RowBar(fraction: fraction, index: index),
           ),
           const SizedBox(width: gap),
           SizedBox(
@@ -681,23 +719,47 @@ class _Figure extends StatelessWidget {
 
 /// A row's share bar — how this model compares with the others listed beside it.
 class _RowBar extends StatelessWidget {
-  const _RowBar({required this.fraction});
+  const _RowBar({required this.fraction, required this.index});
 
   final double fraction;
+
+  /// Where this row sits in the list, which is all the stagger below needs.
+  final int index;
+
+  /// How much of the fill each row waits out before its own starts.
+  ///
+  /// Small on purpose, and capped: the column should read as filling *down*
+  /// rather than all at once, but this panel opens on hover dozens of times an
+  /// hour and every millisecond of lead-in is a toll on that gesture. Capped at
+  /// [_maxStagger] so a grid with twenty models doesn't leave its last rows
+  /// arriving after the pointer has moved on.
+  static const double _stagger = 0.09;
+  static const double _maxStagger = 0.36;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final delay = math.min(index * _stagger, _maxStagger);
+    final instant = MediaQuery.of(context).disableAnimations;
     return ClipRRect(
       borderRadius: BorderRadius.circular(1.5),
       child: SizedBox(
         height: 3,
         child: ColoredBox(
           color: AppSurface.recess,
-          child: FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: fraction.clamp(0.0, 1.0),
-            child: ColoredBox(color: AppPalette.accentOnSurface),
+          // Animating the *factor* rather than a width, so the fill still
+          // tracks the row's width when the window resizes mid-animation.
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: fraction.clamp(0.0, 1.0)),
+            duration: instant ? Duration.zero : AppMotion.meter,
+            curve: instant
+                ? AppMotion.curve
+                : Interval(delay, 1, curve: AppMotion.curve),
+            builder: (context, filled, _) => FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: filled,
+              child: ColoredBox(color: AppPalette.accentOnSurface),
+            ),
           ),
         ),
       ),

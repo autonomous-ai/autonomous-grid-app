@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
@@ -102,6 +104,7 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
   }
 
   void _start() {
+    ref.read(analyticsProvider).engineSetupSubmitted('own_server');
     ref
         .read(providerRunControllerProvider.notifier)
         .startExternal(

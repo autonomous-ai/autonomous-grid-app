@@ -28,7 +28,7 @@ mixin _ChatSettle on _ChatSessions {
     // Before the queue and the goal below: whatever runs next re-reads this
     // chat, and the note belongs under the answer that made the claim rather
     // than after whatever the app went on to do.
-    _noteUnbackedLoopClaim(id);
+    _settleLoopClaim(id);
     // The user's own words first: a follow-up they typed outranks both the
     // carry-on and the goal's next step, and those pick up again once the queue
     // is empty.
