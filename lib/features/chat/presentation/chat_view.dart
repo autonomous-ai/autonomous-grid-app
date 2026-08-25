@@ -1180,24 +1180,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     );
     final isNewChat = messages.isEmpty && !sending;
 
-    // The header naming this conversation lives in the top bar, so it shares
-    // one row with the grid pill instead of sitting in a strip of its own.
-    // Both conditions that gate it are only knowable here — the starters
-    // screen and the no-model nudge are stand-ins for a conversation that
-    // isn't there yet, and a header over either would name nothing — so
-    // publish the answer rather than have the shell re-derive it. Deferred:
-    // writing a provider during build would throw — and deferred only when the
-    // answer actually moved, since this build runs on every keystroke and every
-    // streamed token, and a callback per frame to rewrite an unchanged value is
-    // work the frame doesn't owe.
-    final wantsHeader = !noModel && !isNewChat;
-    if (ref.read(chatHeaderVisibleProvider) != wantsHeader) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!context.mounted) return;
-        ref.read(chatHeaderVisibleProvider.notifier).set(wantsHeader);
-      });
-    }
-
     // The agent has stopped and is asking before it touches this computer. Read
     // for the open chat by name: several turns can be waiting on the user at
     // once, and each chat shows the question its own agent asked.
@@ -1215,6 +1197,30 @@ class _ChatViewState extends ConsumerState<ChatView> {
         agentMode &&
         chatAgent.runsInTerminal &&
         (activeId?.isNotEmpty ?? false);
+
+    // The header naming this conversation lives in the top bar, so it shares
+    // one row with the grid pill instead of sitting in a strip of its own.
+    // Both conditions that gate it are only knowable here — the starters
+    // screen and the no-model nudge are stand-ins for a conversation that
+    // isn't there yet, and a header over either would name nothing — so
+    // publish the answer rather than have the shell re-derive it. Deferred:
+    // writing a provider during build would throw — and deferred only when the
+    // answer actually moved, since this build runs on every keystroke and every
+    // streamed token, and a callback per frame to rewrite an unchanged value is
+    // work the frame doesn't owe.
+    //
+    // **A terminal chat is never "new" in the sense that matters here.** Its
+    // transcript stays empty for life — the CLI holds the conversation, and the
+    // app commits nothing to `messages` — so counting messages read every one of
+    // them as an unstarted chat and took the header away from a chat that was
+    // plainly under way, name and all.
+    final wantsHeader = !noModel && (inTerminal || !isNewChat);
+    if (ref.read(chatHeaderVisibleProvider) != wantsHeader) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        ref.read(chatHeaderVisibleProvider.notifier).set(wantsHeader);
+      });
+    }
     // Two ways a file arrives by hand, one landing. [DropTarget] is the one the
     // system hands us — a file dragged in from Finder, which Flutter never sees
     // as a drag at all. [DragTarget] is a file dragged out of the Files panel,
