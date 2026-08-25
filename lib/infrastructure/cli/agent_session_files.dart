@@ -45,37 +45,46 @@ class AgentSessionFiles {
   }
 
   /// Whether Claude Code can still resume [sessionId].
+  Future<bool> claudeHolds(String sessionId) async =>
+      await claudeSession(sessionId) != null;
+
+  /// Whether Codex can still resume [sessionId].
+  Future<bool> codexHolds(String sessionId) async =>
+      await codexSession(sessionId) != null;
+
+  /// The file Claude Code keeps [sessionId] in, or null when it has none.
   ///
   /// Every project folder is tried rather than the one the slug rule would
   /// name: that rule replaces path separators, so it is lossy in both
   /// directions (see `SessionScanner`), and guessing it wrong would report a
   /// live session as gone and throw away the conversation.
-  Future<bool> claudeHolds(String sessionId) async {
-    if (sessionId.isEmpty) return false;
+  Future<File?> claudeSession(String sessionId) async {
+    if (sessionId.isEmpty) return null;
     try {
       await for (final project in _claudeRoot.list()) {
         if (project is! Directory) continue;
-        if (File('${project.path}/$sessionId.jsonl').existsSync()) return true;
+        final file = File('${project.path}/$sessionId.jsonl');
+        if (file.existsSync()) return file;
       }
     } on FileSystemException {
       // No `~/.claude` at all: nothing to resume, which is the same answer.
-      return false;
+      return null;
     }
-    return false;
+    return null;
   }
 
-  /// Whether Codex can still resume [sessionId] — its rollout is named after
-  /// it, so the id in the filename is the whole check.
-  Future<bool> codexHolds(String sessionId) async {
-    if (sessionId.isEmpty) return false;
+  /// The rollout Codex keeps [sessionId] in, or null when it has none — the
+  /// file is named after the session, so the name is the whole check.
+  Future<File?> codexSession(String sessionId) async {
+    if (sessionId.isEmpty) return null;
     try {
       await for (final entry in _codexRoot.list(recursive: true)) {
         if (entry is! File) continue;
-        if (codexSessionIdFromPath(entry.path) == sessionId) return true;
+        if (codexSessionIdFromPath(entry.path) == sessionId) return entry;
       }
     } on FileSystemException {
-      return false;
+      return null;
     }
-    return false;
+    return null;
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/copy/setup_hints.dart';
 import '../../../shared/terminal/terminal_metrics.dart';
@@ -36,7 +37,7 @@ class AgentTerminalView extends ConsumerStatefulWidget {
     required this.workdir,
     required this.approval,
     required this.network,
-    this.resumeSessionId,
+    this.sessions = const [],
     this.onSessionId,
   });
 
@@ -59,13 +60,14 @@ class AgentTerminalView extends ConsumerStatefulWidget {
 
   final NetworkCredential network;
 
-  /// The conversation the CLI should pick back up, or null to start a new one.
+  /// Every agent session this chat has left behind — one per agent, so the one
+  /// taking over picks its own back up and the one being replaced can be read
+  /// for what it had worked out.
   ///
-  /// Only ever a session this same agent recorded in this same folder — an id
-  /// resumes perfectly well from anywhere, and the agent would carry on editing
-  /// the files it remembers rather than the ones it is now pointed at
-  /// (`AgentResumePoint.matches`).
-  final String? resumeSessionId;
+  /// Handed over whole rather than resolved here: which of these is a resume
+  /// and which is a handover depends on the agent still running under the
+  /// picker, and only [AgentTerminals] knows that.
+  final List<AgentResumePoint> sessions;
 
   /// Fires with the id the CLI is holding, once it is known — immediately for
   /// Claude Code, which is *told* its id, and a few seconds later for Codex,
@@ -120,7 +122,7 @@ class _AgentTerminalViewState extends ConsumerState<AgentTerminalView> {
             workdir: widget.workdir,
             approval: widget.approval,
             network: widget.network,
-            resumeSessionId: widget.resumeSessionId,
+            sessions: widget.sessions,
             onSessionId: widget.onSessionId,
           );
     });

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/app_environment.dart';
 import '../../../core/composer_text.dart';
+import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/chat_drop.dart';
@@ -417,22 +418,15 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _clearDraft();
   }
 
-  /// The session this chat's CLI should pick back up, or null to start a new
-  /// conversation.
+  /// Every agent session the open chat has left behind, for the terminal lane.
   ///
-  /// Both halves of [AgentResumePoint.matches] have to agree before an id is
-  /// handed over. The agent is the obvious one — Codex cannot resume a Claude
-  /// session. The folder is the half that looks optional and isn't: the id would
-  /// resume perfectly well from anywhere, and the CLI would carry on editing the
-  /// files it remembers rather than the ones this chat is pointed at.
-  String? _resumeIdFor(AgentTool agent, String workdir) {
-    final point = ref.watch(
-      chatSessionsProvider.select((s) => s.active?.resumeFor(agent.id)),
-    );
-    if (point == null) return null;
-    if (!point.matches(thisAgent: agent.id, thisWorkdir: workdir)) return null;
-    return point.sessionId;
-  }
+  /// Handed over whole rather than resolved to one id here. Which of them is
+  /// the *resume* depends on the agent the picker now names; which is the
+  /// *handover* depends on the agent still running under it, and only
+  /// [AgentTerminals] knows that one.
+  List<AgentResumePoint> get _resumePoints =>
+      ref.watch(chatSessionsProvider.select((s) => s.active?.resume)) ??
+      const [];
 
   /// Write down the session the terminal has just opened, so closing the app
   /// doesn't cost the conversation.
@@ -1236,7 +1230,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
                           workdir: workdir,
                           approval: approval,
                           network: widget.network,
-                          resumeSessionId: _resumeIdFor(chatAgent, workdir),
+                          sessions: _resumePoints,
                           onSessionId: (id) => _rememberSession(
                             activeId,
                             chatAgent,

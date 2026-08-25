@@ -241,6 +241,32 @@ class TerminalSession {
     return true;
   }
 
+  /// Whether the program in this pty is ready to be pasted into.
+  ///
+  /// A TUI enables bracketed paste (`ESC[?2004h`) as it takes the keyboard, so
+  /// this is also the closest thing either agent CLI offers to "the prompt is
+  /// up". There is no other signal: an agent's CLI prints a banner, an update
+  /// notice and a tips box before it draws its composer, and anything written
+  /// into the pty before then is read by whatever was on screen at the time —
+  /// or by nothing at all.
+  bool get takesPaste => _shell is ShellRunning && terminal.bracketedPasteMode;
+
+  /// Puts [text] at the prompt as a **paste**, and leaves it there unsent.
+  ///
+  /// Not [insert], and the difference is the whole of it: a transcript typed in
+  /// keystroke by keystroke has its newlines read as Enter, so a handover would
+  /// send itself one line at a time and the agent would answer the first
+  /// sentence of a conversation it had not finished reading. A bracketed paste
+  /// arrives as one block, which is also how both CLIs come to show it as
+  /// "[Pasted text +N lines]" instead of filling the screen.
+  ///
+  /// False when there is nobody at the prompt yet — see [takesPaste].
+  bool paste(String text) {
+    if (!takesPaste) return false;
+    terminal.paste(text);
+    return true;
+  }
+
   /// Opens a fresh shell in a terminal whose last one ended, keeping the
   /// scrollback above it — the transcript of what went wrong is usually why the
   /// user is starting another.

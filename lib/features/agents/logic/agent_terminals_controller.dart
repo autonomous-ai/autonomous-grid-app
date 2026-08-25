@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/cli/agent_session_files.dart';
 import '../../../infrastructure/cli/agent_session_id.dart';
 import '../../../infrastructure/cli/codex_rollouts.dart';
@@ -16,8 +17,11 @@ import 'adapters/agent_grid_setup.dart';
 import 'adapters/agent_terminal_command.dart';
 import 'adapters/claude_tool.dart';
 import 'adapters/codex_tool.dart';
+import '../../chat/logic/import/claude_session_parser.dart';
+import '../../chat/logic/import/codex_session_parser.dart';
 import 'adapters/hermes_tool.dart';
 import 'agent_catalog.dart';
+import 'agent_handover.dart';
 import 'agent_model_support.dart';
 
 /// The binary behind one agent, or null when it isn't installed on this machine.
@@ -101,6 +105,11 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// same reason and with the same override.
   final AgentSessionFiles _sessionFiles = AgentSessionFiles();
 
+  /// How long a handover waits for the new CLI to open a prompt. Claude Code
+  /// and Codex both draw one within a second or two of a warm start; this is
+  /// the allowance for a cold one, not the expected wait.
+  static const Duration _pasteWindow = Duration(seconds: 30);
+
   @override
   AgentTerminalsState build() {
     ref.onDispose(_disposeAll);
@@ -113,6 +122,12 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// Silently does nothing for an agent that has no interactive CLI this app
   /// drives, or one that isn't installed: both are states the chat already has a
   /// screen for, and a terminal that flashes and dies is a worse way to say so.
+  ///
+  /// [sessions] is every conversation this chat has left behind, not just the
+  /// one being picked up: the agent taking over reads its own point, and the
+  /// agent being *replaced* is where the handover is read from. Which of them
+  /// is which is a fact only this controller has — the view knows the agent the
+  /// picker names, not the one still running under it.
   Future<void> ensure({
     required String chatId,
     required AgentTool tool,
@@ -120,7 +135,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     required String workdir,
     required AgentApprovalMode approval,
     required NetworkCredential network,
-    String? resumeSessionId,
+    List<AgentResumePoint> sessions = const [],
     ValueChanged<String>? onSessionId,
   }) async {
     if (!tool.runsInTerminal) return;
@@ -151,6 +166,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     // where it currently shows the wrong CLI.
     if (live != null && !agentSupportsModel(tool, model)) return;
     if (!_opening.add(chatId)) return;
+    // Read before [_running] is moved below: this is the agent whose
+    // conversation is about to be replaced on screen, and after the switch
+    // nothing remembers it was ever here.
+    final leaving = live == null ? null : _running[chatId];
     try {
       final executable = ref.read(agentExecutableProvider(tool));
       if (executable == null) return;
@@ -169,7 +188,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       // routinely it doesn't, and what `--resume` on a session that is gone
       // costs. A stale one falls through to a new conversation, which is what
       // this chat was going to get anyway.
-      final resumeId = await _resumableId(tool, resumeSessionId);
+      final resumeId = await _resumableId(
+        tool,
+        _pointFor(sessions, tool, workdir)?.sessionId,
+      );
       // The chat was closed while its agent's history was being read.
       if (!ref.mounted) return;
 
@@ -210,12 +232,20 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       // that terminal rather than replacing it — see [TerminalSession.relaunch]
       // for the crash that replacing it caused.
       if (_sessions[chatId] case final session?) {
+        // What the agent being replaced had worked out, read while its files
+        // are still the newest thing on disk and before its CLI is killed.
+        final handover = await _handoverFrom(
+          leaving,
+          _pointFor(sessions, leaving, workdir),
+        );
+        if (!ref.mounted) return;
         session.relaunch(
           command: command,
           environment: setup.environment,
           onError: _logStartFailure,
         );
         _learnCodexSession(rollouts, chatId, workdir, session, onSessionId);
+        if (handover != null) _pasteWhenReady(chatId, session, handover);
         return;
       }
       final session = TerminalSession(
@@ -234,6 +264,120 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     }
   }
 
+  /// The point [tool] left in [workdir], or null when it has none there.
+  ///
+  /// Both halves of [AgentResumePoint.matches] have to agree, and the folder is
+  /// the half that looks optional: an id resumes perfectly well from anywhere,
+  /// and the agent would carry on editing the files it remembers rather than
+  /// the ones it is now pointed at.
+  AgentResumePoint? _pointFor(
+    List<AgentResumePoint> sessions,
+    AgentTool? tool,
+    String workdir,
+  ) {
+    if (tool == null) return null;
+    for (final point in sessions) {
+      if (point.matches(thisAgent: tool.id, thisWorkdir: workdir)) return point;
+    }
+    return null;
+  }
+
+  /// The conversation [leaving] was holding, as text for the agent taking over
+  /// — or null when there is nothing to hand across.
+  ///
+  /// **A switch is not a resume, and this is the only thing that stops it being
+  /// a memory wipe.** The new CLI opens on an empty session: it has never seen
+  /// the file the last one was halfway through changing, and the user's next
+  /// sentence — which is usually "keep going" — lands on nothing. Reading the
+  /// outgoing agent's own session file is what makes the difference, and the
+  /// app already knows how to read both (`parseClaudeSession`,
+  /// `parseCodexSession`).
+  ///
+  /// Every failure here answers null: a session file another tool writes owes
+  /// this app no shape, and a handover that could not be built has to cost the
+  /// context rather than the switch the user asked for. It is logged, because a
+  /// switch that silently lost the history is exactly the thing that would
+  /// otherwise be reported as the agent behaving oddly (§6).
+  Future<String?> _handoverFrom(
+    AgentTool? leaving,
+    AgentResumePoint? point,
+  ) async {
+    if (leaving == null || point == null || leaving == AgentTool.hermes) {
+      return null;
+    }
+    try {
+      final file = switch (leaving) {
+        AgentTool.claude => await _sessionFiles.claudeSession(point.sessionId),
+        AgentTool.codex => await _sessionFiles.codexSession(point.sessionId),
+        AgentTool.hermes => null,
+      };
+      if (file == null) return null;
+      final lines = await file.readAsLines();
+      final parsed = switch (leaving) {
+        AgentTool.claude => parseClaudeSession(
+          sessionId: point.sessionId,
+          lines: lines,
+        ),
+        AgentTool.codex => parseCodexSession(
+          fallbackSessionId: point.sessionId,
+          lines: lines,
+        ),
+        AgentTool.hermes => null,
+      };
+      if (parsed == null || parsed.messages.isEmpty) return null;
+      return renderAgentHandover(session: parsed, from: leaving);
+    } on Object catch (error) {
+      ref
+          .read(appLogProvider)
+          .failure(
+            'agent',
+            "couldn't read what ${leaving.name} had worked out, so the agent "
+                'taking over starts without it',
+            error: error,
+          );
+      return null;
+    }
+  }
+
+  /// Pastes [text] at the new CLI's prompt as soon as it has one, and leaves it
+  /// there **unsent**.
+  ///
+  /// Unsent because the handover is the user's to send: it is their prompt, it
+  /// spends their tokens, and a chat that fires a turn nobody typed the moment
+  /// they change a picker is the shape of an app that has been taken over. They
+  /// press Enter, or they delete it and start clean.
+  ///
+  /// The wait is for [TerminalSession.takesPaste] rather than a fixed delay —
+  /// an agent CLI prints a banner, an update notice and a tips box before it
+  /// draws its composer, and text written into the pty before then is read by
+  /// whatever was on screen at the time. It gives up at [_pasteWindow] and says
+  /// so: a CLI that never took the keyboard has a bigger problem than a missing
+  /// handover, and a paste that lands minutes later would land in the middle of
+  /// whatever the user had since typed.
+  void _pasteWhenReady(String chatId, TerminalSession session, String text) {
+    final generation = (_watch[chatId] ?? 0) + 1;
+    _watch[chatId] = generation;
+    unawaited(() async {
+      final deadline = DateTime.now().add(_pasteWindow);
+      while (DateTime.now().isBefore(deadline)) {
+        if (!identical(_sessions[chatId], session) ||
+            _watch[chatId] != generation) {
+          return;
+        }
+        if (session.paste(text)) return;
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      ref
+          .read(appLogProvider)
+          .info(
+            'agent',
+            'the agent taking over this chat never opened a prompt, so the '
+                'conversation it was handed was not pasted',
+          );
+    }());
+  }
+
+  /// The stored id, if the agent still has the conversation behind it — else
   /// The stored id, if the agent still has the conversation behind it — else
   /// null, and this chat starts a new one.
   ///

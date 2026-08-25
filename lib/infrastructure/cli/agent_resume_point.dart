@@ -81,10 +81,9 @@ class AgentResumePoint {
   /// starting over.
   static List<AgentResumePoint> listFromJson(Object? raw) => switch (raw) {
     final List<Object?> many => [
-      for (final entry in many)
-        if (fromJson(entry) case final point?) point,
+      for (final entry in many) ?fromJson(entry),
     ].take(kMaxResumePoints).toList(),
-    final Object? one => [if (fromJson(one) case final point?) point],
+    final Object? one => [?fromJson(one)],
   };
 
   /// Reads a stored point, or null when there isn't a usable one.
