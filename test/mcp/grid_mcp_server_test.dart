@@ -63,6 +63,7 @@ void main() {
       server = GridMcpServer(
         onAsk: (chatId, call) async {
           ran.add((chatId, call));
+          if (call.argument == 'throw') throw StateError('boom');
           return 'Repeating every 30m.';
         },
       );
@@ -70,15 +71,16 @@ void main() {
     });
     tearDown(() => server.stop());
 
-    Future<Map<String, Object?>> send(
-      String token,
-      Map<String, Object?> body,
-    ) async {
+    Future<Map<String, Object?>> sendRaw({
+      required String token,
+      required String body,
+      String method = 'POST',
+    }) async {
       final client = HttpClient();
-      final request = await client.postUrl(Uri.parse(server.url!));
+      final request = await client.openUrl(method, Uri.parse(server.url!));
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
       request.headers.contentType = ContentType.json;
-      request.write(jsonEncode(body));
+      request.write(body);
       final response = await request.close();
       final text = await utf8.decoder.bind(response).join();
       client.close();
@@ -87,6 +89,11 @@ void main() {
         if (text.isNotEmpty) ...jsonDecode(text) as Map<String, Object?>,
       };
     }
+
+    Future<Map<String, Object?>> send(
+      String token,
+      Map<String, Object?> body,
+    ) => sendRaw(token: token, body: jsonEncode(body));
 
     test('listens on loopback only — this runs commands in the user\'s chats, '
         'and a listener on every interface would offer that to the room', () {
@@ -138,7 +145,8 @@ void main() {
           'method': 'tools/list',
         });
 
-        expect(reply['status'], HttpStatus.unauthorized);
+        expect(reply['status'], HttpStatus.ok);
+        expect((reply['error']! as Map)['code'], -32001);
         expect(ran, isEmpty);
       },
     );
@@ -151,7 +159,8 @@ void main() {
         'method': 'tools/list',
       });
 
-      expect(reply['status'], HttpStatus.unauthorized);
+      expect(reply['status'], HttpStatus.ok);
+      expect((reply['error']! as Map)['code'], -32001);
     });
 
     test('a refused ask comes back as a result the agent must read, not as a '
@@ -205,6 +214,42 @@ void main() {
       expect(reply['status'], HttpStatus.accepted);
       expect(reply['result'], isNull);
     });
+
+    test('bad input is a JSON-RPC error over HTTP 200, so an agent does not '
+        'retry a request that may have already run', () async {
+      final token = server.mintTurnToken('chat-1');
+
+      final malformed = await sendRaw(token: token, body: '{');
+      final wrongMethod = await sendRaw(
+        token: token,
+        body: '',
+        method: 'DELETE',
+      );
+
+      expect(malformed['status'], HttpStatus.ok);
+      expect((malformed['error']! as Map)['code'], -32700);
+      expect(wrongMethod['status'], HttpStatus.ok);
+      expect((wrongMethod['error']! as Map)['code'], -32600);
+    });
+
+    test('an internal failure is a JSON-RPC error over HTTP 200, so it cannot '
+        'crash a long-running agent turn at the transport layer', () async {
+      final token = server.mintTurnToken('chat-1');
+
+      final reply = await send(token, {
+        'jsonrpc': '2.0',
+        'id': 9,
+        'method': 'tools/call',
+        'params': {
+          'name': 'grid_ask',
+          'arguments': {'run': '/loop throw'},
+        },
+      });
+
+      expect(reply['status'], HttpStatus.ok);
+      expect(reply['id'], 9);
+      expect((reply['error']! as Map)['code'], -32603);
+    });
     test('a chat\'s next turn retires the last one\'s token, so a chat never '
         'has two live keys to itself', () async {
       final first = server.mintTurnToken('chat-1');
@@ -217,7 +262,7 @@ void main() {
           'id': 7,
           'method': 'tools/list',
         }))['status'],
-        HttpStatus.unauthorized,
+        HttpStatus.ok,
       );
       expect(
         (await send(second, {
