@@ -18,6 +18,19 @@ import '../agent_catalog.dart';
 /// [executable] is the resolved binary — the path providers own that, so this
 /// stays a function of its arguments.
 ///
+/// [prompt] is the first thing to say, handed over as the CLI's own positional
+/// argument rather than typed at it. Both take one (`claude [options] [prompt]`,
+/// `codex [OPTIONS] [PROMPT]`) and both open the interactive UI with it already
+/// sent — verified against `claude 2.1.245` in a pty, which drew its TUI and
+/// answered the question.
+///
+/// **This is why the first message of a terminal chat is not typed in.** Typing
+/// it would mean guessing when the CLI is ready to be typed at: too early and
+/// the keystrokes land in a program that hasn't set up its input yet, too late
+/// and the user is watching a prompt they already pressed Enter on. Worse, a
+/// first-run dialog ("Detected a custom API key… use it?") would eat the Return
+/// as its own answer. An argument has none of those problems.
+///
 /// [config] is Codex's `-c` overrides (the grid, the model, the provider), the
 /// same list the one-shot lane builds. Claude Code takes its grid in the
 /// environment instead, so it ignores this.
@@ -42,6 +55,7 @@ ShellCommand agentTerminalCommand({
   String? mcpConfigPath,
   List<String> config = const [],
   AgentSession? session,
+  String? prompt,
 }) => (
   executable: executable,
   arguments: switch (tool) {
@@ -50,6 +64,7 @@ ShellCommand agentTerminalCommand({
       approval: approval,
       mcpConfigPath: mcpConfigPath,
       session: session,
+      prompt: prompt,
     ),
     AgentTool.codex => _codexTerminalArgs(
       model: model,
@@ -57,6 +72,7 @@ ShellCommand agentTerminalCommand({
       approval: approval,
       config: config,
       session: session,
+      prompt: prompt,
     ),
     // Hermes has no interactive CLI this app drives — it speaks ACP, and that
     // is the whole of it. [AgentTool.runsInTerminal] is what keeps a chat from
@@ -80,6 +96,7 @@ List<String> _claudeTerminalArgs({
   required AgentApprovalMode approval,
   required String? mcpConfigPath,
   required AgentSession? session,
+  required String? prompt,
 }) => [
   if (session != null)
     ...(session.resume
@@ -95,6 +112,8 @@ List<String> _claudeTerminalArgs({
     mcpConfigPath,
     '--strict-mcp-config',
   ],
+  // Last, because it is the positional: `claude [options] [prompt]`.
+  ?prompt,
 ];
 
 /// `codex`, with no `exec`: the real TUI, told which folder is its working root.
@@ -110,6 +129,7 @@ List<String> _codexTerminalArgs({
   required AgentApprovalMode approval,
   required List<String> config,
   required AgentSession? session,
+  required String? prompt,
 }) {
   final gate = codexApprovalPolicy(approval);
   return [
@@ -129,5 +149,9 @@ List<String> _codexTerminalArgs({
       '-c',
       override,
     ],
+    // `codex [OPTIONS] [PROMPT]`, and only for a session that is starting
+    // fresh: `codex resume` takes a session id in that slot, and a prompt put
+    // there would be read as one.
+    if (prompt != null && !(session?.resume ?? false)) prompt,
   ];
 }

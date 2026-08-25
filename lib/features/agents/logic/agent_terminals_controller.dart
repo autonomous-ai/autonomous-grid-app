@@ -97,6 +97,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// watcher for the run that has been replaced to stop. This can.
   final Map<String, int> _watch = {};
 
+  /// The first thing a chat has to say, waiting for its CLI to be started with
+  /// it — see [prime].
+  final Map<String, String> _openingPrompts = {};
+
   /// Where a Codex session id is read back from. A field so a test can point it
   /// at a temp folder instead of the user's own Codex history.
   final CodexRollouts _rollouts = CodexRollouts();
@@ -204,6 +208,9 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         (AgentTool.claude, _) => (id: newAgentSessionId(), resume: false),
         _ => null,
       };
+      // Taken here rather than earlier: everything above can still return, and
+      // a message consumed by an attempt that never started the CLI would be
+      // lost with nothing on screen to say so.
       final command = agentTerminalCommand(
         tool: tool,
         executable: executable,
@@ -213,6 +220,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         mcpConfigPath: setup.mcpConfig,
         config: setup.config,
         session: handle,
+        prompt: _openingPrompts.remove(chatId),
       );
       _running[chatId] = tool;
       // Told before the process starts, because the id *is* the flag it starts
@@ -453,6 +461,25 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     );
   }
 
+  /// Holds the message a new chat was started with, for the CLI that is about
+  /// to open in it.
+  ///
+  /// **The first message of a terminal chat has no terminal to go to yet.** The
+  /// chat is created by pressing Send, and the CLI it belongs to is spawned a
+  /// frame later by the view — so the sentence that created the chat would
+  /// otherwise be sent down the one-shot lane (`claude -p`) and answered
+  /// somewhere the user cannot see, which is exactly what happened: the log
+  /// showed the turn running for eleven seconds while the terminal on screen sat
+  /// empty.
+  ///
+  /// Held rather than typed, and handed to the CLI as its own first argument —
+  /// see [agentTerminalCommand].
+  void prime(String chatId, String message) {
+    final text = message.trim();
+    if (text.isEmpty) return;
+    _openingPrompts[chatId] = text;
+  }
+
   /// Puts [text] at the CLI's prompt without submitting it — a dropped file's
   /// path, landing where the user is still writing the rest of the line.
   ///
@@ -464,6 +491,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// Ends the terminal that belonged to [chatId], if there was one.
   void end(String chatId) {
     _running.remove(chatId);
+    _openingPrompts.remove(chatId);
     _watch.remove(chatId);
     final gone = _sessions.remove(chatId);
     if (gone == null) return;

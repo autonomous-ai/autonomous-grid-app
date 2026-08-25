@@ -395,6 +395,16 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // words was a phrase list that guessed both ways, and the assistant has to
     // read the sentence anyway to answer it: what it was asking for comes back
     // in a `grid-ask` block (see [parseAgentAsk]).
+    // A chat whose agent runs in its own CLI takes its first message a different
+    // way: the CLI is started with it. There is no composer here after this —
+    // the terminal takes over the pane — so this is the *only* message that
+    // could ever reach the ordinary send path, and it did, which is why the
+    // sentence that opened the chat was answered by `claude -p` somewhere
+    // off screen while the terminal sat empty.
+    if (_startsTerminalChat(modality)) {
+      _startTerminal(message);
+      return;
+    }
     ref
         .read(chatSessionsProvider.notifier)
         .send(
@@ -415,6 +425,28 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // deliberately, so the app must not go on quoting it into every message
     // after.
     ref.read(attachedTerminalsProvider.notifier).clear();
+    _clearDraft();
+  }
+
+  /// Whether pressing Send here opens an agent's CLI rather than sending a turn.
+  ///
+  /// Text only: a picture is made by the grid's own API, which no CLI is part
+  /// of, and the composer already refuses to send one to an agent that can't
+  /// read it.
+  bool _startsTerminalChat(PlaygroundModality modality) =>
+      modality == PlaygroundModality.text &&
+      _attachments.isEmpty &&
+      ref.read(anyAgentInstalledProvider) &&
+      ref.read(activeChatAgentProvider).runsInTerminal;
+
+  /// Open the chat, hand its first message to the CLI about to start, and clear
+  /// the composer — the same three things [_send] does, minus the turn.
+  void _startTerminal(String message) {
+    final chat = ref
+        .read(chatSessionsProvider.notifier)
+        .startTerminalChat(model: _model.text.trim(), message: message);
+    ref.read(agentTerminalsProvider.notifier).prime(chat.id, message);
+    _message.clear();
     _clearDraft();
   }
 

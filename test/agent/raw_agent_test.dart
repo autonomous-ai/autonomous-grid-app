@@ -330,6 +330,7 @@ void main() {
       AgentApprovalMode approval = AgentApprovalMode.ask,
       String? mcpConfigPath,
       AgentSession? session,
+      String? prompt,
     }) => agentTerminalCommand(
       tool: AgentTool.claude,
       executable: '/bin/claude',
@@ -338,12 +339,14 @@ void main() {
       approval: approval,
       mcpConfigPath: mcpConfigPath,
       session: session,
+      prompt: prompt,
     );
 
     ShellCommand codex({
       AgentApprovalMode approval = AgentApprovalMode.ask,
       List<String> config = const [],
       AgentSession? session,
+      String? prompt,
     }) => agentTerminalCommand(
       tool: AgentTool.codex,
       executable: '/bin/codex',
@@ -352,6 +355,38 @@ void main() {
       approval: approval,
       config: config,
       session: session,
+      prompt: prompt,
+    );
+
+    test(
+      'the message that started the chat is the CLI\'s own last argument, so '
+      'the session opens with it already asked rather than the app guessing '
+      'when the TUI is ready to be typed at',
+      () {
+        expect(
+          claude(prompt: 'Bạn tên Peter?').arguments.last,
+          'Bạn tên Peter?',
+        );
+        expect(
+          codex(prompt: 'Bạn tên Peter?').arguments.last,
+          'Bạn tên Peter?',
+        );
+        expect(claude().arguments.last, isNot('Bạn tên Peter?'));
+      },
+    );
+
+    test(
+      'a resumed Codex session takes no prompt: `resume` reads the positional '
+      'as the session id, so a message there would name a session that does '
+      'not exist',
+      () {
+        final args = codex(
+          session: (id: 'sess-1', resume: true),
+          prompt: 'carry on',
+        ).arguments;
+        expect(args, isNot(contains('carry on')));
+        expect(args.take(2), ['resume', 'sess-1']);
+      },
     );
 
     test(
