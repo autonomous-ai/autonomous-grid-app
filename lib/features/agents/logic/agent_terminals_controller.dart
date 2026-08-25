@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/agent_session_files.dart';
 import '../../../infrastructure/cli/agent_session_id.dart';
 import '../../../infrastructure/cli/codex_rollouts.dart';
 import '../../../infrastructure/logging/app_log.dart';
@@ -96,6 +97,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// at a temp folder instead of the user's own Codex history.
   final CodexRollouts _rollouts = CodexRollouts();
 
+  /// Where a stored session id is checked against the agent's own disk, for the
+  /// same reason and with the same override.
+  final AgentSessionFiles _sessionFiles = AgentSessionFiles();
+
   @override
   AgentTerminalsState build() {
     ref.onDispose(_disposeAll);
@@ -159,11 +164,20 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       // The chat was closed while its grid was being prepared.
       if (!ref.mounted) return;
 
+      // The id the chat remembers is only worth passing while the agent still
+      // has the conversation behind it — see [AgentSessionFiles] for how
+      // routinely it doesn't, and what `--resume` on a session that is gone
+      // costs. A stale one falls through to a new conversation, which is what
+      // this chat was going to get anyway.
+      final resumeId = await _resumableId(tool, resumeSessionId);
+      // The chat was closed while its agent's history was being read.
+      if (!ref.mounted) return;
+
       // What the CLI should be holding when it opens. Claude Code is handed an
       // id the app made up; Codex has no way to be told one, so it can only be
       // *resumed* with an id read back off a rollout it wrote (see
       // [_learnCodexSession]).
-      final handle = switch ((tool, resumeSessionId)) {
+      final handle = switch ((tool, resumeId)) {
         (_, final id?) => (id: id, resume: true),
         (AgentTool.claude, _) => (id: newAgentSessionId(), resume: false),
         _ => null,
@@ -185,7 +199,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       if (handle != null && !handle.resume) onSessionId?.call(handle.id);
       // Codex's own id can only be found by watching for the file it writes, so
       // the listing has to be taken before the spawn below.
-      final rollouts = tool == AgentTool.codex && resumeSessionId == null
+      final rollouts = tool == AgentTool.codex && resumeId == null
           ? await _rollouts.snapshot()
           : null;
       // Handed back only now: a setup that failed above leaves the CLI that is
@@ -218,6 +232,34 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     } finally {
       _opening.remove(chatId);
     }
+  }
+
+  /// The stored id, if the agent still has the conversation behind it — else
+  /// null, and this chat starts a new one.
+  ///
+  /// The check is the whole fix for a chat that could never be opened twice:
+  /// the app writes an id down before the CLI starts, Claude Code only writes
+  /// the session on the first turn, so every chat that was looked at and not
+  /// typed into came back to `--resume` an id nothing answered to and a CLI
+  /// that exited before it drew (see [AgentSessionFiles]). Both the id and the
+  /// screen are replaced by the launch that follows, so the chat repairs
+  /// itself rather than staying broken for good.
+  Future<String?> _resumableId(AgentTool tool, String? sessionId) async {
+    if (sessionId == null || sessionId.isEmpty) return null;
+    final held = switch (tool) {
+      AgentTool.claude => await _sessionFiles.claudeHolds(sessionId),
+      AgentTool.codex => await _sessionFiles.codexHolds(sessionId),
+      AgentTool.hermes => false,
+    };
+    if (held) return sessionId;
+    ref
+        .read(appLogProvider)
+        .info(
+          'agent',
+          '${tool.name} no longer has session $sessionId on this computer; '
+              'this chat starts a new conversation',
+        );
+    return null;
   }
 
   /// Reads back the id Codex gave this chat's session, and hands it to
