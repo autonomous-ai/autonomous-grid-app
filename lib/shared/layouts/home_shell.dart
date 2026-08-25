@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/app_update/logic/app_updater_service.dart';
+import '../../features/app_update/logic/update_watcher.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
 import '../../features/code/logic/code_projects_controller.dart';
 import '../../features/code/presentation/code_pane.dart';
@@ -91,6 +92,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // reached once first-run setup is done or skipped, so Sparkle's "restart
       // to update" prompt can't land on top of a model download.
       unawaited(ref.read(appUpdaterServiceProvider).checkInBackground());
+      // The app's own half-hourly lane, started in the same breath and for the
+      // same reason. It draws the sidebar banner; Sparkle's lane above keeps
+      // running untouched, so a fault in this one still leaves the user a way
+      // to hear about a release.
+      ref.read(updateWatcherProvider.notifier).start();
       // The OS notification prompt, for the same two reasons: it must not land
       // during first-run setup, and asking for it in `main` held back the first
       // frame — the macOS dialog doesn't return until the user answers, so the
