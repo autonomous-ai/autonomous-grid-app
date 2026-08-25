@@ -26,6 +26,7 @@ import '../../projects/logic/selected_project.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import 'panel_firmware_updater.dart';
 import 'panel_chat_mirror.dart';
+import 'panel_flash_damper.dart';
 import 'panel_question_mirror.dart';
 import 'panel_scroll.dart';
 import 'panel_summary_writer.dart';
@@ -168,7 +169,16 @@ class PanelController {
   /// still reporting the version it had, offering again would flash it again,
   /// forever. It also names the only cause — the device's `hello.fw` and the
   /// version inside the image it was given disagree — in the log.
+  ///
+  /// Narrower than [_damper], and kept beside it rather than folded into it,
+  /// because it answers a different question: this one is about a device whose
+  /// *reported* version is wrong, and produces the one log line that names that
+  /// cause. The damper is about how often this app may write at all.
   final _flashed = <String, String>{};
+
+  /// The cap on writing to a board, whatever the rest of this class believes
+  /// about who owns it.
+  final _damper = PanelFlashDamper();
 
   /// Image versions this session already tried to hand a panel and could not.
   ///
@@ -1177,6 +1187,10 @@ class PanelController {
     onGaveUp: (version) {
       if (_mac.isNotEmpty) _refused[_mac] = version;
     },
+    // Fed from here rather than from the `fw.done` case, so the count and the
+    // version come from the handover that actually happened instead of from
+    // whatever this controller happens to be holding when the message lands.
+    onWrote: (version) => _damper.wrote(_mac, version, DateTime.now()),
   );
 
   /// Offer the firmware this build carries, when the panel is running another
@@ -1195,6 +1209,18 @@ class PanelController {
             '${image.version}, but a turn is running — not offering yet',
       );
       _deferredOffer = hello;
+      return;
+    }
+    // THE CAP, checked after the cheap disqualifiers and before anything is
+    // said to the panel. Last among the guards because it is the one that does
+    // not depend on this app being right about who owns the board — the others
+    // all assume the answer to that is yes.
+    final capped = _damper.refuse(hello.mac, image.version, DateTime.now());
+    if (capped != null) {
+      _log.warn(
+        'panel',
+        'Not writing ${image.version} to panel ${hello.mac}: $capped',
+      );
       return;
     }
     if (_refused[hello.mac] == image.version) {

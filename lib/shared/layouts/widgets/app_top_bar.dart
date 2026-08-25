@@ -13,14 +13,12 @@ import '../../../features/code/logic/code_projects_controller.dart';
 import '../../../features/code/logic/code_side_panel.dart';
 import '../../../features/code/logic/project_status_controller.dart';
 import '../../../features/code/presentation/widgets/project_header.dart';
-import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/node_setup/logic/background_model_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_spinner.dart';
 import '../../widgets/panel_toggle.dart';
 import '../shell_state.dart';
-import 'grid_power_pill.dart';
-import 'invite_pill.dart';
+import 'grid_cta_pair.dart';
 import 'top_bar_pill.dart';
 
 /// The slim strip above the open section: on the left, the conversation you're
@@ -101,21 +99,15 @@ class AppTopBar extends ConsumerWidget {
                   ),
                 ),
                 const _ModelDownloadPill(),
-                // The grid, then the people on it, then the window's own
-                // controls — three groups, in the order they belong to: what
-                // this place is, who is in it, what you can open.
+                // What you can do to this grid, then what you can open beside
+                // this conversation. Two groups, and only two — the grid's
+                // figures used to sit between them and they are on
+                // [AppStatusRail] now.
                 //
-                // The faces used to come first, on the reading that "the faces,
-                // then the name of the place they are on" is one sentence. It
-                // reads the other way round just as well, and putting the
-                // capsule first buys something the other order could not: the
-                // one opaque, saturated surface on the bar (the Invite button)
-                // stops sitting in the middle of the glass ones, where it was
-                // the first thing the eye landed on and the last thing that
-                // deserved to be.
-                const GridPowerPill(),
-                const _GridInviteDivider(),
-                const InvitePill(),
+                // That is what makes this bar legible again: everything left on
+                // it is either the conversation's own chrome or a control, and
+                // nothing here is a number to be read.
+                const GridCtaPair(),
                 const _ControlsDivider(),
                 const _ProjectRailToggle(),
                 const _BottomPanelToggle(),
@@ -157,34 +149,12 @@ class _BarDivider extends StatelessWidget {
   }
 }
 
-/// The rule between the grid capsule and the people on that grid.
-///
-/// Drawn only when there is something on *both* sides. Every pill here unmounts
-/// when it has nothing to say, so a rule that always drew would end up floating
-/// against the toggles on a grid with no capsule — a line with one side is a
-/// mark, not a separator.
-class _GridInviteDivider extends ConsumerWidget {
-  const _GridInviteDivider();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final grid = ref.watch(selectedNetworkProvider);
-    if (grid == null) return const SizedBox.shrink();
-    // What [GridPowerPill] itself draws on: a grid with nothing online falls
-    // back to its "Run a model here" offer, and shows nothing at all to someone
-    // who may not host.
-    final hasCapsule =
-        !ref.watch(gridPowerProvider).isEmpty || grid.canManageProvider;
-    if (!hasCapsule) return const SizedBox.shrink();
-    return const _BarDivider();
-  }
-}
-
 /// The rule between the grid's own surfaces and the window's panel toggles.
 ///
-/// Same both-sides rule as [_GridInviteDivider]. The toggles are conditional in
-/// their own right — a chat with no grid has no panel to open, a project with no
-/// repository has nothing to browse — so this asks the same questions they do.
+/// Drawn only when there is something on *both* sides — a line with one side is
+/// a mark, not a separator. The toggles are conditional in their own right — a
+/// chat with no grid has no panel to open, a project with no repository has
+/// nothing to browse — so this asks the same questions they do.
 class _ControlsDivider extends ConsumerWidget {
   const _ControlsDivider();
 

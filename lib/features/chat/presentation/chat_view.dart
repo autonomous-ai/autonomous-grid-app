@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/app_environment.dart';
 import '../../../core/composer_text.dart';
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/chat_drop.dart';
@@ -1130,9 +1132,14 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   child: noModel
                       ? NoModelYet(
                           canManage: widget.network.canManageProvider,
-                          onGoToEngines: () => ref
-                              .read(shellSectionProvider.notifier)
-                              .select(ShellSection.engines),
+                          onGoToEngines: () {
+                            ref
+                                .read(analyticsProvider)
+                                .enginesOpened('start_engine_btn');
+                            ref
+                                .read(shellSectionProvider.notifier)
+                                .select(ShellSection.engines);
+                          },
                         )
                       : isNewChat
                       ? ChatStarters(

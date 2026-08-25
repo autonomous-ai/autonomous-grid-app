@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
@@ -213,6 +215,7 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
       : 'Start cloud engine';
 
   void _start() {
+    ref.read(analyticsProvider).engineSetupSubmitted('api_key');
     final engine = _engine;
     // Preserve whitelist order; serve-all sends no -m (the CLI's zero-config
     // default of "the whole whitelist this key can see").

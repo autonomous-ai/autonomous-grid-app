@@ -98,6 +98,7 @@ class PanelFirmwareUpdater {
     required PanelLink link,
     required AppLog log,
     this.onGaveUp,
+    this.onWrote,
     this.windowBytes = kPanelFirmwareWindowBytes,
     this.stall = kPanelFirmwareStall,
   }) : _link = link,
@@ -118,6 +119,14 @@ class PanelFirmwareUpdater {
   /// is in. Not called for [reset], which is the cable going or the app closing
   /// — nothing was learned about the image there.
   final void Function(String version)? onGaveUp;
+
+  /// Called with the image version when the panel confirms it has written one.
+  ///
+  /// The counterpart to [onGaveUp], and the only moment at which this app has
+  /// actually spent one of a board's erase cycles — an offer that is declined,
+  /// or that fails halfway, writes nothing. Anything counting flashes has to
+  /// count them here.
+  final void Function(String version)? onWrote;
 
   PanelFirmwareImage? _image;
   List<Uint8List> _slices = const [];
@@ -212,6 +221,7 @@ class PanelFirmwareUpdater {
       'The panel wrote firmware ${image.version} and is rebooting into it',
     );
     _finish();
+    onWrote?.call(image.version);
   }
 
   /// The panel refused or failed. It keeps running what it had.

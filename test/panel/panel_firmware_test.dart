@@ -41,6 +41,15 @@ class _FakeTransport implements PanelTransport {
   @override
   void send(List<int> bytes) => sent.add(bytes);
 
+  /// Ports let go because the device on them belongs to another product, with
+  /// the reason the link gave. Recorded rather than ignored: "the link let the
+  /// port go" and "the link said nothing" look identical from the outside, and
+  /// telling them apart is the whole point of the tests that use this.
+  final disowned = <String>[];
+
+  @override
+  void disown(String why) => disowned.add(why);
+
   @override
   Future<void> close() => _in.close();
 

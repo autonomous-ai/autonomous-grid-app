@@ -5,16 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../features/app_update/presentation/update_banner.dart';
 import '../../../features/chat/logic/chat_sessions_controller.dart';
 import '../../../features/chat/presentation/chat_history_list.dart';
 import '../../../features/code/presentation/code_rail.dart';
 import '../../../features/command_palette/presentation/command_palette.dart';
 import '../../../features/network/presentation/invitations_button.dart';
-import '../../../features/provider_node/logic/serving_engines_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_icon_button.dart';
 import '../../widgets/app_segmented.dart';
-import '../../widgets/status_dot.dart';
 import '../shell_state.dart';
 import 'sidebar_account.dart';
 import 'sidebar_item.dart';
@@ -99,6 +98,11 @@ class _AppSidebarState extends ConsumerState<AppSidebar> {
             // the way Codex separates its signed-in user from the list above.
             const Divider(height: 1, thickness: 1),
             const SizedBox(height: 4),
+            // Above the account rather than below it: the account is the last
+            // thing in the window and stays where people expect it, while the
+            // banner appears and disappears. Draws nothing when there is no
+            // release to offer, so nothing shifts on an ordinary launch.
+            const UpdateBanner(),
             const SidebarAccount(),
           ],
         ),
@@ -154,10 +158,6 @@ class _HomeRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final section = ref.watch(shellSectionProvider);
-    // Read here rather than inside the mark itself: a badge that exists but
-    // draws nothing still takes the row's badge gutter, which would leave Model
-    // engines' label 8px short of every other row whenever nothing is serving.
-    final serving = ref.watch(servingEnginesProvider).isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -185,12 +185,6 @@ class _HomeRail extends ConsumerWidget {
                   icon: target.thinIcon,
                   label: target.label,
                   selected: section == target,
-                  // Only Model engines carries a mark, and only while this
-                  // machine is actually serving — it is the one row whose state
-                  // changes without the user being on it.
-                  badge: serving && target == ShellSection.engines
-                      ? const _ServingDot()
-                      : null,
                   onTap: () =>
                       ref.read(shellSectionProvider.notifier).select(target),
                 ),
@@ -203,27 +197,6 @@ class _HomeRail extends ConsumerWidget {
         // instead of overlapping them (Codex keeps this gap).
         const Expanded(child: ChatHistoryList()),
       ],
-    );
-  }
-}
-
-/// The live mark on the Model engines row while this computer is serving.
-///
-/// The rail is then the only place that says "you are hosting right now"
-/// without opening a screen: a host who started an engine and went back to
-/// chatting has nothing else on screen telling them it's still running. Mounted
-/// only while it's true — see [_HomeRail], which owns that condition.
-class _ServingDot extends StatelessWidget {
-  const _ServingDot();
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    // Not pulsing, unlike the top bar's: that one marks a live figure the user
-    // opened a panel to read, while this sits in a list of rows they scan past.
-    return Tooltip(
-      message: 'This computer is serving a model',
-      child: StatusDot(color: AppPalette.online, size: 6),
     );
   }
 }

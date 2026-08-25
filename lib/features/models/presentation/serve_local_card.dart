@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/auto_serve_store.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
@@ -155,6 +157,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   }
 
   void _start(String model) {
+    ref.read(analyticsProvider).engineSetupSubmitted('built_in', model: model);
     _refreshAutoServe(model);
     final advertise = _advertise.text.trim();
     // Fall back to the model's default (200k, capped to its max) when the user

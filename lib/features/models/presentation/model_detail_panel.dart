@@ -272,8 +272,8 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
       ? files.first
       : '${stripSplitSuffix(files.first)} (${files.length} parts)';
 
-  /// Why Delete is off. Names where to stop it — "Model engines" is the row's
-  /// own label in the sidebar, so the sentence points somewhere that exists.
+  /// Why Delete is off. Names where to stop it — "Model engines" is the top
+  /// bar button's own label, so the sentence points somewhere that exists.
   static const _inUseReason =
       'This model is running right now. Stop it in Model engines to delete it.';
 

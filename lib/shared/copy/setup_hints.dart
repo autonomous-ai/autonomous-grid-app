@@ -2,14 +2,15 @@
 ///
 /// One file, because the screen keeps moving and the copy keeps being left
 /// behind: it was four loose entries in the account menu, then Settings ▸ This
-/// computer, and it is now a row in the sidebar. Each move rewrote a dozen error
-/// messages by hand, and the ones that were missed named a place that no longer
-/// existed — the exact failure §5 calls out. Name it here, use it everywhere.
+/// computer, then a row in the sidebar, and it is now a button on the top bar.
+/// Each move rewrote a dozen error messages by hand, and the ones that were
+/// missed named a place that no longer existed — the exact failure §5 calls out.
+/// Name it here, use it everywhere.
 library;
 
-/// Where a user goes to make this computer serve a model — the sidebar row's
-/// own words, so the sentence and the thing it points at agree.
-const kModelEnginesPlace = 'Model engines in the sidebar';
+/// Where a user goes to make this computer serve a model — the button's own
+/// words, so the sentence and the thing it points at agree.
+const kModelEnginesPlace = 'Model engines in the top bar';
 
 /// "This computer isn't set up to `activity` yet…", with the way to fix it.
 ///
