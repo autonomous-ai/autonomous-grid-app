@@ -2,25 +2,6 @@ import '../../../infrastructure/cli/agent_release_pins.dart';
 import '../../../infrastructure/cli/agent_spec_installer.dart';
 import '../../../infrastructure/cli/hermes_acp_setup.dart';
 
-/// Whether a chat with an interactive-CLI agent is driven through that CLI in a
-/// terminal, instead of through the one-shot text lane (`claude -p` /
-/// `codex exec`).
-///
-/// **Parked, on the boss's call on 2026-08-25.** The terminal lane works and is
-/// kept whole behind this flag: flipping it to `true` restores it, and the three
-/// readers of [AgentTool.runsInTerminal] are the whole of it. What it costs
-/// while it is off is exactly what the raw lane cannot do — nothing can ask
-/// permission (the CLI serves `--permission-prompt-tool` only alongside
-/// `--output-format stream-json`), a line typed mid-answer has nowhere to land,
-/// and every turn replays the transcript because a `-p` turn never learns a
-/// session id.
-///
-/// TODO(BE): this is a fork in the road, not a setting. Either the terminal lane
-/// comes back and this flag goes, or it is decided against and the lane is
-/// deleted with it — a `false` const left here to age is how a second, unused
-/// way of running an agent quietly rots (§3).
-const bool kAgentTerminalLane = false;
-
 /// The agents the app can put in charge of a chat.
 ///
 /// Every entry here runs today: the app can get it onto this computer, and it
@@ -107,25 +88,23 @@ enum AgentTool {
   /// Whether a chat with this agent is driven through the agent's **own
   /// interactive CLI**, in a terminal, rather than through turns the app sends.
   ///
-  /// **False everywhere right now**, because [kAgentTerminalLane] is off — read
-  /// that flag for why and for what it costs. Claude Code and Codex are the two
-  /// it would be true for: an interactive CLI the app can drive, where the CLI
-  /// asks for permission in its own words and takes the answer from the
-  /// keyboard, a message typed mid-answer reaches the turn that is running, and
-  /// the conversation is the CLI's own rather than a transcript replayed into
-  /// every prompt. Nothing is parsed on the way through — a pty carries the
-  /// bytes and an emulator draws them.
+  /// True for Claude Code and Codex, and it is what gives the user back
+  /// everything the one-shot text lane cannot offer: the CLI asks for permission
+  /// in its own words and takes the answer from the keyboard, a message typed
+  /// mid-answer reaches the turn that is running, and the conversation is the
+  /// CLI's own rather than a transcript replayed into every prompt. Nothing is
+  /// parsed on the way through — a pty carries the bytes and an emulator draws
+  /// them.
   ///
-  /// Hermes is false on its own account: it has no interactive CLI this app
-  /// drives, it speaks ACP, and its chat is built out of those events.
+  /// False for Hermes, which has no interactive CLI this app drives: it speaks
+  /// ACP, and its chat is built out of those events.
   ///
-  /// It was never the whole story of how a chat reaches these two either. A turn
-  /// the app sends by itself — a goal's next step, a loop's beat, a scheduled
-  /// task — has no keyboard behind it and has always gone out through the
-  /// one-shot lane (`claude -p` / `codex exec`), which is now the only lane.
+  /// It is *not* the whole story of how a chat reaches these two. A turn the app
+  /// sends by itself — a goal's next step, a loop's beat, a scheduled task — has
+  /// no keyboard behind it and still goes out through the one-shot lane
+  /// (`claude -p` / `codex exec`).
   bool get runsInTerminal =>
-      kAgentTerminalLane &&
-      (this == AgentTool.claude || this == AgentTool.codex);
+      this == AgentTool.claude || this == AgentTool.codex;
 
   /// The recipe the app runs to put this agent on the machine, or null for an
   /// agent that ships its own installer (Claude Code — see

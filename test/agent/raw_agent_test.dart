@@ -413,26 +413,11 @@ void main() {
       );
     });
 
-    test('the terminal lane is parked, so no chat reaches it — every agent '
-        'answers through the one-shot lane the boss asked for', () {
-      expect(kAgentTerminalLane, isFalse);
-      for (final tool in AgentTool.values) {
-        expect(tool.runsInTerminal, isFalse, reason: tool.id);
-      }
-    });
-
-    test('Hermes stays out of this lane on its own account, so turning the '
-        'terminal back on can never start a pty for an ACP agent', () {
-      expect(
-        agentTerminalCommand(
-          tool: AgentTool.hermes,
-          executable: '/bin/hermes',
-          model: 'claude:sonnet',
-          workdir: '/tmp/project',
-          approval: AgentApprovalMode.full,
-        ).arguments,
-        isEmpty,
-      );
+    test('Hermes has no interactive CLI to run, and the capability says so — a '
+        'chat with it must never reach this lane', () {
+      expect(AgentTool.claude.runsInTerminal, isTrue);
+      expect(AgentTool.codex.runsInTerminal, isTrue);
+      expect(AgentTool.hermes.runsInTerminal, isFalse);
     });
   });
 
