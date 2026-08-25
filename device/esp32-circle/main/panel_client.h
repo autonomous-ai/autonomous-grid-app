@@ -59,7 +59,25 @@ const char *panel_fw_version(void);
 // the tile the carousel settled on, so the window could follow a swipe. Adding a MESSAGE is a message-layer change and the number has to move with it —
 // bumping only grid-app's copy is exactly what happened first, and the panel then reported 2 to an app
 // claiming 3 within seconds of taking the very image that added the feature.
-#define PANEL_PROTO_VERSION 6
+// 7 since 2026-08-25: `hello` and `welcome` each carry a `product`, and the receiving end POSITIVELY
+// matches it (see PANEL_PRODUCT). Same day as the magic change in panel_frame.h and for the same
+// reason — this board is also the Harness dial and nothing on the wire told the two apart.
+#define PANEL_PROTO_VERSION 7
+
+// Which product this firmware is, named in every `hello` and demanded of every `welcome`.
+//
+// The second half of the fix whose first half is the framing magic (panel_frame.h). The magic already
+// makes the two products mutually unintelligible with no cooperation from anyone, so why this too:
+//
+//   1. It survives someone later re-unifying the magic, or forking this firmware and keeping its magic.
+//   2. It turns the log from "could not parse anything" into "that belongs to another product" — the
+//      difference between a diagnosis and a shrug.
+//   3. It is the half a THIRD product would also have to satisfy.
+//
+// The rule at the receiving end is a POSITIVE match, and ABSENCE MUST MEAN NO. Reading a missing field
+// as "probably mine" puts the whole hole straight back, because the firmware that predates the field is
+// exactly the firmware the other product can still capture.
+#define PANEL_PRODUCT "grid"
 
 // How many projects the panel tracks at once — the size of the UI's tile array (`s_tiles` in
 // ui_screens.c) and of anything that walks it.

@@ -25,7 +25,7 @@ Little-endian throughout.
 
 ```
 offset  size  field
-     0     2  magic      A5 5A
+     0     2  magic      A5 47   (product-scoped — see below)
      2     1  version    framing version, currently 1
      3     1  type       payload kind (below)
      4     2  length     payload bytes, u16
@@ -37,6 +37,53 @@ Overhead is 8 bytes. Maximum payload is **8192**, so a frame never exceeds 8200 
 
 The CRC covers version, type, length and payload — not the magic. The magic is a marker, and
 including a constant would add nothing to detect.
+
+### The magic is the product
+
+**`0x47` is `'G'`, and the second byte of the magic is what makes a Grid Panel a Grid Panel on the
+wire.** Since 2026-08-25. It is not decoration and it must not be "tidied" back to a round number.
+
+Grid Panel and the Harness dial are **the same physical board** — Waveshare 466×466 round,
+ESP32-S3 — so they enumerate with the same USB identity (`303a:1001`, the SoC's own USB-Serial-JTAG,
+whose descriptor lives in ROM and cannot be changed without giving up the port that also carries the
+console). Harness's framing was ported from this one, so both used `A5 5A` and both greeted with the
+same three fields under the same names. **Nothing on the wire told the two apart.** Each side then
+decided "should I update this device?" from a version number — which orders builds *within* one
+lineage and says nothing *across* two.
+
+What that produced, in both directions:
+
+- **One-way capture.** grid-app saw a dial on `0.0.39`, found it "other than the bundled one" — and
+  §2's rule is a comparison, not an ordering, so older counts — and wrote Grid firmware into it
+  within seconds. The dial then reported a version higher than Harness's published one, Harness
+  refused to go backwards, and someone's dial had permanently become a panel.
+- **An unbounded loop**, from the moment Harness's published version climbed past Grid's: each side
+  reflashes what the other just wrote. About 3 MB and a reboot every 15 seconds — roughly 700 MB an
+  hour into a flash rated in erase cycles, the board unusable throughout, and neither app seeing
+  anything wrong.
+
+A decoder scanning for its own magic never matches the other product's frames, so it never obtains a
+`hello`, never learns a version, and therefore **never offers firmware** — with no cooperation from
+the other product required. That is why this layer, rather than the `product` field in §2, is the one
+that settles it.
+
+**Why not a `product` byte in the header instead.** The other decoder would still match the magic,
+read that byte as `version`, derive a nonsense `length`, and swallow a chunk of stream before giving
+up. Changing the magic fails at byte one: a clean discard, and `discarded_bytes` then tells the truth
+about what is on the wire.
+
+`0xA5` stays the lead byte. It is outside ASCII, and that matters on this wire specifically: the ROM,
+the second-stage bootloader and the panic handler all print plain text to it, and a magic that can
+occur in that text resyncs the decoder onto garbage.
+
+⚠️ **The vectors in `test/vectors/panel_frame.txt` are now product-scoped and must not be shared with
+the other product.** `scripts/gen_panel_vectors.py` generates them from this magic.
+
+⚠️ **Changing the magic broke the OTA path that would have delivered it.** Firmware travels only over
+the cable, using exactly the protocol that changed, so every board flashed before 0.1.29 must be
+flashed **once by hand over USB**. There is no way around it, and no transition firmware was shipped
+— neither product had reached customers, so the hand flash was cheaper than a decoder with two
+states in it.
 
 ### Payload types
 
@@ -80,7 +127,7 @@ starts.
 
 The algorithm, normatively:
 
-1. Find the first complete `A5 5A` in the buffer.
+1. Find the first complete `A5 47` in the buffer.
    - None: discard everything except a trailing `A5`, which may be the first half of a magic split
      across two reads. Wait for more.
    - Found, but not at offset 0: discard everything before it.
@@ -133,13 +180,44 @@ one folder the panel drew one and the other did not exist. The tile carries `pro
 the folder is still on screen; it is no longer what the tile *is*.
 
 Unknown keys must be ignored. A missing key falls back to a zero value rather than failing the
-whole message — a peer with an extra field is not a broken peer.
+whole message — a peer with an extra field is not a broken peer. **`product` is the one exception,
+and §1 explains why:** a missing `product` is read as *another product's*, never as this one's.
+
+### Every greeting names its product
+
+Both greetings — the panel's `hello` and the app's `welcome` — carry `"product": "grid"`, and each
+end matches it **positively** before acting on anything else in the message.
+
+**Absence must mean no.** Reading a missing field as "probably mine" puts the whole hole back,
+because the firmware that predates the field is exactly the firmware the other product can still
+capture. A panel that greets without one is not answered and is not offered firmware; it is recovered
+by flashing it over USB by hand, once.
+
+Answer a foreign greeting with **nothing at all**. A `welcome` is what opens a session, and there is
+no session to have with someone else's device. Not a refusal, not an error message: the other
+product's daemon greets on a timer, and anything sent back is noise on a link that is not ours.
+
+Each direction protects a different thing:
+
+- The **app** matching `hello.product` is what stops it writing Grid firmware into another product's
+  board. This is the capture that actually happened.
+- The **panel** matching `welcome.product` is what stops another product's daemon writing into a
+  panel. It gates `fw.offer` specifically — through a flag separate from "is a session open",
+  because a protocol mismatch deliberately leaves the session closed *while the app reflashes the
+  panel over that very disagreement*, and gating firmware on a live session would disable the one
+  path that repairs a stale panel.
+
+§1's magic already makes the two products unintelligible to each other with no cooperation from
+anyone, so this field exists for the three things the magic cannot do: it survives someone
+re-unifying the magic or forking a firmware that keeps its own; it turns the log from *"could not
+parse anything"* into *"that board belongs to another product"*; and it is the half a **third**
+product would also have to satisfy.
 
 ### Device → app
 
 | `t` | Fields | Meaning |
 |---|---|---|
-| `hello` | `fw` string, `proto` int, `mac` string | First thing after the port opens. `mac` is also the device's USB serial number, so the app can tell one panel from another before a byte is exchanged. |
+| `hello` | `product` string, `fw` string, `proto` int, `mac` string | First thing after the port opens. `product` is `"grid"` and is matched **positively** by the app — see "Every greeting names its product" below. `mac` is also the device's USB serial number, so the app can tell one panel from another before a byte is exchanged. |
 | `pong` | — | The answer to a `ping`. Empty: the arrival is the content, and it is the only thing that tells the app its port handle still reaches a running panel (below). |
 | `chats.list` | — | Send me the tiles. |
 | `scroll` | `phase`, `dy`, `v` | A finger on the glass. **The panel as a touchpad** — see the note below. `phase` is `down` \| `move` \| `up`; `dy` is device pixels travelled since the last report, positive = down; `v` is device px/s at the moment of release and is only present on `up`. Sent WHILE the finger is down, in pieces — one stroke arrives as several — throttled on the device at ~8px or ~50ms, whichever comes first. It reports MOVEMENT, not a position: the panel cannot know how tall the window's list is, so the side that owns the list does the arithmetic (`kPanelScrollGain`, tuned on hardware). Not sent while the notification drawer has captured the stroke, during voice, or for a stroke that began at the bottom edge — that one is the home swipe. |
@@ -152,7 +230,7 @@ whole message — a peer with an extra field is not a broken peer.
 
 | `t` | Fields |
 |---|---|
-| `welcome` | `proto` int, `app` string, `machine: {id, name}`, `voiceLang` |
+| `welcome` | `product` string, `proto` int, `app` string, `machine: {id, name}`, `voiceLang` |
 | `chats` | `items[]` of the tile shape below |
 | `focus` | `chatId` — show this tile. The mirror of the device's own `focus`: the window switched chats, so the carousel follows. Each end records the id as already-agreed BEFORE moving, or the two chase each other around one lap. A tile the panel does not have yet is ignored; the `chats` that brings it is on its way. |
 | `chat.updated` | `item` — one tile |
@@ -658,6 +736,13 @@ keeps running the old image if it does not match. Two OTA slots exist for exactl
 > version, older or newer. That is what keeps the two halves from drifting, and it is also a trap
 > with a cable in it.
 >
+> **It is only safe because of §1.** A comparison with no ordering has no floor, so it is the app's
+> whole defence against writing to a board that is not its own — and it has none of its own. Until
+> 2026-08-25 that is exactly what happened: this rule, meeting another product's dial on the same USB
+> id, wrote Grid firmware into it. What makes the rule safe now is that a foreign board can no longer
+> produce a `hello` this app will read, so `hello.firmware` is never a version from another lineage.
+> Do not weaken the magic or the `product` match on the grounds that this rule looks harmless.
+>
 > **What it costs you.** `idf.py flash` a new build, then let an app whose bundle predates it see the
 > panel, and the panel is quietly flashed back to the old image within seconds. Measured on
 > 2026-08-16: the panel was flashed to 0.1.2, and a Grid.app bundle built two days earlier offered
@@ -677,6 +762,22 @@ An offer that **fails** is not offered again for the rest of the app's session. 
 the panel erase a flash slot *before* it answers, so retrying on every `hello` would spend erase
 cycles on the user's hardware every fifteen seconds — and nothing about the next `hello` changes what
 went wrong. Unplugging or restarting the app is a deliberate act and gets a fresh attempt.
+
+#### The cap, which does not trust any of the above
+
+`PanelFlashDamper` bounds what a wrong answer about ownership can cost, and it is deliberately
+independent of every rule that decides *whether this board is ours*:
+
+- the same version is **never** written to the same MAC twice;
+- at most **three** images per MAC per hour;
+- a suppressed write is logged with its reason, because a write that is silently skipped and an
+  update that silently never happened read identically.
+
+Keyed by **MAC** — the board, not the port and not the session. That is the whole point: every flash
+ends in a reboot, so a memory scoped to a link is cleared by the exact event it exists to count.
+
+This is also what covers the cases no layer was written for — a third product on this board, and this
+app's own bugs.
 
 #### Flow control — three numbers that are one decision
 
@@ -771,6 +872,36 @@ else — never on the port's name, and never on "the only one there".
 
 The current device is a **Waveshare ESP32-S3-Touch-AMOLED-1.75**: 466×466 round CO5300 over QSPI,
 CST9217 touch, 8 MB PSRAM, 16 MB flash (dual OTA), ES8311 codec with microphone and speaker.
+
+### Let go of a port that is not yours
+
+Matching the USB id finds a *board of this kind*. It cannot find a *Grid Panel*, because the Harness
+dial is the same board and answers the same id (§1). So the app can and does open another product's
+port, and §1 and §2 do not stop that — they stop it being *understood* and *answered*, not *held*.
+
+Holding it is its own failure. **A tty handed to two readers does not deadlock, it interleaves:** each
+takes a share of the other's bytes, so frames arrive shredded and CRCs fail on **both** sides.
+Measured on this hardware while chasing an unrelated bug — five readers on one stream cost 18 of 22
+greetings. Two apps open at once is that situation whether or not either one ever writes firmware.
+
+The rule: with the port open, if **bytes have arrived but no frame has decoded within ~12 s**, or a
+`hello` decoded naming another product, close the port, remember it as foreign, and leave it alone
+for ~60 s.
+
+Two things make it safe:
+
+- **The window is generous, and the asymmetry is what carries it.** This app's own panel is
+  silent-then-noisy across a reboot — ROM and bootloader text arrive before the firmware frames
+  anything — so a short window would evict a board that was merely booting. Another product's device
+  emits frames *continuously*, so "many bytes, zero frames" is a clean signal rather than a marginal
+  one. The window is timed from the **first byte**, not from the port opening, for the same reason: a
+  port that is open and silent is not suspicious in the first place.
+- **One decoded frame settles it permanently.** A frame that decoded passed this build's magic *and*
+  its CRC, which the other product's stream cannot manage.
+
+Letting go is usually a one-time act. A tty is exclusive on macOS: the moment this app releases it the
+other daemon takes it, and later probes fail to *open* it rather than stealing it back. The cooldown
+therefore only decides how quickly the app notices that socket's device being swapped for a panel.
 
 `tool/panel_tap.dart` in the app repo opens a real port, runs every byte through the real decoder
 and prints frames plus counters. It needs no Flutter and no app build, which is why the Dart

@@ -230,7 +230,7 @@ static void run_stream_cases(void)
        decode_all(scratch, (size_t)(n + good), &got, NULL) == 1 &&
            got.frames[0].payload_len == 11);
 
-    // The reader hunts for A5 5A, so a payload containing that pair is exactly
+    // The reader hunts for A5 47, so a payload containing that pair is exactly
     // where a naive scanner cuts a frame in half and loses both halves.
     const uint8_t tricky[6] = {0x01, PANEL_MAGIC_0, PANEL_MAGIC_1,
                                PANEL_MAGIC_0, PANEL_MAGIC_1, 0x02};

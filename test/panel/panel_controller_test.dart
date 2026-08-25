@@ -111,6 +111,15 @@ class _FakeTransport implements PanelTransport {
   @override
   void send(List<int> bytes) => sent.add(bytes);
 
+  /// Ports let go because the device on them belongs to another product, with
+  /// the reason the link gave. Recorded rather than ignored: "the link let the
+  /// port go" and "the link said nothing" look identical from the outside, and
+  /// telling them apart is the whole point of the tests that use this.
+  final disowned = <String>[];
+
+  @override
+  void disown(String why) => disowned.add(why);
+
   @override
   Future<void> close() => _in.close();
 
@@ -1642,6 +1651,13 @@ void main() {
       String title = 'A chat',
       String model = 'qwen',
     }) {
+      // The folder has to actually be there. Since 2026-08-25 the send path
+      // refuses a turn into a project folder that is not on this computer
+      // (`_intoFolder`), and a fixture that names a directory nobody created is
+      // exactly that case — every turn here failed before reaching the agent,
+      // which reads as seventeen unrelated timeouts rather than as one missing
+      // mkdir.
+      Directory('${tmp.path}/api').createSync(recursive: true);
       ProjectsStore(file: File('${tmp.path}/projects.json')).save([
         Project(id: projectId, name: projectName, path: '${tmp.path}/api'),
       ]);
@@ -1743,7 +1759,7 @@ void main() {
       harness(transport);
 
       transport.deliver(
-        '{"t":"hello","fw":"0.1.0","proto":5,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       await pumpEventQueue();
 
@@ -1756,7 +1772,7 @@ void main() {
       // The Settings page's Voice row reports this rather than choosing it, so it
       // has to be the same reading the transcriber is given.
       expect(welcome['voiceLang'], isNotNull);
-      expect(welcome['proto'], 6);
+      expect(welcome['proto'], 7);
       expect(welcome['app'], '0.9.1');
       expect((welcome['machine']! as Map<String, Object?>)['id'], 'this-mac');
     });
@@ -1773,7 +1789,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      const hello = '{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}';
+      const hello = '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}';
       transport.deliver(hello);
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
@@ -1817,13 +1833,13 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}');
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       final beforeSwap = transport.replies.length;
 
       // Same cable, different board.
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"BB"}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"BB"}');
       await pumpEventQueue();
 
       expect(
@@ -1840,7 +1856,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport);
 
-      transport.deliver('{"t":"hello","fw":"9.0.0","proto":99,"mac":""}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"9.0.0","proto":99,"mac":""}');
       await pumpEventQueue();
 
       await _until(
@@ -2083,7 +2099,7 @@ void main() {
       final container = harness(transport, grid: _credential());
       await container.read(chatSessionsProvider.notifier).restored;
       transport.deliver(
-        '{"t":"hello","fw":"0.1.0","proto":5,"mac":"A4:CB:8F:CF:D0:78"}',
+        '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"A4:CB:8F:CF:D0:78"}',
       );
       await pumpEventQueue(times: 40);
       // Restoring already opened one of them, so start somewhere definite:
@@ -2401,7 +2417,7 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}');
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2470,7 +2486,7 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}');
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2590,7 +2606,7 @@ void main() {
         harness(transport);
 
         transport.deliver('{"t":"screen.brightness","level":40}');
-        transport.deliver('{"t":"hello","fw":"0.1.0","proto":5,"mac":"AA"}');
+        transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2937,7 +2953,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":5,"mac":"AA"}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}');
       await pumpEventQueue();
 
       final offer = transport.replies.firstWhere((r) => r['t'] == 'fw.offer');
@@ -2957,7 +2973,7 @@ void main() {
           firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
         );
 
-        transport.deliver('{"t":"hello","fw":"v0.4.1","proto":5,"mac":"AA"}');
+        transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.1","proto":5,"mac":"AA"}');
         await pumpEventQueue();
 
         await _until(
@@ -2983,7 +2999,7 @@ void main() {
       await container.read(chatSessionsProvider.notifier).restored;
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":5,"mac":"AA"}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}');
       await pumpEventQueue();
 
       expect(transport.replies.any((r) => r['t'] == 'fw.offer'), isFalse);
@@ -3001,7 +3017,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":5,"mac":"AA"}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();
@@ -3030,7 +3046,7 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","fw":"v0.4.0","proto":5,"mac":"AA"}');
+      transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}');
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();

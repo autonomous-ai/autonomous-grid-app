@@ -80,7 +80,7 @@ void main() {
   });
 
   test('a payload containing the magic bytes is not split at them', () {
-    // The reader hunts for A5 5A, so a payload that contains that pair is the
+    // The reader hunts for A5 47, so a payload that contains that pair is the
     // case where a naive scanner cuts a frame in half and loses both.
     final payload = [0x01, ...kPanelMagic, ...kPanelMagic, 0x02];
     final frames = PanelFrameDecoder().feed(
