@@ -109,6 +109,11 @@ class TerminalSession {
   Pty? _pty;
   StreamSubscription<String>? _output;
 
+  /// Whether this screen has already reported a write the emulator couldn't
+  /// take — see [_draw]. Never reset: the program that broke the buffer is
+  /// still writing to it, and the second report says nothing the first didn't.
+  bool _drawFailed = false;
+
   /// Opens the shell, unless one is already running.
   ///
   /// [onError] carries the raw failure to the log: the sentence written onto the
@@ -181,7 +186,7 @@ class TerminalSession {
       _output = pty.output
           .cast<List<int>>()
           .transform(const Utf8Decoder(allowMalformed: true))
-          .listen(terminal.write);
+          .listen((data) => _draw(data, onError));
 
       unawaited(pty.exitCode.then((code) => _onExit(pty, code)));
 
@@ -198,6 +203,27 @@ class TerminalSession {
       );
     }
     onChanged?.call();
+  }
+
+  /// Draws [data] on the screen, and keeps reading the pty if the emulator
+  /// throws on it.
+  ///
+  /// A throw out of `Terminal.write` lands in the pty's own output listener,
+  /// and the byte after it meets the same broken buffer — the emulator has
+  /// taken this app down 48 times in five minutes that way (see
+  /// [ScrollRegionTerminal] and [relaunch]). The bytes that follow are still
+  /// worth drawing: a mangled frame is a bad frame, while a listener that stops
+  /// is a chat frozen mid-answer that looks exactly like an agent thinking for
+  /// ever. Logged once, because a buffer that has broken will keep breaking and
+  /// a log of the same line ten thousand times diagnoses nothing (§6).
+  void _draw(String data, void Function(Object error, StackTrace stack) onError) {
+    try {
+      terminal.write(data);
+    } on Object catch (error, stack) {
+      if (_drawFailed) return;
+      _drawFailed = true;
+      onError(error, stack);
+    }
   }
 
   /// Puts [text] where the cursor is and leaves it there, unsent — what

@@ -180,6 +180,11 @@ are **deliberate** — don't "fix" them back.
   while a write that now runs off the isolate is still landing in it. Each file passes on
   its own, twice over. Re-run the file before believing a failure there; the fix belongs
   in the teardown, not in a retry.
+  **A third joined them on 2026-08-25: `chat/chat_sessions_reload_test.dart`.** Same rule,
+  one difference worth knowing — it failed a *different test each time* across three runs
+  ("a goal that had already ended…" twice, "the headers are dropped once…" once), and
+  passed alone every time. A file whose failure moves is a file racing something, not a
+  broken assertion, so don't go reading the test it named.
 - **Run the whole suite as `flutter test --concurrency=12`** — 2228 tests in 190 files on
   a 10-core Mac took **26s idle and 61s while another agent was working the same
   machine** (both 2026-08-18); it was 20s for 1599 tests in 156 files on 08-11. Wall time
