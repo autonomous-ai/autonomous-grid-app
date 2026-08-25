@@ -92,9 +92,11 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
 
   /// Which run of a chat's terminal is the current one.
   ///
-  /// [_learnCodexSession] can be waiting for minutes, and a relaunch reuses the
-  /// **same** `TerminalSession` object — so identity alone cannot tell the
-  /// watcher for the run that has been replaced to stop. This can.
+  /// Two things outlive the launch that started them — [_learnCodexSession] can
+  /// be waiting minutes for a rollout, and [_pasteWhenReady] for a prompt — and
+  /// a relaunch reuses the **same** `TerminalSession` object, so identity alone
+  /// cannot tell either of them that the run they belong to has been replaced.
+  /// This can: it is bumped once per launch, and both stop when it moves.
   final Map<String, int> _watch = {};
 
   /// Where a Codex session id is read back from. A field so a test can point it
@@ -228,6 +230,9 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       // still running with the tools it had.
       _revokeTools(chatId);
       if (setup.mcpToken case final token?) _mcpTokens[chatId] = token;
+      // This launch, so the watchers below stop the moment another replaces it.
+      final generation = (_watch[chatId] ?? 0) + 1;
+      _watch[chatId] = generation;
       // An agent switched under a chat that already has a terminal takes over
       // that terminal rather than replacing it — see [TerminalSession.relaunch]
       // for the crash that replacing it caused.
@@ -244,8 +249,17 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
           environment: setup.environment,
           onError: _logStartFailure,
         );
-        _learnCodexSession(rollouts, chatId, workdir, session, onSessionId);
-        if (handover != null) _pasteWhenReady(chatId, session, handover);
+        _learnCodexSession(
+          rollouts,
+          chatId,
+          workdir,
+          session,
+          onSessionId,
+          generation,
+        );
+        if (handover != null) {
+          _pasteWhenReady(chatId, session, handover, generation);
+        }
         return;
       }
       final session = TerminalSession(
@@ -258,7 +272,14 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       _sessions[chatId] = session;
       session.start(onError: _logStartFailure);
       _publish();
-      _learnCodexSession(rollouts, chatId, workdir, session, onSessionId);
+      _learnCodexSession(
+        rollouts,
+        chatId,
+        workdir,
+        session,
+        onSessionId,
+        generation,
+      );
     } finally {
       _opening.remove(chatId);
     }
@@ -354,9 +375,12 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// so: a CLI that never took the keyboard has a bigger problem than a missing
   /// handover, and a paste that lands minutes later would land in the middle of
   /// whatever the user had since typed.
-  void _pasteWhenReady(String chatId, TerminalSession session, String text) {
-    final generation = (_watch[chatId] ?? 0) + 1;
-    _watch[chatId] = generation;
+  void _pasteWhenReady(
+    String chatId,
+    TerminalSession session,
+    String text,
+    int generation,
+  ) {
     unawaited(() async {
       final deadline = DateTime.now().add(_pasteWindow);
       while (DateTime.now().isBefore(deadline)) {
@@ -425,10 +449,9 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     String workdir,
     TerminalSession session,
     ValueChanged<String>? onId,
+    int generation,
   ) {
     if (before == null || onId == null) return;
-    final generation = (_watch[chatId] ?? 0) + 1;
-    _watch[chatId] = generation;
     unawaited(
       _rollouts
           .discover(

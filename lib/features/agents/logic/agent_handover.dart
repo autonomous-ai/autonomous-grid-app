@@ -50,8 +50,8 @@ String renderAgentHandover({
         'same folder. Read it, then carry on from where it ends — no need to '
         'redo anything it already did.',
     if (dropped > 0)
-      "(This is the last ${kept.length} of $dropped messages — ask me if you "
-          'need the earlier part.)',
+      '(This is the tail of a longer chat — ${kept.length} of '
+          '${blocks.length} messages. Ask me if you need the earlier ones.)',
     '',
     ...kept,
   ].join('\n');
