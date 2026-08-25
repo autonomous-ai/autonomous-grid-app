@@ -50,6 +50,29 @@ import 'terminal_wheel.dart';
 /// either — re-run `test/agent/grid_terminal_test.dart` after one, and read
 /// `Buffer.scrollUp` and `TerminalMouseButton.wheelUp` before deleting
 /// anything here.
+///
+/// **TODO(BE): a third one is measured but deliberately not patched — how wide
+/// a character is.** `Buffer.writeChar` advances the cursor for every code
+/// point it is given, including the zero-width ones, and it measures against a
+/// **Unicode 11** table (`utils/unicode_v11.dart`, 2018). Checked against
+/// `string-width` — the library Claude Code itself lays its boxes out with —
+/// on twelve glyphs the agent CLIs actually print: **eleven agree**, box
+/// drawing, `✻`, `⎿`, CJK, `⚠️` and a regional-indicator flag among them. The
+/// twelfth is a **ZWJ sequence**: `👨‍💻` is two columns to the CLI and **five**
+/// here, so everything after it on the line sits three columns right of where
+/// the program put it. The same arithmetic misplaces a **combining mark**
+/// (`a` + `U+0300` takes two cells and advances two, measured), which is the
+/// Vietnamese case — but only in NFD, and APFS hands back NFC, so nothing on
+/// this machine currently produces one.
+///
+/// Not fixed because the only fix reachable from out here makes something else
+/// worse: a cell is one `Uint32` code point (`BufferLine._data`), so a cluster
+/// cannot be stored whole, and swallowing the marks to get the columns right
+/// would draw `chao` for `chào`. Fixing it properly means grapheme clustering
+/// inside the emulator — which is precisely why the reference desktop app
+/// stopped rendering with this package on macOS and shipped `xterm.js` with
+/// `addon-unicode-graphemes` in a WebView instead. That is the decision to
+/// take, rather than a fourth patch.
 class GridTerminal extends Terminal {
   GridTerminal({super.maxLines}) : super(mouseHandler: terminalMouseHandler);
 

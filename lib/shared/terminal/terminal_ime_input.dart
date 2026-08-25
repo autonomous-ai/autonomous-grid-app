@@ -61,6 +61,14 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   /// against the field's own history.
   String _sent = '';
 
+  /// Whether the platform is holding preedit text — a candidate window is up
+  /// and the user has not chosen yet.
+  ///
+  /// Never true for Vietnamese, which composes by replacing what it already
+  /// committed; true for Japanese, Chinese and Korean, where the whole keyboard
+  /// belongs to the input method until it commits.
+  bool _composing = false;
+
   @override
   void initState() {
     super.initState();
@@ -109,11 +117,13 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     _connection?.close();
     _connection = null;
     _sent = '';
+    _composing = false;
   }
 
   /// Start a fresh run: an empty field, and nothing owed to the program.
   void _reset(TextInputConnection connection) {
     _sent = '';
+    _composing = false;
     connection.setEditingState(_empty);
   }
 
@@ -145,6 +155,7 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
           keyboard.isMetaPressed ||
           keyboard.isAltPressed,
       hasRun: _sent.isNotEmpty,
+      composing: _composing,
     );
     if (lane == TerminalKeyLane.input) {
       return KeyEventResult.skipRemainingHandlers;
@@ -157,6 +168,12 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   void updateEditingValue(TextEditingValue value) {
     final connection = _connection;
     if (connection == null) return;
+    // Preedit, not text. It is the word the user is still choosing, and
+    // diffing it would type every candidate they scrolled past into the
+    // program. The commit arrives as an ordinary value with the range gone,
+    // and is diffed then.
+    _composing = value.composing.isValid && !value.composing.isCollapsed;
+    if (_composing) return;
     final edit = terminalEdit(_sent, value.text);
     _sent = value.text;
     if (edit.isNotEmpty) widget.onInput(edit);

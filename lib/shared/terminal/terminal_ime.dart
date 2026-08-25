@@ -42,13 +42,25 @@ enum TerminalKeyLane {
 /// the program disagree about what is on the line and the next letter is sent
 /// into the wrong place. With nothing in the field there is nothing to edit, so
 /// it is the program's own rub-out.
+///
+/// [composing] is the other whole-keyboard case, and it is the one Vietnamese
+/// never reaches: Telex is *modeless* — it commits each letter and then
+/// replaces it — while Japanese, Chinese and Korean put up a candidate window
+/// first. Nothing may be sent to the program until the user has chosen.
 TerminalKeyLane terminalKeyLane({
   required LogicalKeyboardKey key,
   required String? character,
   required bool modified,
   required bool hasRun,
+  required bool composing,
 }) {
   if (modified) return TerminalKeyLane.terminal;
+  // While an input method is showing candidates, every key belongs to it:
+  // Enter commits the choice, Escape abandons it, space and the digits pick
+  // between them and the arrows walk the list. Handing any of those to the
+  // program as well would run a command the user was only choosing a word
+  // with.
+  if (composing) return TerminalKeyLane.input;
   if (key == LogicalKeyboardKey.backspace) {
     return hasRun ? TerminalKeyLane.input : TerminalKeyLane.terminal;
   }

@@ -82,11 +82,13 @@ void main() {
       String? character,
       bool modified = false,
       bool hasRun = false,
+      bool composing = false,
     }) => terminalKeyLane(
       key: key,
       character: character,
       modified: modified,
       hasRun: hasRun,
+      composing: composing,
     );
 
     test('a plain letter is declined so macOS offers it to the input method — '
@@ -143,6 +145,48 @@ void main() {
         TerminalKeyLane.input,
       );
       expect(lane(LogicalKeyboardKey.backspace), TerminalKeyLane.terminal);
+    });
+  });
+
+  group('terminalKeyLane — a candidate window owns the whole keyboard', () {
+    test('Enter commits the chosen word rather than running the line, and the '
+        'arrows walk the candidates rather than the shell history — sending '
+        'either to the program as well would run a command the user was only '
+        'picking a word with', () {
+      expect(
+        terminalKeyLane(
+          key: LogicalKeyboardKey.enter,
+          character: '\r',
+          modified: false,
+          hasRun: true,
+          composing: true,
+        ),
+        TerminalKeyLane.input,
+      );
+      expect(
+        terminalKeyLane(
+          key: LogicalKeyboardKey.arrowDown,
+          character: null,
+          modified: false,
+          hasRun: true,
+          composing: true,
+        ),
+        TerminalKeyLane.input,
+      );
+    });
+
+    test('a chord still reaches the terminal, so ctrl-C interrupts even with a '
+        'candidate window up', () {
+      expect(
+        terminalKeyLane(
+          key: LogicalKeyboardKey.keyC,
+          character: 'c',
+          modified: true,
+          hasRun: true,
+          composing: true,
+        ),
+        TerminalKeyLane.terminal,
+      );
     });
   });
 
