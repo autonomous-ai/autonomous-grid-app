@@ -230,6 +230,70 @@ void main() {
     expect(result.stderr, contains(sentence));
   });
 
+  test('a spent allowance says it is a limit and when it lifts', () async {
+    // Public-repo ADR 0036 D-d. It shares 429 with the vendor being busy, and the two want
+    // opposite things from an agent: one lifts in seconds, the other in hours. Exit 2, so the
+    // guide's "exit 1 is worth one more try" never applies to it.
+    const sentence =
+        "You have used this account's daily web-search allowance of 250 searches. "
+        'It returns in about 18 hours. This is a limit, not a failure — do not retry until then.';
+    final relay = await _Relay.serving(
+      status: 429,
+      payload: const {
+        'detail': sentence,
+        'code': 'web_search_allowance_exhausted',
+        'retry_after_seconds': 64800,
+      },
+    );
+    addTearDown(relay.close);
+
+    final result = await _run(['titan arum'], relayUrl: relay.url);
+
+    expect(result.exitCode, 2);
+    expect(result.stdout, isEmpty);
+    expect(result.stderr, contains(sentence));
+  });
+
+  test('an allowance refusal is told from the vendor being busy by its code', () async {
+    // The positive control for the pair: the two differ in the body alone, so a script that keyed
+    // on the status would give both the same exit code and one of the two answers would be wrong.
+    final busy = await _Relay.serving(
+      status: 429,
+      payload: const {'detail': 'Web search is busy right now.'},
+    );
+    addTearDown(busy.close);
+    final spent = await _Relay.serving(
+      status: 429,
+      payload: const {
+        'detail': "You have used this account's daily web-search allowance.",
+        'code': 'web_search_allowance_exhausted',
+      },
+    );
+    addTearDown(spent.close);
+
+    final busyRun = await _run(['titan arum'], relayUrl: busy.url);
+    final spentRun = await _run(['titan arum'], relayUrl: spent.url);
+
+    expect(busyRun.exitCode, 1);
+    expect(spentRun.exitCode, 2);
+  });
+
+  test('a relay too old to carry the code still shows the sentence', () async {
+    // The rollout gap: control plane, then relay, then app. A relay in between forwards `detail`
+    // and drops `code`, so the person still reads why they were refused — at exit 1, which is the
+    // degrade this ordering accepts and the reason the relay ships before this script does.
+    final relay = await _Relay.serving(
+      status: 429,
+      payload: const {'detail': 'You have used this account\'s daily web-search allowance.'},
+    );
+    addTearDown(relay.close);
+
+    final result = await _run(['titan arum'], relayUrl: relay.url);
+
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('allowance'));
+  });
+
   test('a grid that cannot search at all is exit 2, not exit 1', () async {
     final relay = await _Relay.serving(
       status: 503,

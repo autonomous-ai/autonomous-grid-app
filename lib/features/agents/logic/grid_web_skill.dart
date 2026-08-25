@@ -105,8 +105,10 @@ URLs** you used.
 ## If it fails
 Every failure prints one sentence saying what to do. Read it and say it to the
 user — don't retry a command that told you why it won't work.
-- `search` exit 2 = web search isn't available here (no grid, or this grid's
-  relay is too old). Tell the user what the message said.
+- `search` exit 2 = web search isn't available here, or isn't for a while (no
+  grid, a relay too old, or the account's **daily allowance** is spent — the
+  message says which, and when an allowance returns). Tell the user what it
+  said and do **not** run the search again in this turn.
 - `search` exit 1 = it failed this time. If the message says the search is
   busy, wait a few seconds and try **once** more, never in a loop.
 - Exit code 2 on `read`/`browse` = a backend couldn't be provisioned (no
@@ -148,7 +150,8 @@ credential; this script holds none. Prints one result per block:
 Exit codes:
     0  it worked (possibly with no results, which prints "No results.")
     1  the search failed this time — the message says what to do
-    2  web search is not available here — the message says why
+    2  web search is not available here, or not for a while — the message says
+       why. Never worth retrying in this turn.
 """
 
 import argparse
@@ -178,6 +181,12 @@ REFUSED = (
     "This grid refused the credential. In Grid, switch grids and back, or sign "
     "out and in again."
 )
+
+# The control plane's daily per-account allowance, spent. Compared for EQUALITY
+# and never matched on the sentence beside it, which is the far side's to reword.
+# A 429 without it is the search vendor turning the fleet away for a few seconds,
+# which is the opposite advice — hence a code rather than two status codes.
+ALLOWANCE_CODE = "web_search_allowance_exhausted"
 
 
 def main() -> int:
@@ -243,6 +252,9 @@ def refused(error) -> int:
     Every one of these has to be distinguishable from "I found nothing", which
     is a perfectly good exit 0 above — an agent that reported an empty result
     when it was actually turned away would be reporting a fact that is not true.
+
+    The exit code is the part an agent acts on without reading: 1 says the same
+    command is worth trying once more later in this turn, 2 says it is not.
     """
     if error.code == 404:
         print(OLD_RELAY, file=sys.stderr)
@@ -250,23 +262,38 @@ def refused(error) -> int:
     if error.code in (401, 403):
         print(REFUSED, file=sys.stderr)
         return 2
-    sentence = detail(error)
-    print(sentence, file=sys.stderr)
-    # 503 is the grid saying it cannot search at all; everything else, 429
-    # included, is worth one more try later in the same turn.
-    return 2 if error.code == 503 else 1
+    payload = body(error)
+    print(sentence(payload, error.code), file=sys.stderr)
+    # Two refusals share 429, and they want opposite things. The vendor turning
+    # the whole fleet away lifts in seconds and is worth one more try; a spent
+    # daily allowance lifts in hours and is not. Only the second carries a code,
+    # so a relay too old to forward it degrades to "try once more" — the wrong
+    # advice, but with the sentence still saying plainly why. 503 is the grid
+    # saying it cannot search at all.
+    if error.code == 503 or payload.get("code") == ALLOWANCE_CODE:
+        return 2
+    return 1
 
 
-def detail(error) -> str:
-    """The sentence the far side sent, or a plain one when it sent none."""
+def body(error) -> dict:
+    """The refusal's JSON object, or an empty one.
+
+    Read exactly once: an HTTP error is a stream, and a second `.read()` of it
+    answers empty — so the sentence and the code have to come out together.
+    """
     try:
         payload = json.loads(error.read().decode("utf-8", "replace"))
-        sentence = payload.get("detail") if isinstance(payload, dict) else None
-        if isinstance(sentence, str) and sentence.strip():
-            return sentence.strip()
     except Exception:  # noqa: BLE001 - a refusal we cannot read is still a refusal
-        pass
-    return "the search was refused (HTTP %s)" % error.code
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def sentence(payload, code) -> str:
+    """The sentence the far side sent, or a plain one when it sent none."""
+    text = payload.get("detail")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    return "the search was refused (HTTP %s)" % code
 
 
 if __name__ == "__main__":
