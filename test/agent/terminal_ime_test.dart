@@ -81,13 +81,11 @@ void main() {
       LogicalKeyboardKey key, {
       String? character,
       bool modified = false,
-      bool hasRun = false,
       bool composing = false,
     }) => terminalKeyLane(
       key: key,
       character: character,
       modified: modified,
-      hasRun: hasRun,
       composing: composing,
     );
 
@@ -137,14 +135,18 @@ void main() {
       );
     });
 
-    test('Backspace goes wherever the text is: to the field while a word is '
-        'still being composed, so the two agree on what is on the line, and to '
-        'the program when the field is empty and there is nothing to edit', () {
-      expect(
-        lane(LogicalKeyboardKey.backspace, hasRun: true),
-        TerminalKeyLane.input,
-      );
+    test('Backspace reaches the program, because macOS never edits the field '
+        'for us — and because EVKey corrects a word by sending one itself, so '
+        'swallowing it puts the fix beside the mistake instead of over it', () {
       expect(lane(LogicalKeyboardKey.backspace), TerminalKeyLane.terminal);
+    });
+
+    test('a delete selector macOS sends instead of the key becomes the rub-out '
+        'a terminal reads, and an unmapped one is left alone', () {
+      expect(terminalSelectorInput('deleteBackward:'), kTerminalDelete);
+      expect(terminalSelectorInput('deleteWordBackward:'), '\x17');
+      expect(terminalSelectorInput('deleteToBeginningOfLine:'), '\x15');
+      expect(terminalSelectorInput('moveLeft:'), isNull);
     });
   });
 
@@ -158,7 +160,6 @@ void main() {
           key: LogicalKeyboardKey.enter,
           character: '\r',
           modified: false,
-          hasRun: true,
           composing: true,
         ),
         TerminalKeyLane.input,
@@ -168,7 +169,6 @@ void main() {
           key: LogicalKeyboardKey.arrowDown,
           character: null,
           modified: false,
-          hasRun: true,
           composing: true,
         ),
         TerminalKeyLane.input,
@@ -182,7 +182,6 @@ void main() {
           key: LogicalKeyboardKey.keyC,
           character: 'c',
           modified: true,
-          hasRun: true,
           composing: true,
         ),
         TerminalKeyLane.terminal,

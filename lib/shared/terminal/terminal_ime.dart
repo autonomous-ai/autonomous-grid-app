@@ -37,11 +37,24 @@ enum TerminalKeyLane {
 /// every `ctrl`/`alt`/`⌘` chord spell differently depending on the buffer the
 /// program is using, and the input method has no use for any of them.
 ///
-/// Backspace is the one key that belongs to both, decided by [hasRun]: while
-/// there is text in the field the input method has to see it, or the field and
-/// the program disagree about what is on the line and the next letter is sent
-/// into the wrong place. With nothing in the field there is nothing to edit, so
-/// it is the program's own rub-out.
+/// **Backspace is the program's**, unless an input method is mid-composition.
+///
+/// It used to go to the field whenever the field held anything, so the two would
+/// agree on the line. They don't: macOS does not edit the field for a client
+/// that isn't `EditableText`. It sends the key on as the selector
+/// `deleteBackward:` and expects the client to act — which is why
+/// [ImeTerminalInput] now answers those too — and until it did, every Backspace
+/// typed after a letter simply vanished.
+///
+/// It matters most for the input methods that don't compose at all. EVKey,
+/// which is what Vietnamese is usually typed with here, corrects a word by
+/// *sending Backspace itself* and then the replacement letter: type `cuar` and
+/// it rubs out `r` and types `ủ`. Swallow that Backspace and the correction
+/// lands beside the mistake instead of over it — `cuaủa` where the user meant
+/// `của`, which is exactly what the screen showed.
+///
+/// While a candidate window is up the key still belongs to the input method:
+/// that case is settled by [composing] above, before this.
 ///
 /// [composing] is the other whole-keyboard case, and it is the one Vietnamese
 /// never reaches: Telex is *modeless* — it commits each letter and then
@@ -51,7 +64,6 @@ TerminalKeyLane terminalKeyLane({
   required LogicalKeyboardKey key,
   required String? character,
   required bool modified,
-  required bool hasRun,
   required bool composing,
 }) {
   if (modified) return TerminalKeyLane.terminal;
@@ -61,9 +73,7 @@ TerminalKeyLane terminalKeyLane({
   // program as well would run a command the user was only choosing a word
   // with.
   if (composing) return TerminalKeyLane.input;
-  if (key == LogicalKeyboardKey.backspace) {
-    return hasRun ? TerminalKeyLane.input : TerminalKeyLane.terminal;
-  }
+  if (key == LogicalKeyboardKey.backspace) return TerminalKeyLane.terminal;
   if (character == null || character.isEmpty) return TerminalKeyLane.terminal;
   // Enter arrives carrying `\r`, Tab `\t`, Escape `\x1b`. They are keys, not
   // text, and the terminal spells them.
@@ -159,3 +169,25 @@ bool _isHighSurrogate(String text, int index) {
 /// edit cannot reach back across a word boundary.
 bool endsRun(String text) =>
     text.isNotEmpty && RegExp(r'[\s\r\n]$').hasMatch(text);
+
+/// What a macOS editing selector means to a terminal, or null for one it has no
+/// answer for.
+///
+/// macOS delivers a key an input method didn't consume as a *selector* rather
+/// than as text — `deleteBackward:` for Backspace, and the rest of the Emacs-ish
+/// bindings a Cocoa text field answers. Flutter passes them to the text input
+/// client and `EditableText` turns them into intents; a client that ignores them
+/// (which this one did) loses the keystroke entirely.
+///
+/// Only the rub-outs are mapped. Movement selectors (`moveLeft:` and friends)
+/// are deliberately absent: the caret they would move belongs to the program,
+/// which draws its own line and is already sent those keys through xterm's
+/// handler.
+String? terminalSelectorInput(String selector) => switch (selector) {
+  'deleteBackward:' => kTerminalDelete,
+  // ^W and ^U, which is what a terminal line editor reads these as.
+  'deleteWordBackward:' => '\x17',
+  'deleteToBeginningOfLine:' => '\x15',
+  'deleteForward:' => '\x1b[3~',
+  _ => null,
+};
