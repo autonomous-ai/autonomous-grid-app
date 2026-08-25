@@ -1376,7 +1376,13 @@ class _ChatViewState extends ConsumerState<ChatView> {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: _composerWidth),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                      // Nothing under a terminal to give air to — the strip that
+                      // used to hold its controls draws nothing now
+                      // ([AgentTerminalControls]), and padding around an empty
+                      // box is 30px of page the terminal could be using.
+                      padding: inTerminal
+                          ? EdgeInsets.zero
+                          : const EdgeInsets.fromLTRB(20, 10, 20, 20),
                       // Everything that answers to what is being typed lives under
                       // here, so a keystroke rebuilds the composer and not the
                       // transcript above it. The controller is the listenable —
