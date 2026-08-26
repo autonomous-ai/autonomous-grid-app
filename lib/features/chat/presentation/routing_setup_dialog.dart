@@ -221,7 +221,10 @@ class _RoutingSetupDialogState extends ConsumerState<RoutingSetupDialog> {
         );
       }
       return RoutingGroup(
-        mode: widget.mode, isFixed: false, pool: _poolOut(), maxRounds: _maxRounds,
+        mode: widget.mode,
+        isFixed: false,
+        pool: _poolOut(),
+        maxRounds: _maxRounds,
       );
     }
     return switch (widget.mode) {
@@ -347,7 +350,8 @@ class _RoutingSetupDialogState extends ConsumerState<RoutingSetupDialog> {
                             child: _PoolMultiSelect(
                               pool: _pool,
                               minCount: _kMinJudgePool,
-                              helper: 'The models that write and check the answer.',
+                              helper:
+                                  'The models that write and check the answer.',
                               onToggle: _togglePool,
                               onSelectAll: _selectAllPool,
                             ),
@@ -422,7 +426,10 @@ class _DiagramPreview extends StatelessWidget {
   static const _genericJudge = DiagramNode('Checker', NodeStatus.queued);
 
   // The grid's live pick when nothing is pinned — see [RoutingGroup.aggregator].
-  static const _genericAggregator = DiagramNode('Final reply', NodeStatus.queued);
+  static const _genericAggregator = DiagramNode(
+    'Final reply',
+    NodeStatus.queued,
+  );
 
   /// Padding on all four sides of the card, doubled for the height reserved
   /// below so the card never visibly resizes as the model count changes.
@@ -555,7 +562,9 @@ class _ProposerMultiSelectState extends ConsumerState<_ProposerMultiSelect> {
                       checked: widget.models.contains(id),
                       onPressed: widget.models.contains(id)
                           ? (n > _kMinModels ? () => widget.onToggle(id) : null)
-                          : (n < candidates.length - 1 ? () => widget.onToggle(id) : null),
+                          : (n < candidates.length - 1
+                                ? () => widget.onToggle(id)
+                                : null),
                     ),
                 ],
           builder: (context, controller, _) => InkWell(
@@ -573,8 +582,12 @@ class _ProposerMultiSelectState extends ConsumerState<_ProposerMultiSelect> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: widget.models.isEmpty
-                          ? kFieldTextStyle.copyWith(color: AppPalette.textFaint)
-                          : kFieldTextStyle.copyWith(fontWeight: FontWeight.w600),
+                          ? kFieldTextStyle.copyWith(
+                              color: AppPalette.textFaint,
+                            )
+                          : kFieldTextStyle.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                     ),
                   ),
                   Icon(
@@ -859,8 +872,10 @@ class _NumberFieldState extends State<_NumberField> {
           controller: _c,
           keyboardType: const TextInputType.numberWithOptions(decimal: false),
           onChanged: _onChange,
-          decoration: labeledFieldDecoration('', fill: AppCard.inset)
-              .copyWith(hintText: widget.hint),
+          decoration: labeledFieldDecoration(
+            '',
+            fill: AppCard.inset,
+          ).copyWith(hintText: widget.hint),
           style: kFieldTextStyle,
         ),
         if (widget.helper != null) ...[
@@ -950,7 +965,9 @@ class _PoolMultiSelectState extends ConsumerState<_PoolMultiSelect> {
                       id: id,
                       checked: widget.pool.contains(id),
                       onPressed: widget.pool.contains(id)
-                          ? (n > widget.minCount ? () => widget.onToggle(id) : null)
+                          ? (n > widget.minCount
+                                ? () => widget.onToggle(id)
+                                : null)
                           : (n < candidates.length
                                 ? () => widget.onToggle(id)
                                 : null),
@@ -971,8 +988,12 @@ class _PoolMultiSelectState extends ConsumerState<_PoolMultiSelect> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: widget.pool.isEmpty
-                          ? kFieldTextStyle.copyWith(color: AppPalette.textFaint)
-                          : kFieldTextStyle.copyWith(fontWeight: FontWeight.w600),
+                          ? kFieldTextStyle.copyWith(
+                              color: AppPalette.textFaint,
+                            )
+                          : kFieldTextStyle.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                     ),
                   ),
                   Icon(
@@ -989,16 +1010,15 @@ class _PoolMultiSelectState extends ConsumerState<_PoolMultiSelect> {
           const SizedBox(height: 3),
           Text(
             widget.helper!,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppPalette.textSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppPalette.textSecondary),
           ),
         ],
       ],
     );
   }
 }
-
 
 /// The top row of the Pool menu: "All models". Tapping selects every model the
 /// grid serves — the one-gesture way back to the unfiltered default after the

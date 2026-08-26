@@ -321,7 +321,8 @@ mixin _ChatSend on _ChatSessions {
     // this turn makes under a single `X-Request-Id` — a fresh id each new
     // input (send and retry both land here). Timestamp + conversation id is
     // unique enough for grouping and needs no uuid dependency.
-    final turnId = '${conversation.id}-${DateTime.now().microsecondsSinceEpoch}';
+    final turnId =
+        '${conversation.id}-${DateTime.now().microsecondsSinceEpoch}';
     _retryableTurns[id] = _RetryableTurn(
       messageCount: conversation.messages.length,
       attachments: List.unmodifiable(attachments),

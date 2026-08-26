@@ -115,6 +115,27 @@ enum ChatCommand {
     ChatCommand.schedule => '$slash carries words only',
     ChatCommand.compact => null,
   };
+
+  /// Whether the **app** still performs this in a chat drawn as the agent's own
+  /// terminal, instead of handing the typed line to the CLI.
+  ///
+  /// In a terminal chat the CLI owns the conversation: the app commits nothing
+  /// to the transcript, and a command routed through the app's own turn lane
+  /// runs in a `claude -p` nobody can see, in a *different session* from the one
+  /// on screen. That is what `/goal` did — the goal landed in a session the
+  /// terminal never resumes, while the terminal opened with an empty prompt.
+  ///
+  /// So only `/clear` stays: it starts a new chat where the user is standing,
+  /// which is the app's own state and needs no turn at all. Every other command
+  /// goes to the CLI as the opening prompt.
+  ///
+  /// **`/loop` and `/schedule` go too, and neither CLI has them** (`/goal` and
+  /// `/compact` do). They arrive as prose, which the agent will answer as words
+  /// rather than act on — the failure mode `GoalOwner.app` warns about. That is
+  /// the product call of 2026-08-26, made with the cost stated: one rule the
+  /// user can hold ("in a terminal, the terminal takes what you type") beats
+  /// four commands behaving four ways.
+  bool get appRunsInTerminalChat => this == ChatCommand.clear;
 }
 
 /// A command the user has actually typed, with whatever they typed after it.

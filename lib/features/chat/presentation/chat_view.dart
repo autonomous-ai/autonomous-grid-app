@@ -12,6 +12,7 @@ import '../../../core/composer_text.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/chat_drop.dart';
@@ -393,10 +394,39 @@ class _ChatViewState extends ConsumerState<ChatView> {
   void _send(PlaygroundModality modality) {
     final message = _message.text.trim();
     if (message.isEmpty) return;
+    final command = parseChatCommand(message);
+    // A chat whose agent runs in its own CLI takes its first message a different
+    // way: the CLI is started with it. There is no composer here after this —
+    // the terminal takes over the pane — so this is the *only* message that
+    // could ever reach the ordinary send path, and it did, which is why the
+    // sentence that opened the chat was answered by `claude -p` somewhere
+    // off screen while the terminal sat empty.
+    //
+    // **Slash and all, and that is the fix for the same bug wearing a slash.**
+    // The command branch used to come first, so `/goal the tests pass` was run
+    // app-side: it set the goal in a `claude -p` session of its own while the
+    // terminal on screen started a *different*, empty one. The terminal takes
+    // what the user typed, because in that chat the CLI is the only thing that
+    // can act on it. See [ChatCommand.appRunsInTerminalChat] for the one
+    // command that stays with the app, and for what this costs `/loop` and
+    // `/schedule`.
+    if (_startsTerminalChat(modality) &&
+        !(command?.command.appRunsInTerminalChat ?? false)) {
+      if (command != null) {
+        ref
+            .read(appLogProvider)
+            .info(
+              'agent',
+              '${command.command.slash} typed into a terminal chat: handed to '
+                  'the CLI as its opening prompt, not run by the app',
+            );
+      }
+      _startTerminal(message);
+      return;
+    }
     // A command the app owns is performed, not sent: `/clear` reaching an
     // assistant as text is issue #13, and every agent would answer it with a
     // paragraph about clearing.
-    final command = parseChatCommand(message);
     if (command != null) {
       _runCommand(command);
       return;
@@ -406,16 +436,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // words was a phrase list that guessed both ways, and the assistant has to
     // read the sentence anyway to answer it: what it was asking for comes back
     // in a `grid-ask` block (see [parseAgentAsk]).
-    // A chat whose agent runs in its own CLI takes its first message a different
-    // way: the CLI is started with it. There is no composer here after this —
-    // the terminal takes over the pane — so this is the *only* message that
-    // could ever reach the ordinary send path, and it did, which is why the
-    // sentence that opened the chat was answered by `claude -p` somewhere
-    // off screen while the terminal sat empty.
-    if (_startsTerminalChat(modality)) {
-      _startTerminal(message);
-      return;
-    }
     ref
         .read(chatSessionsProvider.notifier)
         .send(

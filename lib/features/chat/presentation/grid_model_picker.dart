@@ -271,8 +271,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     // Same mode already pinned? This is a re-edit, not a first setup — reopen
     // the dialog pre-filled with what the group already holds, so the user can
     // change models/aggregator. A fresh or different mode starts a new dialog.
-    final initial =
-        (pinned != null && pinned.mode == mode) ? pinned : null;
+    final initial = (pinned != null && pinned.mode == mode) ? pinned : null;
     final group = await showRoutingSetupDialog(
       context,
       mode: mode,
@@ -452,8 +451,9 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
       // (so the two can never both draw), while Auto and the real models render
       // as ordinary rows. Nothing is sorted — whatever order `/models` returns
       // is exactly the order the menu shows.
-      final answerableIds =
-          answerableGridOptions(group.options).map((o) => o.id).toSet();
+      final answerableIds = answerableGridOptions(
+        group.options,
+      ).map((o) => o.id).toSet();
       final routingByLabel = {
         for (final o in routingModeOptions(group.options)) o.label: o,
       };

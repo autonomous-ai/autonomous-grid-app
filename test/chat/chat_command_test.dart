@@ -166,4 +166,28 @@ void main() {
       expect(droppedDraftMessage(ChatCommand.loop, const []), isNull);
     });
   });
+
+  group('a terminal chat hands the line to the CLI', () {
+    test(
+      'every command that needs a turn goes to the CLI, because in a terminal '
+      'chat the app lane runs in a session nobody can see — /goal set its goal '
+      'in one `claude -p` while the terminal on screen opened another, empty',
+      () {
+        for (final command in ChatCommand.values.where(
+          (c) => c != ChatCommand.clear,
+        )) {
+          expect(
+            command.appRunsInTerminalChat,
+            isFalse,
+            reason: '${command.slash} must reach the CLI',
+          );
+        }
+      },
+    );
+
+    test('/clear stays with the app: starting a new chat where the user is '
+        'standing is the app own state and needs no turn at all', () {
+      expect(ChatCommand.clear.appRunsInTerminalChat, isTrue);
+    });
+  });
 }

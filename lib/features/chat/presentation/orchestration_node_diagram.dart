@@ -32,10 +32,9 @@ const double _kLoopLabelHeight = 16;
 /// The tallest a Brute Force diagram gets, stacking [maxProposers] proposer
 /// nodes — what a container framing the diagram should reserve so picking
 /// fewer models never visibly shrinks the card around it.
-double bruteForceDiagramHeight(int maxProposers) =>
-    maxProposers <= 0
-        ? _kNodeHeight
-        : maxProposers * _kNodeHeight + (maxProposers - 1) * _kNodeGap;
+double bruteForceDiagramHeight(int maxProposers) => maxProposers <= 0
+    ? _kNodeHeight
+    : maxProposers * _kNodeHeight + (maxProposers - 1) * _kNodeGap;
 
 /// The Judge Loop diagram's height — fixed, since its shape never varies
 /// with what's pinned.
@@ -315,7 +314,9 @@ class _NodePill extends StatelessWidget {
           border: Border.all(
             // Activity is a border glow, not a dot: the step being answered
             // right now draws a coloured edge so it reads at a glance.
-            color: (!_isEndpoint && showStatus &&
+            color:
+                (!_isEndpoint &&
+                    showStatus &&
                     node.status == NodeStatus.running)
                 ? AppPalette.online
                 : AppPalette.divider,

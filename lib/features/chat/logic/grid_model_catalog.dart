@@ -104,9 +104,7 @@ bool isRouterFamilyId(String id) => _routerFamilyNames().contains(id);
 List<PlaygroundModelOption> routingModeOptions(
   List<PlaygroundModelOption> served,
 ) {
-  final auto = served
-      .where((o) => o.id == _kAutoRouterDisplayName)
-      .firstOrNull;
+  final auto = served.where((o) => o.id == _kAutoRouterDisplayName).firstOrNull;
   if (auto == null) return const [];
   if (_realModelCount(served) < _kMinRealModels) return const [];
   return [

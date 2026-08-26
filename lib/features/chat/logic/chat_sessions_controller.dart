@@ -277,7 +277,15 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     // The same name the transcript lane would have derived, from the same line —
     // a chat called "New chat" for the rest of its life is the sidebar losing
     // track of what is in it.
-    final title = chatTitleFromLine(firstLinePreview(text));
+    //
+    // Named after what the line *asks for*, not the word that asks: a slash
+    // command reaches the CLI verbatim now (see [ChatCommand.appRunsInTerminalChat]),
+    // so without this the sidebar fills up with chats called "/goal …".
+    final command = parseChatCommand(text);
+    final titleSource = command != null && command.argument.isNotEmpty
+        ? command.argument
+        : text;
+    final title = chatTitleFromLine(firstLinePreview(titleSource));
     if (title.isEmpty) return chat;
     final named = chat.copyWith(title: title);
     _saveAndReplace(named);
