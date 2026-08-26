@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/auto_serve_store.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
@@ -14,7 +16,7 @@ import '../../node_setup/logic/background_model_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
-import '../logic/context_length.dart';
+import '../../../core/context_length.dart';
 import '../logic/engine_setup_controller.dart';
 import '../logic/engine_status.dart';
 import '../logic/model_download_status.dart';
@@ -155,6 +157,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   }
 
   void _start(String model) {
+    ref.read(analyticsProvider).engineSetupSubmitted('built_in', model: model);
     _refreshAutoServe(model);
     final advertise = _advertise.text.trim();
     // Fall back to the model's default (200k, capped to its max) when the user

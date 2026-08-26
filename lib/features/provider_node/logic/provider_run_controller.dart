@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/state/models/engine_run.dart';
@@ -189,11 +191,6 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   /// the same thing.
   late final String _engineName = ref.read(nodeNameProvider);
 
-  /// Context window for an external (`--at`) engine, passed via `--ctx-size`.
-  /// There's no local GGUF to inspect for the real maximum, so we send a fixed
-  /// 200k — the local `--serve` path derives its own from `grid ctx` instead.
-  static const _externalCtxSize = 200000;
-
   GridProcess? _process;
   GridCliService? _service;
   String? _grid;
@@ -291,16 +288,30 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       await buildArgs(),
       grid: network,
       model: model,
+      engine: 'built_in',
       rebuildForPortConflict: buildArgs,
     );
   }
 
   /// Serve from an external OpenAI-compatible endpoint
-  /// (`grid join <grid> --at <url> -m <model> --ctx-size <n>`).
+  /// (`grid join <grid> --at <url> -m <model> [--ctx-size <n>]`).
+  ///
+  /// [contextLength] null means **unknown**, and the flag is then left off
+  /// entirely. That is the honest state and the CLI is built for it: with no
+  /// `--ctx-size`, `capability_entry` omits `context_window` altogether so the
+  /// relay records "unknown" rather than a number — *"an unknown window is
+  /// omitted, never defaulted, so the master (and the auto-router Advisor)
+  /// treats absence as 'unknown' rather than trusting a fabricated 128000"*
+  /// (`autonomous-grid/remote/probe.py`).
+  ///
+  /// This used to send a flat 200000 for every external engine, which defeated
+  /// that design from the outside: every node advertised a 200k window whatever
+  /// its server really served, and the router chooses nodes on that number.
   Future<void> startExternal({
     required String network,
     required String endpoint,
     required String model,
+    int? contextLength,
     String? advertiseAs,
     String? nodeName,
   }) {
@@ -313,12 +324,13 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         '-m',
         model,
         ..._advertiseArgs(advertiseAs),
-        ..._ctxArgs(_externalCtxSize),
+        ..._ctxArgs(contextLength),
         '--name',
         _nameOr(nodeName),
       ],
       grid: network,
       model: model,
+      engine: 'own_server',
     );
   }
 
@@ -374,6 +386,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       ],
       grid: network,
       model: models.isEmpty ? provider.kind : models.join(', '),
+      engine: 'api:${provider.kind}',
       environment: environment.isEmpty ? null : environment,
     );
   }
@@ -403,6 +416,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
   Future<void> _start(
     List<String> args, {
     required String grid,
+    required String engine,
     String? model,
     bool retried = false,
     Map<String, String>? environment,
@@ -411,6 +425,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     final service = ref.read(gridCliServiceProvider);
     if (service == null) {
       state = const ProviderRunFailed('grid executable not found.');
+      ref.read(analyticsProvider).engineStartFailed('cli_missing');
       return;
     }
 
@@ -473,6 +488,12 @@ class ProviderRunController extends Notifier<ProviderRunState> {
         starting: false,
         model: model,
       );
+      // The engine is serving on the grid now — the node has joined. Only here,
+      // not on the earlier `starting: true` state (that is the attempt) and not
+      // in [reconcile] (that adopts a run from a previous launch).
+      ref
+          .read(analyticsProvider)
+          .engineStarted(model: model ?? '', engine: engine);
       _bumpUnion();
       _syncGridSoon();
       return;
@@ -490,6 +511,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       return _start(
         args,
         grid: grid,
+        engine: engine,
         model: model,
         retried: true,
         environment: environment,
@@ -503,6 +525,7 @@ class ProviderRunController extends Notifier<ProviderRunState> {
       return _start(
         await rebuildForPortConflict(),
         grid: grid,
+        engine: engine,
         model: model,
         retried: true,
         environment: environment,
@@ -512,6 +535,13 @@ class ProviderRunController extends Notifier<ProviderRunState> {
     // Both sides of this: upstream's humanized message, and the model the
     // failure card needs to name which engine broke.
     state = ProviderRunFailed(_humanizeJoinFailure(failure), model: model);
+    // A short code, never the raw line — it can carry a host or a path. The
+    // one dead-end worth naming apart is sharing on a grid you only consume.
+    final reason =
+        (lowerFailure.contains('provider') || lowerFailure.contains('scope'))
+        ? 'not_provider'
+        : 'failed';
+    ref.read(analyticsProvider).engineStartFailed(reason);
   }
 
   /// Turn a raw `grid join` failure into a line a user can act on. The commonest

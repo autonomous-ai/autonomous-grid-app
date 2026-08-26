@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -284,6 +286,7 @@ class _EmptyState extends ConsumerWidget {
     }
 
     void openEngines() {
+      ref.read(analyticsProvider).enginesOpened('model_engines_btn');
       ref.read(shellSectionProvider.notifier).select(ShellSection.engines);
       Navigator.of(context).pop();
     }

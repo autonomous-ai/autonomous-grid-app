@@ -27,4 +27,18 @@ int snapContextLength(int tokens, int maxContext) {
 /// Human label for a context length in tokens: 4096 → "4k", 204800 → "200k",
 /// 262144 → "256k". Rounds to the nearest "k" (1024 tokens) so odd maxima
 /// (40960 → "40k") stay tidy.
-String formatContextLength(int tokens) => '${(tokens / 1024).round()}k';
+///
+/// A megabyte-scale window switches unit rather than reading "1024k", which is
+/// a number people have to convert in their heads to compare against the "1M"
+/// their own engine's flags are written in.
+String formatContextLength(int tokens) {
+  const perM = 1024 * 1024;
+  if (tokens < perM) return '${(tokens / 1024).round()}k';
+  final millions = tokens / perM;
+  // One decimal only where it says something: 1.5M is worth reading, 1.0M is
+  // just a longer way to write 1M.
+  final label = millions == millions.roundToDouble()
+      ? '${millions.round()}'
+      : millions.toStringAsFixed(1);
+  return '${label}M';
+}

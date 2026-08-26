@@ -42,6 +42,10 @@ typedef CodexGridSetup = ({
 /// still has to *drop* what this process inherited ([kClaudeRelayEnvKeys]) —
 /// leaving a variable out of a map does not remove one already in the parent.
 ///
+/// [turnId] is the one turn this run answers, when it is a turn at all — it
+/// rides out as the request header the relay attributes every call to, so a
+/// session (which is many turns) passes none. See [gridTurnEnv].
+///
 /// [mcpExtra] is merged into the turn's MCP config, for the servers only the
 /// caller knows about (the browser). Grid's own tools are added here, on a token
 /// minted for [conversationId] — no chat, no tools, because `grid_ask` is
@@ -52,6 +56,7 @@ Future<ClaudeGridSetup> claudeGridSetup(
   required NetworkCredential network,
   required String model,
   required String? conversationId,
+  String? turnId,
   Map<String, Object?> mcpExtra = const {},
   bool relayEnv = true,
   bool session = false,
@@ -76,7 +81,7 @@ Future<ClaudeGridSetup> claudeGridSetup(
     environment: {
       // On both lanes: it says which chat this run is in, which has nothing to
       // do with who serves the model.
-      ...gridTurnEnv(conversationId),
+      ...gridTurnEnv(conversationId, turnId: turnId),
       if (relayEnv)
         ...claudeCodeEnv(
           network.relayBaseUrl,
@@ -137,6 +142,7 @@ Future<CodexGridSetup> codexGridSetup(
   required NetworkCredential network,
   required String model,
   required String? conversationId,
+  String? turnId,
   bool session = false,
 }) async {
   final grid = ref.read(gridMcpServerProvider);
@@ -183,7 +189,7 @@ Future<CodexGridSetup> codexGridSetup(
     ],
     environment: {
       kCodexAppApiKeyEnv: network.relayApiKey,
-      ...gridTurnEnv(conversationId),
+      ...gridTurnEnv(conversationId, turnId: turnId),
       if (tools) kGridMcpTokenEnv: token,
     },
     mcpToken: token,

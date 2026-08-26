@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../shared/layouts/onboarding_page.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -169,7 +171,10 @@ class _SkipRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Center(
       child: TextButton(
-        onPressed: () => ref.read(gridChoiceGateProvider.notifier).later(),
+        onPressed: () {
+          ref.read(analyticsProvider).gridChoice('later');
+          ref.read(gridChoiceGateProvider.notifier).later();
+        },
         // Ink, not the faint token: a control has to clear 4.5:1 on this white
         // card, which `textFaint` doesn't (§11).
         style: TextButton.styleFrom(foregroundColor: AppPalette.textSecondary),

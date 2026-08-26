@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/host_arch.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../models/logic/advertise_name.dart';
-import '../../models/logic/context_length.dart';
+import '../../../core/context_length.dart';
 import '../../models/logic/engine_status.dart';
 import '../../models/logic/models_providers.dart';
 import '../../network/logic/enable_provider_controller.dart';

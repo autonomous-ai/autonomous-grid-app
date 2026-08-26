@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../infrastructure/analytics/analytics_events.dart';
+import '../../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../../infrastructure/api/models/managed_network.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
@@ -70,6 +72,7 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
   void _onCreated(CreateNetworkDone done) {
     final match = ref.read(sessionProvider).byName(done.network.networkId);
     if (match != null) {
+      ref.read(analyticsProvider).gridChoice('new');
       ref.read(gridChoiceGateProvider.notifier).choose(match);
       return;
     }

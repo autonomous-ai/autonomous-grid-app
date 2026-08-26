@@ -20,14 +20,14 @@ const Duration kUsagePollInterval = Duration(seconds: 5);
 /// so the app never sees their responses — and the agent only knows the name it
 /// was *given* (`auto`, or a tier alias), never the one the router picked.
 ///
-/// Correlation is by TIME WINDOW: transactions carry no chat id, and the app
-/// cannot tag the agent's own HTTP calls because the CLI holds a per-network
-/// key, not a per-turn one. So two turns running at once on the same grid blend
-/// into each other's numbers. Accepted rather than solved — the alternative is
-/// correlation plumbing across three repos for a caption.
+/// Correlation is by TURN ID: the app mints one id per user input and injects
+/// it into the agent CLI as `X-Request-Id`, so every relay call of a turn
+/// carries the same value. `GET /usage/turn/{id}` counts exactly that turn's
+/// calls — two turns running at once on the same grid never blend into each
+/// other (unlike the old time-window caption the relay served before).
 class TurnModelUsage extends Notifier<Map<String, List<ModelShare>>> {
   final _timers = <String, Timer>{};
-  final _started = <String, DateTime>{};
+  final _turns = <String, String>{};
 
   @override
   Map<String, List<ModelShare>> build() {
@@ -40,14 +40,12 @@ class TurnModelUsage extends Notifier<Map<String, List<ModelShare>>> {
     return const {};
   }
 
-  /// Start watching [chat]'s turn. Clears whatever the previous turn left, so a
-  /// new question never inherits the last one's models.
-  void begin(String chat, NetworkCredential network) {
+  /// Start watching [chat]'s turn, stamped with this turn's [turnId] so the
+  /// relay can count exactly what serves it. Clears whatever the previous turn
+  /// left, so a new question never inherits the last one's models.
+  void begin(String chat, NetworkCredential network, String turnId) {
     stop(chat);
-    // A few seconds early: the app's clock and the grid's are not the same, and
-    // a caption that misses the turn's first request is worse than one that
-    // catches a stray from just before it.
-    _started[chat] = DateTime.now().subtract(const Duration(seconds: 5));
+    _turns[chat] = turnId;
     state = {...state}..remove(chat);
     _timers[chat] = Timer.periodic(
       kUsagePollInterval,
@@ -61,30 +59,30 @@ class TurnModelUsage extends Notifier<Map<String, List<ModelShare>>> {
   /// The last poll matters: a turn that ends four seconds after the previous one
   /// would otherwise be recorded without its final requests.
   Future<List<ModelShare>> end(String chat, NetworkCredential network) async {
-    final since = _started[chat];
+    final turnId = _turns[chat];
     stop(chat);
-    if (since == null) return const [];
+    if (turnId == null) return const [];
     // Read the fallback BEFORE the await: `state` is unreachable once the
     // provider is disposed, and a chat closed while this last read is in flight
     // disposes it. Reading it after the gap threw
     // "Cannot use the Ref ... after it has been disposed" and failed the turn
     // that had already answered.
     final polled = state[chat] ?? const <ModelShare>[];
-    final shares = await _fetch(network, since);
+    final shares = await _fetch(network, turnId);
     return shares ?? polled;
   }
 
-  /// Drop the timer and the window without reading anything — used when a chat
+  /// Drop the timer and the turn without reading anything — used when a chat
   /// is deleted mid-turn, and by [begin] before it re-arms.
   void stop(String chat) {
     _timers.remove(chat)?.cancel();
-    _started.remove(chat);
+    _turns.remove(chat);
   }
 
   Future<void> _poll(String chat, NetworkCredential network) async {
-    final since = _started[chat];
-    if (since == null) return;
-    final shares = await _fetch(network, since);
+    final turnId = _turns[chat];
+    if (turnId == null) return;
+    final shares = await _fetch(network, turnId);
     // A failed read leaves the last good answer standing. A caption that blinks
     // to nothing every time a poll times out is worse than one that is stale.
     // `ref.mounted` guards the async gap: the chat may have been closed, and the
@@ -100,17 +98,18 @@ class TurnModelUsage extends Notifier<Map<String, List<ModelShare>>> {
   /// "no data yet", never as an error the user is shown.
   Future<List<ModelShare>?> _fetch(
     NetworkCredential network,
-    DateTime since,
+    String turnId,
   ) async {
     if (!ref.mounted) return null;
     try {
-      return await ref
+      final result = await ref
           .read(relayApiClientProvider)
-          .usage(
+          .usageTurn(
             baseUrl: network.relayBaseUrl,
             apiKey: network.relayApiKey,
-            since: since,
+            turnId: turnId,
           );
+      return result;
     } on Object {
       return null;
     }

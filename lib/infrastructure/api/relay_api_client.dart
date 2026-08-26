@@ -31,19 +31,20 @@ abstract interface class RelayApiClient {
     required String apiKey,
   });
 
-  /// `GET {baseUrl}/usage?since=&until=` → which models served this consumer's
-  /// requests in the window, and how many each.
+  /// `GET {baseUrl}/usage/turn/{turn_id}` → which models served ONE turn, and
+  /// how many each (the app mints the turn id once per user input and injects it
+  /// into the agent CLI as `X-Request-Id`, so every call of that turn groups to
+  /// it).
   ///
   /// The only way to learn what an `auto` turn actually ran on: the agent CLI
   /// makes the relay calls, so the app never sees their responses. Throws
   /// [RelayUnavailable] like the others — including **404 on a grid whose master
   /// predates the endpoint**, which is the common case while the fleet is mid
   /// rollout and must read as "no data", never as an error the user sees.
-  Future<List<ModelShare>> usage({
+  Future<List<ModelShare>> usageTurn({
     required String baseUrl,
     required String apiKey,
-    required DateTime since,
-    DateTime? until,
+    required String turnId,
   });
 
   /// `GET {baseUrl}/grid/members/usage` → what each person on this grid ran in
@@ -147,19 +148,13 @@ class HttpRelayApiClient implements RelayApiClient {
   }
 
   @override
-  Future<List<ModelShare>> usage({
+  Future<List<ModelShare>> usageTurn({
     required String baseUrl,
     required String apiKey,
-    required DateTime since,
-    DateTime? until,
+    required String turnId,
   }) async {
-    final query = {
-      'since': '${since.toUtc().millisecondsSinceEpoch ~/ 1000}',
-      if (until != null)
-        'until': '${until.toUtc().millisecondsSinceEpoch ~/ 1000}',
-    };
     final body = await _get(
-      Uri.parse('$baseUrl/usage').replace(queryParameters: query),
+      Uri.parse('$baseUrl/usage/turn/$turnId'),
       apiKey,
       // Tighter than the overview's: this runs on a timer while a turn is open,
       // and a caption that is late is worth less than one that never blocks.

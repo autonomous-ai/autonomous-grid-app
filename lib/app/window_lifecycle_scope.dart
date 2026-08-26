@@ -4,8 +4,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../features/auth/logic/session_controller.dart';
 import '../features/projects/logic/project_folder_status.dart';
 import '../features/provider_node/logic/provider_run_controller.dart';
+import '../infrastructure/analytics/analytics_events.dart';
+import '../infrastructure/analytics/analytics_providers.dart';
 import '../infrastructure/platform/window_focus.dart';
 
 /// Watches the window's own life: every way the app can quit, so a running engine
@@ -41,11 +44,25 @@ class _WindowLifecycleScopeState extends ConsumerState<WindowLifecycleScope>
   /// fires both hooks, or fires again while the first is still in flight.
   bool _stopped = false;
 
+  /// When this launch started, so the quit event can say how long the app was
+  /// open. Stamped here rather than in `main` because this is also where the
+  /// matching `app_opened` goes out.
+  final DateTime _openedAt = DateTime.now();
+
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
     WidgetsBinding.instance.addObserver(this);
+    // After the first frame: `ref.read` during `initState` is legal, but a
+    // provider that reads `~/.grid` on the way up has no business running
+    // before the window has painted (conventions §2).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref
+          .read(analyticsProvider)
+          .appOpened(signedIn: ref.read(sessionProvider).isLoggedIn);
+    });
   }
 
   @override
@@ -55,11 +72,17 @@ class _WindowLifecycleScopeState extends ConsumerState<WindowLifecycleScope>
     super.dispose();
   }
 
-  /// Stop any engine we're serving. Best-effort and time-boxed so a wedged CLI
-  /// can never trap the user in an app that refuses to quit.
+  /// Close the launch out: the last analytics event, then any engine we're
+  /// serving. Both best-effort and time-boxed, so neither a wedged network nor
+  /// a wedged CLI can trap the user in an app that refuses to quit.
   Future<void> _stopServing() async {
     if (_stopped) return;
     _stopped = true;
+    // Both time-boxed inside themselves, and analytics goes first so its last
+    // event is queued before the eight seconds an engine may take to stop.
+    final analytics = ref.read(analyticsProvider);
+    analytics.appClosed(open: DateTime.now().difference(_openedAt));
+    await analytics.close();
     await ref
         .read(providerRunControllerProvider.notifier)
         .shutdownServing()

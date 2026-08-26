@@ -129,6 +129,19 @@ void main() {
       expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
       expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
       expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
+      // Lets the relay attribute this provider's calls to the conversation
+      // that sent them — Hermes fills in the value itself from its own
+      // environment, so the file carries the literal template, not a value
+      // this app computed.
+      expect(
+        editor.parseAt([
+          'custom_providers',
+          0,
+          'extra_headers',
+          kGridConversationHeader,
+        ]).value,
+        kGridChatIdTemplate,
+      );
       // A fresh config enables every toolset the agent works with — files and
       // terminal as much as the browser, since `toolsets:` is an allowlist and
       // naming any of them turns the unnamed ones off.
@@ -312,6 +325,18 @@ void main() {
         // Keys the new entry no longer carries must not survive the swap.
         expect((list[0] as Map).containsKey('api_mode'), isFalse);
         expect((list[0] as Map).containsKey('provider_key'), isFalse);
+        // A nested map value (extra_headers), not just a scalar leaf, still
+        // lands correctly at this indent — and, critically, the file this
+        // produces is still valid YAML: re-parsing it above didn't throw.
+        expect(
+          editor.parseAt([
+            'custom_providers',
+            0,
+            'extra_headers',
+            kGridConversationHeader,
+          ]).value,
+          kGridChatIdTemplate,
+        );
         // Unrelated settings survive.
         expect(editor.parseAt(['toolsets']).value, contains('hermes-cli'));
       },

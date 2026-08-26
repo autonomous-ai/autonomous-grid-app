@@ -139,6 +139,7 @@ class ClaudeChatSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? turnId,
     String? instructions,
     String? agentCommand,
     bool planFirst = false,
@@ -204,6 +205,7 @@ class ClaudeChatSender implements ChatSender {
       network: network,
       model: model,
       conversationId: conversationId,
+      turnId: turnId,
       mcpExtra: browser.mcpExtra,
       // On the extension lane Claude Code runs against its own sign-in, and must
       // not be handed the relay's credentials at all.

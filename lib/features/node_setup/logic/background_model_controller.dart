@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/cli/parsers/download_progress.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/state/onboarding_store.dart';
@@ -96,7 +98,9 @@ class BackgroundModelController extends Notifier<ModelDownloadState> {
     final step = modelPullStep(caps);
     if (step == null) return; // a model landed while we were checking
 
+    final analytics = ref.read(analyticsProvider);
     state = const ModelDownloadRunning();
+    analytics.modelDownloadStarted();
     try {
       await for (final progress in service.pull(step.args)) {
         state = ModelDownloadRunning(progress: progress);
@@ -105,6 +109,7 @@ class BackgroundModelController extends Notifier<ModelDownloadState> {
       state = const ModelDownloadFailed(
         "Couldn't finish downloading your model. Open Engines to try again.",
       );
+      analytics.modelDownloadFailed('pull_failed');
       return;
     }
 
@@ -112,6 +117,7 @@ class BackgroundModelController extends Notifier<ModelDownloadState> {
     ref.invalidate(downloadingModelsProvider);
     ref.invalidate(nodeCapabilitiesProvider);
     state = const ModelDownloadDone();
+    analytics.modelDownloadCompleted();
 
     // There's a model now — share it on the grid. Idempotent and guarded, so a
     // user with no grid to share on simply no-ops.

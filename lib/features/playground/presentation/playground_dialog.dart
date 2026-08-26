@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/composer_text.dart';
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/platform/clipboard_paste.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
@@ -306,6 +308,7 @@ class _PlaygroundDialogState extends ConsumerState<PlaygroundDialog> {
       return NoModelYet(
         canManage: network.canManageProvider,
         onGoToEngines: () {
+          ref.read(analyticsProvider).enginesOpened('start_engine_btn');
           Navigator.of(context).pop();
           ref.read(shellSectionProvider.notifier).select(ShellSection.engines);
         },

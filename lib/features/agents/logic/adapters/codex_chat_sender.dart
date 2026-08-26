@@ -66,6 +66,7 @@ class CodexChatSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? turnId,
     String? instructions,
     // TODO(BE): Codex has thread goals over `thread/goal/set|get|clear`, not a
     // slash command on the wire — see GoalOwner.codex. Not supported yet.
@@ -113,6 +114,7 @@ class CodexChatSender implements ChatSender {
       network: network,
       model: model,
       conversationId: conversationId,
+      turnId: turnId,
     );
 
     // The whole conversation, every turn: with no thread to resume there is no

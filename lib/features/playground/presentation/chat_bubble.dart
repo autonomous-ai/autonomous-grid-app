@@ -251,7 +251,7 @@ class _ReplyFooter extends StatelessWidget {
   List<String> get _names => [?_agentName, _modelLabel, ?node];
 
   String get _modelLabel =>
-      modelShareLabel(modelShares, label: modelShortLabel) ??
+      modelShareLabel(modelShares, label: modelShortLabel, wireModel: model) ??
       modelShortLabel(model);
 
   /// The agent's name as the app calls it elsewhere ("Claude Code", not
