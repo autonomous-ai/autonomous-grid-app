@@ -58,9 +58,17 @@ class SelectedNetwork extends Notifier<NetworkCredential?> {
     return creds.active;
   }
 
-  void select(NetworkCredential network) {
+  /// Take [network] as the grid in use.
+  ///
+  /// [remember] writes it to `chat_prefs.json` so the next launch opens on it.
+  /// Passing false selects for this run only, which is what the choose-a-grid
+  /// screen's unticked "Remember my choice" means: the user gets the grid they
+  /// asked for now, and the question back next time.
+  void select(NetworkCredential network, {bool remember = true}) {
     _selectedId = network.networkId;
     state = network;
-    ref.read(chatPrefsProvider.notifier).setNetwork(network.networkId);
+    if (remember) {
+      ref.read(chatPrefsProvider.notifier).setNetwork(network.networkId);
+    }
   }
 }

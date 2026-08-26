@@ -143,6 +143,7 @@ InputDecoration labeledFieldDecoration(
   String hint, {
   Color? fill,
   bool hasError = false,
+  bool outlined = false,
 }) {
   OutlineInputBorder border(Color color, [double width = 1]) =>
       OutlineInputBorder(
@@ -164,10 +165,22 @@ InputDecoration labeledFieldDecoration(
     // The error hairline shows whether or not the field has focus — an error the
     // user has to click back into the field to see is an error they won't see.
     border: border(Colors.transparent, 0),
+    // [outlined] draws the same hairline the global `inputDecorationTheme`
+    // gives a plain `TextField` — [AppPalette.divider] is the identical value
+    // that theme's `scheme.outline` resolves to, so the two rims cannot drift.
+    // Off by default: a field on a page carries its edge with fill alone, and
+    // this is only wanted where one sits beside a bordered text field and the
+    // pair would otherwise read as two different kinds of control.
     enabledBorder: hasError
         ? border(fieldErrorInk(), 1.5)
-        : border(Colors.transparent, 0),
-    disabledBorder: border(Colors.transparent, 0),
+        : border(
+            outlined ? AppPalette.divider : Colors.transparent,
+            outlined ? 1 : 0,
+          ),
+    disabledBorder: border(
+      outlined ? AppPalette.divider : Colors.transparent,
+      outlined ? 1 : 0,
+    ),
     focusedBorder: border(hasError ? fieldErrorInk() : AppPalette.accent, 1.5),
   );
 }

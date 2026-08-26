@@ -25,7 +25,8 @@ import '../shell_state.dart';
 /// figures moved to [AppStatusRail], where a readout belongs) and the invite
 /// cluster. What is left up here is only what you press.
 ///
-/// Model engines is a *place* and Invite is an *action*, which is why they are
+/// Share Intelligence is a *place* and Invite is an *action*, which is why
+/// they are
 /// not drawn at the same weight. The engine half is glass, like every other
 /// capsule this bar has ever had; the invite half is the one opaque, saturated
 /// surface on it. That split is the app's existing rule, not a new one — see
@@ -111,7 +112,8 @@ class GridCtaPair extends ConsumerWidget {
   }
 }
 
-/// The door to Model engines — the only one, now that the sidebar row is gone.
+/// The door to Share Intelligence — the only one, now that the sidebar row
+/// is gone.
 ///
 /// It carries two things that row used to: it lights when that screen is the one
 /// open, and it wears a mark for what this computer is contributing. Dropping
@@ -155,17 +157,23 @@ class _EnginesHalfState extends ConsumerState<_EnginesHalf> {
     return Semantics(
       button: true,
       selected: open,
+      // The accessible name matches the visible one, plus the state the dot
+      // beside it carries — a screen reader gets what a sighted user gets.
       label: !widget.canHost
-          ? 'Model engines'
+          ? 'Share Intelligence'
           : serving
-          ? 'Model engines, this computer is serving'
-          : 'Model engines, this computer is not serving',
+          ? 'Share Intelligence, this computer is serving'
+          : 'Share Intelligence, this computer is not serving',
       child: Tooltip(
+        // What pressing it gets you, not what is true right now. The dot beside
+        // the label already reports the state, and a tooltip repeating it spent
+        // the one line this control has on something the user could already see
+        // — while the reason to press it went unsaid.
         message: !widget.canHost
-            ? 'What this computer shares on this grid'
+            ? 'See what’s answering on this grid'
             : serving
-            ? 'This computer is serving on this grid'
-            : "This computer isn't serving anything yet",
+            ? 'Change what this computer adds to the grid'
+            : 'Add this computer so the grid can run bigger models',
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
@@ -211,7 +219,7 @@ class _EnginesHalfState extends ConsumerState<_EnginesHalf> {
                   if (widget.showLabel) ...[
                     const SizedBox(width: 6),
                     Text(
-                      'Model engines',
+                      'Share Intelligence',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: AppFont.semibold,
@@ -292,11 +300,11 @@ class _InviteHalfState extends ConsumerState<_InviteHalf> {
                 '${members.length} '
                 '${plural(members.length, 'person', 'people')} on it',
       child: Tooltip(
-        message: members == null
-            ? 'Invite people to ${widget.grid.name}'
-            : '${members.length} '
-                  '${plural(members.length, 'person', 'people')} '
-                  'on ${widget.grid.name}',
+        // The roster count moved to the label above, which a screen reader
+        // reads and a pointer user does not need twice. This line is for the
+        // reason to press it, in the same words the front door made its case
+        // with: more of them means bigger models.
+        message: 'More people means more machines and bigger models',
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
@@ -334,7 +342,7 @@ class _InviteHalfState extends ConsumerState<_InviteHalf> {
                   if (widget.showLabel) ...[
                     const SizedBox(width: 6),
                     const Text(
-                      'Invite members',
+                      'Invite Members',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: AppFont.semibold,

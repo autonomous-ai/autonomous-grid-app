@@ -68,6 +68,7 @@ class AppSelectField<T> extends StatefulWidget {
     this.showLabel = true,
     this.showDetailInField = true,
     this.fill,
+    this.outlined = false,
   });
 
   /// Whether the closed field repeats the picked option's
@@ -81,6 +82,14 @@ class AppSelectField<T> extends StatefulWidget {
   /// than as help. The open menu still shows it whole, which is where it's
   /// needed — while choosing, not after.
   final bool showDetailInField;
+
+  /// Draw the closed capsule with the same hairline a plain `TextField`
+  /// wears, instead of relying on its fill alone.
+  ///
+  /// For a select sitting directly beneath a bordered text input: without
+  /// it the two controls in one form read as different kinds of thing, and
+  /// the softer one looks unfinished beside the crisp one.
+  final bool outlined;
 
   /// Overrides the closed field's surface — see [labeledFieldDecoration].
   ///
@@ -170,6 +179,7 @@ class _AppSelectFieldState<T> extends State<AppSelectField<T>> {
                 summary: _summary,
                 muted: !_hasSelection,
                 fill: widget.fill,
+                outlined: widget.outlined,
                 detail: widget.showDetailInField ? _detail : null,
                 badges: _badges,
                 onTap: controller.isOpen ? controller.close : controller.open,
@@ -201,6 +211,7 @@ class _FieldSurface extends StatelessWidget {
     required this.summary,
     required this.muted,
     required this.onTap,
+    required this.outlined,
     this.fill,
     this.detail,
     this.badges = const [],
@@ -209,6 +220,9 @@ class _FieldSurface extends StatelessWidget {
   final String summary;
   final bool muted;
   final VoidCallback onTap;
+
+  /// See [AppSelectField.outlined].
+  final bool outlined;
 
   /// The surface, when the default doesn't recess against what it sits on.
   final Color? fill;
@@ -227,7 +241,11 @@ class _FieldSurface extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: InputDecorator(
         isEmpty: false,
-        decoration: labeledFieldDecoration('', fill: fill ?? AppCard.inset),
+        decoration: labeledFieldDecoration(
+          '',
+          fill: fill ?? AppCard.inset,
+          outlined: outlined,
+        ),
         child: Row(
           children: [
             Expanded(
@@ -469,7 +487,12 @@ class _Lines<T> extends StatelessWidget {
           const SizedBox(height: 3),
           Text(
             detail,
-            maxLines: 1,
+            // Wraps. A detail here is a *sentence* explaining what the
+            // option does, and one line of a menu's width cannot hold one:
+            // it arrived clipped at "or start an AI node to powe…", losing
+            // the clause that made it worth reading. Three lines is enough
+            // for the longest rule; the cap is a backstop, not a budget.
+            maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12,

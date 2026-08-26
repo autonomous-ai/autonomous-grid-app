@@ -49,7 +49,7 @@ class TaskServingPanel extends ConsumerWidget {
                   Text(
                     'Teammates can hand this computer a coding job. It copies '
                     'their project here, lets Claude Code change files in that '
-                    'copy, and sends the result back — spending this '
+                    'copy, and sends the result back, spending this '
                     'computer’s own Claude allowance.',
                     style: quiet,
                   ),

@@ -10,7 +10,6 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/toast.dart';
-import '../../auth/logic/session_controller.dart';
 import '../logic/change_grid_type_controller.dart';
 import '../logic/grid_access_types.dart';
 import '../logic/invite_email.dart';
@@ -251,29 +250,9 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
       //
       // The one part that can outgrow the window scrolls on its own instead;
       // see [SharePeopleList.maxHeight].
-      titlePadding: const EdgeInsets.fromLTRB(24, 20, 14, 0),
-      title: Row(
-        children: [
-          Expanded(child: Text('Share “${widget.network.name}”')),
-          // A tooltip on a glyph, the app's own help affordance — not a
-          // button. Docs' ⟨?⟩ opens a help centre; there is nothing here for a
-          // click to go to, and a control that does nothing when pressed is
-          // worse than a mark that never invited the press.
-          Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: Tooltip(
-              message:
-                  'People you add can use the models on this grid. Whether '
-                  'anyone else can reach it is set under General access.',
-              child: Icon(
-                LucideIcons.circleHelp300,
-                size: 16,
-                color: AppPalette.textFaint,
-              ),
-            ),
-          ),
-        ],
-      ),
+      // The 14 on the right was room for a help glyph that is no longer there.
+      titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      title: Text('Who can use “${widget.network.name}”'),
       // Zero, so the banner and the footer's hairline run the full width of the
       // sheet the way Docs draws them. Every block below pays its own inset.
       contentPadding: EdgeInsets.zero,
@@ -331,7 +310,7 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
                     const SizedBox(height: 12),
                     ErrorBox(message: message, maxHeight: 96),
                   ],
-                  const _Heading('People with access'),
+                  const _Heading('Members'),
                   // Removing is the owner's alone — see
                   // [SharePeopleList.canRemove]. `widget.network.isOwner` is
                   // about *this viewer*, not about the people in the rows.
@@ -340,7 +319,7 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
                     canRemove: widget.network.isOwner,
                     grantable: _grantable,
                   ),
-                  const _Heading('General access'),
+                  const _Heading('Who can join'),
                   GeneralAccessRow(network: widget.network),
                   const SizedBox(height: 20),
                 ],
@@ -354,22 +333,7 @@ class _ShareGridDialogState extends ConsumerState<ShareGridDialog> {
       actions: [
         SizedBox(
           width: _sheetWidth - _sheetInset * 2,
-          child: _Footer(
-            change: change,
-            // Live, for the reason [GeneralAccessRow] reads it live: this is
-            // the sentence "this grid is still X", and after ONE change lands
-            // the snapshot is a rule the grid left. Change to "My domain", save
-            // it, then pick "Anyone" — the footer would swear the grid was
-            // still "Invite only". The one line whose whole job is to be true
-            // about right now cannot read from a value fixed when the sheet
-            // opened.
-            current: ManagedNetworkType.fromWire(
-              (ref.watch(sessionProvider).byName(_networkId) ?? widget.network)
-                  .networkType,
-            ),
-            domain: domain,
-            onApply: _applyAccessChange,
-          ),
+          child: _Footer(change: change, onApply: _applyAccessChange),
         ),
       ],
     );
@@ -424,7 +388,7 @@ class _InviteField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const FieldLabel('Add people'),
+        const FieldLabel('Invite people'),
         Focus(
           onFocusChange: onFocusChange,
           child: TextField(
@@ -456,7 +420,7 @@ class _InviteField extends StatelessWidget {
   /// one for the same reason.
   InputDecoration _decoration(bool hasError) {
     final base = labeledFieldDecoration(
-      'Add people by email',
+      'Email address',
       fill: AppCard.inset,
       hasError: hasError,
     );
@@ -540,20 +504,9 @@ class _InviteActions extends StatelessWidget {
 /// the one thing here that is *not* immediate: the access rule, which is
 /// confirmed before it restarts the grid.
 class _Footer extends StatelessWidget {
-  const _Footer({
-    required this.change,
-    required this.current,
-    required this.domain,
-    required this.onApply,
-  });
+  const _Footer({required this.change, required this.onApply});
 
   final ChangeGridTypeState change;
-
-  /// The rule the grid is actually on — what the footer says while the row
-  /// above shows the rule being considered.
-  final ManagedNetworkType? current;
-
-  final String? domain;
   final ValueChanged<ManagedNetworkType> onApply;
 
   @override
@@ -562,13 +515,19 @@ class _Footer extends StatelessWidget {
     return Consumer(
       builder: (context, ref, _) => Row(
         children: [
-          Expanded(child: _status(context)),
+          const Spacer(),
           ...switch (change) {
             ChangeGridTypeConfirming(:final target) => [
               TextButton(
-                onPressed: () => ref
-                    .read(changeGridTypeControllerProvider.notifier)
-                    .cancel(),
+                // Drops the unsaved rule and shuts the sheet. Cancelling only
+                // the change left the user looking at the dialog they had just
+                // backed out of, with nothing to show for the press — and the
+                // controller is app-wide, so a pending rule left behind would
+                // be waiting the next time the sheet opened.
+                onPressed: () {
+                  ref.read(changeGridTypeControllerProvider.notifier).cancel();
+                  Navigator.of(context).pop();
+                },
                 child: const Text('Cancel'),
               ),
               const SizedBox(width: 8),
@@ -590,20 +549,6 @@ class _Footer extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  /// While a change is pending the row above shows the rule that was PICKED, so
-  /// this is the only place left that can say what the grid is on right now.
-  Widget _status(BuildContext context) {
-    if (change is! ChangeGridTypeConfirming) return const SizedBox.shrink();
-    if (current case final saved?) {
-      return Text(
-        'Not saved yet — this grid is still '
-        '“${accessLabelFor(saved, domain: domain)}”.',
-        style: TextStyle(color: AppPalette.textSecondary, fontSize: 12.5),
-      );
-    }
-    return const SizedBox.shrink();
   }
 }
 

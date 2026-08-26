@@ -74,6 +74,11 @@ class GridTypePicker extends StatelessWidget {
           // needed: while choosing, not after. Callers print it under the field
           // for the rule already picked.
           showDetailInField: false,
+          // Both create-grid forms put this directly under a bordered `Name`
+          // field. Without the rim the two controls in one short form read as
+          // different kinds of thing, and the softer one looks unresolved
+          // beside the crisp one.
+          outlined: true,
           fill: fill,
           options: [
             for (final type in types)

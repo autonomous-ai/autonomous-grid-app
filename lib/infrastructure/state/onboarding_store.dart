@@ -6,9 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/grid_paths.dart';
 
 /// What the user chose on first-run onboarding, back when their grid had no
-/// model to chat with yet. Persisted so the choice screen isn't shown again on
-/// every launch — including [later], which installs nothing and so leaves no
-/// on-disk trace of its own to infer the choice from.
+/// model to chat with yet — and back when onboarding asked at all.
+///
+/// The screen that wrote this is gone (2026-08-26), so nothing produces a value
+/// any more; what's on disk from before still decides whether the background
+/// download may run. See `localModelChosenProvider`, which carries the TODO(BE)
+/// for resolving that. Kept a full enum rather than a bool because the file on
+/// disk holds all three names and must still read back as what it says.
 enum OnboardingDecision {
   /// Run a model on this computer — install the engine, then the model
   /// downloads in the background and shares itself on the grid.

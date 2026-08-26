@@ -72,9 +72,10 @@ class ApiEngineBlock extends ConsumerWidget {
       // the one thing about this block worth knowing before filling it in.
       trailing: const EngineCostChip(cost: EngineCost.metered),
       subtitle: hasSeat
-          ? 'Your own API key, or a coding CLI already on this computer — no '
-                'model download.'
-          : 'A hosted provider with your own API key — no model download.',
+          ? 'Your own API key, or a coding CLI already on this computer. '
+                'Nothing to download.'
+          : 'A hosted provider, using a key you already pay for. Nothing '
+                'to download.',
       child: ApiEngineForm(
         network: network,
         engines: available,
@@ -316,8 +317,8 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
           engine.provider.isSeat
               ? 'Requests run through ${engine.provider.label} here and spend '
                     'its own allowance.'
-              : 'Your key stays on this computer; prompts go to '
-                    '${engine.provider.label} for inference.',
+              : 'Your key never leaves this computer. Questions go to '
+                    '${engine.provider.label} to be answered.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -409,7 +410,7 @@ class _SeatPanel extends StatelessWidget {
             children: [
               Text(
                 found
-                    ? '${provider.label} is on this computer — the grid runs it '
+                    ? '${provider.label} is on this computer. The grid runs it '
                           'with the sign-in it already has.'
                     : "${provider.label} isn't on this computer yet. Install it "
                           'and sign in, then come back here.',

@@ -13,6 +13,7 @@ import '../../../network/logic/create_network_controller.dart';
 import '../../../network/logic/grid_access_types.dart';
 import '../../../network/logic/grid_choice.dart';
 import '../../../network/logic/grid_name.dart';
+import '../../../network/logic/grid_sync_controller.dart';
 import '../../../network/presentation/grid_type_picker.dart';
 
 /// Start a grid of your own, from the first-run screen: a name, who may join,
@@ -76,11 +77,16 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
       ref.read(gridChoiceGateProvider.notifier).choose(match);
       return;
     }
+    // Created on the control plane, not yet written here by `grid sync`. Pull
+    // again rather than telling the user to press "Refresh" — that link is
+    // gone, and copy naming a control that isn't on the screen is the exact
+    // failure §5 is about. The row appears in the list above when this lands.
+    ref.read(gridSyncControllerProvider.notifier).sync();
     setState(() {
       _warning =
           done.joinWarning ??
-          'Grid “${done.network.name}” was created, but it hasn’t reached '
-              'this computer yet. Try Refresh below.';
+          'Grid “${done.network.name}” was created. Fetching it onto this '
+              'computer now.';
     });
   }
 
@@ -119,7 +125,12 @@ class _NewGridFormState extends ConsumerState<NewGridForm> {
             onSubmitted: (_) => _submit(selected),
             style: kFieldTextStyle,
             decoration: const InputDecoration(
-              hintText: 'my-team-grid',
+              // A name a person would give a thing, not a slug. The hint was
+              // `my-team-grid`, and a kebab-case example is an instruction: it
+              // tells a non-technical reader the field wants an identifier and
+              // that the format matters. Neither is true — this is the display
+              // name, and it is what everyone they invite will see.
+              hintText: 'Design team',
               counterText: '',
             ),
           ),

@@ -219,7 +219,7 @@ EngineFailureDiagnosis diagnoseEngineFailure(String message) {
       explanation:
           'The built-in engine failed to load a system graphics library it '
           "needs. This usually means the engine build doesn't match this "
-          'version of macOS — reinstalling it fetches the right one.',
+          'version of macOS. Reinstalling it fetches the right one.',
       suggestsReinstall: true,
     );
   }
@@ -258,7 +258,7 @@ EngineFailureDiagnosis diagnoseEngineFailure(String message) {
       title: "This model file couldn't be loaded",
       explanation:
           'The engine rejected the model file. It may have downloaded '
-          'incompletely — re-downloading it in the model manager usually '
+          'incompletely. Re-downloading it in the model manager usually '
           'fixes this.',
       suggestsReinstall: false,
     );

@@ -275,7 +275,8 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   /// Why Delete is off. Names where to stop it — "Model engines" is the top
   /// bar button's own label, so the sentence points somewhere that exists.
   static const _inUseReason =
-      'This model is running right now. Stop it in Model engines to delete it.';
+      'This model is running right now. Stop it in Share Intelligence to '
+      'delete it.';
 
   /// The pills for one version. Quantisation and size are facts, so they stay
   /// neutral; the two badges that carry a verdict — will it run here, is it

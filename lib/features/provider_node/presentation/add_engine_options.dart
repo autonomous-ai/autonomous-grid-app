@@ -116,14 +116,16 @@ class _LocalRowState extends ConsumerState<_LocalRow> {
 
     return ChoiceRow(
       icon: const Icon(Icons.computer_outlined),
-      title: 'Run on this computer',
-      // What the press will actually do, when it isn't the obvious one. Without
-      // this, a machine with no engine yet answers a press for a model picker
-      // with an install — the old card said so on its button ("Set it up"), and
-      // rows have no button to say it on.
+      title: 'Run a model on this computer',
+      // The benefit goes in the badge, which is the slot [ChoiceRow] documents
+      // for exactly this — "two or three words naming what this option saves
+      // you". It used to open the line, which meant the line could not also say
+      // what the press does, and on a machine with no engine yet that press
+      // answers a request for a model picker with an install.
+      badge: 'Private & offline',
       line: needsSetup
-          ? 'Private & offline — installs the engine first'
-          : 'Private & offline — the model runs on your own hardware',
+          ? 'Sets up the built-in engine first, then runs a model here.'
+          : 'The model runs on your own hardware. Nothing leaves the machine.',
       action: ChoiceRowAction.open,
       expanded: body != null,
       onPressed: () => _press(needsSetup, setup),
@@ -183,7 +185,8 @@ class _ApiKeyRowState extends ConsumerState<_ApiKeyRow> {
     final available = ref.watch(apiEnginesProvider).asData?.value ?? const [];
     return ChoiceRow(
       icon: const Icon(Icons.key_outlined),
-      title: 'Use an API key',
+      title: 'Use a key you already pay for',
+      badge: 'No download',
       line: apiKeyCardLine(available),
       action: ChoiceRowAction.open,
       expanded: _open,
@@ -234,10 +237,11 @@ class _OwnServerRowState extends ConsumerState<_OwnServerRow> {
 
     return ChoiceRow(
       icon: const Icon(Icons.dns_outlined),
-      title: 'Use your own server',
+      title: 'Share a server you already run',
+      badge: detected > 0 ? 'Ready now' : null,
       line: detected > 0
-          ? 'Found $detected on this computer — share one as it is'
-          : 'Point Grid at an engine you already run here',
+          ? 'Found $detected running here. Share one exactly as it is.'
+          : 'Point Grid at an engine already running on this computer.',
       action: ChoiceRowAction.open,
       expanded: _open,
       onPressed: () {

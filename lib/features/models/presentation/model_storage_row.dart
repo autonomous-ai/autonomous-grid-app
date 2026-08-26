@@ -41,7 +41,8 @@ class StoredModelRow extends ConsumerWidget {
 
   String? get _blockedReason {
     if (inUse) {
-      return 'This model is running right now. Stop it in Model engines to '
+      return 'This model is running right now. Stop it in Share '
+          'Intelligence to '
           'delete it.';
     }
     if (item.isUnfinished && downloadRunning) {
