@@ -373,8 +373,8 @@ class _ProjectGroupState extends ConsumerState<_ProjectGroup> {
                       )
                     else ...[
                       for (var i = 0; i < shown; i++)
-                        SidebarTimeline(
-                          role: SidebarTimelineRole.branch,
+                        _ChatBranch(
+                          chat: chats[i],
                           below: endsAt != i,
                           child: _RevealItem(
                             // Staggered within its page, not within the whole
@@ -471,15 +471,21 @@ class _LooseChats extends StatelessWidget {
                 // project: the "Chats" and "Projects" labels stay out at the
                 // rail's edge, their contents line up one step in.
                 for (var i = 0; i < shown; i++)
-                  _RevealItem(
-                    // The wave restarts every [kSidebarNextPage] rows instead of
-                    // running the length of the list. The curve table clamps
-                    // past the eighth row, so one ramp over a twenty-row first
-                    // page would land the last twelve together anyway — two
-                    // short waves read as a list arriving, one long one reads as
-                    // a list stalling.
-                    index: i % kSidebarNextPage,
-                    child: _ChatRow(chat: chats[i], indented: true),
+                  // No guide line out here — a loose chat is in no tree — but
+                  // the same mark in the same column, so a chat's assistant is
+                  // read off the same place whether or not it has a project.
+                  _ChatBranch(
+                    chat: chats[i],
+                    child: _RevealItem(
+                      // The wave restarts every [kSidebarNextPage] rows instead
+                      // of running the length of the list. The curve table
+                      // clamps past the eighth row, so one ramp over a
+                      // twenty-row first page would land the last twelve
+                      // together anyway — two short waves read as a list
+                      // arriving, one long one reads as a list stalling.
+                      index: i % kSidebarNextPage,
+                      child: _ChatRow(chat: chats[i], indented: true),
+                    ),
                   ),
                 // Last, so it stays glued to the bottom of the chats however
                 // many pages are open, and costs nothing in the common case
@@ -564,10 +570,6 @@ class _ChatRow extends ConsumerWidget {
     // What the hover preview names as the chat's home. A chat whose project was
     // removed reads as loose here for the same reason the rail lists it there.
     final project = ref.watch(projectByIdProvider(chat.projectId));
-    // Which assistant this conversation belongs to — read off the chat itself,
-    // never off the picker: the rail lists chats started by all of them at once,
-    // and the picker only ever describes the next one.
-    final agent = agentOfChat(chat);
 
     return Padding(
       // Line a project's chats up under the project *name*, not under its
@@ -640,17 +642,9 @@ class _ChatRow extends ConsumerWidget {
           // chats worth pinning are the long-running ones you keep coming *back*
           // to from the rail — not the one already on screen.
           //
-          // The agent's mark leads the pair — a fact, not a button, so it takes
-          // the inner slot and leaves pin and archive exactly where the hand
-          // already reaches for them. It is the one thing here the rail could
-          // not otherwise say: two chats with the same opening line are a
-          // different conversation each if a different assistant is holding
-          // them. Absent on a chat with no agent behind it (the grid answered
-          // it directly), and the slot narrows to match rather than leaving a
-          // gap the titles could have used.
-          trailingWidth: working
-              ? 24
-              : (agent == null ? 50 : 50 + _agentMarkSize + _agentMarkGap),
+          // The agent's mark is not here. It sits out in the gutter, on the
+          // guide line, in the column the folder icons hold — see [_ChatBranch].
+          trailingWidth: working ? 24 : 50,
           trailingAlwaysVisible: working,
           trailing: working
               ? const _ChatActivityCue()
@@ -658,16 +652,6 @@ class _ChatRow extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    if (agent != null) ...[
-                      // Named for screen readers: a logo says which assistant
-                      // to anyone who recognises it and nothing at all to
-                      // anyone who doesn't.
-                      Semantics(
-                        label: agent.name,
-                        child: AgentMark(tool: agent, size: _agentMarkSize),
-                      ),
-                      const SizedBox(width: _agentMarkGap),
-                    ],
                     _RowActionButton(
                       icon: chat.pinned
                           ? LucideIcons.pinOff300
@@ -754,14 +738,116 @@ class _ChatRowSurfaceState extends State<_ChatRowSurface> {
   );
 }
 
-/// The agent mark on a chat row: smaller than the 24px action buttons beside it
-/// because it is read, not aimed at, and a logo the same size as a button reads
-/// as a third thing to click.
+/// The agent mark's size. Smaller than the 18px folder glyph whose column it
+/// borrows, so the guide line clears it by a few pixels either side rather than
+/// appearing to touch it.
 const double _agentMarkSize = 14;
 
-/// The air between the mark and the pin. Wider than the 2px between the two
-/// buttons, which is what separates the fact from the pair of actions.
-const double _agentMarkGap = 6;
+/// The column the mark is centred in — [SidebarItem]'s own icon gutter and the
+/// 18px glyph that sits in it, which is what puts the mark's centre on the
+/// guide's trunk (`sidebar_timeline.dart` derives that from the same two
+/// numbers). Written as the box rather than as "19", so moving the rail's inset
+/// moves the mark with the line instead of leaving it beside one.
+const double _agentMarkBox = 18;
+
+/// One chat in the rail: the row, the guide line beside it when the chat is
+/// inside a project, and the agent's mark — out in the gutter, on the line, in
+/// the column the folder icons hold.
+///
+/// **The mark is here rather than in the row** for two reasons that are really
+/// one. It has to sit *outside* [SidebarItem]'s box, or it would push every
+/// chat title 28px right and out of the column its project's name sits in. And
+/// it has to be painted *after* [SidebarTimeline], whose guide is a
+/// `foregroundPainter` — a mark drawn anywhere inside the row would have the
+/// trunk drawn straight through it.
+///
+/// While the mark is showing, the row **is** a node on that line: the guide
+/// breaks around the logo instead of striking it out, and the arm — which
+/// exists to point at a nested row's left edge — has nothing left to say once
+/// something is standing there. At rest the line goes back to being a plain
+/// branch, so the tree looks exactly as it did.
+class _ChatBranch extends StatefulWidget {
+  const _ChatBranch({required this.chat, required this.child, this.below});
+
+  final Conversation chat;
+
+  /// The row, already wrapped in whatever the list puts around it.
+  final Widget child;
+
+  /// Whether the project's guide carries on below this row — null for a chat
+  /// that belongs to no project, which is in no tree and gets no line.
+  final bool? below;
+
+  @override
+  State<_ChatBranch> createState() => _ChatBranchState();
+}
+
+class _ChatBranchState extends State<_ChatBranch> {
+  bool _hovered = false;
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Which assistant this conversation belongs to — read off the chat itself,
+    // never off the picker: the rail lists chats started by all of them at
+    // once, and the picker only ever describes the next one.
+    final agent = agentOfChat(widget.chat);
+    final below = widget.below;
+    final showMark = agent != null && _hovered;
+    final row = below == null
+        ? widget.child
+        : SidebarTimeline(
+            role: showMark
+                ? SidebarTimelineRole.node
+                : SidebarTimelineRole.branch,
+            below: below,
+            child: widget.child,
+          );
+    if (agent == null) return row;
+
+    return MouseRegion(
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
+      child: Stack(
+        // Passthrough, not the default loose: the rail hands its rows a tight
+        // width and a `Stack` that loosened it would let the row shrink to the
+        // width of its own title, leaving every hover fill ragged.
+        fit: StackFit.passthrough,
+        children: [
+          row,
+          Positioned(
+            left: SidebarItem.iconGutter,
+            top: 0,
+            bottom: 0,
+            width: _agentMarkBox,
+            // On the rail's own hover beat, so the mark arrives with the row's
+            // wash rather than a frame ahead of it. Kept mounted at zero rather
+            // than swapped in, or the guide's gap would open onto nothing while
+            // the image decoded.
+            child: AnimatedOpacity(
+              opacity: showMark ? 1 : 0,
+              duration: AppMotion.hover,
+              curve: AppMotion.curve,
+              child: Center(
+                // Named for screen readers: a logo says which assistant to
+                // anyone who recognises it and nothing at all to anyone who
+                // doesn't.
+                child: Semantics(
+                  label: agent.name,
+                  child: AgentMark(tool: agent, size: _agentMarkSize),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// The live cue on a chat row while a reply is coming in — a spinning ring so a
 /// background chat reads as still working, not stalled. Sits where the archive
