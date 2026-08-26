@@ -19,12 +19,10 @@ import 'widgets/new_grid_form.dart';
 /// screen behind this one reads the answer (what model the grid serves, where
 /// chat sends, what this computer would share), so it is worth one screen.
 ///
-/// The explaining is folded away. It began as a subtitle, which made every
-/// launch pay for the first one: a definition of "grid" sat between the reader
-/// and the rows on the tenth visit exactly as it did on the first, and a
-/// subtitle cannot be skipped. Behind a link it costs one line until someone
-/// wants it, and the people who do want it are asking *before* they read the
-/// list, which is why the link sits above rather than under.
+/// The explaining splits by whether the reader can do without it. What a grid
+/// *is* stays in the subtitle: someone who does not know cannot know to go
+/// looking behind a link for it. What the three labels mean folds away under
+/// the list, because the labels are on the rows and most people never ask.
 ///
 /// Asked once per sign-in. [gridChoiceNeededProvider] is false the moment a grid
 /// is picked, and with "Remember my choice" ticked the answer survives a
@@ -49,10 +47,9 @@ class _GridChoiceScreenState extends ConsumerState<GridChoiceScreen> {
   /// choice is made, not buried in Settings afterwards.
   bool _remember = true;
 
-  /// Whether the "What's a grid?" note is open. Shut to begin with: the
-  /// people who need it are a minority of launches, and a definition unfolded
-  /// over the list makes everyone else read past an answer to a question they
-  /// did not ask.
+  /// Whether the labels note is open. Shut to begin with: the people who need
+  /// it are a minority of launches, and a glossary unfolded under the list
+  /// makes everyone else scroll past an answer to a question they did not ask.
   bool _explaining = false;
 
   @override
@@ -109,7 +106,6 @@ class _GridChoiceScreenState extends ConsumerState<GridChoiceScreen> {
             runSpacing: 2,
             children: [
               _LabelsLink(
-                open: _explaining,
                 onToggle: () => setState(() => _explaining = !_explaining),
               ),
               _RememberChoice(
@@ -210,9 +206,8 @@ class _RememberChoice extends StatelessWidget {
 /// the wrong half of the sentence to spend their attention on. Quoting `Owner`
 /// and `Public` back to them points at something already on the screen.
 class _LabelsLink extends StatelessWidget {
-  const _LabelsLink({required this.open, required this.onToggle});
+  const _LabelsLink({required this.onToggle});
 
-  final bool open;
   final VoidCallback onToggle;
 
   /// The words as the rows above spell them, read off [GridAccessTag] rather
@@ -234,34 +229,22 @@ class _LabelsLink extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppCard.insetRadius),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'What do $_names mean?',
-              // A step under bodySmall, matched by the tick beside it: these
-              // two annotate the list rather than belonging to it, and at the
-              // rows' own size they competed with what they annotate.
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontSize: 12,
-                color: AppPalette.accent,
-                fontWeight: AppFont.medium,
-              ),
-            ),
-            const SizedBox(width: 2),
-            // Ends up pointing at what it opened, exactly as [ChoiceRow]'s
-            // marker does, so the two disclosures on this card behave alike.
-            AnimatedRotation(
-              turns: open ? 0.25 : 0,
-              duration: AppMotion.hover,
-              curve: AppMotion.curve,
-              child: Icon(
-                Icons.chevron_right_rounded,
-                size: 15,
-                color: AppPalette.accent,
-              ),
-            ),
-          ],
+        child: Text(
+          'What do $_names mean?',
+          // A step under bodySmall, matched by the tick beside it: these two
+          // annotate the list rather than belonging to it, and at the rows'
+          // own size they competed with what they annotate.
+          //
+          // No marker beside it. A chevron is how a *row* says it opens, and
+          // this is a question in accent ink — the shape a link already has.
+          // What it opened is visible directly underneath, so a mark reporting
+          // that state would be telling the reader something the panel has
+          // already told them.
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontSize: 12,
+            color: AppPalette.accent,
+            fontWeight: AppFont.medium,
+          ),
         ),
       ),
     );
