@@ -69,7 +69,7 @@ CronRunError describeCronRunError(
           ? 'That is not the grid you have open ("$currentGrid"). Switching '
                 'grids with the app open moves your tasks over; then choose '
                 'Run now.'
-          : 'Share a model on this computer ($kModelEnginesPlace), or switch '
+          : 'Share a model on this computer ($kShareModelsPlace), or switch '
                 'to a grid that has one — your tasks follow the grid you pick.',
     );
   }

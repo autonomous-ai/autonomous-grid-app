@@ -326,7 +326,7 @@ class _LegendRow extends StatelessWidget {
 /// screen that answers had no visible door anywhere in the app.
 ///
 /// It reported for a while, then offered, and now reports again — but for a
-/// different reason than the first time. The offer was right while Model engines
+/// different reason than the first time. The offer was right while the engines screen
 /// had no visible door; it has one now, permanently, on the top bar. Keeping a
 /// button here as well would mean one screen reached by two controls whose
 /// labels disagreed — this one renamed itself between "Run a model here" and

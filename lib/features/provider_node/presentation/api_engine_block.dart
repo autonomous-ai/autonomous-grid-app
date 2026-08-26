@@ -36,13 +36,13 @@ class ApiEngineBlock extends ConsumerWidget {
   final NetworkCredential network;
 
   /// Drop the block's own icon/title/subtitle — see [EngineBlock.headerless].
-  /// Set by the Model Engines page, where the add-engine picker above already
+  /// Set by the Share models page, where the add-engine picker above already
   /// names this path. Onboarding leaves it off: there the block stands alone.
   final bool headerless;
 
   /// Trims the secondary copy (the model-freshness line) for a first-run
   /// context like onboarding, where the full form reads as a wall of text next
-  /// to the other one-line options. The Model Engines screen keeps the full
+  /// to the other one-line options. The Share models screen keeps the full
   /// detail (`compact: false`).
   final bool compact;
 

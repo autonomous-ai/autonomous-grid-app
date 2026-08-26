@@ -172,12 +172,13 @@ enum ShellSection {
     devOnly: true,
   ),
   grids(LucideIcons.zap, 'Grids', thinIcon: LucideIcons.zap300),
-  // "Model engines", not "This computer": the rail names what a row *is*, and
-  // a row called after a place tells a first-time user nothing about the thing
-  // this app exists to do. The screen's own title says the same words — it was
-  // "Model Engines" there and "This computer" in the nav, which is one concept
-  // wearing two names (§5).
-  engines(LucideIcons.server, 'Model engines', thinIcon: LucideIcons.server300),
+  // "Share models", the top bar button's own words — one screen, one name
+  // (§5). It has worn four: "This computer" in the nav while the screen said
+  // "Model Engines", then "Model engines" everywhere, then "Share a computer" —
+  // which collided with the share sheet's grant of that name — and now this. A
+  // row named after a place told a first-time user nothing about the thing this
+  // app exists to do; a row named after the act tells them exactly.
+  engines(LucideIcons.server, 'Share models', thinIcon: LucideIcons.server300),
   guide(
     LucideIcons.circleHelp,
     'How to use',
@@ -403,7 +404,7 @@ List<SettingsGroup> visibleSettingsGroups({
 ///
 /// Grids. It was Appearance only because Grids was developer-only and couldn't
 /// be a landing screen an end user would get; now that it ships, the screen a
-/// user opens Settings *for* leads again. (It was Model engines before that,
+/// user opens Settings *for* leads again. (It was the engines screen before that,
 /// until that screen left Settings for the sidebar.)
 const kDefaultSettingsSection = ShellSection.grids;
 

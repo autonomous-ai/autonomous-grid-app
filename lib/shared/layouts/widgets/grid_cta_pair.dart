@@ -25,8 +25,13 @@ import '../shell_state.dart';
 /// figures moved to [AppStatusRail], where a readout belongs) and the invite
 /// cluster. What is left up here is only what you press.
 ///
-/// Model engines is a *place* and Invite is an *action*, which is why they are
-/// not drawn at the same weight. The engine half is glass, like every other
+/// Both halves name an action now — the engine half was "Model engines", a
+/// place, until 2026-08-26. It is not "Share a computer": that is the share
+/// sheet's grant, and a permission and the screen that exercises it cannot wear
+/// one name (§5). What is offered here is models, which is also what the other
+/// half's guests come for. But the two are not drawn at the same weight. A bar
+/// carries one primary, and inviting is the ask that has to survive a glance;
+/// serving is the one a host goes looking for. The engine half is glass, like every other
 /// capsule this bar has ever had; the invite half is the one opaque, saturated
 /// surface on it. That split is the app's existing rule, not a new one — see
 /// the note on the old `_InviteButton`.
@@ -111,7 +116,7 @@ class GridCtaPair extends ConsumerWidget {
   }
 }
 
-/// The door to Model engines — the only one, now that the sidebar row is gone.
+/// The door to Share models — the only one, now that the sidebar row is gone.
 ///
 /// It carries two things that row used to: it lights when that screen is the one
 /// open, and it wears a mark for what this computer is contributing. Dropping
@@ -156,10 +161,10 @@ class _EnginesHalfState extends ConsumerState<_EnginesHalf> {
       button: true,
       selected: open,
       label: !widget.canHost
-          ? 'Model engines'
+          ? 'Share models'
           : serving
-          ? 'Model engines, this computer is serving'
-          : 'Model engines, this computer is not serving',
+          ? 'Share models, serving now'
+          : 'Share models, not serving yet',
       child: Tooltip(
         message: !widget.canHost
             ? 'What this computer shares on this grid'
@@ -211,7 +216,7 @@ class _EnginesHalfState extends ConsumerState<_EnginesHalf> {
                   if (widget.showLabel) ...[
                     const SizedBox(width: 6),
                     Text(
-                      'Model engines',
+                      'Share models',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: AppFont.semibold,

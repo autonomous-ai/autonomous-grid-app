@@ -303,11 +303,11 @@ class _EmptyState extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (canHost) ...[
-            // The screen's own name, not a verb of its own — the top bar's
-            // button says this too, and one screen answers to one word (§5).
+            // The screen's own name — the top bar's button says this too, and
+            // one screen answers to one word (§5).
             FilledButton(
               onPressed: openEngines,
-              child: const Text('Model engines'),
+              child: const Text('Share models'),
             ),
             const SizedBox(width: 8),
           ],

@@ -1,4 +1,4 @@
-/// The explanations the Model Engines page shows in place of something it can't
+/// The explanations the Share models page shows in place of something it can't
 /// offer — for now, that we're still looking for servers on this computer.
 ///
 /// Kept apart from the page: it carries no state and no provider reads, and the
