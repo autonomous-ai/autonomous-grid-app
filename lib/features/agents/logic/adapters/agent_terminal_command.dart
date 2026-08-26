@@ -1,5 +1,8 @@
 import '../../../../infrastructure/cli/agent_event.dart';
-import '../../../../infrastructure/cli/raw_agent_argv.dart';
+import '../../../../infrastructure/cli/claude_exec_service.dart'
+    show kClaudeSessionSchedulerTools;
+import '../../../../infrastructure/cli/codex_app_server_service.dart'
+    show codexApprovalPolicy;
 import '../../../../shared/terminal/terminal_shell.dart';
 import '../agent_catalog.dart';
 
@@ -13,7 +16,8 @@ import '../agent_catalog.dart';
 /// `--skip-git-repo-check` is `codex exec`'s alone and is rejected by the
 /// interactive `codex`, and `--input-format stream-json` is refused outright
 /// unless the output is JSON too, which is what closed the door on driving these
-/// agents any other way (see [claudeRawArgs]).
+/// agents any other way — a pty is the only channel that carries the CLI's own
+/// interface, which is why this lane exists beside [claudeExecArgs].
 ///
 /// [executable] is the resolved binary — the path providers own that, so this
 /// stays a function of its arguments.
@@ -80,6 +84,26 @@ ShellCommand agentTerminalCommand({
     AgentTool.hermes => const <String>[],
   },
 );
+
+/// How much of this computer an interactive Claude Code session may touch, as
+/// the flags it starts with.
+///
+/// **"Read only" and "ask first" deliberately pass no flag at all.** The
+/// interactive CLI's own default gate *is* the asking one: it stops at what
+/// needs a yes and asks in its own TUI, where the user answers from the
+/// keyboard. Naming a mode this build may not accept would fail the session
+/// before it drew anything, and there is nothing to gain — the default is
+/// already the behaviour both modes describe.
+///
+/// The one real difference between them is what the *user* then answers, which
+/// is the point of a lane that can ask. The JSON lane holds the same two modes
+/// apart app-side instead, where the app is the gate — see
+/// `agentPermissionDecision`.
+List<String> claudePermissionArgs(AgentApprovalMode mode) => switch (mode) {
+  AgentApprovalMode.readOnly || AgentApprovalMode.ask => const [],
+  AgentApprovalMode.plan => const ['--permission-mode', 'plan'],
+  AgentApprovalMode.full => const ['--permission-mode', 'bypassPermissions'],
+};
 
 /// `claude`, with no `-p`: the real REPL, in the folder the pty opens in.
 ///

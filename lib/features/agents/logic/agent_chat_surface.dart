@@ -78,19 +78,18 @@ String agentChatSurfaceLabel(AgentChatSurface surface) => switch (surface) {
 
 /// What picking it actually changes, in one line under the control.
 ///
-/// Both lines name what the choice **costs**, not just what it gives. The
-/// message list is the quieter read and it is also where the agent stops being
-/// able to ask before it acts: without the terminal there is no channel for the
-/// question (see `claudePermissionArgs`), so the agent runs under the access
-/// already granted and writes any refusal into its reply. A user choosing the
-/// calmer-looking option has to know that before they choose it, not after.
+/// Both surfaces stop and ask before the assistant runs a command or changes a
+/// file — they differ in **who does the asking**, not in whether anyone does.
+/// The list asks with the app's own card; the terminal asks in the CLI's words
+/// and takes the answer from the keyboard. Copy must not imply the quieter
+/// option is the looser one: it isn't, and a user who believed that would pick
+/// the wrong one for the wrong reason.
 String agentChatSurfaceDetail(AgentChatSurface surface) => switch (surface) {
   AgentChatSurface.list =>
-    'One bubble per turn, like Hermes. The assistant prints its working-out '
-        'into the reply and cannot stop to ask permission — it runs under the '
-        'access set in the composer.',
+    'One bubble per turn with the steps listed under it, like Hermes. It asks '
+        'here, on a card, before it runs a command or changes a file.',
   AgentChatSurface.terminal =>
-    "The assistant's own command-line app, live. It asks before it acts and "
+    "The assistant's own command-line app, live. It asks in its own words and "
         'you answer with the keyboard; typing mid-answer reaches the turn that '
         'is running.',
 };
