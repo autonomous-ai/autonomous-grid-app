@@ -381,6 +381,32 @@ const Map<String, String> kClaudeTierModelEnv = {
   'fable': 'ANTHROPIC_DEFAULT_FABLE_MODEL',
 };
 
+/// What each slot says about itself in Claude Code's `/model` list, replacing
+/// the tier sentence it writes by default.
+///
+/// Read out of the installed binary (2.1.246) rather than guessed, because the
+/// two halves of a row are two different variables and only one of them is
+/// worth setting:
+///
+/// ```js
+/// label:       ANTHROPIC_DEFAULT_OPUS_MODEL_NAME        ?? e   // the model id
+/// description: ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION ?? `Custom Opus model`
+/// ```
+///
+/// The **label** already falls back to the model id, which is the best name the
+/// app has for a grid model — setting `_NAME` to that same id would change
+/// nothing, so it is deliberately left alone.
+///
+/// The **description** is the half that misleads. With four slots now naming
+/// four different grid models, a row reading "Custom Fable model" beside
+/// `Laguna-S-2.1` claims a lineage that model does not have. "Fable" is Claude
+/// Code's word for the slot; this replaces the sentence with one that is true.
+///
+/// Deliberately says nothing about speed or size: nothing on this path ranks
+/// the grid's models (see [claudeTierModel]), so a row promising "fastest"
+/// would be inventing a fact.
+const String kClaudeGridModelDescription = 'Served by your grid';
+
 /// The endpoint Claude Code wants for a grid: the relay **without** the `/v1`
 /// the OpenAI-compatible clients use. Claude Code appends the API version
 /// itself (`POST {base}/v1/messages`), so handing it the OpenAI base URL asks
@@ -467,8 +493,13 @@ Map<String, String> claudeCodeEnv(
     kClaudeModelEnv: pinned ?? claudeTierModel('opus', models),
     kClaudeSmallFastModelEnv: sonnet,
     kClaudeSubagentModelEnv: sonnet,
-    for (final tier in kClaudeTierModelEnv.entries)
+    for (final tier in kClaudeTierModelEnv.entries) ...{
       tier.value: claudeTierModel(tier.key, models),
+      // Derived from the model variable's own name rather than kept in a second
+      // map beside it: the two would drift, and Claude Code reads exactly this
+      // pair. See [kClaudeGridModelDescription].
+      '${tier.value}_DESCRIPTION': kClaudeGridModelDescription,
+    },
     if (compactWindow != null && compactWindow > 0)
       kClaudeCompactWindowEnv: '$compactWindow',
     if (maxOutputTokens != null && maxOutputTokens > 0)

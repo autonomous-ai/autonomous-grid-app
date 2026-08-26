@@ -465,6 +465,28 @@ void main() {
     );
 
     test(
+      'each slot says what it really is — with four different grid models in '
+      'four tier slots, "Custom Fable model" beside a Laguna claims a lineage '
+      'that model does not have',
+      () {
+        final env = claudeCodeEnv('https://relay/v1', 'k', grid);
+
+        for (final name in kClaudeTierModelEnv.values) {
+          expect(env['${name}_DESCRIPTION'], kClaudeGridModelDescription);
+        }
+      },
+    );
+
+    test('the row label is left alone: it already falls back to the model id, '
+        'which is the best name the app has for a grid model', () {
+      final env = claudeCodeEnv('https://relay/v1', 'k', grid);
+
+      for (final name in kClaudeTierModelEnv.values) {
+        expect(env.containsKey('${name}_NAME'), isFalse);
+      }
+    });
+
+    test(
       'a pinned run answers on the model it was started with — its subagents '
       'and its titles included — while the menu still lists the whole grid, so '
       'filling the picker can never move the turn to another model',
