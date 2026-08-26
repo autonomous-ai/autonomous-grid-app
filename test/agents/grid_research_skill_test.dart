@@ -10,7 +10,6 @@ void main() {
         'on its first command', () {
       final files = gridResearchSkillFiles(
         Directory('/home/.grid/skills/public/grid-research'),
-        uvPath: '/home/.grid/bin/uv',
       );
 
       expect(
@@ -32,6 +31,17 @@ void main() {
       ).card;
       expect(card, contains('markdown link'));
       expect(card, contains('Not verified'));
+    });
+
+    test('names no package runner either — it drives the same two scripts, and '
+        'removing it from one guide and not the other tells an agent to '
+        'provision a package nothing uses', () {
+      final card = gridResearchSkillFiles(
+        Directory('/skills/grid-research'),
+      ).card;
+      for (final runner in ['uv', '--with', 'run --no-project']) {
+        expect(card, isNot(contains(runner)));
+      }
     });
   });
 }

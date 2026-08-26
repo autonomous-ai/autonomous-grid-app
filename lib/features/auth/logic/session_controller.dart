@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/cli/host_environment.dart';
 import '../../../infrastructure/providers.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../infrastructure/state/models/credentials_file.dart';
@@ -34,7 +35,24 @@ class SelectedNetwork extends Notifier<NetworkCredential?> {
   String? _selectedId;
 
   @override
-  NetworkCredential? build() {
+  NetworkCredential? build() => _adopt(_resolve());
+
+  /// Hand the resolved grid down to every agent Grid spawns, and return it.
+  ///
+  /// Both write paths go through here — [build], which re-runs on every refresh
+  /// of the credential list, and [select], which does not re-run it. A grid the
+  /// app moved away from must stop being the one an agent's `search.py` posts
+  /// to, and **null is a value here**: signing out or leaving the last grid has
+  /// to take the credential away rather than leave the previous one live.
+  NetworkCredential? _adopt(NetworkCredential? network) {
+    HostEnvironment.adoptGrid(
+      relayBaseUrl: network?.relayBaseUrl,
+      relayToken: network?.relayApiKey,
+    );
+    return network;
+  }
+
+  NetworkCredential? _resolve() {
     final creds = ref.watch(sessionProvider);
     final active = ref.watch(activeRemoteGridProvider);
     // A live selection wins over the on-disk default, so a refresh doesn't move
@@ -60,7 +78,7 @@ class SelectedNetwork extends Notifier<NetworkCredential?> {
 
   void select(NetworkCredential network) {
     _selectedId = network.networkId;
-    state = network;
+    state = _adopt(network);
     ref.read(chatPrefsProvider.notifier).setNetwork(network.networkId);
   }
 }

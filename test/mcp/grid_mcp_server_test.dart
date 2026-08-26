@@ -336,5 +336,21 @@ void main() {
 
       expect(file.lastModifiedSync(), before);
     });
+
+    test('removes a retired script an older install left behind', () async {
+      // `browse.py` drove a headless Chromium and asked for a ~170 MB download
+      // (public-repo ADR 0036 D-g). No guide names it any more — but a file an
+      // agent can find is a file an agent can run, and not writing it leaves
+      // every existing install with the old one.
+      final stale = File('${into.path}/browse.py');
+      await into.create(recursive: true);
+      await stale.writeAsString('# the old browser fallback');
+
+      await ensureGridAgentScripts(into: into);
+
+      expect(stale.existsSync(), isFalse);
+      expect(kRetiredGridAgentScripts, contains('browse.py'));
+      expect(gridAgentScripts().keys, isNot(contains('browse.py')));
+    });
   });
 }

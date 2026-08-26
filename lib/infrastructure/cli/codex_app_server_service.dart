@@ -52,6 +52,17 @@ List<String> codexAppServerArgs({required List<String> config}) => [
   for (final override in config) ...['-c', override],
 ];
 
+/// The environment one `codex app-server` run gets: what every agent Grid spawns
+/// inherits ([HostEnvironment.agentEnvironment]), with the run's own
+/// [environment] over it.
+///
+/// Pure, and unit-tested, for the same reason [codexAppServerArgs] is: a
+/// variable that never reaches the run fails silently, because nothing on
+/// either side treats a missing one as an error.
+Map<String, String> codexAppServerEnvironment({
+  Map<String, String> environment = const {},
+}) => {...HostEnvironment.agentEnvironment(), ...environment};
+
 /// How long the three calls between Send and the model may take before the app
 /// stops waiting. Generous, because it covers a cold start; finite, because a
 /// server that never answers would otherwise leave the chat working forever.
@@ -196,11 +207,7 @@ class _CodexAppServerTurn {
       path,
       codexAppServerArgs(config: config),
       workingDirectory: workdir,
-      environment: {
-        ...Platform.environment,
-        'PATH': HostEnvironment.path(),
-        ...environment,
-      },
+      environment: codexAppServerEnvironment(environment: environment),
     ).then(_onStarted).catchError(_onStartError);
     return CodexRun(
       events: _events.stream,
