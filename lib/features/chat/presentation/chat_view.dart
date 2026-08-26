@@ -21,6 +21,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../../shared/widgets/typing_dots.dart';
 import '../../agents/logic/agent_chat_scope.dart';
+import '../../agents/logic/agent_chat_surface.dart';
 import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/hermes_vision_controller.dart';
@@ -447,7 +448,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
       modality == PlaygroundModality.text &&
       _attachments.isEmpty &&
       ref.read(anyAgentInstalledProvider) &&
-      ref.read(activeChatAgentProvider).runsInTerminal;
+      ref.read(openChatInTerminalProvider);
 
   /// Open the chat, hand its first message to the CLI about to start, and clear
   /// the composer — the same three things [_send] does, minus the turn.
@@ -497,7 +498,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
   String? get _terminalChatId {
     final id = ref.read(chatSessionsProvider).activeId;
     if (id == null || id.isEmpty) return null;
-    return ref.read(activeChatAgentProvider).runsInTerminal ? id : null;
+    return ref.read(openChatInTerminalProvider) ? id : null;
   }
 
   /// Types [paths] at the CLI's prompt and leaves them there, unsent — what
@@ -1211,7 +1212,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final chatAgent = ref.watch(activeChatAgentProvider);
     final inTerminal =
         agentMode &&
-        chatAgent.runsInTerminal &&
+        ref.watch(openChatInTerminalProvider) &&
         (activeId?.isNotEmpty ?? false);
 
     // The header naming this conversation lives in the top bar, so it shares

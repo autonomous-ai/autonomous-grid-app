@@ -456,6 +456,29 @@ enum AgentDetailMode {
   stepsCommands,
 }
 
+/// How a chat with an agent is **drawn** — as the app's own message list, or as
+/// the agent's command-line program itself.
+///
+/// Not a skin over one thing: the two surfaces keep the conversation in
+/// different places. A message list is a transcript this app owns, replayed into
+/// every turn; a terminal is the agent's own session, and the app commits
+/// nothing to the chat file at all. So a chat cannot be read in the surface it
+/// was not written in, which is why a chat records the one it started in rather
+/// than following the setting for ever (see `Conversation.surface`).
+///
+/// Only an agent with an interactive CLI can offer both — see
+/// `AgentTool.hasInteractiveCli`.
+enum AgentChatSurface {
+  /// The app's own transcript: one bubble per turn, the step feed, the
+  /// composer's model and access pickers, attachments, `/goal` and `/loop`.
+  list,
+
+  /// The agent's own program, live in a terminal. Its permission prompts are
+  /// its own and are answered from the keyboard, a message typed mid-answer
+  /// reaches the turn that is running, and nothing in between parses a byte.
+  terminal,
+}
+
 /// What the agent wants permission for.
 enum AgentPermissionKind {
   /// Run a command on this computer.

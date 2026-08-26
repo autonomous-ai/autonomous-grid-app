@@ -24,6 +24,7 @@ import '../../agents/logic/hermes_vision_controller.dart';
 import '../../agents/logic/agent_session_title.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
+import '../../agents/logic/agent_chat_surface.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agents/logic/adapters/claude_chat_sender.dart';
 import '../../agents/logic/agent_steering.dart';
@@ -201,6 +202,7 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     // grid's ordinary pick. Must also route the model to the mode's own slot id
     // (`auto/brute_force`), because [wireModelFor] keys the routing off it.
     final last = _lastRoutingGroup;
+    final choice = ref.read(chatAgentChoiceProvider(state.draftProjectId));
     return Conversation(
       id: now.microsecondsSinceEpoch.toString(),
       title: kNewConversationTitle,
@@ -208,7 +210,16 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
       createdAt: now,
       updatedAt: now,
       projectId: state.draftProjectId,
-      agent: ref.read(chatAgentChoiceProvider(state.draftProjectId)),
+      agent: choice,
+      // Fixed here for the same reason the agent is, and it has to be resolved
+      // rather than read off [choice]: the choice can be Auto or an agent this
+      // machine no longer has, and neither names a surface. Resolving it is
+      // what [resolvedChatAgentProvider] exists for — and it is safe to read
+      // from this controller where `activeChatAgentProvider` is not, because
+      // that one reads this controller back.
+      surface: ref.read(
+        agentChatSurfaceProvider(ref.read(resolvedChatAgentProvider(choice))),
+      ),
       routingGroup: last,
     );
   }

@@ -457,9 +457,9 @@ void main() {
 
     test('Hermes has no interactive CLI to run, and the capability says so — a '
         'chat with it must never reach this lane', () {
-      expect(AgentTool.claude.runsInTerminal, isTrue);
-      expect(AgentTool.codex.runsInTerminal, isTrue);
-      expect(AgentTool.hermes.runsInTerminal, isFalse);
+      expect(AgentTool.claude.hasInteractiveCli, isTrue);
+      expect(AgentTool.codex.hasInteractiveCli, isTrue);
+      expect(AgentTool.hermes.hasInteractiveCli, isFalse);
     });
   });
 

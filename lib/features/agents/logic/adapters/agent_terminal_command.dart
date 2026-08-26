@@ -75,8 +75,8 @@ ShellCommand agentTerminalCommand({
       prompt: prompt,
     ),
     // Hermes has no interactive CLI this app drives — it speaks ACP, and that
-    // is the whole of it. [AgentTool.runsInTerminal] is what keeps a chat from
-    // ever reaching here with it.
+    // is the whole of it. [AgentTool.hasInteractiveCli] is what keeps a chat
+    // from ever reaching here with it.
     AgentTool.hermes => const <String>[],
   },
 );

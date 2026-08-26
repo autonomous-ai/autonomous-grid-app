@@ -23,6 +23,7 @@ class Conversation {
     this.messages = const [],
     this.projectId,
     this.agent,
+    this.surface,
     this.titleLocked = false,
     this.titleFromModel = false,
     this.archivedAt,
@@ -121,6 +122,18 @@ class Conversation {
   /// rather than a default value so a chat saved before this existed keeps
   /// following the app setting instead of freezing whatever it was that day.
   final AgentApprovalMode? approval;
+
+  /// How this chat is **drawn** — written down when it started, like [agent],
+  /// and never changed after. Null for a chat saved before the setting existed,
+  /// which then follows its agent's default (see `agentChatSurface`).
+  ///
+  /// It has to be the chat's own and not the app's, because the two surfaces
+  /// keep the conversation in **different places**: a message list is
+  /// [messages], and a terminal chat commits nothing here at all — the CLI's
+  /// own session is the conversation. So reading the live setting would empty
+  /// every terminal chat in the sidebar the moment someone changed their mind
+  /// about the next one, and the chats would look deleted rather than redrawn.
+  final AgentChatSurface? surface;
 
   /// The user pinned this chat to the top of the sidebar.
   ///
@@ -228,6 +241,7 @@ class Conversation {
     String? title,
     String? model,
     DateTime? updatedAt,
+    AgentChatSurface? surface,
     List<ChatMessage>? messages,
     // Only ever *set* a project here (null keeps the current one): a chat leaves
     // its project by being deleted, not re-homed, so there's no clear path to
@@ -287,6 +301,7 @@ class Conversation {
     messages: messages ?? this.messages,
     projectId: projectId ?? this.projectId,
     agent: agent ?? this.agent,
+    surface: surface ?? this.surface,
     titleLocked: titleLocked ?? this.titleLocked,
     titleFromModel: titleFromModel ?? this.titleFromModel,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
@@ -314,6 +329,9 @@ class Conversation {
     // one on the way out too, or a chat would read back differently than it was
     // written.
     if (agent?.isNotEmpty ?? false) 'agent': agent,
+    // Same rule, and the same reason: absent means "this chat never recorded
+    // one", which reads back as the agent's default rather than as a choice.
+    if (surface != null) 'surface': surface!.name,
     'titleLocked': titleLocked,
     // Written only when true, so a chat still wearing its derived name is saved
     // byte-identically to what every build before this wrote.
@@ -381,6 +399,7 @@ class Conversation {
       agent: json['agent'] is String && (json['agent'] as String).isNotEmpty
           ? json['agent'] as String
           : null,
+      surface: _parseSurface(json['surface']),
       // Defaults to false, so every chat saved before this field existed stays
       // open to the agent's naming — which is what it had all along.
       titleLocked: json['titleLocked'] == true,
@@ -613,6 +632,19 @@ TurnOrigin _parseOrigin(Object? raw) {
     if (origin.name == raw) return origin;
   }
   return TurnOrigin.user;
+}
+
+/// The surface a chat recorded, or null for one that recorded none.
+///
+/// Null rather than a default, and it is the one parser here that must not fall
+/// back: an unreadable name means the chat never said, and its agent's default
+/// is the right answer. Guessing the *wrong* surface shows an empty transcript
+/// where the conversation is — see [Conversation.surface].
+AgentChatSurface? _parseSurface(Object? raw) {
+  for (final surface in AgentChatSurface.values) {
+    if (surface.name == raw) return surface;
+  }
+  return null;
 }
 
 MediaKind _parseKind(Object? raw) {

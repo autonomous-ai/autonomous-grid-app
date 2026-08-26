@@ -148,7 +148,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     List<AgentResumePoint> sessions = const [],
     ValueChanged<String>? onSessionId,
   }) async {
-    if (!tool.runsInTerminal) return;
+    if (!tool.hasInteractiveCli) return;
     // Nothing about a session can be built before the model is known: it is the
     // `--model` the CLI is started with, and it is every tier of the grid setup
     // the CLI answers from. The picker settles a frame or two after the chat

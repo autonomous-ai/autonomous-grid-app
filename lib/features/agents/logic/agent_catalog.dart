@@ -85,8 +85,8 @@ enum AgentTool {
   bool get resumesBySessionId =>
       this == AgentTool.claude || this == AgentTool.codex;
 
-  /// Whether a chat with this agent is driven through the agent's **own
-  /// interactive CLI**, in a terminal, rather than through turns the app sends.
+  /// Whether this agent has an **interactive CLI** this app can drive in a
+  /// terminal — so a chat with it *can* be shown as that program itself.
   ///
   /// True for Claude Code and Codex, and it is what gives the user back
   /// everything the one-shot text lane cannot offer: the CLI asks for permission
@@ -99,11 +99,16 @@ enum AgentTool {
   /// False for Hermes, which has no interactive CLI this app drives: it speaks
   /// ACP, and its chat is built out of those events.
   ///
-  /// It is *not* the whole story of how a chat reaches these two. A turn the app
-  /// sends by itself — a goal's next step, a loop's beat, a scheduled task — has
-  /// no keyboard behind it and still goes out through the one-shot lane
-  /// (`claude -p` / `codex exec`).
-  bool get runsInTerminal =>
+  /// **A capability, not the choice.** Whether a given chat is actually drawn
+  /// that way is `AgentChatSurface`, which the user sets per agent and a chat
+  /// then fixes when it starts — see `agentChatSurface`. This is only the half
+  /// that says the choice exists at all.
+  ///
+  /// It is *not* the whole story of how a chat reaches these two either. A turn
+  /// the app sends by itself — a goal's next step, a loop's beat, a scheduled
+  /// task — has no keyboard behind it and still goes out through the one-shot
+  /// lane (`claude -p` / `codex exec`).
+  bool get hasInteractiveCli =>
       this == AgentTool.claude || this == AgentTool.codex;
 
   /// The recipe the app runs to put this agent on the machine, or null for an
