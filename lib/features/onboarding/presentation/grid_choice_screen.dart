@@ -85,22 +85,40 @@ class _GridChoiceScreenState extends ConsumerState<GridChoiceScreen> {
       // vocabulary at all. "Choose your grid" asked them to pick one of a thing
       // they had never heard of, using its name as though they already knew it.
       title: 'Where should your chats run?',
+      // Three short sentences doing three jobs: what the word means, what to do
+      // about it, and that doing it is reversible. It sat behind the link for a
+      // while, which was wrong — a reader who does not know what a grid is
+      // cannot know to go looking behind a link for it. What belongs there is
+      // the part that is optional.
+      subtitle:
+          'A grid is a group of computers that answer your chats. Choose one '
+          'to get started. You can switch anytime.',
       children: [
-        // Above the list, because it answers the question a first-time reader
-        // has *before* they look at the rows — and folded, because a returning
-        // one already knows and would only have to scroll past it.
-        _WhatIsAGrid(
-          open: _explaining,
-          onToggle: () => setState(() => _explaining = !_explaining),
-        ),
-        const SizedBox(height: 14),
         if (hasGrids) ...[
           GridPickList(remember: _remember),
-          const SizedBox(height: 10),
-          _RememberChoice(
-            value: _remember,
-            onChanged: (next) => setState(() => _remember = next),
+          const SizedBox(height: 8),
+          // One quiet row under the list carrying both asides: what the labels
+          // on it mean, and whether this answer is kept. Neither is a step, and
+          // on separate lines they read like two more of them.
+          //
+          // Wrap, not Row: both halves grow with the user's font size, and on a
+          // narrow card they drop onto their own lines rather than overflow.
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 2,
+            children: [
+              _LabelsLink(
+                open: _explaining,
+                onToggle: () => setState(() => _explaining = !_explaining),
+              ),
+              _RememberChoice(
+                value: _remember,
+                onChanged: (next) => setState(() => _remember = next),
+              ),
+            ],
           ),
+          _LabelsReveal(open: _explaining),
           const SizedBox(height: 18),
         ],
         ChoiceRowGroup(
@@ -112,7 +130,7 @@ class _GridChoiceScreenState extends ConsumerState<GridChoiceScreen> {
               // and a heavier action under them read as a different weight of
               // thing. Who can join is the form's own first question, so the
               // row does not need to promise it in advance.
-              title: 'Create your own grid',
+              title: 'Create a new grid',
               action: ChoiceRowAction.open,
               expanded: creating,
               onPressed: () => setState(() => _creating = !creating),
@@ -142,79 +160,66 @@ class _RememberChoice extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: InkWell(
-        onTap: () => onChanged(!value),
-        borderRadius: BorderRadius.circular(AppCard.insetRadius),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Scaled rather than resized: the box shrinks to the weight of the
-              // line beside it while the hit area stays the full control, so a
-              // quieter tick is not a harder one to hit (§11).
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: Transform.scale(
-                  scale: 0.82,
-                  child: Checkbox(
-                    value: value,
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onChanged: (next) => onChanged(next ?? false),
-                  ),
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(AppCard.insetRadius),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Scaled rather than resized: the box shrinks to the weight of the
+            // line beside it while the hit area stays the full control, so a
+            // quieter tick is not a harder one to hit (§11).
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: Transform.scale(
+                scale: 0.82,
+                child: Checkbox(
+                  value: value,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (next) => onChanged(next ?? false),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Remember my choice',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  // Not `textFaint`: a control's own label has to clear 4.5:1
-                  // on this white card (§11).
-                  color: AppPalette.textSecondary,
-                ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Remember my choice',
+              style: theme.textTheme.bodySmall?.copyWith(
+                // Matched to the link it shares a row with. Not `textFaint`:
+                // a control's own label has to clear 4.5:1 on this white card,
+                // and shrinking it buys no slack there (§11).
+                fontSize: 12,
+                color: AppPalette.textSecondary,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// The folded note over the list: a link, and what it opens.
-///
-/// A link rather than a paragraph because this screen's job is to be answered,
-/// not read. The words that were here as a subtitle made every launch pay for
-/// the first one — and a subtitle is not skippable, which is the whole
-/// difference between explaining and being in the way.
-///
-/// It names both things it opens, in the order it opens them. Two clauses look
-/// long for a link this quiet, but each covers a question the card genuinely
-/// raises and neither answers the other: a reader who has never heard of a grid
-/// is not helped by a glossary of words, and one who has still meets `Owner`
-/// and `Public` here for the first time, unexplained, on the very rows they are
-/// being asked to choose between.
+/// The link half of the labels note, sized to sit in a row beside the tick.
 ///
 /// It says the words themselves rather than naming what they are. "What do
-/// these tags mean?" asks the reader to know that the coloured thing on a row
-/// is called a tag — interface vocabulary they have no reason to hold, and the
-/// wrong half of the sentence to spend their attention on. Quoting `Owner` and
-/// `Public` back to them points at something already on the screen.
-class _WhatIsAGrid extends StatelessWidget {
-  const _WhatIsAGrid({required this.open, required this.onToggle});
+/// these labels mean?" asks the reader to know that the coloured thing on a row
+/// is called a label — interface vocabulary they have no reason to hold, and
+/// the wrong half of the sentence to spend their attention on. Quoting `Owner`
+/// and `Public` back to them points at something already on the screen.
+class _LabelsLink extends StatelessWidget {
+  const _LabelsLink({required this.open, required this.onToggle});
 
   final bool open;
   final VoidCallback onToggle;
 
-  /// The words as the rows below spell them, read off [GridAccessTag] rather
+  /// The words as the rows above spell them, read off [GridAccessTag] rather
   /// than typed out again — a link quoting a label that has since been renamed
   /// points at nothing, and would do it in the one sentence promising to
   /// explain the labels.
-  static String get _tagNames {
+  static String get _names {
     final names = GridAccessTag.values.map((tag) => tag.label).toList();
     final head = names.sublist(0, names.length - 1).join(', ');
     return '$head and ${names.last}';
@@ -224,58 +229,66 @@ class _WhatIsAGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: onToggle,
-          borderRadius: BorderRadius.circular(AppCard.insetRadius),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'What’s a grid, and what do $_tagNames mean?',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppPalette.accent,
-                    fontWeight: AppFont.medium,
-                  ),
-                ),
-                const SizedBox(width: 3),
-                // Ends up pointing at what it opened, exactly as [ChoiceRow]'s
-                // marker does, so the two disclosures on this card behave alike.
-                AnimatedRotation(
-                  turns: open ? 0.25 : 0,
-                  duration: AppMotion.hover,
-                  curve: AppMotion.curve,
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 17,
-                    color: AppPalette.accent,
-                  ),
-                ),
-              ],
+    return InkWell(
+      onTap: onToggle,
+      borderRadius: BorderRadius.circular(AppCard.insetRadius),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'What do $_names mean?',
+              // A step under bodySmall, matched by the tick beside it: these
+              // two annotate the list rather than belonging to it, and at the
+              // rows' own size they competed with what they annotate.
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                color: AppPalette.accent,
+                fontWeight: AppFont.medium,
+              ),
             ),
-          ),
+            const SizedBox(width: 2),
+            // Ends up pointing at what it opened, exactly as [ChoiceRow]'s
+            // marker does, so the two disclosures on this card behave alike.
+            AnimatedRotation(
+              turns: open ? 0.25 : 0,
+              duration: AppMotion.hover,
+              curve: AppMotion.curve,
+              child: Icon(
+                Icons.chevron_right_rounded,
+                size: 15,
+                color: AppPalette.accent,
+              ),
+            ),
+          ],
         ),
-        AnimatedSize(
-          duration: AppMotion.fold,
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topCenter,
-          child: open
-              ? const Padding(
-                  padding: EdgeInsets.fromLTRB(4, 10, 0, 2),
-                  child: _GridLegend(),
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-      ],
+      ),
     );
   }
 }
 
-/// What a grid is, and what each tag on the rows below means.
+/// What the link opens, folding in under the row the link sits in.
+class _LabelsReveal extends StatelessWidget {
+  const _LabelsReveal({required this.open});
+
+  final bool open;
+
+  @override
+  Widget build(BuildContext context) => AnimatedSize(
+    duration: AppMotion.fold,
+    curve: Curves.easeOutCubic,
+    alignment: Alignment.topCenter,
+    child: open
+        ? const Padding(
+            padding: EdgeInsets.fromLTRB(4, 10, 0, 2),
+            child: _GridLegend(),
+          )
+        : const SizedBox(width: double.infinity),
+  );
+}
+
+/// What each label on the rows above means.
 ///
 /// Shows the real pills rather than naming them: the fastest answer to "what
 /// does Public mean?" is the same badge the row wears, sitting next to its
@@ -286,22 +299,9 @@ class _GridLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // In the link's own order: it asks what a grid is first, so that is what
-        // opens first. Answering the second half before the first makes the
-        // reader hunt through the panel for what they clicked for.
-        Text(
-          'A grid is a group of computers that answer your chats. You can '
-          'switch anytime.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: AppPalette.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 12),
         for (final tag in GridAccessTag.values) ...[
           _LegendRow(tag: tag),
           if (tag != GridAccessTag.values.last) const SizedBox(height: 7),
