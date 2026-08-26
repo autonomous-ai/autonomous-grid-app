@@ -468,10 +468,17 @@ jobs:
             ls dist/*"$want" >/dev/null 2>&1 \
               || echo "MISSING: no $want — that build failed" >> "$GITHUB_STEP_SUMMARY"
           done
-          # A release with no macOS DMG is not a release. Linux may be absent
-          # while it is experimental; the two that ship may not.
-          ls dist/*macOS-Apple-Silicon.dmg >/dev/null 2>&1 || {
-            echo "no Apple Silicon DMG — refusing to publish" >&2; exit 1; }
+          # A release missing EITHER macOS DMG is not a release. Both ship, and a
+          # half-published one is worse than none: the download page offers a
+          # single "Download for Mac" link, so whoever is left without their arch
+          # takes the other one — the app launches (it is universal) and then
+          # refuses the sidecar it cannot execute, i.e. "Grid needs setup" on a
+          # machine that installed exactly what we gave it. Linux may be absent
+          # while it is experimental; these two may not.
+          for dmg in macOS-Apple-Silicon macOS-Intel; do
+            ls dist/*"$dmg".dmg >/dev/null 2>&1 || {
+              echo "no $dmg DMG — refusing to publish half a macOS release" >&2; exit 1; }
+          done
           ls dist/appcast*.xml >/dev/null 2>&1 \
             && echo "- bridging the old feed to ${BRIDGE_REPO}" >> "$GITHUB_STEP_SUMMARY" \
             || echo "NO APPCAST: existing installs get no update from this release" >> "$GITHUB_STEP_SUMMARY"

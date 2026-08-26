@@ -1,19 +1,31 @@
 import '../../infrastructure/cli/cli_diagnostics.dart';
 import '../../infrastructure/cli/grid_cli_service.dart';
+import '../../infrastructure/cli/grid_resolution.dart';
 import 'grid_version.dart';
 import 'preflight_report.dart';
 
 /// Probes the host for the one thing the app depends on: a working `grid`
 /// binary. Injectable so it can run against [FakeGridCliService] in tests.
 class PreflightService {
-  PreflightService(this._service);
+  PreflightService(this._service, this._resolution);
 
   final GridCliService? _service;
 
+  /// What the resolver found and — when it found nothing — what it rejected on
+  /// the way. Without this, a sidecar skipped for its architecture is
+  /// indistinguishable from a machine that never had `grid` at all.
+  final GridResolution _resolution;
+
   Future<PreflightReport> check() async {
-    // No resolved binary at all — `grid` is simply not installed.
+    // No resolved binary at all: either `grid` is simply not installed, or the
+    // helper we ship can't run on this CPU.
     if (_service == null) {
-      return const PreflightReport(gridAvailable: false, gridVersion: null);
+      final wrongArch = _resolution.wrongArchSidecar;
+      return PreflightReport.blocked(
+        wrongArch != null
+            ? GridWrongArch(wrongArch)
+            : GridMissing(_resolution.probed),
+      );
     }
 
     final result = await _service.run(['--version']);
@@ -33,33 +45,57 @@ class PreflightService {
       // Homebrew. Fail here, in the app's voice, instead of deep inside a setup
       // the user can't interpret.
       if (!isSupportedGridVersion(parseGridVersion(version))) {
-        return PreflightReport(
-          gridAvailable: false,
+        return PreflightReport.blocked(
+          GridUnusable(outdatedGridMessage(printed)),
           gridVersion: printed,
-          gridError: outdatedGridMessage(printed),
         );
       }
 
-      return PreflightReport(gridAvailable: true, gridVersion: printed);
+      return PreflightReport.ready(printed);
     }
 
-    // Non-zero exit: `grid` is present but couldn't run. A *negative* exit code
-    // means the OS terminated it with a signal rather than the CLI failing
-    // cleanly — so there's no stderr to show and the fix is different. On macOS
-    // a SIGKILL (exit -9) is almost always Gatekeeper/AMFI blocking a helper
-    // that isn't signed/notarized or still carries the download quarantine flag;
-    // say so in plain terms instead of a cryptic "exit -9".
-    final gridError =
-        _signalError(result.exitCode) ??
-        diagnoseCliFailure(
-          '${result.stdout}\n${result.stderr}'.split('\n'),
-          headline: "The grid CLI couldn't start (exit ${result.exitCode}).",
+    return PreflightReport.blocked(_failure(result));
+  }
+
+  /// Why a non-`ok` `grid --version` failed, in words a user can act on.
+  PreflightIssue _failure(CliResult result) {
+    switch (result.outcome) {
+      // The app gave up waiting, which is not a crash and not a missing helper:
+      // say so, and don't dress -1 up as a signal (it used to read as
+      // "crashed … (signal 1)", which sent people looking for the wrong thing).
+      case CliOutcome.timedOut:
+        return const GridUnusable(
+          "The Grid helper didn't respond in time. Quit Grid, reopen it, and "
+          'check again.',
         );
-    return PreflightReport(
-      gridAvailable: false,
-      gridVersion: null,
-      gridError: gridError,
-    );
+      // A CPU mismatch the resolver could not see — the sidecar's header parsed
+      // as runnable (or this is an Intel build on an Apple Silicon Mac with no
+      // Rosetta), and the OS refused it only at spawn time.
+      case CliOutcome.spawnFailed:
+        final path = _resolution.path;
+        if (_isCpuMismatch(result.errorMessage) && path != null) {
+          return GridWrongArch(path);
+        }
+        return GridUnusable(
+          "The Grid helper wouldn't start: ${result.errorMessage}",
+        );
+      case CliOutcome.completed:
+        return GridUnusable(
+          _signalError(result.exitCode) ??
+              diagnoseCliFailure(
+                '${result.stdout}\n${result.stderr}'.split('\n'),
+                headline:
+                    "The grid CLI couldn't start (exit ${result.exitCode}).",
+              ),
+        );
+    }
+  }
+
+  /// The OS refusing a binary built for another architecture. macOS words it
+  /// "Bad CPU type in executable"; Linux's is "Exec format error".
+  static bool _isCpuMismatch(String message) {
+    final text = message.toLowerCase();
+    return text.contains('bad cpu type') || text.contains('exec format error');
   }
 
   /// A user-facing message when `grid` was killed by a signal (negative exit),

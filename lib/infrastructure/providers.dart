@@ -5,6 +5,7 @@ import 'cli/command_log.dart';
 import 'cli/file_logging_grid_cli_service.dart';
 import 'cli/grid_cli_service.dart';
 import 'cli/grid_cli_service_impl.dart';
+import 'cli/grid_resolution.dart';
 import 'cli/grid_resolver.dart';
 import 'cli/logging_grid_cli_service.dart';
 import 'cli/remote_mode_grid_cli_service.dart';
@@ -15,9 +16,16 @@ import 'state/grid_home_store.dart';
 /// path from settings gets threaded in here later.
 final gridResolverProvider = Provider<GridResolver>((ref) => GridResolver());
 
+/// Where `grid` was found — and, when it wasn't, every path that was tried and
+/// whether the bundled sidecar was skipped for the CPU it was built for.
+/// Preflight turns this into the words the user reads.
+final gridResolutionProvider = Provider<GridResolution>(
+  (ref) => ref.watch(gridResolverProvider).resolveDetailed(),
+);
+
 /// Absolute path to `grid`, or null when it cannot be found.
 final gridPathProvider = Provider<String?>(
-  (ref) => ref.watch(gridResolverProvider).resolve(),
+  (ref) => ref.watch(gridResolutionProvider).path,
 );
 
 /// The CLI seam. Null when `grid` is absent — preflight gates the rest of the
