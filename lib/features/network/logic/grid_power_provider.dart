@@ -365,12 +365,6 @@ String? _firstSegment(String name) {
 
 bool _isSeparator(String c) => c == '-' || c == '_' || c == '.' || c == ' ';
 
-/// Pluralises a unit against its count: `1 node`, `3 nodes`. Every count in the
-/// pill and panel goes through this — a grid with one machine must never read
-/// "1 nodes".
-String plural(int count, String singular, [String? plural]) =>
-    count == 1 ? singular : (plural ?? '${singular}s');
-
 /// Formats a GB figure for display: drops a trailing `.0` (`64.0 → "64"`), keeps
 /// one decimal otherwise (`446.4`), and switches to TB past 1024 so a large grid
 /// reads as "1.2 TB" instead of a four-digit GB number that no longer scans.

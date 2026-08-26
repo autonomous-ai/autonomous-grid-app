@@ -19,6 +19,7 @@
 library;
 
 import '../../../infrastructure/api/models/grid_overview.dart';
+import '../../../shared/copy/plural.dart';
 
 /// Printed in place of a figure the node did not report. An em dash, not `0`,
 /// `N/A`, or an empty string: it reads as "nothing here" at a glance without
@@ -362,8 +363,10 @@ String answeredSummary(NodeAnswered? answered) {
   if (answered == null) return '';
   final window = answeredWindowLabel(answered.windowSeconds);
   final counts =
-      '${formatCount(answered.tokensOut)} output tokens · '
-      '${formatCount(answered.requests)} requests';
+      '${formatCount(answered.tokensOut)} output '
+      '${plural(answered.tokensOut, 'token')} · '
+      '${formatCount(answered.requests)} '
+      '${plural(answered.requests, 'request')}';
   return window.isEmpty ? counts : '$window: $counts';
 }
 
@@ -379,7 +382,8 @@ String answeredByModelHint(OverviewNode node) {
   if (models.length < 2) return '';
   return [
     for (final m in models)
-      '${m.model} — ${formatCount(m.tokensOut)} output tokens · '
-          '${formatCount(m.requests)} requests',
+      '${m.model} — ${formatCount(m.tokensOut)} output '
+          '${plural(m.tokensOut, 'token')} · '
+          '${formatCount(m.requests)} ${plural(m.requests, 'request')}',
   ].join('\n');
 }

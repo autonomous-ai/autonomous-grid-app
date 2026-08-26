@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../network/logic/grid_power_provider.dart' show plural;
 import '../../../shared/widgets/composer_notice_bar.dart';
 import '../logic/chat_sessions_controller.dart';
 

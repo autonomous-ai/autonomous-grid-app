@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -623,9 +624,9 @@ class _ModelMultiSelect extends StatelessWidget {
     if (selected.length == offered) {
       return offered == models.length
           ? 'All available models ($offered)'
-          : 'All $offered models left to share';
+          : 'All $offered ${plural(offered, 'model')} left to share';
     }
-    return '${selected.length} of $offered models';
+    return '${selected.length} of $offered ${plural(offered, 'model')}';
   }
 }
 

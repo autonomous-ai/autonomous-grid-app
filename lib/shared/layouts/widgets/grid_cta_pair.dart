@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../features/auth/logic/session_controller.dart';
-import '../../../features/network/logic/grid_power_provider.dart' show plural;
 import '../../../features/network/logic/member_providers.dart';
 import '../../../features/network/presentation/share_grid_dialog.dart';
 import '../../../features/provider_node/logic/serving_engines_provider.dart';
 import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../copy/plural.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/status_dot.dart';
 import '../shell_state.dart';

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../shared/code/code_highlight.dart';
+import '../../../../shared/copy/plural.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/add_to_chat_selection.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
@@ -552,7 +553,7 @@ class _HunkHeading extends StatelessWidget {
               ),
               if (!open)
                 Text(
-                  '${hunk.rows.length} lines',
+                  '${hunk.rows.length} ${plural(hunk.rows.length, 'line')}',
                   style: AppFont.codeStyle(
                     color: AppPalette.textFaint,
                     scale: 0.85,

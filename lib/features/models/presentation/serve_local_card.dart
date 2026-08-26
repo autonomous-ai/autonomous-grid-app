@@ -6,6 +6,7 @@ import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/auto_serve_store.dart';
 import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
@@ -125,16 +126,22 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   /// The part count used to read "1 parts" for a download that had landed one
   /// shard of three: wrong as grammar, and wrong as a fact, since it offered an
   /// unloadable model as if it were ready to serve.
-  List<AppSelectBadge> _modelBadges(ModelGroup group) => [
-    AppSelectBadge(modelSizeLabel(group.sizeBytes)),
-    if (group.isComplete && group.isSplit)
-      AppSelectBadge('${group.expectedParts} parts')
-    else if (!group.isComplete)
-      AppSelectBadge(
-        'Unfinished · ${group.partCount} of ${group.expectedParts} parts',
-        tone: AppBadgeTone.warning,
-      ),
-  ];
+  List<AppSelectBadge> _modelBadges(ModelGroup group) {
+    // Hoisted so the badges can be pluralised: `isComplete` and `isSplit` each
+    // already imply a count is known, but neither promotes the nullable field.
+    final expected = group.expectedParts;
+    return [
+      AppSelectBadge(modelSizeLabel(group.sizeBytes)),
+      if (group.isComplete && group.isSplit && expected != null)
+        AppSelectBadge('$expected ${plural(expected, 'part')}')
+      else if (!group.isComplete && expected != null)
+        AppSelectBadge(
+          'Unfinished · ${group.partCount} of $expected '
+          '${plural(expected, 'part')}',
+          tone: AppBadgeTone.warning,
+        ),
+    ];
+  }
 
   /// Keeps the start-on-open record in step with the form. No-ops unless the
   /// box is ticked *for this model*.
@@ -413,13 +420,17 @@ class _ServeActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    // An incomplete group always knows how many shards it wants — `isComplete`
+    // is true whenever it doesn't — but the field stays nullable to the reader.
+    final expected = selected.expectedParts;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!selected.isComplete) ...[
+        if (!selected.isComplete && expected != null) ...[
           Text(
             "This model didn't finish downloading — ${selected.partCount} of "
-            '${selected.expectedParts} parts are here. It needs all of them '
+            '$expected ${plural(expected, 'part')} '
+            '${expected == 1 ? 'is' : 'are'} here. It needs all of them '
             'before it can run.',
             style: Theme.of(
               context,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/member_usage.dart';
 import '../../../infrastructure/api/relay_api_client.dart';
 import '../../../infrastructure/cli/command_log.dart';
+import '../../../shared/copy/plural.dart';
 import '../../auth/logic/session_controller.dart';
 import 'node_metrics.dart' show answeredWindowLabel, formatCount;
 
@@ -167,8 +168,10 @@ String memberInputTotalLabel(Iterable<MemberUsage?> rows, int windowSeconds) {
 /// them raw would show a person three numbers adding up to more than they used,
 /// and the error grows with how well their cache works.
 List<String> memberUsageLines(MemberUsage usage) => [
-  '${formatCount(usage.requests)} requests · '
-      '${formatCount(usage.freshInputTokens)} input tokens',
+  '${formatCount(usage.requests)} ${plural(usage.requests, 'request')} · '
+      '${formatCount(usage.freshInputTokens)} input '
+      '${plural(usage.freshInputTokens, 'token')}',
   '${formatCount(usage.tokensCached)} from cache · '
-      '${formatCount(usage.tokensOut)} output tokens',
+      '${formatCount(usage.tokensOut)} output '
+      '${plural(usage.tokensOut, 'token')}',
 ];

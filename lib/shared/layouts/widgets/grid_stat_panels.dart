@@ -15,6 +15,7 @@ import '../../../features/network/logic/node_metrics.dart'
 import '../../../features/network/presentation/share_grid_dialog.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/api/models/member_usage.dart';
+import '../../copy/plural.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/skeleton.dart';
 import 'pill_panel_shell.dart';
@@ -257,7 +258,7 @@ class _GridMembersListState extends ConsumerState<GridMembersList> {
                   // column adds up to its own header — it can read lower than the
                   // pill's grid-wide input figure, which also counts people the
                   // roster no longer lists and consumers the relay could not name.
-                  label: '${rows.length} members',
+                  label: '${rows.length} ${plural(rows.length, 'member')}',
                   trailing: usage == null
                       ? null
                       : memberInputTotalLabel(
@@ -603,30 +604,29 @@ class _MemberDetailLine extends StatelessWidget {
   final MemberUsage? usage;
 
   /// Whether the usage call is still out. The two lines are then bars rather
-  /// than words: the hint ("Point at a member…") would be an invitation to hover
-  /// for numbers that cannot be shown yet.
+  /// than blank, so the block reads as figures on their way rather than a gap.
   final bool loading;
 
-  /// One line of this block, text or bar. Set explicitly so the skeleton can be
-  /// the same height as the sentence it stands in for.
+  /// One line of this block, text or bar. Set explicitly so the skeleton and the
+  /// idle blank are the same height as the figures they stand in for.
   static const double _fontSize = 11.5;
   static const double _lineHeight = 1.3;
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final measured = usage != null;
-    // Always two lines, hovered or not. The idle state spends the first saying
-    // what to do and leaves the second empty — an empty `Text` still lays out
-    // its line box, so the height holds without a hardcoded number that OS text
-    // scaling would clip.
-    final lines = measured
-        ? memberUsageLines(usage!)
-        : const ['Point at a member for their 24h split.', ''];
+    // Always two lines, hovered or not. The idle state leaves both empty rather
+    // than spending one on a hint to hover: the rows are plainly a list, and a
+    // sentence saying so sat under every open panel forever. An empty `Text`
+    // still lays out its line box, so the height holds — and it must, or the
+    // rows shift under a pointer already resting on them — without a hardcoded
+    // number that OS text scaling would clip.
+    final usage = this.usage;
+    final lines = usage == null ? const ['', ''] : memberUsageLines(usage);
     final style = TextStyle(
       fontSize: _fontSize,
       height: _lineHeight,
-      color: measured ? AppPalette.textSecondary : AppPalette.textFaint,
+      color: AppPalette.textSecondary,
       fontFeatures: AppFont.tabularFigures,
     );
     return Padding(
@@ -1189,10 +1189,13 @@ class GridTokensList extends ConsumerWidget {
           trailing: window.isEmpty ? null : 'last $window',
         ),
         const SizedBox(height: 10),
+        // The unit is pluralised off the raw count, not off what `formatCount`
+        // printed: past a thousand it prints "1.2M" and the noun beside it is
+        // still plural, and only the count itself knows that.
         PillPanelStatRow(
           label: 'Input',
           value: formatCount(answered.freshInputTokens),
-          unit: 'tokens',
+          unit: plural(answered.freshInputTokens, 'token'),
         ),
         // Kept at zero: a grid whose cache never hits should be able to see
         // that, and a row that vanishes at zero makes the rest look like the
@@ -1200,12 +1203,12 @@ class GridTokensList extends ConsumerWidget {
         PillPanelStatRow(
           label: 'Cached',
           value: formatCount(answered.tokensCached),
-          unit: 'tokens',
+          unit: plural(answered.tokensCached, 'token'),
         ),
         PillPanelStatRow(
           label: 'Output',
           value: formatCount(answered.tokensOut),
-          unit: 'tokens',
+          unit: plural(answered.tokensOut, 'token'),
         ),
         PillPanelStatRow(
           label: 'Answered',

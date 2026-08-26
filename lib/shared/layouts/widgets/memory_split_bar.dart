@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
+import '../../copy/plural.dart';
 import '../../theme/app_theme.dart';
 
 /// One machine's share of the grid's GPU memory: what to draw, what to call it,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/copy/plural.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
@@ -482,7 +483,8 @@ class _Footer extends StatelessWidget {
             // long before `totalCount`, so this says how many are *on screen*
             // out of how many matched, and never claims the rest are reachable.
             Text(
-              '${state.entries.length} of ${state.totalCount} matches',
+              '${state.entries.length} of ${state.totalCount} '
+              '${plural(state.totalCount, 'match', 'matches')}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: AppPalette.textFaint,
               ),
@@ -511,9 +513,11 @@ class _Footer extends StatelessWidget {
       child: Center(
         child: Text(
           capped
-              ? '${state.entries.length} of ${state.totalCount} matches — '
+              ? '${state.entries.length} of ${state.totalCount} '
+                    '${plural(state.totalCount, 'match', 'matches')} — '
                     'search to narrow it down'
-              : 'All ${state.entries.length} servers',
+              : 'All ${state.entries.length} '
+                    '${plural(state.entries.length, 'server')}',
           textAlign: TextAlign.center,
           style: theme.textTheme.bodySmall?.copyWith(
             color: AppPalette.textFaint,

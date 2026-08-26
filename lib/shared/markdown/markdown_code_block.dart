@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../code/code_highlight.dart';
+import '../copy/plural.dart';
 import '../theme/app_theme.dart';
 import '../widgets/code_text_scope.dart';
 
@@ -204,7 +205,7 @@ class _FoldBarState extends State<_FoldBar> {
     // whether to open a block wants to know whether it is eight more lines or
     // eight hundred.
     final label = widget.folded
-        ? 'Show all ${widget.lines} lines'
+        ? 'Show all ${widget.lines} ${plural(widget.lines, 'line')}'
         : 'Show less';
     final ink = _hovered ? AppPalette.textPrimary : AppPalette.textSecondary;
     return Material(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/copy/plural.dart';
 import '../../../shared/layouts/onboarding_page.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -49,7 +50,7 @@ class _InstallerScreenState extends ConsumerState<InstallerScreen> {
     return OnboardingPage(
       title: installerHeadline(state),
       subtitle: installerSubtitle(state),
-      meta: '$done of ${rows.length} steps',
+      meta: '$done of ${rows.length} ${plural(rows.length, 'step')}',
       children: [
         AppProgressBar(value: rows.isEmpty ? 0 : done / rows.length),
         const SizedBox(height: 20),
