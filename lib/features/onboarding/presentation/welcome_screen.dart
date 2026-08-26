@@ -37,18 +37,22 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Honour Reduce Motion by showing the finished grid instead of the story:
-    // the whole point survives as a still, and nothing here is only legible in
-    // motion. Held rather than played, exactly like OnboardingBackdrop.
+    // Honour Reduce Motion by holding one frame instead of playing the story:
+    // late enough that all three numbers have said what they have to say, early
+    // enough that the picture is still whole rather than half-dissolved. The
+    // whole point survives as a still — nothing here is only legible in motion.
+    // Held rather than played, exactly like OnboardingBackdrop.
     if (MediaQuery.of(context).disableAnimations) {
       _timeline.stop();
-      _timeline.value = (kGridFinaleAt + 0.6) / kWelcomeLoopSeconds;
+      _timeline.value = kSettledAt / kWelcomeLoopSeconds;
       return;
     }
     // Loops, because there is no telling how long someone looks at it: a grid
     // frozen mid-assembly is a screen that broke, and one frozen complete has
     // thrown away the only thing it had to say. The turn dissolves at its seam
-    // (see [loopFade]) so the restart reads as a breath, not a cut.
+    // (see [loopFade]) so the restart reads as a breath, not a cut — and the
+    // last wave is still arriving as it goes, which is the only honest way to
+    // draw "and it keeps going".
     if (!_timeline.isAnimating) _timeline.repeat();
   }
 
