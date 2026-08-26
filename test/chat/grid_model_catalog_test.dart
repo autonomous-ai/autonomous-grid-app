@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/chat/logic/grid_model_catalog.dart';
+import 'package:grid_app/features/chat/logic/routing_group.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/features/network/logic/network_models_provider.dart';
+import 'package:grid_app/features/playground/logic/playground_models.dart';
+import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
 
@@ -194,6 +197,192 @@ void main() {
       container.read(gridModelCatalogProvider).single.options.map((o) => o.id),
       ['maker/m1', 'maker/m2'],
     );
+  });
+
+  group('the orchestrator rows offered beside a grid\'s models', () {
+    test('a grid with no auto router offers none, so no row can be tapped '
+        'into a mode the grid has nothing to run', () {
+      expect(
+        routingModeOptions(const [
+          PlaygroundModelOption(
+            id: 'qwen',
+            label: 'qwen',
+            modality: PlaygroundModality.text,
+          ),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('a grid serving auto offers one row per mode, each named the way '
+        'the mode is named everywhere else', () {
+      // The relay's own `/models` never lists a bare `auto` id (one name per
+      // row, so a generic client can tell the modes apart) — it lists this
+      // display name instead. See `_kAutoRouterDisplayName`.
+      final rows = routingModeOptions(const [
+        PlaygroundModelOption(
+          id: 'Auto',
+          label: 'Auto',
+          modality: PlaygroundModality.text,
+        ),
+        PlaygroundModelOption(
+          id: 'maker/a',
+          label: 'maker/a',
+          modality: PlaygroundModality.text,
+        ),
+        PlaygroundModelOption(
+          id: 'maker/b',
+          label: 'maker/b',
+          modality: PlaygroundModality.text,
+        ),
+      ]);
+
+      expect(rows.map((o) => o.id), [
+        for (final mode in RoutingMode.values) routingModelId(mode),
+      ]);
+      expect(rows.map((o) => o.label), ['Brute Force', 'Feedback Loop']);
+    });
+
+    test("the rows read images exactly when the router does — they are the "
+        "router, so a vision lock must not answer differently for them", () {
+      const realModels = [
+        PlaygroundModelOption(
+          id: 'maker/a',
+          label: 'maker/a',
+          modality: PlaygroundModality.text,
+        ),
+        PlaygroundModelOption(
+          id: 'maker/b',
+          label: 'maker/b',
+          modality: PlaygroundModality.text,
+        ),
+      ];
+      const seeing = PlaygroundModelOption(
+        id: 'Auto',
+        label: 'Auto',
+        modality: PlaygroundModality.text,
+        vision: true,
+      );
+      const blind = PlaygroundModelOption(
+        id: 'Auto',
+        label: 'Auto',
+        modality: PlaygroundModality.text,
+      );
+
+      expect(
+        routingModeOptions([seeing, ...realModels]).every((o) => o.vision),
+        isTrue,
+      );
+      expect(
+        routingModeOptions([blind, ...realModels]).any((o) => o.vision),
+        isFalse,
+      );
+    });
+
+    test('a bare-lowercase "auto" row is not the relay\'s router signal — '
+        'the relay never sends one, so trusting it would leave the rows '
+        'permanently empty on every real grid', () {
+      expect(
+        routingModeOptions(const [
+          PlaygroundModelOption(
+            id: 'auto',
+            label: 'auto',
+            modality: PlaygroundModality.text,
+          ),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('a router with zero real models offers no row — the dialog it '
+        'would open has nothing to pick and no way to confirm', () {
+      expect(
+        routingModeOptions(const [
+          PlaygroundModelOption(
+            id: 'Auto',
+            label: 'Auto',
+            modality: PlaygroundModality.text,
+          ),
+        ]),
+        isEmpty,
+      );
+    });
+
+    test('a router with exactly one real model still offers no row — Brute '
+        'Force and Feedback Loop both need two to route between', () {
+      expect(
+        routingModeOptions(const [
+          PlaygroundModelOption(
+            id: 'Auto',
+            label: 'Auto',
+            modality: PlaygroundModality.text,
+          ),
+          PlaygroundModelOption(
+            id: 'maker/a',
+            label: 'maker/a',
+            modality: PlaygroundModality.text,
+          ),
+        ]),
+        isEmpty,
+      );
+    });
+  });
+
+  group('answerableGridOptions', () {
+    test('drops the relay\'s own "Brute Force" / "Feedback Loop" catalog '
+        'rows — routingModeOptions already offers the same two modes, and a '
+        'tap on the relay\'s row skips the Fixed/Dynamic choice entirely', () {
+      const models = [
+        PlaygroundModelOption(
+          id: 'Auto',
+          label: 'Auto',
+          modality: PlaygroundModality.text,
+        ),
+        PlaygroundModelOption(
+          id: 'Brute Force',
+          label: 'Brute Force',
+          modality: PlaygroundModality.text,
+        ),
+        PlaygroundModelOption(
+          id: 'Feedback Loop',
+          label: 'Feedback Loop',
+          modality: PlaygroundModality.text,
+        ),
+        PlaygroundModelOption(
+          id: 'qwen',
+          label: 'qwen',
+          modality: PlaygroundModality.text,
+        ),
+      ];
+
+      expect(answerableGridOptions(models).map((o) => o.id), [
+        'Auto',
+        'qwen',
+      ]);
+    });
+
+    test('also drops "Auto" once there are zero real models behind it — '
+        'a router with nothing to route to is not a model to pick either', () {
+      const models = [
+        PlaygroundModelOption(
+          id: 'Auto',
+          label: 'Auto',
+          modality: PlaygroundModality.text,
+        ),
+        PlaygroundModelOption(
+          id: 'Brute Force',
+          label: 'Brute Force',
+          modality: PlaygroundModality.text,
+        ),
+        PlaygroundModelOption(
+          id: 'Feedback Loop',
+          label: 'Feedback Loop',
+          modality: PlaygroundModality.text,
+        ),
+      ];
+
+      expect(answerableGridOptions(models), isEmpty);
+    });
   });
 
   test('catalog is empty when no grid is selected', () {

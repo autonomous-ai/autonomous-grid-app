@@ -17,7 +17,19 @@ const String kGridChatIdEnv = 'GRID_CHAT_ID';
 /// Empty when the turn has no conversation yet — a chat that hasn't been saved
 /// has no id to deliver into, and an empty variable would have the agent write
 /// `grid:chat:` into a job nothing could route.
-Map<String, String> gridTurnEnv(String? conversationId) =>
-    conversationId == null || conversationId.isEmpty
-    ? const {}
-    : {kGridChatIdEnv: conversationId};
+Map<String, String> gridTurnEnv(String? conversationId, {String? turnId}) {
+  final env = <String, String>{
+    if (turnId != null && turnId.isNotEmpty) ...{
+      // Both CLIs hand these through as their outbound request header. Claude
+      // Code reads `ANTHROPIC_CUSTOM_HEADERS` ("Name: Value"); Codex reads
+      // `OPENAI_CUSTOM_HEADERS`. Each lands as the same X-Request-Id so the
+      // relay attributes every call of this turn to one id.
+      'ANTHROPIC_CUSTOM_HEADERS': 'X-Request-Id: $turnId',
+      'OPENAI_CUSTOM_HEADERS': 'X-Request-Id: $turnId',
+    },
+  };
+  if (conversationId != null && conversationId.isNotEmpty) {
+    env[kGridChatIdEnv] = conversationId;
+  }
+  return env;
+}

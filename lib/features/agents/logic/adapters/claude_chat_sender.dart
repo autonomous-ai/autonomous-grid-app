@@ -179,6 +179,7 @@ class ClaudeChatSender implements ChatSender {
     String? localBaseUrl,
     String? workdir,
     String? conversationId,
+    String? turnId,
     String? instructions,
     String? agentCommand,
     bool planFirst = false,
@@ -284,7 +285,7 @@ class ClaudeChatSender implements ChatSender {
     final environment = {
       // On both lanes: it says which chat this turn is in, which has nothing to
       // do with who serves the model.
-      ...gridTurnEnv(conversationId),
+      ...gridTurnEnv(conversationId, turnId: turnId),
       ...onExtension
           ? const <String, String>{}
           : claudeCodeEnv(

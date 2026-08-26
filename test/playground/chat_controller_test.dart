@@ -45,10 +45,12 @@ class _FakeChatTransport implements ChatTransport {
 
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     this.endpoint = endpoint;
     this.messages = messages;
@@ -69,10 +71,12 @@ class _DeltaTransport implements ChatTransport {
 
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     for (final delta in deltas) {
       yield ChatDelta(delta);
@@ -137,6 +141,7 @@ class _OpenStreamSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) => controller.stream;
 }

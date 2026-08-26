@@ -41,6 +41,19 @@ class AppEnvironment {
   static const _prodControlPlaneUrl = 'https://api-grid.autonomous.ai/';
   static const _prodWebsiteUrl = 'https://grid.autonomous.ai';
 
+  /// The page that actually hands out the app.
+  ///
+  /// Not [_prodWebsiteUrl]: that host serves `/install.sh` (200) but 404s at its
+  /// root and at `/download` — measured 2026-08-26 — so the preflight "get help"
+  /// button used to open a 404 for anyone it was meant to rescue. This page is
+  /// where the DMG links live.
+  ///
+  /// TODO(BE): it offers ONE Mac build, labelled "Apple Silicon", while CI
+  /// publishes an Intel DMG for every release (measured 2026-08-26). That is how
+  /// an Intel user ends up with an arm64 sidecar the app has to refuse, and the
+  /// preflight screen then has to explain.
+  static const _prodDownloadsUrl = 'https://autonomous.ai/grid';
+
   /// Control-plane (Hermes) base URL for the app's own HTTP calls. Staging
   /// override honoured only in dev; release is pinned to prod.
   static String get controlPlaneUrl =>
@@ -53,6 +66,12 @@ class AppEnvironment {
         RegExp(r'/+$'),
         '',
       );
+
+  /// Where to send someone who needs the app itself — the wrong build for their
+  /// Mac, or no working helper at all. Follows the website override in dev so a
+  /// staging build doesn't point at the public page.
+  static String get downloadsUrl =>
+      _devOverride(websiteEnvKey) ?? _prodDownloadsUrl;
 
   /// True when a dev override is pointing the app at a non-prod backend — use it
   /// to surface a "you're on staging" hint in the UI if desired.

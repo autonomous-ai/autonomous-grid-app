@@ -106,3 +106,4 @@ device/*/.cache/
 #
 # assets/panel/ itself must keep existing: pubspec.yaml declares it and Flutter
 # fails the build outright on a declared asset directory that is absent.
+.worktrees/

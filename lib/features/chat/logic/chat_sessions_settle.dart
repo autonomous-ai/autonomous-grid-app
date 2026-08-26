@@ -109,6 +109,15 @@ mixin _ChatSettle on _ChatSessions {
   /// waiting, so this is something the user can see go.
   @override
   void _cancel(String id) {
+    // Stop polling this chat's turn usage. Stop/Delete land here but never
+    // reach [_settleModelShares], and a leaked timer polled /usage/turn every
+    // 5s forever — one per failed/stopped chat, piling up into a request
+    // flood. Guarded by `_disposed`: this same method runs from `_cancelAll`
+    // on ref.onDispose, where Riverpod forbids touching other providers (the
+    // usage provider's own onDispose cancels its timers at teardown anyway).
+    if (!_disposed) {
+      ref.read(turnModelUsageProvider.notifier).stop(id);
+    }
     _retryableTurns.remove(id);
     _turnActivityAt.remove(id);
     final sub = _subs.remove(id);

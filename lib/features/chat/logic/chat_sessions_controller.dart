@@ -7,6 +7,7 @@ import '../../../core/app_environment.dart';
 import '../../../core/text_preview.dart';
 import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
+import '../../../infrastructure/api/relay_api_client.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/logging/app_log.dart';
@@ -54,6 +55,7 @@ import 'chat_store.dart';
 import 'conversation.dart';
 import 'interrupted_turn.dart';
 import 'loop_claim.dart';
+import 'routing_group.dart';
 
 /// Re-exported so every file that already imports the controller keeps seeing
 /// [ChatSessionsState] — moving the state out is not a change any caller has to
@@ -171,6 +173,13 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// request.
   final Set<String> _naming = {};
 
+  /// The most recent routing group the user set up, carried across chats so a
+  /// fresh conversation (new chat / blank composer) reuses the same brute-force
+  /// or feedback flow instead of silently dropping back to the grid's ordinary
+  /// pick. Seeded from the most recently touched routed chat on restore, so it
+  /// survives a restart too. null until the user has routed any chat.
+  RoutingGroup? _lastRoutingGroup;
+
   ChatStore get _store => ref.read(chatStoreProvider);
 
   /// The open conversation, or a fresh (unsaved) one seeded with [model] and the
@@ -179,13 +188,19 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     final active = state.active;
     if (active != null) return active;
     final now = DateTime.now();
+    // A fresh chat reuses the routing the user last set up, so it keeps the same
+    // brute-force / feedback flow they expect instead of dropping back to the
+    // grid's ordinary pick. Must also route the model to the mode's own slot id
+    // (`auto/brute_force`), because [wireModelFor] keys the routing off it.
+    final last = _lastRoutingGroup;
     return Conversation(
       id: now.microsecondsSinceEpoch.toString(),
       title: kNewConversationTitle,
-      model: model,
+      model: last != null ? routingModelId(last.mode) : model,
       createdAt: now,
       updatedAt: now,
       projectId: state.draftProjectId,
+      routingGroup: last,
     );
   }
 
@@ -459,6 +474,15 @@ class ChatSessionsController extends _ChatSessions
           ? state.activeId
           : (opening.isEmpty ? null : opening.first.id),
     );
+    // A restart must remember the last routing the user set up, so a new chat
+    // created now keeps the same brute-force / feedback flow. The most recently
+    // touched routed chat is the best stand-in for "the last one used".
+    for (final c in merged) {
+      if (c.routingGroup != null) {
+        _lastRoutingGroup = c.routingGroup;
+        break; // merged is sorted newest-first
+      }
+    }
     // Last, and only here: the history has to be in state before a loop can be
     // found in it, and this is the one path that reads *this* computer's own
     // chat folder (see [_stopForeignLoop] for the other one).
@@ -813,6 +837,44 @@ class ChatSessionsController extends _ChatSessions
     if (active == null || active.model == model) return;
     final updated = active.copyWith(model: model);
     _saveAndReplace(updated);
+  }
+
+  /// Route the open chat through [group] — which models answer in it, and
+  /// whether that pick is held or re-made every turn (see [RoutingGroup]).
+  ///
+  /// Starts the chat when the user is standing on a blank composer, the way
+  /// `/goal` does: the setup dialog this lands from spends a real request
+  /// asking the grid which models to use, and there would be nothing to keep
+  /// the answer on otherwise. The fresh chat is seeded with the mode's own
+  /// model id ([routingModelId]) — the row the picker has just moved to.
+  ///
+  /// Leaves `updatedAt` alone, like [setActiveModel]: choosing how a chat is
+  /// routed is not talking in it, and must not re-sort the sidebar.
+  void setRoutingGroup(RoutingGroup group) {
+    _lastRoutingGroup = group;
+    final active = state.active;
+    if (active != null) {
+      if (active.routingGroup == group) return;
+      _saveAndReplace(active.copyWith(routingGroup: group));
+      return;
+    }
+    _commit(
+      _activeOrNew(routingModelId(group.mode)).copyWith(routingGroup: group),
+      phase: const SendIdle(),
+      makeActive: true,
+    );
+  }
+
+  /// Hand the open chat back to the grid's ordinary pick — what choosing a
+  /// plain model in the picker means, since a group left behind would go on
+  /// pinning models the composer no longer names.
+  ///
+  /// A no-op for a chat that was never routed, so switching models in an
+  /// ordinary chat writes nothing.
+  void clearRoutingGroup() {
+    final active = state.active;
+    if (active == null || active.routingGroup == null) return;
+    _saveAndReplace(active.copyWith(clearRoutingGroup: true));
   }
 
   /// Set how much the assistant may do without asking.

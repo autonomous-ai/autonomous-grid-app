@@ -15,6 +15,7 @@ import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
+import 'package:grid_app/features/chat/logic/routing_group.dart';
 import 'package:grid_app/features/agents/logic/agent_session_title.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_chat_sender.dart';
@@ -30,8 +31,10 @@ import 'package:grid_app/features/chat/logic/chat_scope.dart';
 import 'package:grid_app/features/playground/logic/playground_models.dart';
 import 'package:grid_app/infrastructure/api/chat_transport.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
+import 'package:grid_app/features/chat/logic/turn_model_share.dart';
 import 'package:grid_app/features/network/logic/grid_overview_provider.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
+import 'package:grid_app/infrastructure/api/relay_api_client.dart';
 import 'package:grid_app/features/playground/logic/chat_sender.dart';
 import 'package:grid_app/features/playground/logic/media_outputs.dart';
 import 'package:grid_app/features/playground/logic/message_media.dart';
@@ -89,6 +92,7 @@ class _FakeSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     this.history = history;
@@ -133,6 +137,7 @@ class _ScriptedSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     histories.add(history);
@@ -169,6 +174,7 @@ class _OpenEndedSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) => _controller.stream;
 }
@@ -200,6 +206,7 @@ class _PerChatSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     final id = conversationId!;
@@ -232,6 +239,7 @@ class _HangAfterFirstSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     calls++;
@@ -270,6 +278,7 @@ class _StreamingLoopSender implements ChatSender {
     String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
+    String? turnId,
     AgentResumePoint? resume,
   }) {
     calls++;
@@ -301,6 +310,68 @@ class _FlippableNetwork extends SelectedNetwork {
     dropped = true;
     ref.invalidateSelf();
   }
+}
+
+/// Stands in for the relay's `/usage/turn/{turnId}` endpoint, so a turn
+/// landing never reaches the real network — every other test in this file
+/// leaves this on its default (no models), which resolves instantly and
+/// changes nothing about the turn it lands.
+class _FakeUsageRelay implements RelayApiClient {
+  _FakeUsageRelay({this.response = const <ModelShare>[]});
+
+  /// Mutable, so a test can change what the *next* call returns.
+  List<ModelShare> response;
+
+  /// Throw instead of answering, for the turn-still-lands-on-failure case.
+  Object? failWith;
+
+  /// When set, a call *waits right here* until the test completes it —
+  /// instead of guessing at a real delay's timing, this pins the read to a
+  /// window a test can act inside deterministically (stop the turn, delete
+  /// the chat) before letting it finish. Also what proves the turn's landing
+  /// genuinely waits on this call rather than merely happening to, since an
+  /// instantly-resolving fake can't tell a paused subscription from an
+  /// unpaused one that just got lucky (see the race [chat_sessions_send.dart]
+  /// documents on `_attachOrchestrationUsage`).
+  Completer<void>? hold;
+
+  /// Every turn id this was asked for, in call order. Both the attach read and
+  /// the background [turnModelUsageProvider] poll hit the same fake with the
+  /// same turn id, so a bare count cannot tell the two apart — assert on the
+  /// observable outcome (landed `orchestrationModels`) instead of counts.
+  final calls = <String>[];
+
+  @override
+  Future<List<ModelShare>> usageTurn({
+    required String baseUrl,
+    required String apiKey,
+    required String turnId,
+  }) async {
+    calls.add(turnId);
+    final gate = hold;
+    if (gate != null) await gate.future;
+    final fail = failWith;
+    if (fail != null) throw fail;
+    return response;
+  }
+
+  @override
+  Future<List<String>> models({
+    required String baseUrl,
+    required String apiKey,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<GridOverview> overview({
+    required String baseUrl,
+    required String apiKey,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<MemberUsageReport?> memberUsage({
+    required String baseUrl,
+    required String apiKey,
+  }) => throw UnimplementedError();
 }
 
 /// The agent's own name for a session, handed back the moment it's asked for —
@@ -367,6 +438,7 @@ OverviewNode _node(String name, {List<String> models = const []}) =>
   _FakeSender agent,
   _FakeAgentTitle agentTitle,
   _FakeTitleWriter titleWriter,
+  _FakeUsageRelay relay,
 })
 _harness(
   Directory dir, {
@@ -382,15 +454,21 @@ _harness(
   Duration? loopContinuousGap,
   Duration? loopResumeSettle,
   SelectedNetwork Function()? selectedNetwork,
+  _FakeUsageRelay? relay,
 }) {
   final store = ChatStore(directory: dir);
   final sender = _FakeSender(updates);
   final agent = _FakeSender(updates);
   final agentTitle = _FakeAgentTitle(agentName, held: holdAgentName);
   final titleWriter = _FakeTitleWriter(modelName);
+  final usageRelay = relay ?? _FakeUsageRelay();
   final container = ProviderContainer(
     overrides: [
       chatStoreProvider.overrideWithValue(store),
+      // Every turn's landing now reads `/usage` (see
+      // [_attachOrchestrationUsage]) — keep it off the real network like
+      // everything else here, unless a test hands in its own.
+      relayApiClientProvider.overrideWithValue(usageRelay),
       // Shorten the stall window so a test can prove a hung loop turn is stopped
       // — and a working one is left alone — without waiting the full hour.
       if (loopTurnStall != null)
@@ -468,6 +546,7 @@ _harness(
     agent: agent,
     agentTitle: agentTitle,
     titleWriter: titleWriter,
+    relay: usageRelay,
   );
 }
 
@@ -718,6 +797,297 @@ void main() {
           .node,
       isNull,
     );
+  });
+
+group('turn settle reads the grid\'s usage log', () {
+    // Every test below routes its chat first, because only a routed chat reads
+    // the log at all: the breakdown has one reader (the orchestration strip),
+    // which draws nothing without a group, so an unrouted turn must never pay
+    // the read's wait. The last test in the group holds that line.
+    const routed = RoutingGroup(
+      mode: RoutingMode.bruteForce,
+      isFixed: true,
+      models: ['a', 'b'],
+    );
+    const routedModel = 'auto/brute_force';
+
+    test('a landed routed turn reads which models actually served it and '
+        'stamps them onto its message, persisted not merely held in memory',
+        () async {
+      final relay = _FakeUsageRelay(
+        response: const [ModelShare(model: 'qwen', requests: 2)],
+      );
+      final h = _harness(
+        tmp,
+        relay: relay,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+      final chat = h.container.read(chatSessionsProvider.notifier)
+        ..setRoutingGroup(routed);
+
+      await chat.send(
+        network: _credential(),
+        model: routedModel,
+        message: 'hi',
+      );
+
+      final conv = h.container.read(chatSessionsProvider).conversations.single;
+      // The attach read's answer is on the landed message (the background
+      // poll feeds a different field via turnModelUsageProvider).
+      expect(conv.messages.last.orchestrationModels, [
+        const ModelShare(model: 'qwen', requests: 2),
+      ]);
+      expect(
+        relay.calls,
+        isNotEmpty,
+        reason: 'a routed turn reads usage',
+      );
+
+      // Persisted, not only held in memory.
+      final reloaded = await ChatStore(directory: tmp).loadAll();
+      expect(reloaded.single.messages.last.orchestrationModels, [
+        const ModelShare(model: 'qwen', requests: 2),
+      ]);
+    });
+
+    test('a turn genuinely waits for its usage read to finish before landing — '
+        'not merely correct on an instant fake, which an unpaused version '
+        'would pass too, only by luck of the microtask ordering', () async {
+      final relay = _FakeUsageRelay(
+        response: const [ModelShare(model: 'qwen', requests: 2)],
+      )..hold = Completer<void>();
+      final h = _harness(
+        tmp,
+        relay: relay,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+      final chat = h.container.read(chatSessionsProvider.notifier)
+        ..setRoutingGroup(routed);
+
+      final sent = chat.send(
+        network: _credential(),
+        model: routedModel,
+        message: 'hi',
+      );
+      // Let the turn reach the usage read and stall there — not landed yet.
+      await pumpEventQueue();
+      final mid = h.container.read(chatSessionsProvider).conversations.single;
+      expect(mid.messages.map((m) => m.role), [ChatRole.user]);
+
+      relay.hold!.complete();
+      await sent;
+
+      final conv = h.container.read(chatSessionsProvider).conversations.single;
+      expect(conv.messages.last.orchestrationModels, [
+        const ModelShare(model: 'qwen', requests: 2),
+      ]);
+    });
+
+    test(
+      'Stop while a turn\'s usage read is still in flight leaves the stop in '
+      'place — the read finishing afterward must not overwrite it with the '
+      'full reply it never got to see land',
+      () async {
+        final relay = _FakeUsageRelay(
+          response: const [ModelShare(model: 'qwen', requests: 2)],
+        )..hold = Completer<void>();
+        final h = _harness(
+          tmp,
+          relay: relay,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+            ),
+          ],
+        );
+        final chat = h.container.read(chatSessionsProvider.notifier)
+          ..setRoutingGroup(routed);
+
+        final sent = chat.send(
+          network: _credential(),
+          model: routedModel,
+          message: 'hi',
+        );
+        // Let the attach read reach the gate so it is actually in flight.
+        await pumpEventQueue();
+
+        // The user hits Stop while the read is still in flight.
+        chat.stop();
+
+        // Only now does the read resolve — after the turn was already
+        // stopped.
+        relay.hold!.complete();
+        await sent;
+        await pumpEventQueue();
+
+        final conv = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single;
+        // Stop wins: nothing had streamed, so no assistant message landed —
+        // and critically, the reply the read was fetching usage *for* never
+        // gets to write itself in on top of that afterward.
+        expect(conv.messages.map((m) => m.role), [ChatRole.user]);
+        expect(h.container.read(chatSessionsProvider).sending, isFalse);
+      },
+    );
+
+    test(
+      'deleting a chat while its turn\'s usage read is still in flight keeps '
+      'it deleted — the read finishing afterward must not resurrect it',
+      () async {
+        final relay = _FakeUsageRelay(
+          response: const [ModelShare(model: 'qwen', requests: 2)],
+        )..hold = Completer<void>();
+        final h = _harness(
+          tmp,
+          relay: relay,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+            ),
+          ],
+        );
+        final chat = h.container.read(chatSessionsProvider.notifier)
+          ..setRoutingGroup(routed);
+
+        final sent = chat.send(
+          network: _credential(),
+          model: routedModel,
+          message: 'hi',
+        );
+        // Let the attach read reach the gate so it is actually in flight.
+        await pumpEventQueue();
+
+        final id = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single
+            .id;
+        chat.deleteConversation(id);
+
+        // Only now does the read resolve — after the chat was already gone.
+        relay.hold!.complete();
+        await sent;
+        await pumpEventQueue();
+
+        final state = h.container.read(chatSessionsProvider);
+        expect(state.conversations, isEmpty);
+        expect(
+          await ChatStore(directory: tmp).loadAll(),
+          isEmpty,
+          reason: 'the read landing late must not write the chat back to disk',
+        );
+      },
+    );
+
+    test('a usage read that fails never blocks the turn from landing — it is '
+        'enrichment, not a requirement', () async {
+      final relay = _FakeUsageRelay()
+        ..failWith = const RelayUnavailable(statusCode: 404);
+      final h = _harness(
+        tmp,
+        relay: relay,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+
+      await (h.container.read(chatSessionsProvider.notifier)
+            ..setRoutingGroup(routed))
+          .send(network: _credential(), model: routedModel, message: 'hi');
+
+      final state = h.container.read(chatSessionsProvider);
+      expect(state.sending, isFalse);
+      expect(state.error, isNull);
+      final conv = state.conversations.single;
+      // The turn still landed, text and all — the failed read cost only
+      // the caption.
+      expect(conv.messages.last.text, 'hi back');
+      expect(conv.messages.last.orchestrationModels, isNull);
+
+      final reloaded = await ChatStore(directory: tmp).loadAll();
+      expect(reloaded.single.messages.last.text, 'hi back');
+    });
+
+    test(
+      'a failed turn\'s kept partial reply is read for usage too, and still '
+      'lands with the error showing even when that read also fails',
+      () async {
+        final relay = _FakeUsageRelay()
+          ..failWith = const RelayUnavailable(statusCode: 500);
+        final h = _harness(
+          tmp,
+          relay: relay,
+          updates: [
+            const ChatSendStreaming("Here's my plan"),
+            ChatSendFailure(
+              'The agent planned the work but stopped before finishing it.',
+              partial: const ChatMessage(
+                role: ChatRole.assistant,
+                text: "Here's my plan",
+              ),
+            ),
+          ],
+        );
+
+        await (h.container.read(
+          chatSessionsProvider.notifier,
+        )..setRoutingGroup(routed)).send(
+          network: _credential(),
+          model: routedModel,
+          message: 'build a game',
+        );
+
+        final state = h.container.read(chatSessionsProvider);
+        expect(
+          state.error,
+          'The agent planned the work but stopped before finishing it.',
+        );
+        final conv = state.conversations.single;
+        expect(conv.messages.last.text, "Here's my plan");
+        expect(conv.messages.last.orchestrationModels, isNull);
+      },
+    );
+
+    test('a chat on the grid\'s ordinary pick never reads the log at all — '
+        'the breakdown has one reader and it draws nothing here, so charging '
+        'every turn in the app up to the read\'s deadline buys nobody '
+        'anything', () async {
+      final relay = _FakeUsageRelay(
+        response: const [ModelShare(model: 'qwen', requests: 2)],
+      )..hold = Completer<void>();
+      final h = _harness(
+        tmp,
+        relay: relay,
+        updates: [
+          const ChatSendSuccess(
+            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+          ),
+        ],
+      );
+
+      // Never completed: an unrouted turn that waited on this read would hang
+      // here, so landing at all is the assertion.
+      await h.container
+          .read(chatSessionsProvider.notifier)
+          .send(network: _credential(), model: 'qwen', message: 'hi');
+
+      final conv = h.container.read(chatSessionsProvider).conversations.single;
+      expect(conv.messages.last.text, 'hi back');
+      // Unrouted means the attach read never ran, so the caption is empty.
+      expect(conv.messages.last.orchestrationModels, isNull);
+    });
   });
 
   test(
@@ -4049,6 +4419,127 @@ void main() {
       expect(h.container.read(chatSessionsProvider).sending, isFalse);
     });
   });
+
+  group('a chat routed through an orchestrator mode', () {
+    test('setting a mode on a blank composer starts the chat, so the models '
+        'the setup dialog just spent a request on have somewhere to live', () {
+      final h = _harness(tmp, updates: _kOneReply);
+      final c = h.container.read(chatSessionsProvider.notifier);
+
+      c.setRoutingGroup(
+        const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.routingGroup?.mode, RoutingMode.bruteForce);
+      // Seeded with the mode's own id — the row the picker has moved to.
+      expect(chat.model, 'auto/brute_force');
+      expect(h.container.read(chatSessionsProvider).activeId, chat.id);
+    });
+
+    test('a Fixed chat puts its pinned models on the wire while the chat '
+        'itself goes on naming the row the user picked', () async {
+      final h = _harness(tmp, updates: _kOneReply);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      c.setRoutingGroup(
+        const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      await c.send(
+        network: _credential(),
+        model: 'auto/brute_force',
+        message: 'hi',
+      );
+
+      expect(h.sender.model, '{"mode":"brute_force","models":["a","b"]}');
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.model, 'auto/brute_force');
+      // And the reply is stamped with the readable pick, not the JSON: a
+      // footer answering "what answered this?" with an object says nothing.
+      expect(chat.messages.last.model, 'auto/brute_force');
+    });
+
+    test('a Dynamic chat sends the plain mode string, so the grid picks its '
+        'models afresh every turn', () async {
+      final h = _harness(tmp, updates: _kOneReply);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      c.setRoutingGroup(
+        const RoutingGroup(mode: RoutingMode.judgeLoop, isFixed: false),
+      );
+
+      await c.send(
+        network: _credential(),
+        model: 'auto/judge_loop',
+        message: 'hi',
+      );
+
+      expect(h.sender.model, 'auto/judge_loop');
+    });
+
+    test('a group left on a chat whose composer has moved to a plain model '
+        'stops reaching the wire, so the pill and the request can never say '
+        'two different things', () async {
+      // Nothing clears the group on this path: switching to a grid that
+      // serves no router drops the composer to a plain model on its own (see
+      // `_syncModelField`), and the chat keeps the group it was pinned with.
+      final h = _harness(tmp, updates: _kOneReply);
+      final c = h.container.read(chatSessionsProvider.notifier);
+      c.setRoutingGroup(
+        const RoutingGroup(
+          mode: RoutingMode.bruteForce,
+          isFixed: true,
+          models: ['a', 'b'],
+        ),
+      );
+
+      await c.send(network: _credential(), model: 'qwen', message: 'hi');
+
+      expect(h.sender.model, 'qwen');
+      // The group is still there — this is the send declining to use it, not
+      // the picker having cleared it.
+      final chat = h.container.read(chatSessionsProvider).conversations.single;
+      expect(chat.routingGroup?.mode, RoutingMode.bruteForce);
+    });
+
+    test(
+      'clearing the group hands the chat back to the grid — picking a '
+      'plain model must not go on sending models it no longer names',
+      () async {
+        final h = _harness(tmp, updates: _kOneReply);
+        final c = h.container.read(chatSessionsProvider.notifier);
+        c.setRoutingGroup(
+          const RoutingGroup(
+            mode: RoutingMode.bruteForce,
+            isFixed: true,
+            models: ['a', 'b'],
+          ),
+        );
+
+        c.clearRoutingGroup();
+        await c.send(network: _credential(), model: 'qwen', message: 'hi');
+
+        expect(h.sender.model, 'qwen');
+        final chat = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single;
+        expect(chat.routingGroup, isNull);
+        // And it survives the restart, rather than coming back pinned.
+        expect(
+          (await ChatStore(directory: tmp).loadAll()).single.routingGroup,
+          isNull,
+        );
+      },
+    );
+  });
 }
 
 const _kOneReply = [
@@ -4071,10 +4562,12 @@ class _FakeClassifier implements ChatTransport {
 
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     calls++;
     final gate = _gate;

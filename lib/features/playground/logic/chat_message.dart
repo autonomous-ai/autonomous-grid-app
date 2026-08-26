@@ -64,6 +64,7 @@ class ChatMessage {
     this.model,
     this.node,
     this.modelShares = const [],
+    this.orchestrationModels,
     this.took,
     this.firstToken,
     this.sentAt,
@@ -148,6 +149,19 @@ class ChatMessage {
   /// fans out across an agent's lead / small-fast / subagent models.
   final List<ModelShare> modelShares;
 
+  /// Which models actually served this turn, read from the grid's
+  /// per-conversation usage log once the turn has landed — the request
+  /// range bounded by the conversation's own watermark, not a time window.
+  ///
+  /// Null when that read was never attempted or failed outright: a grid
+  /// whose master predates the endpoint, one that's briefly unreachable, or
+  /// a transcript saved before this existed. A failed read costs only this
+  /// caption — it never blocks the turn itself from landing. Compare
+  /// [modelShares], read over a rolling time window while the turn is still
+  /// generating and corrected once more right after it lands; this is the
+  /// exact, final reading tied to the conversation itself.
+  final List<ModelShare>? orchestrationModels;
+
   /// How long this reply took to arrive — from the moment the turn was sent to
   /// the answer landing, so a queued agent turn isn't charged for the wait.
   ///
@@ -188,6 +202,7 @@ class ChatMessage {
     String? model,
     String? node,
     List<ModelShare>? modelShares,
+    List<ModelShare>? orchestrationModels,
     Duration? took,
     Duration? firstToken,
     DateTime? sentAt,
@@ -205,6 +220,7 @@ class ChatMessage {
     model: model ?? this.model,
     node: node ?? this.node,
     modelShares: modelShares ?? this.modelShares,
+    orchestrationModels: orchestrationModels ?? this.orchestrationModels,
     took: took ?? this.took,
     firstToken: firstToken ?? this.firstToken,
     sentAt: sentAt ?? this.sentAt,

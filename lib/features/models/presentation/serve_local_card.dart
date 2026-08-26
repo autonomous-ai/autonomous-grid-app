@@ -16,7 +16,7 @@ import '../../node_setup/logic/background_model_controller.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/advertise_name.dart';
-import '../logic/context_length.dart';
+import '../../../core/context_length.dart';
 import '../logic/engine_setup_controller.dart';
 import '../logic/engine_status.dart';
 import '../logic/model_download_status.dart';

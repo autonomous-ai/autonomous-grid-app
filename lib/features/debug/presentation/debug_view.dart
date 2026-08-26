@@ -263,7 +263,7 @@ class _WhichGridCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context); // reads AppPalette tokens — follow theme flips.
     final theme = Theme.of(context);
-    final path = ref.watch(gridPathProvider);
+    final resolution = ref.watch(gridResolutionProvider);
     final preflight = ref.watch(preflightProvider);
     final gridBin = Platform.environment['GRID_BIN'];
 
@@ -280,7 +280,7 @@ class _WhichGridCard extends ConsumerWidget {
               const Spacer(),
               _RecheckButton(
                 onPressed: () {
-                  ref.invalidate(gridPathProvider);
+                  ref.invalidate(gridResolutionProvider);
                   ref.invalidate(preflightProvider);
                 },
               ),
@@ -289,9 +289,14 @@ class _WhichGridCard extends ConsumerWidget {
           const SizedBox(height: 4),
           _PathRow(
             label: 'path',
-            value: path ?? 'Not found on this system',
-            ok: path != null,
+            value: resolution.path ?? 'Not found on this system',
+            ok: resolution.path != null,
           ),
+          // Where we looked, when we came back empty — the question support
+          // always has to ask next, and the app is the only thing that knows.
+          if (resolution.path == null)
+            for (final probed in resolution.probed)
+              _PathRow(label: 'tried', value: probed, ok: false),
           if (gridBin != null && gridBin.isNotEmpty)
             _PathRow(label: 'GRID_BIN', value: gridBin, ok: true),
           const SizedBox(height: 6),
@@ -317,9 +322,9 @@ class _WhichGridCard extends ConsumerWidget {
         ),
       ),
       data: (report) {
-        // Health is the exit-0 signal (`gridAvailable`), not the presence of a
-        // version string — a working `grid` can exit 0 without printing one.
-        if (report.gridAvailable) {
+        // Health is the exit-0 signal (no [PreflightIssue]), not the presence
+        // of a version string — a working `grid` can exit 0 without printing one.
+        if (report.canProceed) {
           return Row(
             children: [
               Icon(Icons.check_circle, size: 14, color: AppPalette.online),
@@ -343,7 +348,7 @@ class _WhichGridCard extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: SelectableText(
-                report.gridError ?? 'grid not found',
+                report.issue?.summary ?? 'grid not found',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),

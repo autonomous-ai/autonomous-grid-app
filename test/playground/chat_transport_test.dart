@@ -89,10 +89,12 @@ class _ScriptedTransport implements ChatTransport {
 
   @override
   Stream<ChatStreamEvent> stream({
+    String? turnId,
     required String endpoint,
     required String apiKey,
     required String model,
     required List<Map<String, dynamic>> messages,
+    String? conversationId,
   }) async* {
     for (final event in events) {
       yield event;

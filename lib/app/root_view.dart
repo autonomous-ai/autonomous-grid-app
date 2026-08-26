@@ -34,7 +34,8 @@ class RootView extends ConsumerWidget {
             onRetry: () => ref.invalidate(preflightProvider),
           ),
           data: (report) {
-            if (!report.canProceed) return PreflightScreen(report: report);
+            final issue = report.issue;
+            if (issue != null) return PreflightScreen(issue: issue);
             final loggedIn = ref.watch(sessionProvider).isLoggedIn;
             // A dead session token still sits in `credentials.toml`, so
             // `isLoggedIn` stays true even after it expires. Treat "couldn't
