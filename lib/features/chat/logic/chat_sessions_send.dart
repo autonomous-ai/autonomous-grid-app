@@ -20,13 +20,41 @@ mixin _ChatSend on _ChatSessions {
   /// [_agentChoiceFor] takes the conversation it already has in hand and
   /// resolves through providers that depend on nothing here, so it is safe to
   /// ask; the early return keeps the ordinary text turn from asking at all.
-  bool _agentReadsImages(Conversation chat, {required bool hasImages}) {
+  bool _agentReadsImages(
+    Conversation chat, {
+    required bool hasImages,
+    required String model,
+  }) {
     if (!hasImages) return false;
+    final choice = _agentChoiceFor(chat);
     return agentReadsImagesForChat(
-      agent: ref.read(resolvedChatAgentProvider(_agentChoiceFor(chat))),
+      agent: ref.read(resolvedChatAgentProvider(choice)),
       hermesVisionModel: ref.read(hermesVisionModelProvider).value,
       developerMode: AppEnvironment.isDeveloperMode,
+      modelReadsImages: _modelReadsImages(model),
+      autoRouted: autoAgentChosen(choice),
     );
+  }
+
+  /// Whether the picker says [model] can read an image.
+  ///
+  /// The composer's own list, read the same way it reads it — `served` plus the
+  /// orchestrator rows on top ([routingModeOptions]) — because the two answers
+  /// have to agree: the composer's decides whether Send is unlocked, this one
+  /// decides where the turn actually goes, and a pair that disagrees either
+  /// blocks a turn that would have worked or sends a picture to a model that
+  /// can't see it.
+  ///
+  /// False for a model the list doesn't know (it hasn't landed yet, or the id
+  /// was typed by hand): a model nothing has vouched for is not one to hand a
+  /// picture to on the strength of a guess.
+  bool _modelReadsImages(String model) {
+    final served = ref.read(playgroundModelsProvider);
+    for (final option in [...served, ...routingModeOptions(served)]) {
+      if (option.id != model) continue;
+      return option.vision && option.modality == PlaygroundModality.text;
+    }
+    return false;
   }
 
   /// Send [message] in the open chat — or, when [into] names one, in that chat
@@ -125,6 +153,10 @@ mixin _ChatSend on _ChatSessions {
       agentReadsImages: _agentReadsImages(
         target,
         hasImages: attachments.isNotEmpty,
+        // The model the user picked, not [effectiveModel]: the picture is read
+        // by whatever ends up answering, and under Auto that is nobody yet —
+        // which is why Auto never takes one (see [agentReadsImagesForChat]).
+        model: model,
       ),
     );
 
@@ -275,6 +307,7 @@ mixin _ChatSend on _ChatSessions {
       agentReadsImages: _agentReadsImages(
         conversation,
         hasImages: retryable.attachments.isNotEmpty,
+        model: model,
       ),
     );
     final approval = approvalFor(

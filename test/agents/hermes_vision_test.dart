@@ -153,8 +153,27 @@ void main() {
     });
 
     test(
-      'and not the other agents — neither swaps an image for a description '
-      'the way Hermes does, so the picture still needs a model that sees',
+      'Claude Code and Codex do too, by opening the file — the app saves the '
+      'picture and hands over the path',
+      () {
+        for (final agent in [AgentTool.codex, AgentTool.claude]) {
+          expect(
+            agentReadsImagesForChat(
+              agent: agent,
+              hermesVisionModel: null,
+              developerMode: false,
+              modelReadsImages: true,
+            ),
+            isTrue,
+            reason: agent.name,
+          );
+        }
+      },
+    );
+
+    test(
+      'but no further than the model behind them sees — the agent carries the '
+      'picture, it does not look at it',
       () {
         for (final agent in [AgentTool.codex, AgentTool.claude]) {
           expect(
@@ -167,6 +186,23 @@ void main() {
             reason: agent.name,
           );
         }
+      },
+    );
+
+    test(
+      'nobody does under Auto — the agent is picked per question, after this '
+      'is decided, so a picture would be routed somewhere blind',
+      () {
+        expect(
+          agentReadsImagesForChat(
+            agent: AgentTool.claude,
+            hermesVisionModel: 'qwen/qwen3.8-27b',
+            developerMode: true,
+            modelReadsImages: true,
+            autoRouted: true,
+          ),
+          isFalse,
+        );
       },
     );
 

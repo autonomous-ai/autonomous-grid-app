@@ -60,6 +60,30 @@ void main() {
       expect(prompt, endsWith('What breed is it?'));
     });
 
+    // Claude Code and Codex take no image on the wire — they open the file. A
+    // picture on the message being *asked* went unnamed until 2026-08-26, which
+    // is the whole turn's subject arriving as a question about nothing.
+    test('the picture on the newest message is named, with somewhere to go and '
+        'look at it', () {
+      final prompt = buildAgentPrompt([
+        _user(
+          'What is in this?',
+          media: const [
+            ChatMedia(path: '/tmp/shot.png', kind: MediaKind.image),
+          ],
+        ),
+      ]);
+
+      expect(prompt, startsWith('What is in this?'));
+      expect(prompt, contains('[image attached: /tmp/shot.png]'));
+      expect(prompt, endsWith(kOpenAttachedMediaLine));
+    });
+
+    test('a message with no picture on it is untouched — the instruction to go '
+        'and open one belongs only where there is one', () {
+      expect(buildAgentPrompt([_user('Hello?')]), 'Hello?');
+    });
+
     test('a turn holding neither words nor media is dropped', () {
       final prompt = buildAgentPrompt([_user('   '), _user('Hello?')]);
       expect(prompt, 'Hello?');

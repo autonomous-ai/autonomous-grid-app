@@ -111,6 +111,26 @@ enum AgentTool {
   bool get hasInteractiveCli =>
       this == AgentTool.claude || this == AgentTool.codex;
 
+  /// Whether this agent can look at a picture by **opening the file itself**.
+  ///
+  /// True for Claude Code and Codex. Neither takes an image on the wire the way
+  /// Hermes does — what they take is a path and a tool that opens it: Claude
+  /// Code's `Read` hands an image file to the model as an image block (which is
+  /// why `claudeMediaTokens` exists at all — it counts the screenshots that
+  /// arrive this way), and Codex's `view_image` attaches a local file to the
+  /// thread. So a picture reaches them as a line saying where it is, written by
+  /// [withAttachedMedia], and the app saves every attachment to disk before the
+  /// turn goes out ([buildUserTurn]) — the path is real on both lanes.
+  ///
+  /// False for Hermes, which is handed the bytes themselves over ACP
+  /// ([acpImages]) and has its own auxiliary vision model behind that.
+  ///
+  /// **It says nothing about the model.** The agent only carries the picture to
+  /// whatever is answering, so a model that cannot see is still a model that
+  /// cannot see — see [agentReadsImagesForChat], which asks both questions.
+  bool get opensImageFiles =>
+      this == AgentTool.claude || this == AgentTool.codex;
+
   /// The recipe the app runs to put this agent on the machine, or null for an
   /// agent that ships its own installer (Claude Code — see
   /// `ClaudeInstaller`). `AgentInstaller` reads this to pick the route; every

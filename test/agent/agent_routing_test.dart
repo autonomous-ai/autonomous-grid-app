@@ -32,8 +32,8 @@ void main() {
       }
     });
 
-    test('a text turn carrying an image goes to the API — the agent is blind '
-        'to attachments', () {
+    test('a text turn carrying an image goes to the API unless the agent can '
+        'read it — see agentReadsImagesForChat', () {
       expect(
         agentAnswersTurn(
           modality: PlaygroundModality.text,

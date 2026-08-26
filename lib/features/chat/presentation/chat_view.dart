@@ -27,11 +27,13 @@ import '../../agents/logic/agent_permissions.dart';
 import '../../agents/logic/agent_routing.dart';
 import '../../agents/logic/hermes_vision_controller.dart';
 import '../../agents/logic/active_chat_agent.dart';
+import '../../agents/logic/auto_agent.dart';
 import '../../agents/logic/agent_terminals_controller.dart';
 import '../../agents/presentation/agent_terminal_controls.dart';
 import '../../agents/presentation/agent_terminal_view.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
+import '../../agents/logic/agent_prompt.dart';
 import '../../agents/logic/agent_providers.dart';
 import '../../agents/logic/agent_status.dart';
 import '../../agents/presentation/agent_picker.dart';
@@ -44,6 +46,7 @@ import '../../playground/logic/image_budget.dart';
 import '../../playground/logic/image_shrink.dart';
 import '../../../infrastructure/panel/panel_message.dart' show PanelScrollPhase;
 import '../../panel/logic/panel_scroll.dart';
+import '../../playground/logic/media_outputs.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../playground/presentation/chat_bubble.dart';
@@ -461,24 +464,102 @@ class _ChatViewState extends ConsumerState<ChatView> {
 
   /// Whether pressing Send here opens an agent's CLI rather than sending a turn.
   ///
-  /// Text only: a picture is made by the grid's own API, which no CLI is part
-  /// of, and the composer already refuses to send one to an agent that can't
-  /// read it.
+  /// Text only: *making* a picture is the grid's own API, which no CLI is part
+  /// of.
+  ///
+  /// A picture **attached** to the line comes along, and used to be the one
+  /// thing that fell out of this lane. Excluded here, a first message carrying a
+  /// screenshot went down the ordinary send path instead — answered by the chat
+  /// model, on the API, while the composer cleared and the pane turned into the
+  /// terminal the chat was always going to be. The turn was real and its answer
+  /// was unreachable: from the user's side the picture went nowhere and the
+  /// agent never worked. It rides in the opening prompt now, as a path
+  /// ([_openingPrompt]), which is how both CLIs take one.
   bool _startsTerminalChat(PlaygroundModality modality) =>
       modality == PlaygroundModality.text &&
-      _attachments.isEmpty &&
       ref.read(anyAgentInstalledProvider) &&
       ref.read(openChatInTerminalProvider);
 
   /// Open the chat, hand its first message to the CLI about to start, and clear
   /// the composer — the same three things [_send] does, minus the turn.
+  ///
+  /// The composer is emptied first and the chat started after, because the
+  /// pictures have to be written to disk in between: the draft is the user's to
+  /// keep typing in the moment Send is pressed, and the chat must not exist
+  /// before the prompt that opens it is finished — a chat on screen with no
+  /// prompt primed is a terminal that starts empty.
   void _startTerminal(String message) {
-    final chat = ref
-        .read(chatSessionsProvider.notifier)
-        .startTerminalChat(model: _model.text.trim(), message: message);
-    ref.read(agentTerminalsProvider.notifier).prime(chat.id, message);
+    final pictures = List.of(_attachments);
+    final files = List.of(_files);
     _message.clear();
     _clearDraft();
+    unawaited(_openTerminalChat(message, pictures, files));
+  }
+
+  /// Start the chat and hand the CLI its first argument: what the user typed,
+  /// plus where anything they attached now lives on disk.
+  ///
+  /// Paths, for both kinds. A picture is one because that is the only way these
+  /// two agents take one at all; a document is one because this prompt is a
+  /// single command-line argument, and the text the app already read out of it
+  /// ([ChatFile.promptBlock]) would go in there whole. The CLI opens both for
+  /// itself.
+  ///
+  /// They go on their own lines under the sentence, so the name the chat takes
+  /// from its opening message ([ChatSessions.startTerminalChat] reads the first
+  /// line) is still the question and not a folder in `~/.grid`.
+  Future<void> _openTerminalChat(
+    String message,
+    List<MediaAttachment> pictures,
+    List<ChatFile> files,
+  ) async {
+    final saved = await _savePictures(pictures);
+    if (!mounted) return;
+    // The chat opens either way. Losing the sentence because a picture couldn't
+    // be written is the failure this whole lane exists to stop — so say what is
+    // missing and go on, rather than swallow the message with it.
+    if (pictures.isNotEmpty && saved.isEmpty) {
+      ToastScope.show(
+        context,
+        const ToastSpec(
+          message:
+              "Couldn't attach the picture — starting the chat without it.",
+          severity: ToastSeverity.warning,
+        ),
+      );
+    }
+    final opening = withAttachedPaths(message, [
+      for (final picture in saved) picture.path,
+      for (final file in files) file.path,
+    ]);
+    final chat = ref
+        .read(chatSessionsProvider.notifier)
+        .startTerminalChat(model: _model.text.trim(), message: opening);
+    ref.read(agentTerminalsProvider.notifier).prime(chat.id, opening);
+  }
+
+  /// Writes [pictures] where every attachment the app keeps goes —
+  /// `~/.grid/outputs` — and hands back what to call them.
+  ///
+  /// The transcript lane saves them for the same two reasons and in the same
+  /// place ([buildUserTurn]): the bubble draws them from there, and an agent
+  /// that reads files needs somewhere to read from.
+  ///
+  /// Empty rather than thrown when the disk refuses. Both callers run detached
+  /// from a gesture — a `unawaited` send, a paste — so an exception here has
+  /// nobody to reach: it would take the message with it and report nothing.
+  Future<List<ChatMedia>> _savePictures(List<MediaAttachment> pictures) async {
+    if (pictures.isEmpty) return const [];
+    try {
+      return await saveMediaOutputs([
+        for (final picture in pictures) picture.toMediaFile(),
+      ], ref.read(mediaOutputsDirProvider));
+    } on Object catch (error) {
+      ref
+          .read(appLogProvider)
+          .failure('chat', "couldn't save an attached picture: $error");
+      return const [];
+    }
   }
 
   /// Every agent session the open chat has left behind, for the terminal lane.
@@ -626,6 +707,44 @@ class _ChatViewState extends ConsumerState<ChatView> {
     await _attachImageBytes(fromWeb);
   }
 
+  /// A screenshot pasted into a chat that is drawn as its agent's own CLI:
+  /// written to disk and typed at the prompt as a path, unsent, exactly as a
+  /// dropped file already is ([_typedIntoTerminal]).
+  ///
+  /// Both CLIs read a picture by opening it, so a path is all this lane can
+  /// carry — and all it needs to. It used to carry nothing: the paste was
+  /// refused with a note asking the user to save the file themselves and drop
+  /// it in, which is this, done by hand.
+  ///
+  /// Not shrunk on the way, unlike the transcript lane below: nothing here goes
+  /// into a request body, and the agent's own reader decides what it wants.
+  Future<void> _pasteIntoTerminal(
+    List<({String filename, Uint8List bytes})> pictures,
+  ) async {
+    final saved = await _savePictures([
+      for (final picture in pictures)
+        MediaAttachment(filename: picture.filename, bytes: picture.bytes),
+    ]);
+    if (!mounted) return;
+    if (saved.isNotEmpty &&
+        _typedIntoTerminal([for (final file in saved) file.path])) {
+      return;
+    }
+    // The chat is a terminal but nothing is running in it — the CLI has ended,
+    // or hasn't opened yet. The picture is safe on disk either way, so say
+    // where, rather than lose a paste to a race the user can't see.
+    ToastScope.show(
+      context,
+      ToastSpec(
+        message: saved.isEmpty
+            ? "Couldn't save the picture to attach it."
+            : 'No terminal running here yet — the picture is saved at '
+                  '${saved.first.path}.',
+        severity: ToastSeverity.warning,
+      ),
+    );
+  }
+
   /// Attaches [pictures] that arrived as bytes rather than as files on disk — a
   /// pasted screenshot, images dragged out of a web page.
   ///
@@ -638,18 +757,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     List<({String filename, Uint8List bytes})> pictures,
   ) async {
     if (pictures.isNotEmpty && _terminalChatId != null) {
-      // No file on disk means no path to type, and this lane has no other way
-      // to carry one. Said out loud, because a paste that silently did nothing
-      // is indistinguishable from the app being broken.
-      ToastScope.show(
-        context,
-        const ToastSpec(
-          message:
-              'This chat is a terminal — save the picture to a file and drop '
-              'that in.',
-          severity: ToastSeverity.warning,
-        ),
-      );
+      await _pasteIntoTerminal(pictures);
       return;
     }
     final overflow = <String>[];
@@ -1171,14 +1279,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // (text-only) agent — so the in-flight bubble must show the media progress
     // bar, not "the agent is working".
     final agentInstalled = ref.watch(anyAgentInstalledProvider);
+    // The option behind the model field, read before the two questions that
+    // need it — who receives an attached picture, and whether Send is locked.
+    final selectedModel = _selectedOption(options);
     // Whether the assistant answering this chat can read the picture itself, so
     // the turn need not be handed to the chat model that can't. See
-    // [agentReadsImagesForChat] — Hermes only, and only once it has been given a
-    // model for images.
+    // [agentReadsImagesForChat]: Claude Code and Codex open the file, Hermes is
+    // handed the bytes, and Auto takes no picture at all.
     final agentReadsImages = agentReadsImagesForChat(
       agent: ref.watch(activeChatAgentProvider),
       hermesVisionModel: ref.watch(hermesVisionModelProvider).asData?.value,
       developerMode: AppEnvironment.isDeveloperMode,
+      modelReadsImages: selectedModel?.vision ?? false,
+      autoRouted: autoAgentChosen(ref.watch(openChatAgentChoiceProvider)),
     );
     final agentMode = agentAnswersTurn(
       modality: modality,
@@ -1191,7 +1304,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // the user switches to a vision-capable text model (or drops the image): a
     // text model without vision would reject the send, so the app asks for the
     // switch before the relay does.
-    final selectedModel = _selectedOption(options);
     final visionLocked =
         !noModel &&
         modality == PlaygroundModality.text &&

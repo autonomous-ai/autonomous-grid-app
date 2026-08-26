@@ -292,7 +292,9 @@ class HermesChatSender implements ChatSender {
       live.seen = history.length;
       return (
         session: live.session,
-        text: buildAgentPrompt(unseen),
+        // The pictures on this turn ride beside the prompt as bytes, so this
+        // must not also send the agent off to open them on disk.
+        text: buildAgentPrompt(unseen, opensAttachments: false),
         live: live,
       );
     }
@@ -323,7 +325,10 @@ class HermesChatSender implements ChatSender {
     // — led by the project's house rules, so the agent starts on the same page.
     return (
       session: session,
-      text: withProjectInstructions(buildAgentPrompt(history), instructions),
+      text: withProjectInstructions(
+        buildAgentPrompt(history, opensAttachments: false),
+        instructions,
+      ),
       live: fresh,
     );
   }

@@ -12,21 +12,37 @@ const int kAgentTranscriptBudget = 24000;
 /// seen yet** — the whole history when a session starts, or just what has landed
 /// since the last turn when one is being continued.
 ///
-/// The last entry is the user's new message and is always sent in full. Anything
-/// before it goes in as a transcript preamble, so the agent isn't amnesiac about
-/// turns it never handled: a picture (which the grid's API answers, never the
-/// agent — see `agentAnswersTurn`) and a scheduled task's result both land in the
-/// chat without an agent turn behind them. Passing only the newest message left
-/// the agent confidently discussing a conversation it had half of.
+/// The last entry is the user's new message and is always sent in full,
+/// including where anything attached to it sits on disk ([withAttachedMedia]).
+/// Anything before it goes in as a transcript preamble, so the agent isn't
+/// amnesiac about turns it never handled: a picture the grid's API answered
+/// instead (see [agentAnswersTurn] — that is still where one goes when the agent
+/// can't read it) and a scheduled task's result both land in the chat without an
+/// agent turn behind them. Passing only the newest message left the agent
+/// confidently discussing a conversation it had half of.
 ///
-/// Shared by the codex and hermes senders so both carry context identically.
+/// Shared by all three senders so every agent carries context identically.
+///
+/// [opensAttachments] is what separates them. Claude Code and Codex are given
+/// the picture as a path to open ([AgentTool.opensImageFiles]); Hermes is handed
+/// the bytes themselves beside this prompt ([acpImages]) and passes false, so it
+/// isn't sent to open a file it has already been shown.
 String buildAgentPrompt(
   List<ChatMessage> unseen, {
   int budget = kAgentTranscriptBudget,
+  bool opensAttachments = true,
 }) {
   if (unseen.isEmpty) return '';
-  // The new message and whatever the user attached to it, as one request.
-  final latest = messageForModel(unseen.last).trim();
+  // The new message and whatever the user attached to it, as one request —
+  // pictures included, by the path they were saved under. Naming them only in
+  // the *quoted* turns below (which is all this did) meant the one message the
+  // turn is actually about was the one message whose picture went unmentioned:
+  // the agent was asked "what's in this screenshot?" with no screenshot in
+  // sight, and answered about nothing.
+  final request = messageForModel(unseen.last).trim();
+  final latest = opensAttachments
+      ? withAttachedMedia(request, unseen.last.media)
+      : request;
   final prior = [
     for (final message in unseen.take(unseen.length - 1))
       if (_renderTurn(message) case final turn when turn.isNotEmpty) turn,
@@ -63,13 +79,67 @@ String _renderTurn(ChatMessage message) {
   final text = messageForModel(message).trim();
   final body = [
     if (text.isNotEmpty) _fence(text),
-    for (final media in message.media)
-      '[${media.kind.name} attached: ${media.path}]',
+    for (final media in message.media) _mediaLine(media),
   ].join('\n');
   if (body.isEmpty) return '';
   final who = message.role == ChatRole.user ? 'user' : 'assistant';
   return '<turn from="$who">\n$body\n</turn>';
 }
+
+/// One attached file, named by what it is and where it is.
+String _mediaLine(ChatMedia media) =>
+    '[${media.kind.name} attached: ${media.path}]';
+
+/// [text] with the files attached to the same turn named under it, and the
+/// agent told to go and open them.
+///
+/// **This is how a picture reaches Claude Code and Codex at all.** Neither takes
+/// an image on the wire the way Hermes does — what they take is a path and a
+/// tool that opens it (`Read` renders an image file; `view_image` attaches one),
+/// so the app saves every attachment to disk as the turn is committed
+/// ([buildUserTurn]) and hands over the path. See [AgentTool.opensImageFiles]
+/// and [agentReadsImagesForChat] for who is sent one.
+///
+/// The instruction is worth its line: a path sitting under a question is
+/// something an agent may or may not act on, and "have a look at it" is the
+/// difference between an answer about the picture and an answer about the
+/// sentence. Said once for the whole turn rather than once per file.
+///
+/// Used for the message being asked, never for the quoted transcript above it —
+/// those turns are history, and telling the agent to go and open a screenshot
+/// from four messages ago is asking it to spend the context this turn needs.
+String withAttachedMedia(String text, List<ChatMedia> media) =>
+    _withAttachments(text, [for (final file in media) _mediaLine(file)]);
+
+/// The same, for attachments known only by where they are.
+///
+/// What the terminal lane has to work with: that lane's whole prompt is one
+/// command-line argument, so a document goes over as a place to open rather
+/// than as the text the app read out of it — see [withAttachedMedia] for why a
+/// path is enough for these two agents.
+String withAttachedPaths(String text, List<String> paths) => _withAttachments(
+  text,
+  [for (final path in paths) '[file attached: $path]'],
+);
+
+String _withAttachments(String text, List<String> attached) {
+  if (attached.isEmpty) return text;
+  return [
+    if (text.trim().isNotEmpty) text.trim(),
+    ...attached,
+    kOpenAttachedMediaLine,
+  ].join('\n');
+}
+
+/// What [withAttachedMedia] asks for, in one line.
+///
+/// A constant because the terminal lane sends it too — a chat drawn as the
+/// agent's own CLI starts that CLI with this same sentence as its first
+/// argument — and the two lanes saying it differently is how one of them ends
+/// up not saying it at all.
+const String kOpenAttachedMediaLine =
+    'The file(s) above are on this computer. Open them and look at them before '
+    'answering.';
 
 /// The tags this transcript is built from, neutralised inside quoted text.
 ///

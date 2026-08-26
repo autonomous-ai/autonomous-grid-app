@@ -8,7 +8,6 @@ import '../../chat/logic/grid_model_catalog.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../playground/logic/playground_request.dart';
 import 'adapters/hermes_tool.dart';
-import 'agent_catalog.dart';
 
 /// The models on this grid that say they can read an image, **spelled the way
 /// the composer's own model picker spells them**.
@@ -37,30 +36,6 @@ List<String> visionCapableModels(List<PlaygroundModelOption> options) {
   ids.sort();
   return List.unmodifiable(ids);
 }
-
-/// Whether the agent answering this chat can take a picture off the chat model's
-/// hands.
-///
-/// True only for Hermes, only once it has been pointed at a model for images,
-/// and only in a developer build — the same three conditions that put the
-/// setting on screen in the first place. Anything looser would unlock the
-/// composer for a turn that then fails at the engine, which is the exact
-/// outcome the lock exists to prevent.
-///
-/// Hermes is the one agent that can do this: when the model holding the
-/// conversation can't read images, it swaps each one for a description written
-/// by its auxiliary vision model rather than failing the turn
-/// (`run_agent.py:_prepare_messages_for_non_vision_model`). Codex and Claude
-/// Code have no equivalent, so a picture still has to go to a model that can
-/// see it.
-bool agentReadsImagesForChat({
-  required AgentTool? agent,
-  required String? hermesVisionModel,
-  required bool developerMode,
-}) =>
-    developerMode &&
-    agent == AgentTool.hermes &&
-    (hermesVisionModel ?? '').trim().isNotEmpty;
 
 /// The vision-capable models the open grid serves, for the picker.
 final visionModelsProvider = Provider<List<String>>(
