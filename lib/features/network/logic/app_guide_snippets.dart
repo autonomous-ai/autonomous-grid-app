@@ -388,14 +388,27 @@ const Map<String, String> kClaudeTierModelEnv = {
 String claudeBaseUrl(String relayBase) =>
     relayBase.replaceFirst(RegExp(r'(/v1)?/*$'), '');
 
-/// The grid model that answers when Claude Code asks for [tier]: the id the grid
-/// advertises for that tier (`claude:opus` on a grid serving Claude), else the
-/// grid's default model — every tier pointing at the one model it does serve
-/// beats naming a Claude model it doesn't.
-String claudeTierModel(String tier, List<String> models) => models.firstWhere(
-  (id) => id.toLowerCase().contains(tier),
-  orElse: () => gridDefaultModel(models),
-);
+/// The grid model that answers when Claude Code asks for [tier].
+///
+/// A grid that serves Claude's own tiers names them (`claude:opus`), and that
+/// match is exact. A grid of local models names none of them — and pointing all
+/// four slots at the same id is what made Claude Code's `/model` offer one
+/// model five times over, which is a list, not a menu. So the slots are dealt
+/// the grid's models in order instead: four slots, four different models, and
+/// `/model` becomes a real switch between what this grid actually serves.
+///
+/// **It does not rank them.** Nothing here knows which grid model is the
+/// largest, so "Opus" is Claude Code's word for the slot, not a claim about the
+/// model sitting in it. Wrapping is deliberate for a grid serving fewer than
+/// four: a repeated name is the honest picture of a short grid.
+String claudeTierModel(String tier, List<String> models) {
+  for (final id in models) {
+    if (id.toLowerCase().contains(tier)) return id;
+  }
+  if (models.isEmpty) return kGuideDefaultModel;
+  final slot = kClaudeTierModelEnv.keys.toList().indexOf(tier);
+  return models[(slot < 0 ? 0 : slot) % models.length];
+}
 
 /// The `env` block Claude Code reads its whole connection from — endpoint,
 /// credential, and which grid model stands in for each Claude tier. One source
@@ -431,6 +444,7 @@ Map<String, String> claudeCodeEnv(
   String base,
   String key,
   List<String> models, {
+  String? pinned,
   int? compactWindow,
   int? maxOutputTokens,
   bool withoutBundledSkills = false,
@@ -438,12 +452,19 @@ Map<String, String> claudeCodeEnv(
   // Opus leads and sonnet takes the side work: the same split Claude Code makes
   // on Anthropic's own API, so a grid serving the tiers behaves as users expect
   // (and on a grid without them both resolve to its one model anyway).
-  final sonnet = claudeTierModel('sonnet', models);
+  //
+  // [pinned] overrides all three, and only these three. A run the app started
+  // on one model must answer on that model — its subagents and its titles
+  // included — while the four `ANTHROPIC_DEFAULT_*_MODEL` slots below go on
+  // naming the rest of the grid, because those are what `/model` offers and
+  // nothing else reads them. Splitting the two is the whole point: the menu can
+  // list the grid without the turn quietly moving to another model.
+  final sonnet = pinned ?? claudeTierModel('sonnet', models);
   return {
     kClaudeBaseUrlEnv: claudeBaseUrl(base),
     kClaudeAuthTokenEnv: key,
     kClaudeApiKeyEnv: key,
-    kClaudeModelEnv: claudeTierModel('opus', models),
+    kClaudeModelEnv: pinned ?? claudeTierModel('opus', models),
     kClaudeSmallFastModelEnv: sonnet,
     kClaudeSubagentModelEnv: sonnet,
     for (final tier in kClaudeTierModelEnv.entries)

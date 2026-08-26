@@ -5,6 +5,7 @@ import '../../../../infrastructure/mcp/grid_mcp_provider.dart';
 import '../../../../infrastructure/mcp/grid_mcp_server.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
 import '../../../network/logic/app_guide_snippets.dart';
+import '../../../network/logic/network_models_provider.dart';
 import '../model_context_window.dart';
 import 'agent_turn_env.dart';
 import 'claude_turn_mcp_config.dart';
@@ -86,7 +87,14 @@ Future<ClaudeGridSetup> claudeGridSetup(
         ...claudeCodeEnv(
           network.relayBaseUrl,
           network.relayApiKey,
-          [model],
+          // The whole grid, so Claude Code's own `/model` lists what this grid
+          // serves instead of the one model five times over — see
+          // [claudeTierModel]. Empty while the list is still in flight (or the
+          // grid is unreachable), which falls back to exactly what this passed
+          // before: the run's own model in every slot.
+          _gridModels(ref, model),
+          // …while the run itself stays on the model the app started it with.
+          pinned: model,
           // Null below Claude Code's own floor of 100000, where the value would
           // be discarded and 100000 used instead — see [claudeCompactWindow].
           compactWindow: claudeCompactWindow(agentContextCeiling(window)),
@@ -104,6 +112,17 @@ Future<ClaudeGridSetup> claudeGridSetup(
     mcpConfig: mcpConfig,
     mcpToken: token,
   );
+}
+
+/// The models this grid serves, or just [model] when the list isn't there.
+///
+/// Read rather than watched, and never awaited: this runs in front of a turn
+/// the user is waiting on, and a menu that lists one model is a far smaller
+/// cost than a turn that waits on a round trip to fill it. `servedModelIds`
+/// keeps the last answer across a refresh for exactly this kind of reader.
+List<String> _gridModels(Ref ref, String model) {
+  final served = ref.read(servedModelIdsProvider);
+  return served.isEmpty ? [model] : served;
 }
 
 /// The grant Grid's tools run under for one agent run, or null when this run has

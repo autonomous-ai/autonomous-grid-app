@@ -419,4 +419,70 @@ void main() {
       expect(out, isNot(contains('media/image/generate')));
     });
   });
+
+  group("Claude Code's /model offers the grid, not one model four times", () {
+    const grid = [
+      'DeepSeek-V4-Flash',
+      'GLM-4.7-Flash',
+      'Laguna-S-2.1',
+      'Qwen3.8',
+    ];
+
+    test(
+      'the four tier slots name four different grid models — all four pointing '
+      'at the same id is what made the picker list one model five times over',
+      () {
+        final env = claudeCodeEnv('https://relay/v1', 'k', grid);
+        final slots = [
+          for (final name in kClaudeTierModelEnv.values) env[name],
+        ];
+
+        expect(slots.toSet(), hasLength(4));
+        expect(slots.toSet(), grid.toSet());
+      },
+    );
+
+    test('a grid that serves Claude tiers by name still gets the exact match, '
+        'because a real opus beats a slot dealt in order', () {
+      const claude = ['claude:sonnet', 'claude:opus', 'claude:haiku'];
+      final env = claudeCodeEnv('https://relay/v1', 'k', claude);
+
+      expect(env[kClaudeTierModelEnv['opus']], 'claude:opus');
+      expect(env[kClaudeTierModelEnv['sonnet']], 'claude:sonnet');
+      expect(env[kClaudeTierModelEnv['haiku']], 'claude:haiku');
+    });
+
+    test(
+      'a grid serving fewer than four wraps rather than inventing a name — a '
+      'repeat is the honest picture of a short grid',
+      () {
+        final env = claudeCodeEnv('https://relay/v1', 'k', const ['only-one']);
+
+        for (final name in kClaudeTierModelEnv.values) {
+          expect(env[name], 'only-one');
+        }
+      },
+    );
+
+    test(
+      'a pinned run answers on the model it was started with — its subagents '
+      'and its titles included — while the menu still lists the whole grid, so '
+      'filling the picker can never move the turn to another model',
+      () {
+        final env = claudeCodeEnv(
+          'https://relay/v1',
+          'k',
+          grid,
+          pinned: 'Qwen3.8',
+        );
+
+        expect(env[kClaudeModelEnv], 'Qwen3.8');
+        expect(env[kClaudeSmallFastModelEnv], 'Qwen3.8');
+        expect(env[kClaudeSubagentModelEnv], 'Qwen3.8');
+        expect({
+          for (final name in kClaudeTierModelEnv.values) env[name],
+        }, grid.toSet());
+      },
+    );
+  });
 }
