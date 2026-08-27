@@ -148,6 +148,35 @@ const String kClaudePermissionMode = 'default';
 /// page, and that is the route the agent takes instead.
 const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
 
+/// The skills bundled inside Claude Code that a chat turn switches off, as the
+/// `skillOverrides` map `--settings` takes.
+///
+/// `claude-api` is why: a reference for Anthropic's own API that the Skill tool
+/// loads **whole** — ~922 KB, about 230000 tokens, in one tool result. On a
+/// model holding 262144 with 32000 reserved for the reply, that overflows by a
+/// single token, and a brand-new chat fails on its first message before the
+/// user has said anything long (autonomous-grid-app#16). It documents an API a
+/// Grid chat never talks to.
+///
+/// **That one, not all of them.** Until 2026-08-27 the lane set
+/// `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1` instead, which is all-or-nothing —
+/// and `/loop` is a bundled skill, so the switch that kept `claude-api` out
+/// also took away the one command that makes a chat tick on its own: a `/loop`
+/// typed into the Messages lane reached the model as prose and ran once.
+/// Measured on 2.1.247: with this override the `init` line lists `loop` and
+/// not `claude-api`, and `/loop 1m …` books a session cron that fired every
+/// minute for as long as the process was kept alive (see [ClaudeTurnWaiting]).
+///
+/// On the argv rather than in a settings file, and only on this lane: the
+/// user's own `settings.json` — what the guide and "Set up for me" write — is
+/// theirs, and so is the Claude Code in their terminal.
+const Map<String, String> kClaudeSkillOverrides = {'claude-api': 'off'};
+
+/// [kClaudeSkillOverrides] as the JSON `--settings` reads. A constant rather
+/// than an encode at call time so the argv stays a pure function of its
+/// arguments — and so a test can read the exact string the CLI will.
+const String kClaudeTurnSettings = '{"skillOverrides":{"claude-api":"off"}}';
+
 /// Claude Code's own schedulers, taken away on every turn: none of them can
 /// work here, and they fail by *succeeding*.
 ///
@@ -208,6 +237,8 @@ const List<String> kClaudeSessionSchedulerTools = [
 ///   default because it is only ever right for one lane: the flag costs context
 ///   on every turn that carries it, and a turn holding the relay's credentials
 ///   cannot use the extension at all (see [ClaudeBrowserLane]).
+/// - `--settings` carries [kClaudeTurnSettings]: one bundled skill off, the
+///   rest — `/loop` among them — left exactly as the CLI ships them.
 /// - `--disallowedTools` takes away the web tools a grid model can't serve —
 ///   see [withoutServerWebTools] — and nothing else: the session-only
 ///   schedulers ([kClaudeSessionSchedulerTools]) were let back in on this lane
@@ -237,6 +268,8 @@ List<String> claudeExecArgs({
   kClaudePermissionPromptTool,
   '--model',
   model,
+  '--settings',
+  kClaudeTurnSettings,
   if (chrome) '--chrome',
   if (withoutServerWebTools) ...['--disallowedTools', ...kClaudeServerWebTools],
   if (mcpConfigPath != null) ...[

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
@@ -123,6 +125,21 @@ void main() {
     test('a later turn resumes the session instead of replaying the chat', () {
       final args = claudeExecArgs(model: 'm', resumeSessionId: 'sess-1');
       expect(args, containsAllInOrder(['--resume', 'sess-1']));
+    });
+
+    test('only claude-api is switched off, as a --settings override — the '
+        'all-or-nothing env var took /loop with it, so a loop typed into the '
+        'Messages lane ran once as prose', () {
+      final args = claudeExecArgs(model: 'm', withoutServerWebTools: true);
+      final flag = args.indexOf('--settings');
+      expect(flag, greaterThan(0));
+      expect(jsonDecode(args[flag + 1]), {
+        'skillOverrides': {'claude-api': 'off'},
+      });
+      expect(kClaudeSkillOverrides.keys, ['claude-api']);
+      // The override is one value, so the variadic --disallowedTools after it
+      // still reads exactly the web tools and nothing of the settings.
+      expect(args, isNot(contains('CLAUDE_CODE_DISABLE_BUNDLED_SKILLS')));
     });
 
     test('a turn with nothing to take away passes no --disallowedTools at '

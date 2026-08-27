@@ -103,10 +103,6 @@ Future<ClaudeGridSetup> claudeGridSetup(
           // drew the 400 (#47). Sized to what *this* model's ceiling leaves room
           // for.
           maxOutputTokens: agentReplyReserve(window),
-          // The ~922 KB reference for Anthropic's API — and every other bundle
-          // that could grow to match it — stays out of a window this run needs
-          // for the conversation. Grid's own skills live elsewhere.
-          withoutBundledSkills: true,
         ),
     },
     mcpConfig: mcpConfig,
