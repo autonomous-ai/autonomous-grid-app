@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/theme/share_page_theme.dart';
 import '../../messaging/presentation/remote_reach_row.dart';
@@ -424,13 +423,12 @@ IconData _routeIcon(ShareRoute route) => switch (route) {
   ShareRoute.server => Icons.dns_outlined,
 };
 
-/// The two facts a host should have before they start, not after, and the way
-/// to the longer answer.
-class _RailFootnote extends ConsumerWidget {
+/// The two facts a host should have before they start, not after.
+class _RailFootnote extends StatelessWidget {
   const _RailFootnote();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -445,25 +443,6 @@ class _RailFootnote extends ConsumerWidget {
           'Sharing stops the moment you close the lid, quit Grid, or press '
           'stop. A key you paste never leaves this computer.',
           style: ShareType.footnote,
-        ),
-        const SizedBox(height: 7),
-        // Opens the app's own guide. The design's link had no destination and
-        // this one is checked: [ShellSection.guide] is a shipped row, not a
-        // place named on faith (§5).
-        GestureDetector(
-          onTap: () => ref
-              .read(shellSectionProvider.notifier)
-              .select(ShellSection.guide),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: Text(
-              'How sharing works →',
-              style: ShareType.footnote.copyWith(
-                fontWeight: AppFont.semibold,
-                color: SharePalette.accent,
-              ),
-            ),
-          ),
         ),
       ],
     );

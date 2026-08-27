@@ -8,7 +8,8 @@ import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
-import '../../../shared/widgets/context_window_field.dart';
+import '../../../shared/theme/share_page_theme.dart';
+import '../logic/context_ladder.dart';
 import '../../../shared/widgets/form_plate.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/node_name_field.dart';
@@ -28,9 +29,9 @@ class ExternalServerBlock extends ConsumerStatefulWidget {
   const ExternalServerBlock({
     super.key,
     required this.network,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
+    this.icon,
+    this.title,
+    this.subtitle,
     this.initialEndpoint = '',
     this.initialModel = '',
     this.initialAdvertise = '',
@@ -39,9 +40,12 @@ class ExternalServerBlock extends ConsumerStatefulWidget {
   });
 
   final NetworkCredential network;
-  final IconData icon;
-  final String title;
-  final String subtitle;
+
+  /// The header this block draws above its form, or null for a block that is
+  /// the whole pane and has already been named by what sits above it.
+  final IconData? icon;
+  final String? title;
+  final String? subtitle;
   final String initialEndpoint;
   final String initialModel;
   final String initialAdvertise;
@@ -308,18 +312,20 @@ class _ExternalServerBlockState extends ConsumerState<ExternalServerBlock> {
       onRetry: _retry,
       onStart: _start,
     );
+    final title = widget.title;
+    if (title == null) return form;
     if (widget.collapsible) {
       return CollapsibleEngineBlock(
-        icon: widget.icon,
-        title: widget.title,
-        subtitle: widget.subtitle,
+        icon: widget.icon!,
+        title: title,
+        subtitle: widget.subtitle!,
         child: form,
       );
     }
     return EngineBlock(
-      icon: widget.icon,
-      title: widget.title,
-      subtitle: widget.subtitle,
+      icon: widget.icon!,
+      title: title,
+      subtitle: widget.subtitle!,
       child: form,
     );
   }
@@ -369,9 +375,11 @@ class ServerForm extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Five fields in one column read as five steps. Ruled into three
-        // groups they read as what they are: where the engine is, what it is
-        // called, and how much it remembers.
+        // One plate, one grid. The design puts all five in a 2-column block
+        // with the address across the top, and it is right to: unlike the local
+        // engine's form, these are not three questions of different kinds — they
+        // are five facts about one server, and ruling them apart implied a
+        // sequence that isn't there.
         FormPlate(
           sections: [
             Column(
@@ -383,40 +391,51 @@ class ServerForm extends StatelessWidget {
                   reach: reach,
                   onRetry: onRetry,
                 ),
-                const SizedBox(height: 14),
-                ModelField(model: model, suggestedModels: suggestedModels),
+                const SizedBox(height: 16),
+                FieldPair(
+                  first: ModelField(
+                    model: model,
+                    suggestedModels: suggestedModels,
+                  ),
+                  second: AdvertiseAsField(
+                    controller: advertise,
+                    hintText: 'Optional, defaults to model id',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FieldPair(
+                  first: _ContextSelect(
+                    max: contextMax,
+                    value: contextValue,
+                    note: contextNote,
+                    onChanged: onContextChanged,
+                  ),
+                  second: NodeNameField(controller: nodeName),
+                ),
               ],
-            ),
-            FieldPair(
-              first: AdvertiseAsField(
-                controller: advertise,
-                hintText: 'qwen3-31b.gguf',
-                optional: true,
-              ),
-              second: NodeNameField(controller: nodeName),
-            ),
-            ContextWindowField(
-              max: contextMax,
-              value: contextValue,
-              note: contextNote,
-              // Already inside a plate that rules it off from the fields above,
-              // so the recessed tile would be a box inside a box.
-              inline: true,
-              onChanged: onContextChanged,
             ),
           ],
         ),
         const SizedBox(height: 18),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ListenableBuilder(
-            listenable: Listenable.merge([endpoint, model]),
-            builder: (context, _) => EngineStartButton(
-              label: checking ? 'Checking…' : 'Start engine',
-              blockedReason: _blockedReason(),
-              onPressed: onStart,
-            ),
-          ),
+        ListenableBuilder(
+          listenable: Listenable.merge([endpoint, model]),
+          builder: (context, _) {
+            final blocked = _blockedReason();
+            return Wrap(
+              spacing: ShareMetrics.buttonGap,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                EngineStartButton(
+                  label: checking ? 'Checking…' : 'Start engine',
+                  blockedReason: blocked,
+                  onPressed: onStart,
+                ),
+                if (blocked != null)
+                  Text(blocked, style: ShareType.buttonHelper),
+              ],
+            );
+          },
         ),
       ],
     );
@@ -435,7 +454,10 @@ class ServerForm extends StatelessWidget {
   String? _blockedReason() {
     if (checking) return 'Checking the server…';
     return switch (readEngineAddress(endpoint.text)) {
-      EngineAddressEmpty() => 'Fill in the server address to start.',
+      // The design's wording for the empty form: it names both things that are
+      // missing, where "fill in the server address" named one and left the
+      // reader to discover the other after they had.
+      EngineAddressEmpty() => 'Add an endpoint and a model id to continue.',
       EngineAddressRejected(:final message) => message,
       EngineAddressReady() => _serverBlockedReason(),
     };
@@ -472,7 +494,10 @@ class ModelField extends StatelessWidget {
   Widget build(BuildContext context) {
     if (suggestedModels.isEmpty) {
       return LabeledField(
-        label: 'Model',
+        // "Model id", not "Model": what goes here is the string the server
+        // answers to, and beside "Shown on the grid as" the difference between
+        // the two names is the whole point of having both.
+        label: 'Model id',
         controller: model,
         hint: 'gemma4-31b.gguf',
       );
@@ -484,7 +509,7 @@ class ModelField extends StatelessWidget {
         // AppSelectField for the same reason as the other two pickers: a
         // Material dropdown's popup can't match the app's floating menus.
         return AppSelectField<String>(
-          label: 'Model',
+          label: 'Model id',
           value: value,
           options: [
             for (final m in suggestedModels)
@@ -493,6 +518,55 @@ class ModelField extends StatelessWidget {
           onChanged: (v) => model.text = v,
         );
       },
+    );
+  }
+}
+
+/// The context window for an *external* server: a picker, not a slider.
+///
+/// The design draws it that way, and the reason survives the drawing. A local
+/// model's window is a choice about memory, which is what a slider is for. A
+/// server's window is a number it was already launched with, so the question is
+/// "which of these did you start it on" — and a list answers that in one press
+/// without a drag that can land a thousand tokens off.
+///
+/// [contextLadder] keeps whatever is already set as its own rung, so opening
+/// this can never round somebody's `--ctx-size` to the nearest familiar number.
+class _ContextSelect extends StatelessWidget {
+  const _ContextSelect({
+    required this.max,
+    required this.value,
+    required this.note,
+    required this.onChanged,
+  });
+
+  final int max;
+  final int value;
+
+  /// What the server said about its own window, when it said anything.
+  final String? note;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final rungs = contextLadder(max: max, current: value);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppSelectField<int>(
+          label: 'Context window',
+          value: rungs.contains(value) ? value : rungs.last,
+          options: [
+            for (final rung in rungs)
+              AppSelectOption(value: rung, label: formatContextLength(rung)),
+          ],
+          onChanged: onChanged,
+        ),
+        if (note case final line?) ...[
+          const SizedBox(height: 6),
+          Text(line, style: ShareType.note),
+        ],
+      ],
     );
   }
 }

@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/share_page_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../models/logic/advertise_name.dart';
 import '../logic/backend_detector.dart';
 import '../logic/ollama_launch_controller.dart';
 import '../logic/provider_run_controller.dart';
-import 'engine_block.dart';
 import 'engine_notes.dart';
 import 'external_server_block.dart';
 
@@ -72,14 +72,12 @@ class ExternalServers extends ConsumerWidget {
         ExternalServerBlock(
           key: const ValueKey('manual'),
           network: network,
-          // Open. It used to fold away, which was right while this sat three
-          // disclosures deep on a page of stacked rows; on a pane of its own
-          // it is the route's own form, and a route whose form is shut shows
-          // the reader nothing to do.
+          // Open, and bare. It used to fold away behind a header, which was
+          // right while this sat three disclosures deep on a page of stacked
+          // rows. On a pane of its own the rule above already names it and the
+          // first field says the rest — a title and a subtitle here made the
+          // page say "another endpoint" three times in six inches.
           collapsible: false,
-          icon: Icons.computer_outlined,
-          title: 'Point at another endpoint',
-          subtitle: 'Any OpenAI-compatible engine running on this computer.',
         ),
       ],
     );
@@ -106,43 +104,71 @@ class _NotRunningBackendBlock extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final launch = ref.watch(ollamaLaunchControllerProvider);
     final starting = launch is OllamaLaunchStarting;
-    return EngineBlock(
-      icon: Icons.dns_outlined,
-      title: backend.label,
-      subtitle: 'Installed on this computer, but not running yet',
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: SharePalette.accent.withValues(alpha: 0.045),
+        borderRadius: BorderRadius.circular(ShareMetrics.plateRadius),
+        border: Border.all(color: SharePalette.accent.withValues(alpha: 0.3)),
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Row(
+            children: [
+              Icon(Icons.dns_outlined, size: 22, color: SharePalette.accent),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      backend.label,
+                      style: ShareType.cardTitle.copyWith(fontSize: 14),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Installed on this computer, not running yet.',
+                      style: ShareType.buttonHelper,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              FilledButton.icon(
+                onPressed: starting
+                    ? null
+                    : () => ref
+                          .read(ollamaLaunchControllerProvider.notifier)
+                          .start(),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 15),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: AppFont.semibold,
+                  ),
+                ),
+                icon: starting
+                    ? const AppSpinner.onAccent()
+                    : const Icon(Icons.play_arrow, size: 16),
+                label: Text(starting ? 'Starting…' : 'Launch & share'),
+              ),
+            ],
+          ),
           if (launch is OllamaLaunchFailed) ...[
+            const SizedBox(height: 12),
             Text(
               launch.message,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.error,
               ),
             ),
-            const SizedBox(height: 12),
           ],
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: starting
-                  ? null
-                  : () => ref
-                        .read(ollamaLaunchControllerProvider.notifier)
-                        .start(),
-              icon: starting
-                  ? const AppSpinner()
-                  : const Icon(Icons.play_arrow),
-              label: Text(
-                starting
-                    ? 'Starting ${backend.label}…'
-                    : 'Run ${backend.label}',
-              ),
-            ),
-          ),
         ],
       ),
     );

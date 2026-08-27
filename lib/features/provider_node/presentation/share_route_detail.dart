@@ -42,6 +42,20 @@ class ShareRouteDetail extends ConsumerWidget {
   /// row that is not on the page.
   int get _position => offers.indexWhere((offer) => offer.route == route) + 1;
 
+  /// How many engines were detected here, read off the badge the rail already
+  /// draws, so the paragraph and the card can never disagree about the count.
+  int get _serversFound {
+    final server = offers
+        .where((offer) => offer.route == ShareRoute.server)
+        .firstOrNull;
+    final badge = server?.badge;
+    if (badge == null) return 0;
+    return int.tryParse(badge.split(' ').first) ?? 0;
+  }
+
+  String get _foundPhrase =>
+      _serversFound == 1 ? 'one engine' : '$_serversFound engines';
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
@@ -61,10 +75,17 @@ class ShareRouteDetail extends ConsumerWidget {
       ),
       ShareRoute.server => (
         'EXISTING SERVER',
-        'Share what is already running.',
-        'Point Grid at an engine on this computer and your setup is shared '
-            'exactly as you configured it: same models, same quantisation, '
-            'same flags.',
+        "Share what's already running.",
+        // Names the count when there is one to name — the design's sentence —
+        // and falls back to the general one when nothing was detected, where
+        // "Grid found one engine" would be a plain untruth (§5).
+        _serversFound == 0
+            ? 'Point Grid at an engine on this computer and your existing '
+                  'setup is shared exactly as configured: models, '
+                  'quantization, flags.'
+            : 'Grid found $_foundPhrase on this computer. Point at it and '
+                  'your existing setup is shared exactly as configured: '
+                  'models, quantization, flags.',
       ),
     };
 
