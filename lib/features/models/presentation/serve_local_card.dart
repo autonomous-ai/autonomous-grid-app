@@ -8,6 +8,7 @@ import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/share_page_theme.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -362,10 +363,9 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
             // one button on the form that finishes the job.
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: TextButton(
                 onPressed: () => showModelManager(context),
-                icon: const Icon(Icons.tune, size: 16),
-                label: const Text('Download or manage models'),
+                child: const Text('Download or manage models →'),
               ),
             ),
           ],
@@ -462,9 +462,7 @@ class _ServeActions extends StatelessWidget {
                 // What a first-time host actually wants to know before
                 // pressing it, which is that pressing it is not a commitment.
                 'You can stop at any time.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppPalette.textSecondary,
-                ),
+                style: ShareType.buttonHelper,
               ),
           ],
         ),

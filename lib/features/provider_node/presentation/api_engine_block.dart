@@ -559,6 +559,7 @@ class _KeyField extends StatelessWidget {
               labeledFieldDecoration(
                 provider.keyHint,
                 fill: AppCard.inset,
+                skin: FieldSkinScope.maybeOf(context),
               ).copyWith(
                 // Cap the toggle so it doesn't inflate the field above the theme's
                 // field height (a bare IconButton is 48, the field is 44).
@@ -679,7 +680,11 @@ class _ModelField extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           child: InputDecorator(
             isEmpty: false,
-            decoration: labeledFieldDecoration('', fill: AppCard.inset),
+            decoration: labeledFieldDecoration(
+              '',
+              fill: AppCard.inset,
+              skin: FieldSkinScope.maybeOf(context),
+            ),
             child: Row(
               children: [
                 Expanded(

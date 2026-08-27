@@ -81,7 +81,11 @@ List<ShareRouteOffer> buildShareRouteOffers({
       route: ShareRoute.server,
       title: 'Share a server you run',
       badge: external.isEmpty ? null : '${external.length} found',
-      badgeTone: running.isEmpty
+      // Green the moment something is found, which is what the design does —
+      // not only when it is already answering. The card's own line separates
+      // the two states ("already running here" against "installed here"); the
+      // badge counts what was found.
+      badgeTone: external.isEmpty
           ? ShareBadgeTone.neutral
           : ShareBadgeTone.ready,
       line: switch ((running.firstOrNull, external.firstOrNull)) {

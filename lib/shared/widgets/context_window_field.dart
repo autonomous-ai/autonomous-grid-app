@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/context_length.dart';
 import '../theme/app_theme.dart';
+import '../theme/share_page_theme.dart';
 import 'app_spinner.dart';
 
 /// The "Context window" setting: a collapsed tile showing the current value,
@@ -51,6 +52,7 @@ class ContextWindowField extends StatelessWidget {
       max: max,
       value: value,
       note: note,
+      inline: inline,
       onChanged: (tokens) => onChanged(snapContextLength(tokens, max)),
     );
     if (!inline) {
@@ -59,20 +61,14 @@ class ContextWindowField extends StatelessWidget {
         child: slider,
       );
     }
-    final theme = Theme.of(context);
-    // No value on this header. The box beside the slider holds the exact number
-    // and can be typed into; a rounded copy of it two lines above was a second
-    // reading of one setting, and the two disagreed on sight — "200k" over
-    // "204800" looks like two different numbers to anyone not doing the
-    // arithmetic.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Context window', style: theme.textTheme.bodySmall),
-        const SizedBox(height: 6),
-        slider,
-      ],
-    );
+    // Inline is the Share Intelligence design's shape: the setting's name on
+    // the left of one row and its value on the right, then the sentence, then
+    // the slider full width under both. The exact-number box *is* that value —
+    // the design draws a read-only pill there, and this app has to keep the
+    // typing (a server launched with `--ctx-size 40960` cannot be matched by
+    // dragging), so the box wears the pill's shape and sits in the pill's
+    // place. One reading of the setting, in the position the design put it.
+    return slider;
   }
 }
 
@@ -173,12 +169,17 @@ class _SliderAndBox extends StatefulWidget {
     required this.max,
     required this.value,
     required this.note,
+    required this.inline,
     required this.onChanged,
   });
 
   final int max;
   final int value;
   final String? note;
+
+  /// Lay the value out as the design does — beside the label above, not beside
+  /// the slider. See [ContextWindowField.inline].
+  final bool inline;
 
   /// Reports the raw (unsnapped) token count; the parent snaps and clamps it.
   final ValueChanged<int> onChanged;
@@ -235,51 +236,156 @@ class _SliderAndBoxState extends State<_SliderAndBox> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
-    final endLabel = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
+    final endLabel = widget.inline
+        ? ShareType.note
+        : theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          );
+    final box = _TokenBox(
+      controller: _typed,
+      focus: _focus,
+      onCommit: _commit,
+      inline: widget.inline,
+    );
+    final slider = SliderTheme(
+      // The design's slider: a 5px track, and a white thumb ringed in accent
+      // rather than filled with it. Material's default is a fatter track and a
+      // solid dot, which on this page read as a different family of control
+      // from everything around it.
+      data: widget.inline
+          ? SliderThemeData(
+              trackHeight: 5,
+              activeTrackColor: SharePalette.accent,
+              inactiveTrackColor: SharePalette.track,
+              thumbColor: Colors.white,
+              overlayColor: SharePalette.accentRing,
+              thumbShape: const _RingThumb(),
+              trackShape: const RoundedRectSliderTrackShape(),
+            )
+          : SliderTheme.of(context),
+      child: Slider(
+        value: widget.value.toDouble().clamp(
+          minContextTokens.toDouble(),
+          widget.max.toDouble(),
+        ),
+        min: minContextTokens.toDouble(),
+        max: widget.max.toDouble(),
+        label: formatContextLength(widget.value),
+        onChanged: (v) => widget.onChanged(v.round()),
+      ),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'How much of your conversation the model can remember and use when it '
-          'replies. Higher remembers more but uses more memory.',
-          style: endLabel,
-        ),
-        if (widget.note case final line?) ...[
-          const SizedBox(height: 4),
-          Text(line, style: endLabel),
-        ],
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Slider(
-                value: widget.value.toDouble().clamp(
-                  minContextTokens.toDouble(),
-                  widget.max.toDouble(),
-                ),
-                min: minContextTokens.toDouble(),
-                max: widget.max.toDouble(),
-                label: formatContextLength(widget.value),
-                onChanged: (v) => widget.onChanged(v.round()),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // The name of the setting sits *inside* this row in the
+                  // design, so the value beside it lines up with the name
+                  // rather than with the sentence explaining it.
+                  if (widget.inline)
+                    Text('Memory for context', style: ShareType.fieldLabel),
+                  Text(
+                    'How much of your conversation the model can remember and '
+                    'use when it replies. Higher remembers more but uses more '
+                    'memory.',
+                    style: endLabel,
+                  ),
+                  if (widget.note case final line?) ...[
+                    const SizedBox(height: 4),
+                    Text(line, style: endLabel),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            _TokenBox(controller: _typed, focus: _focus, onCommit: _commit),
+            if (widget.inline) ...[const SizedBox(width: 16), box],
           ],
         ),
+        if (widget.inline)
+          slider
+        else
+          Row(
+            children: [
+              Expanded(child: slider),
+              const SizedBox(width: 8),
+              box,
+            ],
+          ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
             children: [
-              Text(formatContextLength(minContextTokens), style: endLabel),
+              Text(
+                widget.inline
+                    ? '${formatContextLength(minContextTokens)} · lightest'
+                    : formatContextLength(minContextTokens),
+                style: endLabel,
+              ),
               const Spacer(),
-              Text(formatContextLength(widget.max), style: endLabel),
+              Text(
+                widget.inline
+                    ? '${formatContextLength(widget.max)} · heaviest'
+                    : formatContextLength(widget.max),
+                style: endLabel,
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The design's slider handle: white, ringed in accent, with a soft drop.
+///
+/// Material's `RoundSliderThumbShape` fills the thumb with the active colour,
+/// which reads as a dot *on* the track rather than a handle *over* it.
+class _RingThumb extends SliderComponentShape {
+  const _RingThumb();
+
+  static const double _radius = 8;
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) =>
+      const Size.fromRadius(_radius);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final canvas = context.canvas;
+    canvas.drawCircle(
+      center.translate(0, 1),
+      _radius,
+      Paint()
+        ..color = SharePalette.ink.withValues(alpha: 0.22)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    canvas.drawCircle(center, _radius, Paint()..color = Colors.white);
+    canvas.drawCircle(
+      center,
+      _radius - 0.75,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = SharePalette.accent,
     );
   }
 }
@@ -300,39 +406,51 @@ class _TokenBox extends StatelessWidget {
     required this.controller,
     required this.focus,
     required this.onCommit,
+    required this.inline,
   });
 
   final TextEditingController controller;
   final FocusNode focus;
   final VoidCallback onCommit;
 
+  /// Wear the design's value pill — a filled chip beside the setting's name —
+  /// instead of the app's field. Still typable: it is the same box.
+  final bool inline;
+
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return SizedBox(
-      width: 104,
+      width: inline ? 92 : 104,
       child: TextField(
         controller: controller,
         focusNode: focus,
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        textAlign: TextAlign.right,
+        textAlign: inline ? TextAlign.center : TextAlign.right,
         // Tabular figures: the number changes as the slider moves, and
         // proportional digits make it jitter sideways while it does.
-        style: theme.textTheme.bodyMedium?.copyWith(
-          fontFeatures: const [FontFeature.tabularFigures()],
-        ),
+        style:
+            (inline
+                    ? TextStyle(
+                        fontSize: 14,
+                        fontWeight: AppFont.semibold,
+                        color: SharePalette.ink,
+                      )
+                    : theme.textTheme.bodyMedium)
+                ?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
         onSubmitted: (_) => onCommit(),
         decoration: InputDecoration(
           isDense: true,
           filled: true,
-          fillColor: AppPalette.cardBg,
-          contentPadding: const EdgeInsets.symmetric(
+          fillColor: inline ? SharePalette.badgeFill : AppPalette.cardBg,
+          contentPadding: EdgeInsets.symmetric(
             horizontal: 10,
-            vertical: 8,
+            vertical: inline ? 6 : 8,
           ),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppControl.radius),
+            borderRadius: BorderRadius.circular(inline ? 7 : AppControl.radius),
             borderSide: BorderSide.none,
           ),
         ),

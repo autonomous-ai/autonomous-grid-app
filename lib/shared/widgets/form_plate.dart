@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/share_page_theme.dart';
 
 /// A form as one plate with its questions ruled apart, rather than a run of
 /// loose fields down a page.
@@ -11,11 +12,10 @@ import '../theme/app_theme.dart';
 /// six. A rule between groups says "this is a different question" in the one
 /// piece of ink that cannot be mistaken for a heading.
 ///
-/// **Lifted, not recessed.** The fields inside fill themselves [AppCard.inset];
-/// a recessed plate would be that same `#F7F7F5` and they would vanish into it.
-/// The rim is [AppPalette.divider], the same hairline the app rules everything
-/// else with, so a plate on a white pane still has an edge (§2 — fill alone
-/// cannot separate two surfaces).
+/// Its two greys are a pair on purpose and come from the design: the rim is
+/// [SharePalette.rim], the rules inside are [SharePalette.innerRule], one shade
+/// lighter — so the plate reads as one object with divisions rather than as
+/// three cards stacked flush.
 class FormPlate extends StatelessWidget {
   const FormPlate({super.key, required this.sections});
 
@@ -28,10 +28,9 @@ class FormPlate extends StatelessWidget {
     AppTheme.watch(context);
     return Container(
       decoration: BoxDecoration(
-        color: AppCard.base,
-        borderRadius: BorderRadius.circular(AppCard.radius),
-        border: Border.all(color: AppPalette.divider),
-        boxShadow: AppGlass.cardShadow,
+        color: SharePalette.surface,
+        borderRadius: BorderRadius.circular(ShareMetrics.plateRadius),
+        border: Border.all(color: SharePalette.rim),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -39,11 +38,8 @@ class FormPlate extends StatelessWidget {
         children: [
           for (final (index, section) in sections.indexed) ...[
             if (index > 0)
-              Divider(height: 1, thickness: 1, color: AppPalette.divider),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 17),
-              child: section,
-            ),
+              Divider(height: 1, thickness: 1, color: SharePalette.innerRule),
+            Padding(padding: ShareMetrics.plateSection, child: section),
           ],
         ],
       ),
@@ -63,6 +59,9 @@ class FieldPair extends StatelessWidget {
   final Widget first;
   final Widget second;
 
+  /// The design's own column gap.
+  static const double _gap = 16;
+
   /// Under this, each field would be narrower than the hint text it shows.
   static const double _stackBelow = 430;
 
@@ -71,13 +70,17 @@ class FieldPair extends StatelessWidget {
     builder: (context, constraints) => constraints.maxWidth < _stackBelow
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [first, const SizedBox(height: 14), second],
+            children: [
+              first,
+              const SizedBox(height: _gap),
+              second,
+            ],
           )
         : Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(child: first),
-              const SizedBox(width: 16),
+              const SizedBox(width: _gap),
               Expanded(child: second),
             ],
           ),

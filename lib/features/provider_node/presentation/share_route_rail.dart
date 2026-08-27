@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/detail_widgets.dart';
-import '../../../shared/widgets/status_dot.dart';
+import '../../../shared/theme/share_page_theme.dart';
 import '../../messaging/presentation/remote_reach_row.dart';
 import '../logic/share_route.dart';
 import '../logic/share_route_offer.dart';
@@ -61,7 +61,7 @@ class ShareRouteRail extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _RailHeader(gridName: network.name),
-                const SizedBox(height: 18),
+                const SizedBox(height: ShareMetrics.railGap),
                 _SharingStatus(live: live, starting: starting),
                 // Nothing at all unless a bot is connected. It belongs beside
                 // the sharing status and nowhere else on this page: both answer
@@ -70,9 +70,12 @@ class ShareRouteRail extends ConsumerWidget {
                   padding: EdgeInsets.only(top: 12),
                   child: RemoteReachRow(),
                 ),
-                const SizedBox(height: 18),
-                _RailLabel(live ? 'WAYS TO SHARE' : 'CHOOSE A ROUTE'),
-                const SizedBox(height: 10),
+                const SizedBox(height: ShareMetrics.railGap),
+                Text(
+                  live ? 'WAYS TO SHARE' : 'CHOOSE A ROUTE',
+                  style: ShareType.eyebrow,
+                ),
+                const SizedBox(height: 8),
                 for (final offer in offers) ...[
                   _RouteCard(
                     offer: offer,
@@ -88,7 +91,7 @@ class ShareRouteRail extends ConsumerWidget {
                   const SizedBox(height: 8),
                 ],
                 const Spacer(),
-                const SizedBox(height: 14),
+                const SizedBox(height: 18),
                 const _RailFootnote(),
               ],
             ),
@@ -106,30 +109,27 @@ class _RailHeader extends StatelessWidget {
   final String gridName;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Put this computer to work.',
-          style: theme.textTheme.headlineMedium?.copyWith(height: 1.14),
-        ),
-        const SizedBox(height: 9),
-        Text(
-          // Names the grid, because every sentence on this page is about it,
-          // and says the choice is reversible before it is made — the thing
-          // that stops a first-time reader hunting for the "right" answer.
-          'Answer questions for $gridName using hardware and keys you '
-          'already own. Pick a route below. You can change it any time.',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: AppPalette.textSecondary,
-            height: 1.5,
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        // Broken where the design breaks it, not where the rail happens to run
+        // out: "Put this computer" over "to work." is the shape that was drawn,
+        // and it survives a font this app does not ship.
+        'Put this computer\nto work.',
+        style: ShareType.railTitle,
+      ),
+      const SizedBox(height: 9),
+      Text(
+        // Names the grid, because every sentence on this page is about it, and
+        // says the choice is reversible before it is made — the thing that
+        // stops a first-time reader hunting for the "right" answer.
+        'Answer questions for $gridName using hardware and keys you '
+        'already own. Pick a route below. You can change it any time.',
+        style: ShareType.railBody,
+      ),
+    ],
+  );
 }
 
 /// Whether this computer is reachable from the grid, said plainly.
@@ -144,7 +144,7 @@ class _SharingStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    AppTheme.watch(context);
     final (title, note) = switch ((live, starting)) {
       (true, _) => (
         'Sharing, live now',
@@ -160,44 +160,29 @@ class _SharingStatus extends StatelessWidget {
       ),
     };
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: AppGlass.surfaceFill,
-        borderRadius: BorderRadius.circular(AppCard.radius),
-        border: Border.all(color: AppPalette.divider),
+        color: SharePalette.surface,
+        borderRadius: BorderRadius.circular(ShareMetrics.statusRadius),
+        border: Border.all(color: SharePalette.rim),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 3),
-            child: StatusDot(
-              color: live ? AppPalette.online : AppPalette.textFaint,
-              size: 8,
-              // Breathing only while something is actually happening — a halo
-              // on an idle machine reports activity there isn't any of.
-              pulsing: live || starting,
-            ),
+          // Breathing only while something is actually happening — a halo on an
+          // idle machine reports activity there isn't any of.
+          _PulseDot(
+            colour: live ? SharePalette.liveDot : SharePalette.idleDot,
+            pulsing: live || starting,
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: AppFont.semibold,
-                  ),
-                ),
+                Text(title, style: ShareType.statusTitle),
                 const SizedBox(height: 2),
-                Text(
-                  note,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppPalette.textSecondary,
-                    height: 1.45,
-                  ),
-                ),
+                Text(note, style: ShareType.note),
               ],
             ),
           ),
@@ -207,20 +192,74 @@ class _SharingStatus extends StatelessWidget {
   }
 }
 
-/// The small capitalised label over a group in the rail.
-class _RailLabel extends StatelessWidget {
-  const _RailLabel(this.text);
+/// The 7px dot beside the sharing status, breathing while something is live.
+///
+/// Not [StatusDot]: that one is 9px with a glow behind it, drawn for a row in a
+/// list. The design's is a plain 7px circle that pulses by fading and shrinking
+/// on a 2.4s ease — a slower, smaller signal, sized for a block of text rather
+/// than a table.
+class _PulseDot extends StatefulWidget {
+  const _PulseDot({required this.colour, required this.pulsing});
 
-  final String text;
+  final Color colour;
+  final bool pulsing;
 
   @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-      fontSize: 10.5,
-      fontWeight: AppFont.semibold,
-      letterSpacing: 1.05,
-      color: AppPalette.textSecondary,
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _beat = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2400),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reduce Motion gets the dot, not the breathing: the colour already carries
+    // the whole message (§11).
+    final still = !widget.pulsing || MediaQuery.of(context).disableAnimations;
+    if (still) {
+      _beat.stop();
+      _beat.value = 0;
+      return;
+    }
+    if (!_beat.isAnimating) _beat.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_PulseDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pulsing != widget.pulsing) didChangeDependencies();
+  }
+
+  @override
+  void dispose() {
+    _beat.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: AnimatedBuilder(
+      animation: _beat,
+      builder: (context, child) {
+        // 0 → 1 → 0 over the turn, which is the CSS keyframe's shape: full at
+        // both ends, weakest in the middle.
+        final swing = (0.5 - (_beat.value - 0.5).abs()) * 2;
+        return Opacity(
+          opacity: 1 - 0.65 * swing,
+          child: Transform.scale(scale: 1 - 0.15 * swing, child: child),
+        );
+      },
+      child: Container(
+        width: 7,
+        height: 7,
+        decoration: BoxDecoration(color: widget.colour, shape: BoxShape.circle),
+      ),
     ),
   );
 }
@@ -253,12 +292,8 @@ class _RouteCardState extends State<_RouteCard> {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final theme = Theme.of(context);
     final offer = widget.offer;
     final selected = widget.selected;
-    final ink = widget.enabled
-        ? AppPalette.textPrimary
-        : AppPalette.textSecondary;
 
     return Opacity(
       // Dimmed rather than removed while an engine serves: the cards are the
@@ -279,36 +314,36 @@ class _RouteCardState extends State<_RouteCard> {
             curve: AppMotion.curve,
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppGlass.surfaceFill,
-              borderRadius: BorderRadius.circular(AppCard.radius),
+              color: SharePalette.surface,
+              borderRadius: BorderRadius.circular(ShareMetrics.cardRadius),
               border: Border.all(
                 color: selected
-                    ? AppPalette.accent
+                    ? SharePalette.accent
                     : _hovered && widget.enabled
-                    ? AppPalette.textFaint
-                    : AppPalette.divider,
+                    ? SharePalette.fieldRim
+                    : SharePalette.rim,
               ),
               // A ring, not a heavier border: the selected card has to be
               // findable at a glance without the row growing by a pixel and
               // shifting the two under it.
               boxShadow: selected
-                  ? [
-                      BoxShadow(
-                        color: AppPalette.accent.withValues(alpha: 0.14),
-                        spreadRadius: 3,
-                      ),
-                    ]
-                  : AppGlass.cardShadow,
+                  ? [BoxShadow(color: SharePalette.accentRing, spreadRadius: 3)]
+                  : null,
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: Icon(
-                    _routeIcon(offer.route),
-                    size: 21,
-                    color: selected ? AppPalette.accent : AppPalette.textFaint,
+                // A fixed gutter, so the three titles start on one line however
+                // wide their glyphs are.
+                SizedBox(
+                  width: 26,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Icon(
+                      _routeIcon(offer.route),
+                      size: 22,
+                      color: selected ? SharePalette.accent : SharePalette.line,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -317,39 +352,63 @@ class _RouteCardState extends State<_RouteCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: Text(
                               offer.title,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                color: ink,
-                              ),
+                              style: ShareType.cardTitle,
                             ),
                           ),
                           if (offer.badge != null) ...[
                             const SizedBox(width: 8),
-                            BadgePill(
+                            _RouteBadge(
                               label: offer.badge!,
-                              color: _badgeColour(offer.badgeTone),
-                              compact: true,
+                              tone: offer.badgeTone,
                             ),
                           ],
                         ],
                       ),
                       const SizedBox(height: 3),
-                      Text(
-                        offer.line,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppPalette.textSecondary,
-                          height: 1.45,
-                        ),
-                      ),
+                      Text(offer.line, style: ShareType.cardLine),
                     ],
                   ),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The two-word benefit on a route card.
+///
+/// Its own widget rather than [BadgePill]: that one is a tinted rim at radius 6
+/// for a badge sitting *in* a list of them, and the design's is a filled chip,
+/// radius 5, no border, at 10px — quieter beside a title, which is the point of
+/// it here.
+class _RouteBadge extends StatelessWidget {
+  const _RouteBadge({required this.label, required this.tone});
+
+  final String label;
+  final ShareBadgeTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final ready = tone == ShareBadgeTone.ready;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: ready ? SharePalette.readyBadgeFill : SharePalette.badgeFill,
+        borderRadius: BorderRadius.circular(ShareMetrics.badgeRadius),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: ShareType.badge.copyWith(
+          color: ready ? SharePalette.readyBadgeInk : SharePalette.badgeInk,
         ),
       ),
     );
@@ -365,26 +424,19 @@ IconData _routeIcon(ShareRoute route) => switch (route) {
   ShareRoute.server => Icons.dns_outlined,
 };
 
-/// One badge on this page gets a colour: a server already running here, which
-/// is the route that is one press from done. The rest stay neutral, because a
-/// rail where every pill is bright has nothing left to point with.
-Color _badgeColour(ShareBadgeTone tone) => switch (tone) {
-  ShareBadgeTone.neutral => AppPalette.textSecondary,
-  ShareBadgeTone.ready => AppPalette.online,
-};
-
-/// The two facts a host should have before they start, not after.
-class _RailFootnote extends StatelessWidget {
+/// The two facts a host should have before they start, not after, and the way
+/// to the longer answer.
+class _RailFootnote extends ConsumerWidget {
   const _RailFootnote();
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Divider(height: 1, color: AppPalette.divider),
-        const SizedBox(height: 14),
+        Divider(height: 1, thickness: 1, color: SharePalette.footRule),
+        const SizedBox(height: 18),
         Text(
           // "Keys stay in your keychain" is what the design said here, and this
           // app has no keychain — a key goes to the local `grid` CLI. The
@@ -392,9 +444,25 @@ class _RailFootnote extends StatelessWidget {
           // makes, in its words (§5).
           'Sharing stops the moment you close the lid, quit Grid, or press '
           'stop. A key you paste never leaves this computer.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: AppPalette.textSecondary,
-            height: 1.5,
+          style: ShareType.footnote,
+        ),
+        const SizedBox(height: 7),
+        // Opens the app's own guide. The design's link had no destination and
+        // this one is checked: [ShellSection.guide] is a shipped row, not a
+        // place named on faith (§5).
+        GestureDetector(
+          onTap: () => ref
+              .read(shellSectionProvider.notifier)
+              .select(ShellSection.guide),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: Text(
+              'How sharing works →',
+              style: ShareType.footnote.copyWith(
+                fontWeight: AppFont.semibold,
+                color: SharePalette.accent,
+              ),
+            ),
           ),
         ),
       ],

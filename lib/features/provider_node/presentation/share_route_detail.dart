@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/share_page_theme.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../node_setup/logic/node_capabilities.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
@@ -67,15 +68,14 @@ class ShareRouteDetail extends ConsumerWidget {
       ),
     };
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _PaneColumn(
       children: [
         PanelHeader(
           eyebrow: 'ROUTE 0$_position · $eyebrow',
           title: title,
           blurb: blurb,
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: ShareMetrics.paneGap),
         Expanded(
           child: SingleChildScrollView(
             child: switch (route) {
@@ -88,6 +88,29 @@ class ShareRouteDetail extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// A pane's content, held to the design's reading width and pinned left.
+///
+/// Without the cap, a paragraph on a wide display runs the full width of the
+/// window and every form field stretches with it — the two things a measure
+/// exists to stop.
+class _PaneColumn extends StatelessWidget {
+  const _PaneColumn({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.topLeft,
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: ShareMetrics.paneMaxWidth),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    ),
+  );
 }
 
 /// What the pane is about, before anything it asks for.
@@ -112,32 +135,19 @@ class PanelHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           eyebrow,
-          style: theme.textTheme.labelSmall?.copyWith(
-            fontSize: 10.5,
-            fontWeight: AppFont.semibold,
-            letterSpacing: 1.05,
-            color: eyebrowColour ?? AppPalette.textSecondary,
-          ),
+          style: eyebrowColour == null
+              ? ShareType.eyebrow
+              : ShareType.eyebrow.copyWith(color: eyebrowColour),
         ),
         const SizedBox(height: 7),
-        Text(title, style: theme.textTheme.headlineSmall),
+        Text(title, style: ShareType.paneTitle),
         const SizedBox(height: 7),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: Text(
-            blurb,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: AppPalette.textSecondary,
-              height: 1.55,
-            ),
-          ),
-        ),
+        Text(blurb, style: ShareType.paneBody),
       ],
     );
   }
@@ -196,17 +206,14 @@ class _SetUpFirst extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'This computer needs the built-in engine before it can run a '
           'model. It downloads once and takes a few minutes.',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: AppPalette.textSecondary,
-            height: 1.5,
-          ),
+          style: ShareType.paneBody,
         ),
         const SizedBox(height: 16),
         FilledButton.icon(
@@ -270,16 +277,15 @@ class LiveShareDetail extends ConsumerWidget {
       1 => 'Serving ${models.first} on ${network.name}',
       final n => 'Serving $n models on ${network.name}',
     };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return _PaneColumn(
       children: [
         PanelHeader(
           eyebrow: 'LIVE ON THE GRID',
-          eyebrowColour: AppPalette.online,
+          eyebrowColour: SharePalette.liveInk,
           title: 'This computer is answering questions.',
           blurb: '$what. Leave Grid running and it keeps working.',
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: ShareMetrics.paneGap),
         Expanded(
           child: SingleChildScrollView(
             child: ServingEnginesSection(network: network),

@@ -245,6 +245,7 @@ class _FieldSurface extends StatelessWidget {
           '',
           fill: fill ?? AppCard.inset,
           outlined: outlined,
+          skin: FieldSkinScope.maybeOf(context),
         ),
         child: Row(
           children: [

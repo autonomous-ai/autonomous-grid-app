@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/share_page_theme.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../models/logic/engine_setup_controller.dart';
 import '../../network/presentation/enable_provider_card.dart';
@@ -65,11 +67,66 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
 class _ShareIntelligencePage extends ConsumerWidget {
   const _ShareIntelligencePage();
 
-  /// Below this the two panes stop being two: a 380px rail beside a form is
-  /// most of a narrow window, and both halves end up too tight to read. Desktop
-  /// windows get dragged small (§4), so the layout has to have an answer.
+  /// Below this the two panes stop being two: the design's 396px rail beside a
+  /// form is most of a narrow window, and both halves end up too tight to read.
+  /// Desktop windows get dragged small (§4), so the layout has to have an
+  /// answer.
   static const double _splitAt = 940;
-  static const double _railWidth = 380;
+
+  /// The mockup's field: a visible 1px rim at radius 9 on a light fill, where
+  /// the app's own idiom is a borderless capsule at radius 12. Hung over the
+  /// page so every field inside it — the model picker, both name boxes, the API
+  /// key, the endpoint — picks the design up without seven widgets each growing
+  /// a parameter for it.
+  static FieldSkin get _fieldSkin => FieldSkin(
+    fill: SharePalette.fieldFill,
+    rim: SharePalette.fieldRim,
+    radius: ShareMetrics.fieldRadius,
+    // 38px tall at 13.5px text, which is the design's field.
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    hintSize: 13.5,
+    labelStyle: ShareType.fieldLabel,
+    showHelp: false,
+  );
+
+  /// The design's buttons and links, for the whole page at once.
+  ///
+  /// Material reads these from the theme, so one override here reaches
+  /// `FilledButton`, `EngineStartButton` and every `TextButton.icon` in the
+  /// forms — including the ones inside widgets this page does not own.
+  ThemeData _pageTheme(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.copyWith(
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: SharePalette.accent,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, ShareMetrics.buttonHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ShareMetrics.fieldRadius),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 13.5,
+            fontWeight: AppFont.semibold,
+          ),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: SharePalette.accent,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          minimumSize: const Size(0, 28),
+          textStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: AppFont.semibold,
+          ),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -88,33 +145,42 @@ class _ShareIntelligencePage extends ConsumerWidget {
     // note on `NetworkCredential.isProvider` vs `.role`.
     if (!network.isProvider) return _LockedPage(network: network);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final rail = _RailPane(network: network);
-        final detail = _DetailPane(network: network);
-        if (constraints.maxWidth < _splitAt) {
-          return SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Bounded, because a rail that is a whole scrolling column has
-                // no bottom to pin its footnote to.
-                SizedBox(height: 520, child: rail),
-                Divider(height: 1, color: AppPalette.divider),
-                SizedBox(height: constraints.maxHeight, child: detail),
-              ],
-            ),
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(width: _railWidth, child: rail),
-            VerticalDivider(width: 1, color: AppPalette.divider),
-            Expanded(child: detail),
-          ],
-        );
-      },
+    return Theme(
+      data: _pageTheme(context),
+      child: FieldSkinScope(
+        skin: _fieldSkin,
+        child: ColoredBox(
+          color: SharePalette.pageBg,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final rail = _RailPane(network: network);
+              final detail = _DetailPane(network: network);
+              if (constraints.maxWidth < _splitAt) {
+                return SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Bounded, because a rail that is a whole scrolling
+                      // column has no bottom to pin its footnote to.
+                      SizedBox(height: 520, child: rail),
+                      Divider(height: 1, color: SharePalette.rim),
+                      SizedBox(height: constraints.maxHeight, child: detail),
+                    ],
+                  ),
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(width: ShareMetrics.railWidth, child: rail),
+                  VerticalDivider(width: 1, color: SharePalette.rim),
+                  Expanded(child: detail),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }
@@ -130,9 +196,9 @@ class _RailPane extends ConsumerWidget {
     final serving = ref.watch(servingEnginesProvider);
     final run = ref.watch(providerRunControllerProvider);
     return ColoredBox(
-      color: AppPalette.panelBg,
+      color: SharePalette.railBg,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+        padding: ShareMetrics.railPadding,
         child: ShareRouteRail(
           network: network,
           offers: shareRouteOffers(ref),
@@ -160,7 +226,7 @@ class _DetailPane extends ConsumerWidget {
     final busy = _startingHere(run, network) || _stoppingHere(run, network);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 26, 28, 26),
+      padding: ShareMetrics.panePadding,
       child: switch (run) {
         // Bad news first: a failure is the only thing on this page that the
         // reader cannot act on anywhere else.

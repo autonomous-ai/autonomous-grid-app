@@ -59,20 +59,23 @@ class AdvertiseAsField extends StatelessWidget {
               labeledFieldDecoration(
                 hintText ?? '',
                 fill: AppCard.inset,
+                skin: FieldSkinScope.maybeOf(context),
               ).copyWith(
                 suffixIconConstraints: const BoxConstraints(
                   minWidth: 40,
                   maxWidth: 40,
                   maxHeight: 44,
                 ),
-                suffixIcon: Tooltip(
-                  message: _tooltip,
-                  child: Icon(
-                    Icons.help_outline,
-                    size: kFieldIconSize,
-                    color: AppPalette.textFaint,
-                  ),
-                ),
+                suffixIcon: FieldSkinScope.maybeOf(context)?.showHelp == false
+                    ? null
+                    : Tooltip(
+                        message: _tooltip,
+                        child: Icon(
+                          Icons.help_outline,
+                          size: kFieldIconSize,
+                          color: AppPalette.textFaint,
+                        ),
+                      ),
               ),
         ),
       ],
