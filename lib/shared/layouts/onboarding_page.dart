@@ -28,6 +28,7 @@ class OnboardingPage extends StatelessWidget {
     this.meta,
     this.corner,
     this.leading,
+    this.footer,
   });
 
   /// A mark above the title, inside the card — the brand, on the one screen
@@ -56,6 +57,14 @@ class OnboardingPage extends StatelessWidget {
 
   final List<Widget> children;
 
+  /// A strip across the bottom of the card, edge to edge and on its own ground.
+  ///
+  /// Outside the card's padding on purpose: what goes here is the screen's
+  /// standing controls — a tick that outlives the choice, the button that ends
+  /// the screen — and a rule under a tinted strip is what separates "the thing
+  /// you are choosing" from "what happens when you have".
+  final Widget? footer;
+
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
@@ -82,6 +91,7 @@ class OnboardingPage extends StatelessWidget {
                       title: title,
                       subtitle: subtitle,
                       meta: meta,
+                      footer: footer,
                       children: children,
                     ),
                   ),
@@ -107,6 +117,7 @@ class _Card extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.meta,
+    required this.footer,
     required this.children,
   });
 
@@ -114,54 +125,76 @@ class _Card extends StatelessWidget {
   final String title;
   final String? subtitle;
   final String? meta;
+  final Widget? footer;
   final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 540),
-      child: DecoratedBox(
+      // The design's card: 480 across, radius 16, and its sides padded 26. It
+      // was 540/18/32 — a frame drawn before this screen had a scrolling list
+      // and a footer in it, and roomier than either wants.
+      constraints: const BoxConstraints(maxWidth: 480),
+      child: Container(
         decoration: BoxDecoration(
           color: AppCard.base,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppGlass.hair),
           boxShadow: AppCard.heroShadow,
         ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(32, 30, 32, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (leading != null) ...[
-                Align(alignment: Alignment.centerLeft, child: leading!),
-                const SizedBox(height: 18),
-              ],
-              Text(title, style: theme.textTheme.headlineSmall),
-              if (subtitle case final subtitle?) ...[
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        subtitle,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppPalette.textSecondary,
-                        ),
-                      ),
-                    ),
-                    if (meta != null) ...[
-                      const SizedBox(width: 12),
-                      MetaLabel(meta!),
-                    ],
+        // So a footer can run to the card's own rounded edge.
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(26, 26, 26, footer == null ? 26 : 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (leading != null) ...[
+                    Align(alignment: Alignment.centerLeft, child: leading!),
+                    const SizedBox(height: 18),
                   ],
-                ),
-              ],
-              const SizedBox(height: 22),
-              ...children,
-            ],
-          ),
+                  Text(
+                    title,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontSize: 20,
+                      fontWeight: AppFont.semibold,
+                      letterSpacing: -0.024 * 20,
+                    ),
+                  ),
+                  if (subtitle case final subtitle?) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            subtitle,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontSize: 13.5,
+                              height: 1.5,
+                              color: AppPalette.textSecondary,
+                            ),
+                          ),
+                        ),
+                        if (meta != null) ...[
+                          const SizedBox(width: 12),
+                          MetaLabel(meta!),
+                        ],
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  ...children,
+                ],
+              ),
+            ),
+            ?footer,
+          ],
         ),
       ),
     );

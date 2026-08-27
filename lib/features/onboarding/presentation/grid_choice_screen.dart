@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
+import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/onboarding_page.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/choice_row.dart';
-import '../../../shared/widgets/detail_widgets.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../network/logic/grid_access_summary.dart';
+import '../../network/logic/grid_choice.dart';
+import '../../network/logic/grid_choice_row.dart';
 import '../../network/logic/grid_sync_controller.dart';
 import 'widgets/grid_pick_list.dart';
+import 'widgets/grid_search_field.dart';
 import 'widgets/new_grid_form.dart';
 
 /// The first thing after signing in: which grid is this?
@@ -19,13 +22,13 @@ import 'widgets/new_grid_form.dart';
 /// screen behind this one reads the answer (what model the grid serves, where
 /// chat sends, what this computer would share), so it is worth one screen.
 ///
-/// The explaining splits by whether the reader can do without it. What a grid
-/// *is* stays in the subtitle: someone who does not know cannot know to go
-/// looking behind a link for it. What the three labels mean folds away under
-/// the list, because the labels are on the rows and most people never ask.
+/// Choosing is two steps now: press a grid, then press the button. That reads
+/// like a step too many until you have three grids and no idea which of them
+/// has anything running — the rows carry that, and a list you can compare is
+/// only comparable if pressing one doesn't end the screen.
 ///
 /// Asked once per sign-in. [gridChoiceNeededProvider] is false the moment a grid
-/// is picked, and with "Remember my choice" ticked the answer survives a
+/// is entered, and with "Always start here" ticked the answer survives a
 /// relaunch too — but never a sign-out, which clears it (`AuthController`).
 class GridChoiceScreen extends ConsumerStatefulWidget {
   const GridChoiceScreen({super.key});
@@ -35,11 +38,15 @@ class GridChoiceScreen extends ConsumerStatefulWidget {
 }
 
 class _GridChoiceScreenState extends ConsumerState<GridChoiceScreen> {
-  /// Whether the create form is showing. Null until the user says either way,
+  /// The grid the button would enter. Null until the reader picks, which is
+  /// also what keeps the button honest about having nothing to do yet.
+  String? _selectedId;
+
+  /// Whether the create block is open. Null until the reader says either way,
   /// so the default below can follow the account.
   bool? _creating;
 
-  /// Whether picking a grid writes it down for next time.
+  /// Whether entering a grid writes it down for next time.
   ///
   /// Ticked by default: most people work on one grid, and asking them the same
   /// question at every launch is friction with nothing to show for it. The tick
@@ -47,10 +54,7 @@ class _GridChoiceScreenState extends ConsumerState<GridChoiceScreen> {
   /// choice is made, not buried in Settings afterwards.
   bool _remember = true;
 
-  /// Whether the labels note is open. Shut to begin with: the people who need
-  /// it are a minority of launches, and a glossary unfolded under the list
-  /// makes everyone else scroll past an answer to a question they did not ask.
-  bool _explaining = false;
+  final _query = TextEditingController();
 
   @override
   void initState() {
@@ -69,85 +73,137 @@ class _GridChoiceScreenState extends ConsumerState<GridChoiceScreen> {
   }
 
   @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  void _enter(NetworkCredential network) {
+    ref.read(analyticsProvider).gridChoice('existing');
+    ref
+        .read(gridChoiceGateProvider.notifier)
+        .choose(network, remember: _remember);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final networks = ref.watch(sessionProvider).networks;
-    final hasGrids = networks.isNotEmpty;
-    // An account with no grids has only one honest answer, so the create form
-    // opens itself rather than making the user press a row whose alternative
-    // isn't there. Otherwise the list leads: picking is one click from here.
-    final creating = _creating ?? !hasGrids;
+    final matches = filterGrids(networks, _query.text);
+    final selected = matches
+        .where((n) => n.networkId == _selectedId)
+        .firstOrNull;
+    // An account with no grids has only one honest answer, so the create block
+    // opens itself rather than making the reader press a row whose alternative
+    // isn't there. Otherwise the list leads.
+    final creating = _creating ?? networks.isEmpty;
 
     return OnboardingPage(
       // A question the reader can answer, in words carrying no product
       // vocabulary at all. "Choose your grid" asked them to pick one of a thing
       // they had never heard of, using its name as though they already knew it.
       title: 'Where should your chats run?',
-      // Three short sentences doing three jobs: what the word means, what to do
-      // about it, and that doing it is reversible. It sat behind the link for a
-      // while, which was wrong — a reader who does not know what a grid is
-      // cannot know to go looking behind a link for it. What belongs there is
-      // the part that is optional.
+      // What the word means, what to do about it, and that doing it is
+      // reversible — a reader who does not know what a grid is cannot know to
+      // go looking behind a link for it.
       subtitle:
-          'A grid is a group of computers that answer your chats. Choose one '
-          'to get started. You can switch anytime.',
+          'A grid is a set of computers that answer your chats. Pick one to '
+          'get started. Switching later takes a click.',
+      footer: _Footer(
+        remember: _remember,
+        onRemember: (next) => setState(() => _remember = next),
+        // Nothing to confirm while the create block is open: that block has its
+        // own button, and two primaries on one screen is a coin toss.
+        selected: creating ? null : selected,
+        onEnter: () => _enter(selected!),
+      ),
       children: [
-        if (hasGrids) ...[
-          GridPickList(remember: _remember),
-          const SizedBox(height: 8),
-          // One quiet row under the list carrying both asides: what the labels
-          // on it mean, and whether this answer is kept. Neither is a step, and
-          // on separate lines they read like two more of them.
-          //
-          // Wrap, not Row: both halves grow with the user's font size, and on a
-          // narrow card they drop onto their own lines rather than overflow.
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            runSpacing: 2,
-            children: [
-              _LabelsLink(
-                onToggle: () => setState(() => _explaining = !_explaining),
-              ),
-              _RememberChoice(
-                value: _remember,
-                onChanged: (next) => setState(() => _remember = next),
-              ),
-            ],
-          ),
-          _LabelsReveal(open: _explaining),
-          const SizedBox(height: 18),
-        ],
-        ChoiceRowGroup(
-          outlined: true,
-          children: [
-            ChoiceRow(
-              icon: const Icon(Icons.add_circle_outline),
-              // One line, like the rows above it: those are single-line items,
-              // and a heavier action under them read as a different weight of
-              // thing. Who can join is the form's own first question, so the
-              // row does not need to promise it in advance.
-              title: 'Create a new grid',
-              action: ChoiceRowAction.open,
-              expanded: creating,
-              onPressed: () => setState(() => _creating = !creating),
-              child: creating ? const NewGridForm() : null,
+        // Only once the list is long enough to be worth searching. Below that
+        // it is a box that costs a row of height to save nobody any scrolling.
+        if (networks.length > 5) ...[
+          GridSearchField(
+            controller: _query,
+            countLabel: gridCountLabel(
+              shown: matches.length,
+              total: networks.length,
             ),
-          ],
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (networks.isNotEmpty)
+          GridPickList(
+            networks: matches,
+            selected: creating ? null : selected,
+            onSelect: (network) => setState(() {
+              _selectedId = network.networkId;
+              _creating = false;
+            }),
+          ),
+        const SizedBox(height: 6),
+        NewGridForm(
+          open: creating,
+          onToggle: () => setState(() {
+            _creating = !creating;
+            if (_creating!) _selectedId = null;
+          }),
         ),
       ],
     );
   }
 }
 
-/// The tick deciding whether this answer outlives the session.
-///
-/// One quiet line, sized and coloured to sit *under* the list rather than
-/// compete with it. It had a bold title and a sentence explaining both states,
-/// which gave a setting more weight than the choice it modifies — the rows above
-/// are what this screen is for, and a two-line block in ink as dark as theirs
-/// read as a third thing to decide.
-class _RememberChoice extends StatelessWidget {
-  const _RememberChoice({required this.value, required this.onChanged});
+/// The strip across the bottom: what outlives this choice, and the button that
+/// acts on it.
+class _Footer extends StatelessWidget {
+  const _Footer({
+    required this.remember,
+    required this.onRemember,
+    required this.selected,
+    required this.onEnter,
+  });
+
+  final bool remember;
+  final ValueChanged<bool> onRemember;
+  final NetworkCredential? selected;
+  final VoidCallback onEnter;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(26, 16, 26, 16),
+      decoration: BoxDecoration(
+        color: AppPalette.panelBg,
+        border: Border(top: BorderSide(color: AppPalette.divider)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _RememberTick(value: remember, onChanged: onRemember),
+          ),
+          const SizedBox(width: 16),
+          SizedBox(
+            height: 36,
+            child: FilledButton(
+              // Dead until there is something to enter, and saying which of the
+              // two it is: "Pick a grid" is the instruction, "Start chatting"
+              // is the promise. A button that only ever said the second would
+              // be a control the reader presses and nothing happens.
+              onPressed: selected == null ? null : onEnter,
+              child: Text(selected == null ? 'Pick a grid' : 'Start chatting'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Always start here" — whether this answer outlives the session.
+class _RememberTick extends StatelessWidget {
+  const _RememberTick({required this.value, required this.onChanged});
 
   final bool value;
   final ValueChanged<bool> onChanged;
@@ -156,185 +212,47 @@ class _RememberChoice extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: () => onChanged(!value),
-      borderRadius: BorderRadius.circular(AppCard.insetRadius),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Scaled rather than resized: the box shrinks to the weight of the
-            // line beside it while the hit area stays the full control, so a
-            // quieter tick is not a harder one to hit (§11).
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: Transform.scale(
-                scale: 0.82,
-                child: Checkbox(
-                  value: value,
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (next) => onChanged(next ?? false),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onChanged(!value),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 17,
+                height: 17,
+                decoration: BoxDecoration(
+                  color: value ? AppPalette.accent : AppCard.base,
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: value ? AppPalette.accent : AppPalette.textFaint,
+                    width: 1.5,
+                  ),
+                ),
+                child: value
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 12,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 9),
+              Text(
+                'Always start here',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 12.5,
+                  color: AppPalette.textSecondary,
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Remember my choice',
-              style: theme.textTheme.bodySmall?.copyWith(
-                // Matched to the link it shares a row with. Not `textFaint`:
-                // a control's own label has to clear 4.5:1 on this white card,
-                // and shrinking it buys no slack there (§11).
-                fontSize: 12,
-                color: AppPalette.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The link half of the labels note, sized to sit in a row beside the tick.
-///
-/// It says the words themselves rather than naming what they are. "What do
-/// these labels mean?" asks the reader to know that the coloured thing on a row
-/// is called a label — interface vocabulary they have no reason to hold, and
-/// the wrong half of the sentence to spend their attention on. Quoting `Owner`
-/// and `Public` back to them points at something already on the screen.
-class _LabelsLink extends StatelessWidget {
-  const _LabelsLink({required this.onToggle});
-
-  final VoidCallback onToggle;
-
-  /// The words as the rows above spell them, read off [GridAccessTag] rather
-  /// than typed out again — a link quoting a label that has since been renamed
-  /// points at nothing, and would do it in the one sentence promising to
-  /// explain the labels.
-  static String get _names {
-    final names = GridAccessTag.values.map((tag) => tag.label).toList();
-    final head = names.sublist(0, names.length - 1).join(', ');
-    return '$head and ${names.last}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: onToggle,
-      borderRadius: BorderRadius.circular(AppCard.insetRadius),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Text(
-          'What do $_names mean?',
-          // A step under bodySmall, matched by the tick beside it: these two
-          // annotate the list rather than belonging to it, and at the rows'
-          // own size they competed with what they annotate.
-          //
-          // No marker beside it. A chevron is how a *row* says it opens, and
-          // this is a question in accent ink — the shape a link already has.
-          // What it opened is visible directly underneath, so a mark reporting
-          // that state would be telling the reader something the panel has
-          // already told them.
-          style: theme.textTheme.bodySmall?.copyWith(
-            fontSize: 12,
-            color: AppPalette.accent,
-            fontWeight: AppFont.medium,
+            ],
           ),
         ),
       ),
-    );
-  }
-}
-
-/// What the link opens, folding in under the row the link sits in.
-class _LabelsReveal extends StatelessWidget {
-  const _LabelsReveal({required this.open});
-
-  final bool open;
-
-  @override
-  Widget build(BuildContext context) => AnimatedSize(
-    duration: AppMotion.fold,
-    curve: Curves.easeOutCubic,
-    alignment: Alignment.topCenter,
-    child: open
-        ? const Padding(
-            padding: EdgeInsets.fromLTRB(4, 10, 0, 2),
-            child: _GridLegend(),
-          )
-        : const SizedBox(width: double.infinity),
-  );
-}
-
-/// What each label on the rows above means.
-///
-/// Shows the real pills rather than naming them: the fastest answer to "what
-/// does Public mean?" is the same badge the row wears, sitting next to its
-/// sentence. Spelling the words out in prose would leave the reader to match
-/// the two up themselves.
-class _GridLegend extends StatelessWidget {
-  const _GridLegend();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final tag in GridAccessTag.values) ...[
-          _LegendRow(tag: tag),
-          if (tag != GridAccessTag.values.last) const SizedBox(height: 7),
-        ],
-      ],
-    );
-  }
-}
-
-/// One tag beside what it means.
-class _LegendRow extends StatelessWidget {
-  const _LegendRow({required this.tag});
-
-  final GridAccessTag tag;
-
-  /// Written from the reader's side — what the tag says about *them* and this
-  /// grid, not what the control plane calls the rule.
-  String get _meaning => switch (tag) {
-    GridAccessTag.public => 'Anyone can use this one.',
-    GridAccessTag.owner => 'You created it, so you decide who joins.',
-    GridAccessTag.invited => 'Someone gave you access to theirs.',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // A fixed column so the three sentences line up. The pills are three
-        // different widths, and a ragged left edge reads as three unrelated
-        // notes rather than one legend.
-        SizedBox(
-          width: 74,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: gridPill(tag.label, gridTagColour(tag)),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            _meaning,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppPalette.textSecondary,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
