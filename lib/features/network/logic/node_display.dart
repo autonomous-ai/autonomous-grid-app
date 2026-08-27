@@ -299,6 +299,42 @@ String? mediaCapabilityLabel(String id) => _capabilityLabels[id];
 /// empty, not "ready to chat". One constant so every empty-state check agrees.
 const String kAutoModelId = 'auto';
 
+/// The API-service kinds a grid stands up for its members rather than a person
+/// joining with their own credential — today just the one.
+///
+/// A member never chose these and holds no credential for them, so the kind's
+/// name is the name of a supplier they have no relationship with. It is stripped
+/// from every id the app *shows*; the id it *sends* is untouched.
+const Set<String> kGridRunKinds = {'openrouter'};
+
+/// A model id with a grid-run kind's `<kind>:` prefix taken off, for display
+/// only — `openrouter:deepseek/deepseek-v4-flash-0731` reads
+/// `deepseek/deepseek-v4-flash-0731`. Every other id comes back trimmed and
+/// otherwise whole, prefix and all: `claude:claude-opus-5` names a seat the user
+/// set up themselves.
+///
+/// **A backstop, not the fix.** The provider advertises these models bare, so on
+/// a grid whose provider has been through a release carrying that change there
+/// is no prefix here to remove. This catches the grids that registered before
+/// it, and only where the app controls the text — the client config the app
+/// hands a user to paste carries the wire id verbatim and cannot be rewritten by
+/// anything here.
+///
+/// Never used for matching: [modelKey] and every comparison stay on the raw id,
+/// so a display rule can't silently change which model a row is about.
+String withoutGridRunPrefix(String id) {
+  final trimmed = id.trim();
+  final colon = trimmed.indexOf(':');
+  if (colon <= 0) return trimmed;
+  if (!kGridRunKinds.contains(trimmed.substring(0, colon).toLowerCase())) {
+    return trimmed;
+  }
+  final rest = trimmed.substring(colon + 1).trim();
+  // A bare `openrouter:` names nothing; showing the id as it came beats showing
+  // an empty cell where a model should be.
+  return rest.isEmpty ? trimmed : rest;
+}
+
 /// One model id, in the form the app compares by.
 ///
 /// Ids reach the app from three directions that disagree on case and spacing:

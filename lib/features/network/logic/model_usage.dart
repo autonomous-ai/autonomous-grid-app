@@ -120,9 +120,13 @@ int modelNodeCount(Iterable<OverviewNode> nodes, String modelId) {
 /// A short id splits into head alone: pinning a tail on a name that was never
 /// going to be shortened only invites a break in the middle of a word.
 ({String org, String head, String tail}) splitModelId(String id) {
-  final slash = id.indexOf('/');
-  final org = slash < 0 ? '' : id.substring(0, slash + 1);
-  final rest = id.substring(org.length);
+  // Stripped before the split, not after: the prefix would otherwise become the
+  // `org` — `openrouter:deepseek/` — and print the supplier at the front of
+  // every row in the column that repeats most. See [withoutGridRunPrefix].
+  final stripped = withoutGridRunPrefix(id);
+  final slash = stripped.indexOf('/');
+  final org = slash < 0 ? '' : stripped.substring(0, slash + 1);
+  final rest = stripped.substring(org.length);
   if (rest.length <= _minToShorten) return (org: org, head: rest, tail: '');
   final segments = rest.split('-');
   var tail = '';
