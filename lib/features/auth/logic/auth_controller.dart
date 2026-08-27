@@ -6,6 +6,7 @@ import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/cli/grid_cli_service.dart';
 import '../../../infrastructure/providers.dart';
+import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import 'auth_state.dart';
 import 'device_login_parser.dart';
@@ -146,6 +147,14 @@ class AuthController extends Notifier<AuthState> {
     } else {
       ref.read(gridHomeStoreProvider).clearCredentials();
     }
+    // Forget the grid with the account that chose it. `grid logout` clears the
+    // CLI's own active-grid pointer in `state.json`, but `chat_prefs.json` is
+    // app-owned and the CLI never touches it — so without this the two disagree
+    // about which grid is current, which is the exact failure `needsGridChoice`
+    // exists to prevent. Worse than the skipped question: the next account to
+    // sign in on this machine inherits the last one's grid whenever it happens
+    // to hold a grid of the same id.
+    ref.read(chatPrefsProvider.notifier).clearNetwork();
     // Before the invalidate, so the event still knows who signed out.
     ref.read(analyticsProvider).signedOut();
     ref.invalidate(sessionProvider);

@@ -15,8 +15,8 @@ import 'api_engine_catalog.dart';
 /// hasn't got is a road that ends in "not installed".
 ///
 /// TODO(BE): no screen offers these any more — the first-run screen and the
-/// Share models page both dropped their `Share <CLI>` rows on 2026-08-20, and
-/// what is left reads this only to pick a default provider for a form that is
+/// Share Intelligence page both dropped their `Share <CLI>` rows on 2026-08-20,
+/// and what is left reads this only to pick a default provider for a form that is
 /// never handed a seat. Either the seat path comes back or it goes, form and
 /// all; it should not sit here half-wired.
 List<ApiEngine> seatEngines(List<ApiEngine> engines) => [

@@ -165,7 +165,12 @@ class MetaRow extends StatelessWidget {
 /// grid list's selected row back when that row was filled with solid accent.
 /// The list now marks its selection with a quiet wash and an accent edge, so no
 /// badge ever sits on accent and the variant had no callers left.
-Widget _gridPill(String label, Color color) => BadgePill(
+/// One rounded, tinted pill at the grid badges' own weight.
+///
+/// Public because the choose-a-grid list needs the identical shape: a pill
+/// there that merely *looked* like these would drift the first time one of the
+/// five numbers below changed.
+Widget gridPill(String label, Color color) => BadgePill(
   label: label,
   color: color,
   compact: true,
@@ -185,10 +190,10 @@ class GridBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (network.role == NetworkRole.admin) {
-      return _gridPill(network.roleLabel, AppPalette.teal);
+      return gridPill(network.roleLabel, AppPalette.teal);
     }
     if (network.isPublic) {
-      return _gridPill(network.visibilityLabel, AppPalette.accent);
+      return gridPill(network.visibilityLabel, AppPalette.accent);
     }
     return const SizedBox.shrink();
   }
@@ -207,9 +212,9 @@ class GridBadges extends StatelessWidget {
   Widget build(BuildContext context) {
     final pills = <Widget>[
       if (network.role == NetworkRole.admin)
-        _gridPill(network.roleLabel, AppPalette.teal),
+        gridPill(network.roleLabel, AppPalette.teal),
       if (network.isPublic)
-        _gridPill(network.visibilityLabel, AppPalette.accent),
+        gridPill(network.visibilityLabel, AppPalette.accent),
     ];
     if (pills.isEmpty) return const SizedBox.shrink();
     return Wrap(spacing: 6, runSpacing: 6, children: pills);

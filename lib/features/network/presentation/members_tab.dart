@@ -256,7 +256,7 @@ class _DomainBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message:
-          'On this grid because of their work email — '
+          'On this grid because of their work email, '
           'so they can’t be removed from it here.',
       child: BadgePill(label: 'Work email', color: AppPalette.textSecondary),
     );

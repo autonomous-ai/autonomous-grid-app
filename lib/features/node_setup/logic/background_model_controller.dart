@@ -45,9 +45,24 @@ class ModelDownloadFailed extends ModelDownloadState {
 /// to run a model on this computer (onboarding's "run local" path).
 ///
 /// Before onboarding branched, any Mac with the engine and no model downloaded
-/// one automatically. Now that's a deliberate choice — a user who picked a
+/// one automatically. That became a deliberate choice — a user who picked a
 /// hosted provider or chose to wait for a teammate must not be handed a
 /// several-GB download they said no to. Overridable in tests.
+///
+/// **TODO(BE): nothing sets this any more.** Onboarding stopped asking which
+/// model to connect on 2026-08-26, and that screen was the only writer of
+/// [OnboardingDecision]. The decision is persisted in
+/// `~/.grid/app/onboarding.json`, so this stays true on installs that answered
+/// `local` before that date, and is permanently false on every install made
+/// since — which means the background download, [AutoHostController]'s
+/// automatic `grid join --serve`, the top bar's download pill and
+/// [NoModelYet]'s downloading state are all now reachable by old installs
+/// only. That is a deliberate hold, not an oversight: deleting the
+/// chain would take auto-share away from the users who *do* still reach it. New
+/// users set an engine up from **Share Intelligence** instead, which is the
+/// door chat's empty state already sends them to. Decide it properly rather than
+/// letting it rot — either give this a new writer, or remove the chain and
+/// accept the loss for old installs.
 final localModelChosenProvider = Provider<bool>(
   (ref) => ref.watch(onboardingDecisionProvider) == OnboardingDecision.local,
 );

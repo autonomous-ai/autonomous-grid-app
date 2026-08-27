@@ -19,6 +19,7 @@ class ContextWindowField extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.note,
+    this.inline = false,
   });
 
   /// The ceiling: the most this engine can actually serve.
@@ -35,16 +36,42 @@ class ContextWindowField extends StatelessWidget {
   /// where [max] came from and whether it can be trusted.
   final String? note;
 
+  /// Draw the slider directly, with a plain label instead of the recessed tile.
+  ///
+  /// For a caller that has *already* folded this away. The tile is a disclosure,
+  /// and a disclosure inside a disclosure inside a disclosure is what the local
+  /// engine form had become: open the row, open "Names and context window",
+  /// then open a boxed tile with its own gear icon to reach one slider. Nesting
+  /// is what made that form read as clutter rather than as three settings.
+  final bool inline;
+
   @override
   Widget build(BuildContext context) {
-    return ContextWindowTile(
-      valueLabel: formatContextLength(value),
-      child: _SliderAndBox(
-        max: max,
-        value: value,
-        note: note,
-        onChanged: (tokens) => onChanged(snapContextLength(tokens, max)),
-      ),
+    final slider = _SliderAndBox(
+      max: max,
+      value: value,
+      note: note,
+      onChanged: (tokens) => onChanged(snapContextLength(tokens, max)),
+    );
+    if (!inline) {
+      return ContextWindowTile(
+        valueLabel: formatContextLength(value),
+        child: slider,
+      );
+    }
+    final theme = Theme.of(context);
+    // No value on this header. The box beside the slider holds the exact number
+    // and can be typed into; a rounded copy of it two lines above was a second
+    // reading of one setting, and the two disagreed on sight — "200k" over
+    // "204800" looks like two different numbers to anyone not doing the
+    // arithmetic.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Context window', style: theme.textTheme.bodySmall),
+        const SizedBox(height: 6),
+        slider,
+      ],
     );
   }
 }

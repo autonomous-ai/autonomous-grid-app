@@ -43,7 +43,7 @@ class StoredModelRow extends ConsumerWidget {
   String? get _blockedReason {
     if (inUse) {
       return 'This model is running right now. Stop it from '
-          '$kShareModelsPlace to delete it.';
+          '$kSharePlace to delete it.';
     }
     if (item.isUnfinished && downloadRunning) {
       return 'A download is running. Wait for it to finish, or cancel it, '

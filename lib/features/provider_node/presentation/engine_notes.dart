@@ -1,5 +1,6 @@
-/// The explanations the Share models page shows in place of something it can't
-/// offer — for now, that we're still looking for servers on this computer.
+/// The explanations the Share Intelligence page shows in place of something it
+/// can't offer — for now, that we're still looking for servers on this
+/// computer.
 ///
 /// Kept apart from the page: it carries no state and no provider reads, and the
 /// page's own file is about *when* it applies.

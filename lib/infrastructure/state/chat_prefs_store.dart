@@ -160,8 +160,13 @@ class ChatPrefs {
     double? codeFontSize,
     bool clearUiFontFamily = false,
     bool clearCodeFontFamily = false,
+
+    /// Forget the grid entirely. Needed because a null [networkId] cannot say
+    /// "clear it" — `??` reads null as "leave it alone" — and signing out has
+    /// to be able to un-answer the question, not just re-answer it.
+    bool clearNetwork = false,
   }) => ChatPrefs(
-    networkId: networkId ?? this.networkId,
+    networkId: clearNetwork ? null : (networkId ?? this.networkId),
     model: model ?? this.model,
     approval: approval ?? this.approval,
     detail: detail ?? this.detail,
@@ -410,6 +415,13 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
 
   void setNetwork(String networkId) =>
       _update(state.copyWith(networkId: networkId));
+
+  /// Forget which grid was chosen, leaving every other preference alone.
+  ///
+  /// Signing out calls this. The grid belongs to the account that picked it,
+  /// while the theme and the fonts belong to the person at the keyboard — so
+  /// this file empties by the spoonful, not by being deleted.
+  void clearNetwork() => _update(state.copyWith(clearNetwork: true));
 
   void setModel(String model) => _update(state.copyWith(model: model));
 

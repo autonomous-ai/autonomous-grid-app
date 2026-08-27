@@ -38,18 +38,19 @@ enum ManagedNetworkType {
   restricted(
     'permissioned-public',
     'Invite only',
-    'Only people you invite can use this grid, or run a model for it.',
+    'Only people you invite can use this grid, or start an AI node to '
+        'power it.',
   ),
   domain(
     'domain-restricted',
     'My domain',
-    'Anyone with an email on your domain can use this grid, or run a model '
-        'for it — as well as the people you invite.',
+    'Anyone with an email on your domain can use this grid, or start an AI '
+        'node to power it, as well as the people you invite.',
   ),
   anyone(
     'permissionless',
-    'Anyone signed in to Grid',
-    'Anyone signed in to Grid can use this grid, or run a model for it.',
+    'Public',
+    'Anyone can use this grid, or start an AI node to power it.',
   );
 
   const ManagedNetworkType(this.wire, this.label, this.description);

@@ -109,8 +109,8 @@ class _DomainAccess extends StatelessWidget {
           ? 'One email domain'
           : accessLabelFor(ManagedNetworkType.domain, domain: domain),
       description: domain == null
-          ? 'Only people on this grid’s email domain can use it, or run a '
-                'model for it.'
+          ? 'Only people on this grid’s email domain can use it, or start '
+                'an AI node to power it.'
           : accessRowDescription(ManagedNetworkType.domain, domain: domain),
     );
   }
@@ -281,7 +281,7 @@ IconData _readOnlyIcon(GridAccess access) => switch (access) {
 String _readOnlyLabel(GridAccess access) => switch (access) {
   GridAccess.restricted => 'Invite only',
   GridAccess.domain => 'One email domain',
-  GridAccess.anyone => 'Anyone signed in to Grid',
+  GridAccess.anyone => 'Public',
 };
 
 /// What the rule permits, in one line — for a member who cannot change it and
@@ -294,8 +294,9 @@ String _readOnlyLabel(GridAccess access) => switch (access) {
 /// is, not who may walk into it.
 String _readOnlySummary(GridAccess access) => switch (access) {
   GridAccess.restricted || GridAccess.domain =>
-    'Only the people listed above can use this grid, or run a model for it.',
+    'Only the people listed above can use this grid, or start an AI node '
+        'to power it.',
   GridAccess.anyone =>
-    'Anyone signed in to Grid can use it. Only the people above can run a '
-        'model for it.',
+    'Anyone can use it. Only the people above can start an AI node to '
+        'power it.',
 };

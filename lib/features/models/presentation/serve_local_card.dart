@@ -25,7 +25,6 @@ import '../logic/model_group.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/model_storage.dart';
 import '../logic/models_providers.dart';
-import 'auto_serve_row.dart';
 import 'context_length_field.dart';
 import 'model_manager_dialog.dart';
 
@@ -61,10 +60,21 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   void initState() {
     super.initState();
     _nodeName.text = ref.read(nodeNameProvider);
+    // The summary quotes both fields, so it has to follow them while they are
+    // being edited — a preview that only caught up on Done would be wrong at
+    // exactly the moment someone is checking it.
+    _advertise.addListener(_onDetailEdited);
+    _nodeName.addListener(_onDetailEdited);
+  }
+
+  void _onDetailEdited() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _advertise.removeListener(_onDetailEdited);
+    _nodeName.removeListener(_onDetailEdited);
     _advertise.dispose();
     _nodeName.dispose();
     super.dispose();
@@ -95,31 +105,6 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         .firstOrNull;
   }
 
-  /// Whether *this* model is the one set to start when the app opens. Read from
-  /// the record, not from a bare on/off: the tick sits beside one model in a
-  /// picker, so it has to mean that model.
-  bool _autoServes(ModelGroup group) {
-    final prefs = ref.watch(autoServePrefsProvider);
-    return prefs.enabled &&
-        prefs.networkId == widget.network.networkId &&
-        prefs.model == group.primary.name;
-  }
-
-  /// The *other* model set to start on open, if there is one. Said out loud
-  /// beside an unticked box, because "off" next to this model would otherwise
-  /// read as "nothing starts on its own" while something does.
-  String? _armedElsewhere(ModelGroup group) {
-    final prefs = ref.watch(autoServePrefsProvider);
-    if (!prefs.enabled || _autoServes(group)) return null;
-    final model = prefs.model;
-    if (model == null || model.isEmpty) return null;
-    return ref
-        .read(modelGroupsProvider)
-        .where((other) => other.primary.name == model)
-        .map((other) => other.displayName)
-        .firstOrNull;
-  }
-
   /// The pills beside a model in the picker: what it costs on disk, and — for
   /// a split set — whether every part of it is actually here.
   ///
@@ -143,8 +128,20 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     ];
   }
 
-  /// Keeps the start-on-open record in step with the form. No-ops unless the
-  /// box is ticked *for this model*.
+  /// Whether the pre-filled details are open for editing. Shut by default: the
+  /// summary above already says what they are, so opening is for changing them,
+  /// not for reading them.
+  bool _editingDetails = false;
+
+  /// Keeps a start-on-open record in step with the form. No-ops unless one is
+  /// armed *for this model*.
+  ///
+  /// **TODO(BE): nothing arms one any more.** The tick that wrote these records
+  /// was removed on 2026-08-26, so `refresh` only ever finds a record made
+  /// before that date. `AutoServeStarter` still reads them, which is why this
+  /// and [_armedGroup] stay: an old install can still be set to serve on open,
+  /// and it must keep opening on the model it is armed with. New installs have
+  /// no way to turn it on at all. Give it a new home or retire the feature.
   void _refreshAutoServe(String model) {
     ref
         .read(autoServePrefsProvider.notifier)
@@ -158,6 +155,16 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 
   /// The name to announce [model] under: what the user typed, or the one
   /// derived from the filename when they left the field alone.
+  /// The window this model will actually start on — the typed value, or the
+  /// default read from the model's own ceiling. Null only while that ceiling is
+  /// still being read, where the summary simply leaves the clause out rather
+  /// than guessing a number the engine might not use.
+  int? _effectiveContext(String model) {
+    if (_ctxSize case final chosen?) return chosen;
+    final max = ref.watch(modelMaxContextProvider(model)).asData?.value;
+    return max == null ? null : defaultContextLength(max);
+  }
+
   String _advertiseName(String model) {
     final typed = _advertise.text.trim();
     return typed.isEmpty ? deriveAdvertiseName(model) : typed;
@@ -269,7 +276,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     DownloadingModel partial,
   ) => [
     Text(
-      'A model download stopped partway — '
+      'A model download stopped partway. '
       '${partial.gbSoFar.toStringAsFixed(1)} GB is already here. '
       'Download it again to finish; it carries on from where it left off.',
       style: theme.textTheme.bodyMedium?.copyWith(
@@ -291,7 +298,7 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
   /// place of the download button, since the live bar + Cancel are below.
   List<Widget> _downloadingSection(ThemeData theme, int? pct) => [
     Text(
-      'Downloading a model — this can take a few minutes.',
+      'Downloading a model. This can take a few minutes.',
       style: theme.textTheme.bodyMedium?.copyWith(
         color: theme.colorScheme.onSurfaceVariant,
       ),
@@ -348,46 +355,40 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         _ctxSize = null;
       }),
     ),
-    const SizedBox(height: 12),
-    // The display name and the context window are both pre-filled correctly from
-    // the model itself, so most starts never touch them. Folding them away keeps
-    // the block to one decision — which model — while leaving both a tap away.
-    _AdvancedOptions(
-      children: [
-        AdvertiseAsField(controller: _advertise, hintText: 'Qwen3.6-35B-A3B'),
-        const SizedBox(height: 12),
-        NodeNameField(controller: _nodeName),
-        const SizedBox(height: 12),
-        ContextLengthField(
+    const SizedBox(height: 10),
+    // Every one of these is pre-filled correctly from the model itself, so most
+    // starts never touch any of them. Folding them away was right and not
+    // enough: hidden, they were also *unverifiable* — you could not find out
+    // what name the grid would see without opening a section. A sentence says
+    // it in a line and still opens.
+    _DetailsSummary(
+      advertiseAs: _advertiseName(selected.primary.name),
+      nodeName: _nodeName.text.trim(),
+      contextTokens: _effectiveContext(selected.primary.name),
+      open: _editingDetails,
+      onToggle: () => setState(() => _editingDetails = !_editingDetails),
+    ),
+    if (_editingDetails) ...[
+      const SizedBox(height: 10),
+      _DetailsPanel(
+        names: [
+          AdvertiseAsField(controller: _advertise, hintText: 'Qwen3.6-35B-A3B'),
+          const SizedBox(height: 14),
+          NodeNameField(controller: _nodeName),
+        ],
+        window: ContextLengthField(
           model: selected.primary.name,
           value: _ctxSize,
+          // The panel and the summary both carry the number already — see
+          // [ContextWindowField.inline].
+          inline: true,
           onChanged: (tokens) {
             setState(() => _ctxSize = tokens);
-            // A start-on-open model has to open with the window shown here,
-            // not the one that was in the field when the box was ticked.
+            // A machine still carrying a start-on-open record has to open with
+            // the window shown here, not the one from when it was armed.
             _refreshAutoServe(selected.primary.name);
           },
         ),
-      ],
-    ),
-    // Only offered for a model that can actually start. Ticking it against an
-    // unfinished download would arm a launch that fails where nobody is
-    // looking.
-    if (selected.isComplete) ...[
-      const SizedBox(height: 12),
-      AutoServeRow(
-        value: _autoServes(selected),
-        armedElsewhere: _armedElsewhere(selected),
-        modelLabel: selected.displayName,
-        onChanged: (enabled) => ref
-            .read(autoServePrefsProvider.notifier)
-            .set(
-              enabled: enabled,
-              networkId: widget.network.networkId,
-              model: selected.primary.name,
-              advertiseAs: _advertiseName(selected.primary.name),
-              ctxSize: _ctxSize,
-            ),
       ),
     ],
     const SizedBox(height: 16),
@@ -428,7 +429,7 @@ class _ServeActions extends StatelessWidget {
       children: [
         if (!selected.isComplete && expected != null) ...[
           Text(
-            "This model didn't finish downloading — ${selected.partCount} of "
+            "This model didn't finish downloading. ${selected.partCount} of "
             '$expected ${plural(expected, 'part')} '
             '${expected == 1 ? 'is' : 'are'} here. It needs all of them '
             'before it can run.',
@@ -447,7 +448,7 @@ class _ServeActions extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onStart,
                 icon: const Icon(Icons.play_arrow),
-                label: const Text('Start local engine'),
+                label: const Text('Start sharing'),
               )
             else
               FilledButton.icon(
@@ -467,40 +468,132 @@ class _ServeActions extends StatelessWidget {
   }
 }
 
-/// A quiet disclosure holding the settings that are already right by default —
-/// the grid-facing name (derived from the model) and the context window (the
-/// model's own maximum, capped). Both matter when you want them and are noise
-/// when you don't, so the block leads with the single real choice, the model,
-/// and keeps these one tap away.
+/// The three pre-filled details, as one sentence you can read or open.
 ///
-/// Not the same as [ContextLengthField]'s own collapsed tile, which stays nested
-/// inside this: that one carries a slider that would otherwise dominate the card
-/// even when expanded here.
-class _AdvancedOptions extends StatelessWidget {
-  const _AdvancedOptions({required this.children});
+/// This replaced a "Names and context window" expander, and the difference is
+/// not that it is shorter. A disclosure hides a *decision*; these are not
+/// decisions, they are defaults derived from the model and the machine, and the
+/// question a person actually has about a default is "what is it?" — which a
+/// closed expander is the one shape that cannot answer. Read it in a line,
+/// press Change only if it is wrong.
+///
+/// It also puts the weight back where it belongs. The model picker is the one
+/// real choice in this form; three full-width fields under it were drawn at
+/// exactly the same size, so nothing on the card looked more important than
+/// anything else.
+class _DetailsSummary extends StatelessWidget {
+  const _DetailsSummary({
+    required this.advertiseAs,
+    required this.nodeName,
+    required this.contextTokens,
+    required this.open,
+    required this.onToggle,
+  });
 
-  final List<Widget> children;
+  final String advertiseAs;
+  final String nodeName;
+
+  /// Null while the model's ceiling is still being read.
+  final int? contextTokens;
+
+  final bool open;
+  final VoidCallback onToggle;
+
+  /// Written as the grid will see it, not as the fields are labelled. "Model
+  /// name shown to the grid" is the right label above an input and the wrong
+  /// words in a sentence, where what matters is the name itself.
+  String get _sentence {
+    final from = nodeName.isEmpty ? 'this computer' : nodeName;
+    final window = contextTokens == null
+        ? ''
+        : ', remembering ${formatContextLength(contextTokens!)}';
+    return 'Shared as “$advertiseAs” from “$from”$window.';
+  }
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
-    return Theme(
-      // Drop ExpansionTile's divider lines so it reads as part of the form
-      // rather than a separate section.
-      data: theme.copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsets.only(top: 4),
-        minTileHeight: 40,
-        dense: true,
-        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-        title: Text(
-          'Name and context window',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            _sentence,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppPalette.textSecondary,
+            ),
           ),
         ),
-        children: children,
+        const SizedBox(width: 12),
+        // A text button, not a chevron: the row is a sentence, and a disclosure
+        // arrow on a sentence promises more words rather than the fields that
+        // actually open.
+        TextButton(
+          onPressed: onToggle,
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: const Size(0, 28),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(open ? 'Done' : 'Change'),
+        ),
+      ],
+    );
+  }
+}
+
+/// The opened details, as one plate rather than a run of loose fields.
+///
+/// Open, the three settings used to flow at the same level as the model picker
+/// and the Start button, so a form with **one** decision in it looked like a
+/// form with six. Nothing said the fields belonged to the sentence that revealed
+/// them, or to each other.
+///
+/// A plate says both at once, and its two surfaces are picked by measurement
+/// rather than by taste.
+///
+/// **Lifted, not recessed.** [AdvertiseAsField] and [NodeNameField] both fill
+/// themselves [AppCard.inset]; a recessed plate would be that same `#F7F7F5`
+/// and the fields would vanish into it. White keeps them readable as insets.
+///
+/// **Rimmed with [AppGlass.lift], not [AppCard.hair].** In light this plate is
+/// `#FFFFFF` on a block that is *also* `#FFFFFF` ([AppGlass.surfaceFill]) — 1:1,
+/// so fill does no work at all here and the edge is the whole separation (§2).
+/// `hair` is 6% black and disappears on a white pane, which is the case `lift`
+/// exists for. The shadow carries the rest.
+///
+/// A rule splits the two questions inside it, because what the grid calls this
+/// and how much it remembers are not the same kind of setting.
+class _DetailsPanel extends StatelessWidget {
+  const _DetailsPanel({required this.names, required this.window});
+
+  /// The two "what the grid sees" fields.
+  final List<Widget> names;
+
+  /// The context-window control, which answers a different question.
+  final Widget window;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: AppCard.base,
+        borderRadius: BorderRadius.circular(AppCard.radius),
+        border: Border.all(color: AppGlass.lift),
+        boxShadow: AppGlass.cardShadow,
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...names,
+          const SizedBox(height: 16),
+          Divider(height: 1, thickness: 1, color: AppPalette.divider),
+          const SizedBox(height: 15),
+          window,
+        ],
       ),
     );
   }
@@ -548,12 +641,12 @@ class _EngineSetupSection extends ConsumerWidget {
   /// The lead-in sentence for the current state.
   static String _intro(EngineSetupState state) => switch (state) {
     EngineSetupRunning() =>
-      'Downloading the built-in engine — this takes a moment.',
+      'Downloading the built-in engine. This takes a moment.',
     EngineSetupDone() =>
       'The built-in engine is ready. Download a model to run it.',
     _ =>
       "The built-in engine isn't set up on this computer yet. Grid downloads "
-          'it for you — then you can run a model here.',
+          'it for you, then you can run a model here.',
   };
 
   /// The error line under the intro, if the install failed.

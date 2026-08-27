@@ -90,8 +90,8 @@ String accessDescriptionFor(ManagedNetworkType type, {String? domain}) {
   if (type != ManagedNetworkType.domain) return type.description;
   final named = (domain ?? '').trim();
   if (named.isEmpty) return type.description;
-  return 'Anyone with an @$named email can use this grid, or run a model for '
-      'it — as well as the people you invite.';
+  return 'Anyone with an @$named email can use this grid, or start an AI '
+      'node to power it, as well as the people you invite.';
 }
 
 /// The one-line explanation printed **inside the share sheet's access row**,
@@ -109,8 +109,8 @@ String accessDescriptionFor(ManagedNetworkType type, {String? domain}) {
 String accessRowDescription(ManagedNetworkType type, {String? domain}) {
   switch (type) {
     case ManagedNetworkType.restricted:
-      return 'Only the people listed above can use this grid, or run a model '
-          'for it.';
+      return 'Only the people listed above can use this grid, or start an '
+          'AI node to power it.';
     case ManagedNetworkType.domain:
       final named = (domain ?? '').trim();
       if (named.isEmpty) return type.description;
@@ -122,14 +122,14 @@ String accessRowDescription(ManagedNetworkType type, {String? domain}) {
       // people you invite" is the half that changed on 2026-08-21: the domain
       // now admits rather than excludes, so an invited outsider keeps working
       // after the switch (01653659).
-      return 'Anyone with an @$named email can use this grid, or run a model '
-          'for it — as well as the people you invite.';
+      return 'Anyone with an @$named email can use this grid, or start an '
+          'AI node to power it, as well as the people you invite.';
     case ManagedNetworkType.anyone:
       // The second clause is never dropped: opening up who may *use* the grid
       // is not opening up who may plug a machine into it, and "anyone can use
       // this grid" alone reads as the larger promise.
-      return 'Anyone signed in to Grid can use it. Only the people above can '
-          'run a model for it.';
+      return 'Anyone can use it. Only the people above can start an AI '
+          'node to power it.';
   }
 }
 
@@ -138,20 +138,24 @@ String accessRowDescription(ManagedNetworkType type, {String? domain}) {
 ///
 /// The restart is not in here: every rule restarts the grid, so the warning
 /// says it once ([accessChangeWarning]) rather than three times over.
-String accessCostFor(ManagedNetworkType target) => switch (target) {
+///
+/// Null for a rule that takes nothing from anyone already on the grid. Opening
+/// a grid up is the one change with no victim — the two that close it down cut
+/// people off, which is worth stopping for, while listing billing and
+/// moderation consequences under a warning triangle gave a harmless change the
+/// same alarm as a harmful one.
+String? accessCostFor(ManagedNetworkType target) => switch (target) {
   ManagedNetworkType.restricted =>
-    'Anyone using it who is not on the list above loses access, and any model '
-        'they run for it stops serving.',
+    'Anyone using it who is not on the list above loses access, and any AI '
+        'node they started for it stops serving.',
   // This used to warn that everyone off the domain lost access "even though
   // they stay on the list". They do not any more — the domain admits, and the
   // list keeps working beside it — so the cost falls only on someone who is on
   // neither, which is who a switch away from "Anyone" takes it from.
   ManagedNetworkType.domain =>
     'Anyone using it who is neither on that domain nor on the list above '
-        'loses access, and any model they run for it stops serving.',
-  ManagedNetworkType.anyone =>
-    'Usage on this grid stops being billed, and you can no longer block an '
-        'individual person.',
+        'loses access, and any AI node they started for it stops serving.',
+  ManagedNetworkType.anyone => null,
 };
 
 /// The whole warning shown while a change is picked but not yet saved.
@@ -162,6 +166,8 @@ String accessCostFor(ManagedNetworkType target) => switch (target) {
 /// including the person reading.
 String accessChangeWarning(ManagedNetworkType target, {String? domain}) {
   final name = accessLabelFor(target, domain: domain);
-  return 'Switching to “$name” restarts this grid — everyone reconnects once. '
-      '${accessCostFor(target)}';
+  final restart =
+      'Switching to “$name” restarts this grid, so everyone reconnects once.';
+  final cost = accessCostFor(target);
+  return cost == null ? restart : '$restart $cost';
 }

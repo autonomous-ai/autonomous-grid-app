@@ -181,19 +181,125 @@ void main() {
       );
     });
 
-    test('choosing later lets the user in without an answer on record', () {
-      final container = containerWith([]);
-      expect(container.read(gridChoiceNeededProvider), isTrue);
+    test('an unremembered pick opens the door without writing anything', () {
+      final container = containerWith([lab, office]);
 
-      container.read(gridChoiceGateProvider.notifier).later();
+      container
+          .read(gridChoiceGateProvider.notifier)
+          .choose(office, remember: false);
 
-      expect(container.read(gridChoiceNeededProvider), isFalse);
+      expect(
+        container.read(gridChoiceNeededProvider),
+        isFalse,
+        reason: 'the user answered — this run goes in on the grid they picked',
+      );
+      expect(
+        container.read(selectedNetworkProvider)?.networkId,
+        'net-2',
+        reason: 'not remembering it must not mean not using it',
+      );
       expect(
         ChatPrefsStore(
           file: File('${temp.path}/chat_prefs.json'),
         ).load().networkId,
         isNull,
-        reason: 'a skip is not an answer — the next launch asks again',
+        reason: 'nothing on disk, so the next launch asks again',
+      );
+    });
+
+    test('signing out shuts the door, so the next account is asked again', () {
+      final container = containerWith([lab, office]);
+      container.read(gridChoiceGateProvider.notifier).choose(office);
+      expect(container.read(gridChoiceGateProvider), isTrue);
+
+      // What signing out looks like from here: `grid logout` empties the
+      // credentials file, which is the only thing the session reads.
+      store.credentials = CredentialsFile.empty;
+      container.invalidate(sessionProvider);
+
+      expect(
+        container.read(gridChoiceGateProvider),
+        isFalse,
+        reason:
+            'a door held open across a sign-out sends the account signing in '
+            'next straight past the question onto a grid it never picked',
+      );
+    });
+
+    test('the whole question comes back for whoever signs in next', () {
+      final container = containerWith([lab, office]);
+      // Subscribed for the whole run, because `RootView` is: without a listener
+      // the container is lazy, the signed-out moment is never computed, and the
+      // gate compares the second sign-in against the first and sees no change.
+      // The bug this covers only exists in a tree that is watching.
+      container.listen(gridChoiceNeededProvider, (_, _) {});
+      container.read(gridChoiceGateProvider.notifier).choose(office);
+      expect(container.read(gridChoiceNeededProvider), isFalse);
+
+      // Sign out. The remembered grid goes with the logout, exactly as it does
+      // on disk — `grid logout` clears the pointer along with the credentials.
+      store.credentials = CredentialsFile.empty;
+      File('${temp.path}/chat_prefs.json').deleteSync();
+      container.invalidate(chatPrefsProvider);
+      container.invalidate(sessionProvider);
+      expect(container.read(gridChoiceNeededProvider), isTrue);
+
+      // Sign back in, on an account that holds grids of its own.
+      store.credentials = _credentials([lab, office]);
+      container.invalidate(sessionProvider);
+
+      expect(
+        container.read(gridChoiceNeededProvider),
+        isTrue,
+        reason: 'the second sign-in is a first run for that account',
+      );
+    });
+
+    test('forgetting the grid on sign-out un-answers the question', () {
+      final container = containerWith([lab, office]);
+      container.listen(gridChoiceNeededProvider, (_, _) {});
+      container.read(gridChoiceGateProvider.notifier).choose(office);
+      expect(container.read(gridChoiceNeededProvider), isFalse);
+
+      // Signing out: the credentials go, and the app forgets the grid that
+      // account picked. `grid logout` clears the CLI's pointer but never
+      // touches `chat_prefs.json`, so the app has to clear its own.
+      store.credentials = CredentialsFile.empty;
+      container.read(chatPrefsProvider.notifier).clearNetwork();
+      container.invalidate(sessionProvider);
+      expect(container.read(gridChoiceNeededProvider), isTrue);
+
+      // Someone signs in on the same machine, holding a grid by the same id.
+      store.credentials = _credentials([lab, office]);
+      container.invalidate(sessionProvider);
+
+      expect(
+        container.read(gridChoiceNeededProvider),
+        isTrue,
+        reason:
+            'inheriting the previous account’s grid because the ids happen to '
+            'match is worse than asking — it puts one person’s chats on '
+            'another person’s grid without either of them being told',
+      );
+    });
+
+    test('forgetting the grid keeps every other preference', () {
+      final container = containerWith([lab, office]);
+      container.read(chatPrefsProvider.notifier).setChatAgent('codex');
+      container.read(gridChoiceGateProvider.notifier).choose(office);
+
+      container.read(chatPrefsProvider.notifier).clearNetwork();
+
+      final prefs = ChatPrefsStore(
+        file: File('${temp.path}/chat_prefs.json'),
+      ).load();
+      expect(prefs.networkId, isNull);
+      expect(
+        prefs.chatAgent,
+        'codex',
+        reason:
+            'the grid belongs to the account, the rest belongs to the person '
+            'at the keyboard — signing out must not reset their app',
       );
     });
   });

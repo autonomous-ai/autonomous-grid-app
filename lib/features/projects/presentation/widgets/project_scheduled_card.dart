@@ -44,7 +44,7 @@ class ProjectScheduledCard extends ConsumerWidget {
           ? _body(context, ref)
           : const RailHint(
               'Scheduling needs this computer set up to run tasks. Open '
-              '$kShareModelsPlace to finish setting it up.',
+              '$kSharePlace to finish setting it up.',
             ),
     );
   }

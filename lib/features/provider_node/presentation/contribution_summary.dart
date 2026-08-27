@@ -54,7 +54,8 @@ class ContributionSummary extends StatelessWidget {
         ? 'Anyone on this grid can use ${count == 1 ? 'it' : 'them'} right now.'
         : starting
         ? 'It will appear here as soon as it’s serving.'
-        : 'Add an engine below to share a model with $gridName.';
+        : 'Pick a way below and this computer starts answering for '
+              '$gridName.';
 
     return Padding(
       padding: const EdgeInsets.only(left: 2, bottom: 14),

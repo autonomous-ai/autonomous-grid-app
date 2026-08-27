@@ -172,13 +172,20 @@ enum ShellSection {
     devOnly: true,
   ),
   grids(LucideIcons.zap, 'Grids', thinIcon: LucideIcons.zap300),
-  // "Share models", the top bar button's own words — one screen, one name
-  // (§5). It has worn four: "This computer" in the nav while the screen said
-  // "Model Engines", then "Model engines" everywhere, then "Share a computer" —
-  // which collided with the share sheet's grant of that name — and now this. A
-  // row named after a place told a first-time user nothing about the thing this
-  // app exists to do; a row named after the act tells them exactly.
-  engines(LucideIcons.server, 'Share models', thinIcon: LucideIcons.server300),
+  // "Share Intelligence", the top bar button's own words — one screen, one
+  // name (§5), and this label is rendered: the command palette offers it as
+  // "Go to …". It has worn five: "This computer" in the nav while the screen
+  // said "Model Engines", then "Model engines" everywhere, then "Share a
+  // computer" — which collided with the share sheet's grant of that name —
+  // then "Share models", and now this. A row named after a place told a
+  // first-time user nothing about the thing this app exists to do; a row named
+  // after the act tells them exactly, and the noun is the one both halves of
+  // the top bar's pair now speak.
+  engines(
+    LucideIcons.server,
+    'Share Intelligence',
+    thinIcon: LucideIcons.server300,
+  ),
   guide(
     LucideIcons.circleHelp,
     'How to use',

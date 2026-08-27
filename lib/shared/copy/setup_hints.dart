@@ -10,7 +10,7 @@ library;
 
 /// Where a user goes to make this computer serve a model — the button's own
 /// words, so the sentence and the thing it points at agree.
-const kShareModelsPlace = 'Share models in the top bar';
+const kSharePlace = 'Share Intelligence in the top bar';
 
 /// "This computer isn't set up to `activity` yet…", with the way to fix it.
 ///
@@ -19,5 +19,5 @@ const kShareModelsPlace = 'Share models in the top bar';
 /// is what makes it usable wherever an agent, a task or a connector finds this
 /// machine has no engine behind it.
 String notSetUpToMessage(String activity) =>
-    "This computer isn't set up to $activity yet. Open $kShareModelsPlace to "
+    "This computer isn't set up to $activity yet. Open $kSharePlace to "
     'finish setting it up.';

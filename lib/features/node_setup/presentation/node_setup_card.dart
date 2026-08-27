@@ -20,8 +20,8 @@ class NodeSetupCard extends ConsumerWidget {
 
   /// Whether to draw its own card and title. False when it's embedded in
   /// something that already says what it is — the "Run on this computer" card
-  /// on Share models — where the frame would be a box inside a box and the
-  /// title would say the same thing twice.
+  /// on Share Intelligence — where the frame would be a box inside a box and
+  /// the title would say the same thing twice.
   final bool framed;
 
   @override
@@ -111,7 +111,7 @@ class _PlanPreview extends ConsumerWidget {
         _CapabilitySummary(caps: caps),
         const SizedBox(height: 16),
         Text(
-          'Setting up automatically — installing what\'s missing:',
+          'Setting up automatically. Installing what\'s missing:',
           style: theme.textTheme.titleSmall,
         ),
         const SizedBox(height: 8),
@@ -360,7 +360,7 @@ class _DoneBody extends ConsumerWidget {
               child: Text(
                 completed.isEmpty
                     ? 'This computer was already set up as a node.'
-                    : 'Done — this computer is set up as a node.',
+                    : 'Done. This computer is ready to share.',
                 style: theme.textTheme.titleSmall,
               ),
             ),

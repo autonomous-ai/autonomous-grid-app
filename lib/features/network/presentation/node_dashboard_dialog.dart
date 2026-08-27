@@ -297,7 +297,7 @@ class _EmptyState extends ConsumerWidget {
       message: canHost
           ? "Share this computer's models with the grid, or invite someone "
                 'who can share theirs.'
-          : 'Invite someone who can run a model for this grid, and their '
+          : 'Invite someone who can start an AI node for this grid, and their '
                 'readings appear here.',
       action: Row(
         mainAxisSize: MainAxisSize.min,
@@ -307,7 +307,7 @@ class _EmptyState extends ConsumerWidget {
             // one screen answers to one word (§5).
             FilledButton(
               onPressed: openEngines,
-              child: const Text('Share models'),
+              child: const Text('Share Intelligence'),
             ),
             const SizedBox(width: 8),
           ],

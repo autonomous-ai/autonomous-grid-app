@@ -40,29 +40,50 @@ bool needsGridChoice({
 /// floating over it. The screen belongs to starting the app; once through, the
 /// app handles a missing grid where the user actually is (see [NoGridNotice]).
 ///
-/// It is also what makes "I'll choose later" possible, and why that is a door
-/// rather than a saved answer: the screen is a fork, not a wall (§5), so
-/// someone with no grids on a day the control plane is unreachable still gets
-/// into an app they could otherwise open — and is asked again next launch,
-/// because they never answered.
+/// It used to carry an "I'll choose later" escape too, and that is worth
+/// knowing about: on a day the control plane is unreachable, an account with no
+/// grids can now neither pick one nor create one, so this screen is where it
+/// stops. The app is unusable without a grid either way, so the escape led into
+/// a shell that could not chat — but it did let someone reach their settings
+/// and their old chats, and nothing replaces that today.
+/// **TODO(BE): give the outage its own way out**, an offline state that says
+/// what is wrong rather than a silent wall.
 final gridChoiceGateProvider = NotifierProvider<GridChoiceGate, bool>(
   GridChoiceGate.new,
 );
 
 class GridChoiceGate extends Notifier<bool> {
   @override
-  bool build() => false;
+  bool build() {
+    // Signing out shuts the door again. `grid logout` clears the grid pointer,
+    // so the account signing in next genuinely has no grid — and a door left
+    // open from the previous session walked them straight past the question
+    // into whatever [CredentialsFile.active] happened to fall back to, which is
+    // the silent five-deep guess this screen exists to replace.
+    //
+    // Watching the flag and not the session is the whole trick: this must stay
+    // a door (see above), and a refresh that keeps the user signed in leaves
+    // `isLoggedIn` untouched, so `select` doesn't rebuild and the door doesn't
+    // slam mid-session. It only moves when sign-in state actually flips.
+    ref.watch(sessionProvider.select((credentials) => credentials.isLoggedIn));
+    return false;
+  }
 
   /// Take [network] as the user's grid and go in — the one path that both
   /// answers the question and opens the door, so the two can't come apart in
-  /// one of the three places the screen offers it.
-  void choose(NetworkCredential network) {
-    ref.read(selectedNetworkProvider.notifier).select(network);
+  /// one of the places the screen offers it.
+  ///
+  /// [remember] decides whether the answer outlives this run. Unticked, the door
+  /// still opens and the grid is still selected; only the note on disk is
+  /// skipped, so the next launch asks again. Signing out clears that note either
+  /// way (see `AuthController.logout`), so a remembered grid never greets the
+  /// next account to use this computer.
+  void choose(NetworkCredential network, {bool remember = true}) {
+    ref
+        .read(selectedNetworkProvider.notifier)
+        .select(network, remember: remember);
     state = true;
   }
-
-  /// Go in without answering. Nothing is written, so the next launch asks.
-  void later() => state = true;
 }
 
 /// The live answer, wiring the app's providers into [needsGridChoice].

@@ -26,15 +26,15 @@ enum ChoiceRowAction {
 /// real target a small button inside each. As a row the whole strip is the
 /// target, the button goes, and the same four options cost a third of the height.
 ///
-/// Shared between the first-run screen and the Share models tab on purpose:
-/// they offer the *same* ways onto a grid, and a user who picked one on the way
-/// in should meet it wearing the same clothes later.
+/// Shared between the first-run screen and the Share Intelligence tab on
+/// purpose: they offer the *same* ways onto a grid, and a user who picked one
+/// on the way in should meet it wearing the same clothes later.
 class ChoiceRow extends StatelessWidget {
   const ChoiceRow({
     super.key,
     required this.icon,
     required this.title,
-    required this.line,
+    this.line,
     required this.action,
     required this.onPressed,
     this.badge,
@@ -49,9 +49,14 @@ class ChoiceRow extends StatelessWidget {
 
   final String title;
 
-  /// The one line under the title. One, not a paragraph — the detail belongs in
-  /// what the row opens, not in front of it.
-  final String line;
+  /// The one line under the title, or null for a row whose title already
+  /// says the whole thing.
+  ///
+  /// One line, not a paragraph — the detail belongs in what the row opens,
+  /// not in front of it. Dropping it entirely is for a row sitting in a list
+  /// of single-line items, where a second line would make the action look
+  /// like a heavier kind of thing than the rows it stands beside.
+  final String? line;
 
   /// Two or three words naming what this option *saves* the user — "no setup",
   /// "private & offline". A benefit, never a restatement of the title: it earns
@@ -112,13 +117,15 @@ class ChoiceRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(title, style: theme.textTheme.titleSmall),
-                      const SizedBox(height: 2),
-                      Text(
-                        line,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                      if (line case final line?) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          line,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),

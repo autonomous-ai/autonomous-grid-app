@@ -28,10 +28,11 @@ import '../shell_state.dart';
 /// Both halves name an action now — the engine half was "Model engines", a
 /// place, until 2026-08-26. It is not "Share a computer": that is the share
 /// sheet's grant, and a permission and the screen that exercises it cannot wear
-/// one name (§5). What is offered here is models, which is also what the other
-/// half's guests come for. But the two are not drawn at the same weight. A bar
-/// carries one primary, and inviting is the ask that has to survive a glance;
-/// serving is the one a host goes looking for. The engine half is glass, like every other
+/// one name (§5). What is offered here is intelligence, which is also what the
+/// other half's guests come for. But the two are not drawn at the same weight.
+/// A bar carries one primary, and inviting is the ask that has to survive a
+/// glance; serving is the one a host goes looking for. The engine half is
+/// glass, like every other
 /// capsule this bar has ever had; the invite half is the one opaque, saturated
 /// surface on it. That split is the app's existing rule, not a new one — see
 /// the note on the old `_InviteButton`.
@@ -116,7 +117,8 @@ class GridCtaPair extends ConsumerWidget {
   }
 }
 
-/// The door to Share models — the only one, now that the sidebar row is gone.
+/// The door to Share Intelligence — the only one, now that the sidebar row
+/// is gone.
 ///
 /// It carries two things that row used to: it lights when that screen is the one
 /// open, and it wears a mark for what this computer is contributing. Dropping
@@ -160,17 +162,30 @@ class _EnginesHalfState extends ConsumerState<_EnginesHalf> {
     return Semantics(
       button: true,
       selected: open,
+      // The accessible name matches the visible one, plus the state the dot
+      // beside it carries — a screen reader gets what a sighted user gets.
       label: !widget.canHost
-          ? 'Share models'
+          ? 'Share Intelligence'
           : serving
-          ? 'Share models, serving now'
-          : 'Share models, not serving yet',
+          ? 'Share Intelligence, serving now'
+          : 'Share Intelligence, not serving yet',
       child: Tooltip(
+        // What pressing it gets you, not what is true right now. The dot beside
+        // the label already reports the state, and a tooltip repeating it spent
+        // the one line this control has on something the user could already see
+        // — while the reason to press it went unsaid.
+        //
+        // The off state names the two ways in, because "Share Intelligence" is
+        // an umbrella and a reader who owns no GPU reads it as a demand for one.
+        // Both routes are real rows on the page behind it ("Run a model on this
+        // computer", "Use a key you already pay for"), and the one that costs
+        // nothing to try is the one people don't know is there.
         message: !widget.canHost
-            ? 'What this computer shares on this grid'
+            ? 'See what’s answering on this grid'
             : serving
-            ? 'This computer is serving on this grid'
-            : "This computer isn't serving anything yet",
+            ? 'Change what you’re sharing with the grid'
+            : 'Contribute intelligence to the grid, from this computer '
+                  'or your API key',
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
@@ -216,7 +231,7 @@ class _EnginesHalfState extends ConsumerState<_EnginesHalf> {
                   if (widget.showLabel) ...[
                     const SizedBox(width: 6),
                     Text(
-                      'Share models',
+                      'Share Intelligence',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: AppFont.semibold,
@@ -297,11 +312,16 @@ class _InviteHalfState extends ConsumerState<_InviteHalf> {
                 '${members.length} '
                 '${plural(members.length, 'person', 'people')} on it',
       child: Tooltip(
-        message: members == null
-            ? 'Invite people to ${widget.grid.name}'
-            : '${members.length} '
-                  '${plural(members.length, 'person', 'people')} '
-                  'on ${widget.grid.name}',
+        // The roster count moved to the label above, which a screen reader
+        // reads and a pointer user does not need twice. This line is for the
+        // reason to press it, in the same words the front door made its case
+        // with: more of them means more to answer with.
+        //
+        // "Intelligence", not "models", and the same word its neighbour uses:
+        // these two halves are one argument read left to right — bring
+        // intelligence, bring people who bring more — and two nouns for the
+        // one thing would break it in the six inches between them.
+        message: 'More people means more machines and more intelligence',
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
@@ -339,7 +359,7 @@ class _InviteHalfState extends ConsumerState<_InviteHalf> {
                   if (widget.showLabel) ...[
                     const SizedBox(width: 6),
                     const Text(
-                      'Invite members',
+                      'Invite Members',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: AppFont.semibold,

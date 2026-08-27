@@ -797,7 +797,7 @@ void main() {
 
     // Names the screen that fixes it — the point of the refusal is the way out,
     // and that screen has moved before (it was in the account menu).
-    expect(result.error, contains(kShareModelsPlace));
+    expect(result.error, contains(kSharePlace));
     expect(h.cron.created, isNull);
   });
 

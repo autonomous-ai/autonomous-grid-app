@@ -97,7 +97,7 @@ void main() {
       expect(result.summary, contains('hp-1-1'));
       // The fix is somebody sharing a model, so the hint has to send the user
       // where sharing is set up — the shared sentence, not a second wording.
-      expect(result.hint, contains(kShareModelsPlace));
+      expect(result.hint, contains(kSharePlace));
     });
 
     test('says so when the task is pointed at a different grid than the one on '
@@ -113,7 +113,7 @@ void main() {
       expect(result.hint, contains('autonomous.ai'));
       // Sending them to share a model here would be the wrong fix: this grid
       // has models, the task is simply not on it.
-      expect(result.hint, isNot(contains(kShareModelsPlace)));
+      expect(result.hint, isNot(contains(kSharePlace)));
     });
 
     test('still explains a no-provider failure when the grid is unknown, '
@@ -125,7 +125,7 @@ void main() {
 
       expect(result.summary, contains('sharing AI'));
       expect(result.summary, isNot(contains('"')));
-      expect(result.hint, contains(kShareModelsPlace));
+      expect(result.hint, contains(kSharePlace));
     });
 
     test(

@@ -65,10 +65,10 @@ class ExternalServers extends ConsumerWidget {
           network: network,
           collapsible: true,
           icon: Icons.computer_outlined,
-          title: 'Connect your own engine',
+          title: 'Connect something else',
           subtitle:
-              'Advanced — point Grid at an OpenAI-compatible engine you run on '
-              'this computer.',
+              'Point Grid at any OpenAI-compatible engine running on this '
+              'computer.',
         ),
       ],
     );

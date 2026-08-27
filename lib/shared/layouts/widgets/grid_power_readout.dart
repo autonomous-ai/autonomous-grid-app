@@ -186,8 +186,8 @@ class _GridPowerReadoutState extends ConsumerState<GridPowerReadout> {
           // Nothing online, so nothing to report. It used to become an offer to
           // start hosting, because vanishing took the last thing on screen away
           // at the moment the grid needed a machine. That reasoning retires with
-          // the move: Share models is a permanent control on the top bar now,
-          // so the offer is already on screen whether or not this reports
+          // the move: Share Intelligence is a permanent control on the top bar
+          // now, so the offer is already on screen whether or not this reports
           // anything.
           ? const SizedBox.shrink()
           // No wrapping MouseRegion any more. The row spans the rail so that

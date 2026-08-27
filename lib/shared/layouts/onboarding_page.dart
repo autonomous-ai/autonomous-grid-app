@@ -23,8 +23,8 @@ class OnboardingPage extends StatelessWidget {
   const OnboardingPage({
     super.key,
     required this.title,
-    required this.subtitle,
     required this.children,
+    this.subtitle,
     this.meta,
     this.corner,
     this.leading,
@@ -38,8 +38,12 @@ class OnboardingPage extends StatelessWidget {
   final String title;
 
   /// The one line under the title. Says what this screen wants, or what is
-  /// happening — never both.
-  final String subtitle;
+  /// happening, never both.
+  ///
+  /// Null for a screen whose content answers the title on its own, and whose
+  /// explaining belongs *after* the reader has seen what they are choosing
+  /// between rather than in front of it.
+  final String? subtitle;
 
   /// A counter on the subtitle's line, right-aligned — "1 of 2 steps". Rendered
   /// as a [MetaLabel] so it reads the same as a choice row's badge.
@@ -108,7 +112,7 @@ class _Card extends StatelessWidget {
 
   final Widget? leading;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final String? meta;
   final List<Widget> children;
 
@@ -135,23 +139,25 @@ class _Card extends StatelessWidget {
                 const SizedBox(height: 18),
               ],
               Text(title, style: theme.textTheme.headlineSmall),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      subtitle,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppPalette.textSecondary,
+              if (subtitle case final subtitle?) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        subtitle,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: AppPalette.textSecondary,
+                        ),
                       ),
                     ),
-                  ),
-                  if (meta != null) ...[
-                    const SizedBox(width: 12),
-                    MetaLabel(meta!),
+                    if (meta != null) ...[
+                      const SizedBox(width: 12),
+                      MetaLabel(meta!),
+                    ],
                   ],
-                ],
-              ),
+                ),
+              ],
               const SizedBox(height: 22),
               ...children,
             ],

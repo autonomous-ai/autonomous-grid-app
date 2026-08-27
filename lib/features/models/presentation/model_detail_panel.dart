@@ -273,10 +273,10 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
       ? files.first
       : '${stripSplitSuffix(files.first)} (${files.length} parts)';
 
-  /// Why Delete is off. Names where to stop it from [kShareModelsPlace], the
+  /// Why Delete is off. Names where to stop it from [kSharePlace], the
   /// top bar button's own label, so the sentence points somewhere that exists.
   static const _inUseReason =
-      'This model is running right now. Stop it from $kShareModelsPlace to '
+      'This model is running right now. Stop it from $kSharePlace to '
       'delete it.';
 
   /// The pills for one version. Quantisation and size are facts, so they stay
