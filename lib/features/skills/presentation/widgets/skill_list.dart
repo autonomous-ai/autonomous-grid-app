@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/skills/agent_skill_home.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
@@ -375,7 +376,7 @@ Future<bool?> _confirmDeleteSkill(
   String name,
   SkillSource source,
 ) {
-  return showDialog<bool>(
+  return showAppDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Remove it from ${source.label}?'),

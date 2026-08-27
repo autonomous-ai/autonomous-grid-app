@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/layouts/reveal_chat.dart';
@@ -583,7 +584,7 @@ Future<String?> showRenameChatDialog(
     // replaces the lot.
     ..selection = TextSelection(baseOffset: text.length, extentOffset: 0);
   try {
-    final name = await showDialog<String>(
+    final name = await showAppDialog<String>(
       context: context,
       builder: (context) => _RenameChatDialog(controller: controller),
     );
@@ -686,7 +687,7 @@ class _RenameChatDialogState extends State<_RenameChatDialog> {
 /// Asks before dropping [chat]. Deleting throws the transcript away for good, so
 /// it asks rather than offering an undo it can't honour.
 Future<bool> confirmDeleteChat(BuildContext context, Conversation chat) async {
-  final ok = await showDialog<bool>(
+  final ok = await showAppDialog<bool>(
     context: context,
     builder: (context) {
       AppTheme.watch(context);

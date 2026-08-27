@@ -28,7 +28,7 @@ class _ActionsState extends ConsumerState<_Actions> {
   }
 
   Future<void> _confirmDelete() async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Delete "${widget.job.name}"?'),

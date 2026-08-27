@@ -49,13 +49,19 @@ class PillChoice extends StatelessWidget {
                 Icon(icon, size: 15, color: foreground),
                 const SizedBox(width: 8),
               ],
-              DefaultTextStyle.merge(
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 13.5,
-                  fontWeight: AppFont.medium,
+              // A pill is a button, so what is written on it is a label and not
+              // the page's text — the rule `unselectableLabel` applies to every
+              // Material button. This one is built from an `InkWell`, so no
+              // `ButtonStyle` reaches it and it has to say so itself.
+              SelectionContainer.disabled(
+                child: DefaultTextStyle.merge(
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 13.5,
+                    fontWeight: AppFont.medium,
+                  ),
+                  child: label,
                 ),
-                child: label,
               ),
             ],
           ),

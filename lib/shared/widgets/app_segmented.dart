@@ -165,17 +165,21 @@ class _Label extends StatelessWidget {
   final bool centred;
 
   @override
-  Widget build(BuildContext context) => Text(
-    spec.label,
-    maxLines: 1,
-    overflow: TextOverflow.ellipsis,
-    textAlign: centred ? TextAlign.center : TextAlign.start,
-    style: TextStyle(
-      fontSize: 12,
-      height: 1.2,
-      // Selection is marked three ways — chip fill, shadow, and this weight.
-      fontWeight: selected ? FontWeight.w600 : AppFont.medium,
-      color: ink,
+  // A segment names a choice you press — a label, like every button's (see
+  // `unselectableLabel`), and out of the page's selection for the same reason.
+  Widget build(BuildContext context) => SelectionContainer.disabled(
+    child: Text(
+      spec.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: centred ? TextAlign.center : TextAlign.start,
+      style: TextStyle(
+        fontSize: 12,
+        height: 1.2,
+        // Selection is marked three ways — chip fill, shadow, and this weight.
+        fontWeight: selected ? FontWeight.w600 : AppFont.medium,
+        color: ink,
+      ),
     ),
   );
 }

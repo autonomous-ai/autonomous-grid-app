@@ -1,6 +1,7 @@
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_turn_part.dart';
 import '../../chat/logic/turn_model_share.dart';
+import '../../network/logic/node_display.dart' show withoutGridRunPrefix;
 import 'chat_context.dart';
 import 'chat_file.dart';
 import 'message_media.dart';
@@ -278,11 +279,15 @@ String _pad(int value) => value.toString().padLeft(2, '0');
 /// "claude" twice and read as a config string rather than as Opus. This gives
 /// `claude/opus-5`, and `codex-cli:gpt-5.6-terra` → `codex-cli/gpt-5.6-terra`.
 ///
+/// A grid-run kind loses its prefix outright rather than gaining a slash
+/// ([withoutGridRunPrefix]): nobody chose that kind, so naming it here would
+/// print a supplier the reader has no relationship with.
+///
 /// Display only — the id itself is what a request carries, so this never goes on
 /// the wire. Anything without a kind (a grid model, `auto`, the media modes)
 /// comes back trimmed and otherwise untouched.
 String modelDisplayLabel(String id) {
-  final trimmed = id.trim();
+  final trimmed = withoutGridRunPrefix(id);
   final colon = trimmed.indexOf(':');
   if (colon <= 0) return trimmed;
   final kind = trimmed.substring(0, colon);

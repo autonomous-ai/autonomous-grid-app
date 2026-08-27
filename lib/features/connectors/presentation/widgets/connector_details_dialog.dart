@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../logic/connector.dart';
 import 'connector_mark.dart';
@@ -39,7 +40,7 @@ Future<void> showConnectorDetailsDialog(
   BuildContext context,
   Connector connector, {
   Widget Function(VoidCallback close)? actionBuilder,
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (_) =>
       _DetailsDialog(connector: connector, actionBuilder: actionBuilder),

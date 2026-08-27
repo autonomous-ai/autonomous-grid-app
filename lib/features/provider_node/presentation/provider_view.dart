@@ -16,6 +16,7 @@ import '../../node_setup/logic/node_setup_plan.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/api_engine_catalog.dart';
 import '../logic/provider_run_controller.dart';
+import '../../../shared/widgets/selectable_body.dart';
 import '../logic/serving_engines_provider.dart';
 import '../logic/share_route.dart';
 import '../logic/share_route_offer.dart';
@@ -299,17 +300,22 @@ class _FailurePane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => SingleChildScrollView(
-    child: EngineFailureCard(
-      message: message,
-      engineLabel: engineLabel,
-      // Clears the failed state so the routes come back; the user then starts
-      // from the one they meant to use. We can't replay the exact join here —
-      // the controller doesn't retain its arguments — and guessing which engine
-      // to restart would be worse than asking.
-      onRetry: () =>
-          ref.read(providerRunControllerProvider.notifier).clearFailure(),
-      onReinstallEngine: () =>
-          ref.read(engineSetupControllerProvider.notifier).run(),
+    // Inside the scroll view, never around it — see [SelectableBody]. Ported
+    // by hand from main's `93e30c91`, which wrapped the page body this branch
+    // had already replaced.
+    child: SelectableBody(
+      child: EngineFailureCard(
+        message: message,
+        engineLabel: engineLabel,
+        // Clears the failed state so the routes come back; the user then starts
+        // from the one they meant to use. We can't replay the exact join here —
+        // the controller doesn't retain its arguments — and guessing which engine
+        // to restart would be worse than asking.
+        onRetry: () =>
+            ref.read(providerRunControllerProvider.notifier).clearFailure(),
+        onReinstallEngine: () =>
+            ref.read(engineSetupControllerProvider.notifier).run(),
+      ),
     ),
   );
 }
@@ -324,21 +330,23 @@ class _LockedPage extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(24),
     child: SingleChildScrollView(
-      child: network.role == NetworkRole.admin
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                EnableProviderCard(network: network),
-                const SizedBox(height: 16),
-                const NodeSetupCard(),
-              ],
-            )
-          // No set-up card here, deliberately. Installing an engine needs no
-          // grid permission, so it *could* be offered — but on a grid you can't
-          // share on, a multi-GB download prepares you for something you still
-          // can't do, and it read as the page's main call to action while the
-          // actual way forward (a grid of your own) sat beside it.
-          : SharingLockedView(network: network),
+      child: SelectableBody(
+        child: network.role == NetworkRole.admin
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  EnableProviderCard(network: network),
+                  const SizedBox(height: 16),
+                  const NodeSetupCard(),
+                ],
+              )
+            // No set-up card here, deliberately. Installing an engine needs no
+            // grid permission, so it *could* be offered — but on a grid you can't
+            // share on, a multi-GB download prepares you for something you still
+            // can't do, and it read as the page's main call to action while the
+            // actual way forward (a grid of your own) sat beside it.
+            : SharingLockedView(network: network),
+      ),
     ),
   );
 }
@@ -388,47 +396,49 @@ class _EngineBusyElsewhere extends ConsumerWidget {
         ref.watch(sessionProvider).byName(runningGridId)?.name ??
         'another grid';
     return SingleChildScrollView(
-      child: EngineSurface(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.dns, color: AppPalette.online, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'An engine is already running on $runningName',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'You can run an engine on only one grid at a time. '
-                        'Stop it to start one on this grid.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+      child: SelectableBody(
+        child: EngineSurface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.dns, color: AppPalette.online, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'An engine is already running on $runningName',
+                          style: theme.textTheme.titleMedium,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          'You can run an engine on only one grid at a time. '
+                          'Stop it to start one on this grid.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: () =>
-                    ref.read(providerRunControllerProvider.notifier).stop(),
-                icon: const Icon(Icons.stop),
-                label: Text('Stop engine on $runningName'),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: () =>
+                      ref.read(providerRunControllerProvider.notifier).stop(),
+                  icon: const Icon(Icons.stop),
+                  label: Text('Stop engine on $runningName'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

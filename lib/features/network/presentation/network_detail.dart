@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -53,14 +54,19 @@ class NetworkDetail extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           header,
-          const TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            dividerColor: Colors.transparent,
-            tabs: [
-              Tab(text: 'Overview'),
-              Tab(text: 'Members'),
-            ],
+          // Tabs are navigation, so their words are not the page's text. A
+          // `TabBarTheme` carries no hook for this the way `ButtonStyle` does
+          // (see `unselectableLabel`), so it is said here.
+          const SelectionContainer.disabled(
+            child: TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              dividerColor: Colors.transparent,
+              tabs: [
+                Tab(text: 'Overview'),
+                Tab(text: 'Members'),
+              ],
+            ),
           ),
           Expanded(
             child: TabBarView(
@@ -413,7 +419,7 @@ class _DeleteGridButton extends ConsumerWidget {
   }
 
   Future<void> _confirmAndDelete(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) {
         final theme = Theme.of(ctx);

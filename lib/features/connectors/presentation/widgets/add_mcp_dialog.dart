@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../shared/external_launch.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -31,7 +32,7 @@ Future<void> showAddMcpDialog(
   BuildContext context, {
   String initialName = '',
   String initialUrl = '',
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (_) => _McpDialog(initialName: initialName, initialUrl: initialUrl),
 );
@@ -47,7 +48,7 @@ Future<void> showEditMcpDialog(
   BuildContext context,
   McpServer server, {
   bool signedIn = false,
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (_) => _McpDialog(existing: server, signedIn: signedIn),
 );

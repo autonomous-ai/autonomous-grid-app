@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -17,7 +18,7 @@ class CreateNetworkDialog extends ConsumerStatefulWidget {
   const CreateNetworkDialog({super.key});
 
   static Future<void> show(BuildContext context) {
-    return showDialog<void>(
+    return showAppDialog<void>(
       context: context,
       builder: (_) => const CreateNetworkDialog(),
     );

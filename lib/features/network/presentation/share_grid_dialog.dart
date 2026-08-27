@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/api/models/managed_network.dart';
 import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
@@ -49,7 +50,7 @@ class ShareGridDialog extends ConsumerStatefulWidget {
   final NetworkCredential network;
 
   static Future<void> show(BuildContext context, NetworkCredential network) {
-    return showDialog<void>(
+    return showAppDialog<void>(
       context: context,
       builder: (_) => ShareGridDialog(network: network),
     );

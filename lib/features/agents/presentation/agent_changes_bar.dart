@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/external_launch.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -125,7 +126,10 @@ class _UndoAllButtonState extends ConsumerState<_UndoAllButton> {
 /// The full list of what the agent changed, each with its diff and its own undo,
 /// so the user can put back one file without losing the rest.
 Future<void> showAgentChangesDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _ChangesDialog());
+    showAppDialog<void>(
+      context: context,
+      builder: (_) => const _ChangesDialog(),
+    );
 
 class _ChangesDialog extends ConsumerWidget {
   const _ChangesDialog();

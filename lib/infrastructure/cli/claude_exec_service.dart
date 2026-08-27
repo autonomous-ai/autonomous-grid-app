@@ -230,7 +230,7 @@ List<String> claudeExecArgs({
   model,
   if (chrome) '--chrome',
   '--disallowedTools',
-  ...kClaudeSessionSchedulerTools,
+  // ...kClaudeSessionSchedulerTools,
   if (withoutServerWebTools) ...kClaudeServerWebTools,
   if (mcpConfigPath != null) ...[
     '--mcp-config',

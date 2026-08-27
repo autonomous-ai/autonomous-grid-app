@@ -5,6 +5,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/anchored_menu_position.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
@@ -101,8 +102,10 @@ class AddSkillButton extends StatelessWidget {
 /// lived outside the store would vanish from the assistant the day that folder
 /// moved, and a folder the user went and found is their own — `public/` is for
 /// what Grid hands them.
-Future<void> showUploadSkillDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _UploadDialog());
+Future<void> showUploadSkillDialog(BuildContext context) => showAppDialog<void>(
+  context: context,
+  builder: (_) => const _UploadDialog(),
+);
 
 class _UploadDialog extends ConsumerStatefulWidget {
   const _UploadDialog();

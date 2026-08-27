@@ -53,15 +53,33 @@ class GridApp extends ConsumerWidget {
       // Material actually resolved (after ThemeMode.system is applied) and feeds
       // it to the color tokens, which resolve against AppTheme.brightness.
       home: const _BrightnessSync(
-        child: WindowLifecycleScope(
-          child: TrayScope(
-            // Every transient notification in the app surfaces through this one
-            // host, mounted above RootView so a toast is reachable from the
-            // login screen and the main shell alike.
-            child: ToastScope(
-              // Update-check feedback is mounted app-wide: the macOS "Check for
-              // Updates…" menu item works on the login screen too.
-              child: UpdateToastScope(child: RootView()),
+        // Every word on screen can be dragged over and copied, the way it can in
+        // any other desktop app. Before this, only the handful of surfaces that
+        // had asked for it could be — a `SelectableText` here, a `SelectionArea`
+        // around a chat message there — so a user who wanted an error, a model
+        // name or a grid address out of the app had to retype it.
+        //
+        // **Here and not in `MaterialApp.builder`**, which would also cover
+        // routes pushed above this one. `builder` wraps the Navigator, so a
+        // SelectableRegion mounted there has no Overlay above it, and the right
+        // click that opens Copy resolves `Overlay.of(context, rootOverlay:
+        // true)` and throws. Inside `home` the region sits in the Navigator's
+        // own overlay entry, where that lookup succeeds.
+        //
+        // The cost of that placement: a dialog is a sibling entry in the same
+        // overlay, not a descendant of this region, so dialog text is still only
+        // as selectable as its own widgets make it.
+        child: SelectionArea(
+          child: WindowLifecycleScope(
+            child: TrayScope(
+              // Every transient notification in the app surfaces through this
+              // one host, mounted above RootView so a toast is reachable from
+              // the login screen and the main shell alike.
+              child: ToastScope(
+                // Update-check feedback is mounted app-wide: the macOS "Check
+                // for Updates…" menu item works on the login screen too.
+                child: UpdateToastScope(child: RootView()),
+              ),
             ),
           ),
         ),

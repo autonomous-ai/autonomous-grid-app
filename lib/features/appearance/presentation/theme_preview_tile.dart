@@ -98,17 +98,21 @@ class ThemePreviewTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontFamily: AppFont.sans,
-                  fontFamilyFallback: AppFont.sansFallback,
-                  fontSize: 12,
-                  // The picked one says so twice: the ring, and the ink.
-                  fontWeight: selected ? AppFont.medium : FontWeight.w400,
-                  color: selected
-                      ? AppPalette.textPrimary
-                      : AppPalette.textSecondary,
+              // "Light" / "Dark" / "System" name the choice this tile makes —
+              // a label, like every button's (see `unselectableLabel`).
+              SelectionContainer.disabled(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: AppFont.sans,
+                    fontFamilyFallback: AppFont.sansFallback,
+                    fontSize: 12,
+                    // The picked one says so twice: the ring, and the ink.
+                    fontWeight: selected ? AppFont.medium : FontWeight.w400,
+                    color: selected
+                        ? AppPalette.textPrimary
+                        : AppPalette.textSecondary,
+                  ),
                 ),
               ),
             ],

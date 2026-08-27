@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/code_text_scope.dart';
 import '../../../agents/logic/agent_skill.dart';
@@ -16,7 +17,7 @@ import 'skill_folder_view.dart';
 /// scripts underneath are what it actually runs. Read-only wherever it came
 /// from: this is for understanding a skill, not for editing one.
 Future<void> showSkillDetail(BuildContext context, AgentSkill skill) =>
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (_) => _SkillDetailDialog(skill: skill),
     );

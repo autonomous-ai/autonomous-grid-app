@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/api/model_catalog_client.dart';
 import '../../../infrastructure/api/models/model_detail.dart';
 import '../../../infrastructure/api/models/model_icon_service.dart';
@@ -223,7 +224,7 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
   /// explicit yes — Cancel, Escape, a tap outside — returns false, so a stray
   /// dismissal never starts a multi-gigabyte transfer that can't be run.
   Future<bool> _confirmTooLarge(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Download anyway?'),

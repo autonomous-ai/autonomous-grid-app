@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/api/models/managed_network_member.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
@@ -29,7 +30,7 @@ class _MembersTabState extends ConsumerState<MembersTab> {
   String get _networkId => widget.network.networkId;
 
   Future<void> _confirmRemove(ManagedNetworkMember member) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Remove member'),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../logic/sync_keyring.dart';
@@ -15,7 +16,7 @@ typedef SyncPasswordAnswer = ({String password, String? hint});
 /// without it, and a typo here is only discovered on the day the backup is
 /// needed.
 Future<SyncPasswordAnswer?> showNewBackupPasswordDialog(BuildContext context) =>
-    showDialog<SyncPasswordAnswer>(
+    showAppDialog<SyncPasswordAnswer>(
       context: context,
       builder: (context) => const _PasswordDialog(confirming: true),
     );
@@ -25,7 +26,7 @@ Future<SyncPasswordAnswer?> showNewBackupPasswordDialog(BuildContext context) =>
 Future<SyncPasswordAnswer?> showRestorePasswordDialog(
   BuildContext context, {
   String? hint,
-}) => showDialog<SyncPasswordAnswer>(
+}) => showAppDialog<SyncPasswordAnswer>(
   context: context,
   builder: (context) => _PasswordDialog(confirming: false, hint: hint),
 );
@@ -41,7 +42,7 @@ Future<bool?> showRestoreConflictDialog(
 ) {
   final shown = preview.replacedTitles.take(5).toList();
   final rest = preview.replacedTitles.length - shown.length;
-  return showDialog<bool>(
+  return showAppDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       backgroundColor: appMenuFill(),

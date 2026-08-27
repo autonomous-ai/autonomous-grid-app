@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/copy/plural.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
@@ -29,7 +30,10 @@ import 'connector_mark.dart';
 /// without losing that place. It also means the list underneath refreshes into
 /// view the moment a connection lands, with nothing to navigate back to.
 Future<void> showBrowseConnectorsDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _BrowseDialog());
+    showAppDialog<void>(
+      context: context,
+      builder: (_) => const _BrowseDialog(),
+    );
 
 class _BrowseDialog extends ConsumerStatefulWidget {
   const _BrowseDialog();

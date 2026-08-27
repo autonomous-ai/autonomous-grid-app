@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../core/folder_name.dart';
 import '../../../../infrastructure/cli/git_providers.dart';
 import '../../../../infrastructure/cli/git_repo.dart';
@@ -18,7 +19,7 @@ import 'repo_folder_field.dart';
 /// at a folder, done. It is one dialog rather than two because the two halves
 /// are not separable — a project with no repository in it cannot run a task,
 /// and the only way it ever gets one is this import.
-Future<void> showNewProjectDialog(BuildContext context) => showDialog<void>(
+Future<void> showNewProjectDialog(BuildContext context) => showAppDialog<void>(
   context: context,
   builder: (_) => const _NewProjectDialog(),
 );

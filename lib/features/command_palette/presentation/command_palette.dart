@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/layouts/office_entry.dart';
 import '../../../shared/layouts/reveal_chat.dart';
 import '../../../shared/layouts/shell_state.dart';
@@ -25,7 +26,7 @@ part 'command_palette_row.dart';
 /// Opened with ⌘K (Ctrl+K elsewhere) or the search button in the rail. Typing
 /// searches everything you own; ↑/↓ move, ⏎ opens, ⌘1…⌘9 jump straight to a row,
 /// Esc closes.
-Future<void> showCommandPalette(BuildContext context) => showDialog<void>(
+Future<void> showCommandPalette(BuildContext context) => showAppDialog<void>(
   context: context,
   barrierColor: const Color(0x33000000),
   builder: (_) => const CommandPalette(),

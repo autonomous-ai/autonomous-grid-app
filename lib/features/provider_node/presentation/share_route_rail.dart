@@ -6,6 +6,7 @@ import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/theme/share_page_theme.dart';
+import '../../../shared/widgets/selectable_body.dart';
 import '../../messaging/presentation/remote_reach_row.dart';
 import '../logic/share_route.dart';
 import '../logic/share_route_offer.dart';
@@ -53,46 +54,49 @@ class ShareRouteRail extends ConsumerWidget {
     // reads as a broken page rather than as a list that continues.
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: IntrinsicHeight(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _RailHeader(gridName: network.name),
-                const SizedBox(height: ShareMetrics.railGap),
-                _SharingStatus(live: live, starting: starting),
-                // Nothing at all unless a bot is connected. It belongs beside
-                // the sharing status and nowhere else on this page: both answer
-                // "what is this computer doing while nobody is at it".
-                const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: RemoteReachRow(),
-                ),
-                const SizedBox(height: ShareMetrics.railGap),
-                Text(
-                  live ? 'WAYS TO SHARE' : 'CHOOSE A ROUTE',
-                  style: ShareType.eyebrow,
-                ),
-                const SizedBox(height: 8),
-                for (final offer in offers) ...[
-                  _RouteCard(
-                    offer: offer,
-                    selected: !live && offer.route == route,
-                    enabled: !live && !starting,
-                    onPressed: () {
-                      ref
-                          .read(analyticsProvider)
-                          .addEngineOption(offer.route.name);
-                      ref.read(shareRouteProvider.notifier).pick(offer.route);
-                    },
+        // Inside the scroll view, never around it — see [SelectableBody].
+        child: SelectableBody(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _RailHeader(gridName: network.name),
+                  const SizedBox(height: ShareMetrics.railGap),
+                  _SharingStatus(live: live, starting: starting),
+                  // Nothing at all unless a bot is connected. It belongs beside
+                  // the sharing status and nowhere else on this page: both answer
+                  // "what is this computer doing while nobody is at it".
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: RemoteReachRow(),
+                  ),
+                  const SizedBox(height: ShareMetrics.railGap),
+                  Text(
+                    live ? 'WAYS TO SHARE' : 'CHOOSE A ROUTE',
+                    style: ShareType.eyebrow,
                   ),
                   const SizedBox(height: 8),
+                  for (final offer in offers) ...[
+                    _RouteCard(
+                      offer: offer,
+                      selected: !live && offer.route == route,
+                      enabled: !live && !starting,
+                      onPressed: () {
+                        ref
+                            .read(analyticsProvider)
+                            .addEngineOption(offer.route.name);
+                        ref.read(shareRouteProvider.notifier).pick(offer.route);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  const Spacer(),
+                  const SizedBox(height: 18),
+                  const _RailFootnote(),
                 ],
-                const Spacer(),
-                const SizedBox(height: 18),
-                const _RailFootnote(),
-              ],
+              ),
             ),
           ),
         ),

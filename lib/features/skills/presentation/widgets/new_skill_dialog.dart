@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/labeled_field.dart';
@@ -18,7 +19,7 @@ import 'skill_target_picker.dart';
 /// a skill is relevant to what you just asked, so the dialog says so rather than
 /// leaving the user to guess why their skill never fires.
 Future<void> showNewSkillDialog(BuildContext context) =>
-    showDialog<void>(context: context, builder: (_) => const _SkillDialog());
+    showAppDialog<void>(context: context, builder: (_) => const _SkillDialog());
 
 /// Reopens a skill the user wrote to change its wording or steps — the same
 /// form, pre-filled from what's on disk.
@@ -26,7 +27,7 @@ Future<void> showNewSkillDialog(BuildContext context) =>
 /// Offered only for their own skills (see [AgentSkill.isMine]): the only ones an
 /// edit can round-trip without the next Hermes update undoing it.
 Future<void> showEditSkillDialog(BuildContext context, AgentSkill skill) =>
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (_) => _SkillDialog(existing: skill),
     );

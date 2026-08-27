@@ -808,6 +808,12 @@ ThemeData buildAppTheme({Brightness brightness = Brightness.light}) {
       style: _outlinedButtonStyle(scheme),
     ),
     textButtonTheme: TextButtonThemeData(style: _textButtonStyle()),
+    // A menu row is a button like any other, and its label is styled from here
+    // rather than at the twenty call sites — so the one thing this theme wants
+    // from it, [unselectableLabel], is set here too.
+    menuButtonTheme: MenuButtonThemeData(
+      style: const ButtonStyle(foregroundBuilder: unselectableLabel),
+    ),
     useMaterial3: true,
     brightness: brightness,
     colorScheme: scheme,
@@ -1511,6 +1517,29 @@ ButtonStyle dangerButtonStyle() => FilledButton.styleFrom(
   foregroundColor: Colors.white,
 );
 
+/// A button's label, taken out of the page's text selection.
+///
+/// **Where every Material button in the app gets that behaviour**, because
+/// `ButtonStyle.foregroundBuilder` is the one hook that wraps a button's *child*
+/// and it can be set from a theme. Five hundred `FilledButton`/`TextButton`/
+/// `OutlinedButton`/`MenuItemButton` calls live across ~200 files; a rule
+/// applied at the call sites would have been wrong in a fortnight, and wrong
+/// silently — nobody notices a label that started highlighting.
+///
+/// The rule it serves: **you can select what the app is showing you, not what
+/// it is steered by.** A drag across a page passes over its buttons the way it
+/// passes over a toolbar. The sentence a row *explains itself* with is content
+/// and stays selectable; the words on the thing you press are not.
+///
+/// A null child is the icon-only case, where there is no label to speak of.
+Widget unselectableLabel(
+  BuildContext context,
+  Set<WidgetState> states,
+  Widget? child,
+) => child == null
+    ? const SizedBox.shrink()
+    : SelectionContainer.disabled(child: child);
+
 ButtonStyle _filledButtonStyle() => FilledButton.styleFrom(
   minimumSize: Size(0, AppControl.heightScaled),
   padding: AppControl.paddingScaled,
@@ -1521,7 +1550,7 @@ ButtonStyle _filledButtonStyle() => FilledButton.styleFrom(
   // sits in.
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
   visualDensity: VisualDensity.standard,
-);
+).copyWith(foregroundBuilder: unselectableLabel);
 
 /// The secondary action: a hairline rim, no fill — Apple's "bordered" button.
 ButtonStyle _outlinedButtonStyle(ColorScheme scheme) =>
@@ -1534,7 +1563,7 @@ ButtonStyle _outlinedButtonStyle(ColorScheme scheme) =>
       foregroundColor: scheme.onSurface,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.standard,
-    );
+    ).copyWith(foregroundBuilder: unselectableLabel);
 
 /// The tertiary action: text only, for the quiet way out of a dialog.
 ButtonStyle _textButtonStyle() => TextButton.styleFrom(
@@ -1544,7 +1573,7 @@ ButtonStyle _textButtonStyle() => TextButton.styleFrom(
   textStyle: _buttonTextStyle,
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
   visualDensity: VisualDensity.standard,
-);
+).copyWith(foregroundBuilder: unselectableLabel);
 
 TextTheme _appTextTheme(Color primary, Color secondary) {
   final base = TextStyle(

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/cli/command_log.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
@@ -25,7 +26,7 @@ import 'log_status_icon.dart';
 Future<void> showCommandDetailDialog(
   BuildContext context,
   GridCommandLog log,
-) => showDialog<void>(
+) => showAppDialog<void>(
   context: context,
   builder: (_) => _DetailDialog(opened: log),
 );

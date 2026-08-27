@@ -41,7 +41,10 @@ class _NetworksContent extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const NetworkList(),
+        // The rail is navigation — the grid names on it are how you move around,
+        // not what the page is showing you. Same rule as the shell's own sidebar
+        // (`home_shell.dart`) and every button's label ([unselectableLabel]).
+        const SelectionContainer.disabled(child: NetworkList()),
         const VerticalDivider(width: 1),
         Expanded(
           child: selected == null

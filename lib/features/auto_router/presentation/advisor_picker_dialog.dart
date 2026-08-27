@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/extension_tile_surface.dart';
@@ -14,7 +15,7 @@ Future<List<String>?> showAdvisorPicker(
   BuildContext context,
   WidgetRef ref, {
   required List<String> current,
-}) => showDialog<List<String>>(
+}) => showAppDialog<List<String>>(
   context: context,
   builder: (_) => _AdvisorPickerDialog(initial: current),
 );

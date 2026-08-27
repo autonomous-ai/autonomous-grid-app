@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../logic/model_storage.dart';
 
@@ -28,7 +29,7 @@ Future<bool> confirmModelDelete(
   required bool unfinished,
 }) async {
   final size = modelSizeLabel(sizeBytes);
-  final confirmed = await showDialog<bool>(
+  final confirmed = await showAppDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(

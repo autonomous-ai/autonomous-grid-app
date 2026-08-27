@@ -1,3 +1,4 @@
+import '../../../shared/widgets/app_dialog.dart';
 import 'package:flutter/material.dart';
 
 /// Ask before an engine stops serving.
@@ -15,7 +16,7 @@ Future<bool> confirmStopEngine(
   /// Codex", or a plain plural for several at once.
   required String what,
 }) async {
-  final ok = await showDialog<bool>(
+  final ok = await showAppDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Text('Stop $what?'),

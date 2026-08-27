@@ -9,10 +9,12 @@ import '../theme/app_theme.dart';
 /// in the same words — "Add to chat" over a selection in Files and over one in
 /// Review is one gesture, and two copies of it drift.
 ///
-/// Hand-rolled per the design system's §5 recipe, because the app defines no
-/// `menuButtonTheme`: a bare `MenuItemButton` takes Material's defaults and gets
-/// all four wrong at once — square corners, a 14pt label, a grey `onSurface`
-/// hover, and an ink ripple the app disables everywhere else.
+/// Hand-rolled per the design system's §5 recipe, because a bare
+/// `MenuItemButton` takes Material's defaults and gets all four wrong at once —
+/// square corners, a 14pt label, a grey `onSurface` hover, and an ink ripple the
+/// app disables everywhere else. The app's `menuButtonTheme` fixes exactly one
+/// thing about `MenuItemButton` (its label opts out of text selection); it is
+/// not a dressing this row can inherit instead of the recipe below.
 class AppMenuRow extends StatefulWidget {
   const AppMenuRow({
     super.key,
@@ -68,15 +70,19 @@ class _AppMenuRowState extends State<AppMenuRow> {
                   ),
                   const SizedBox(width: 9),
                   Expanded(
-                    child: Text(
-                      widget.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppPalette.textPrimary,
-                        fontSize: 13,
-                        height: 1.2,
-                        fontWeight: FontWeight.w500,
+                    // A menu row is a button; its label is not page text. See
+                    // `unselectableLabel`.
+                    child: SelectionContainer.disabled(
+                      child: Text(
+                        widget.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppPalette.textPrimary,
+                          fontSize: 13,
+                          height: 1.2,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ),

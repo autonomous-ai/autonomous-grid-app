@@ -8,6 +8,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../../shared/widgets/selectable_body.dart';
 import '../../agents/logic/adapters/hermes_tool.dart';
 import '../logic/cron_output.dart';
 import '../logic/job_schedule.dart';
@@ -180,22 +181,29 @@ class _PickOne extends ConsumerWidget {
       AsyncData(:final value) => ListView(
         padding: const EdgeInsets.only(right: 4),
         children: [
-          Text(
-            'Recent activity',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
+          SelectableBody(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Recent activity',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'The latest from your tasks. Pick one to open it.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppPalette.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                for (final run in value.take(8))
+                  _ActivityCard(run: run, previewLines: _previewLines),
+              ],
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'The latest from your tasks. Pick one to open it.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppPalette.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 16),
-          for (final run in value.take(8))
-            _ActivityCard(run: run, previewLines: _previewLines),
         ],
       ),
       _ => const LoadingView(),

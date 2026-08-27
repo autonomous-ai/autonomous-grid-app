@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../core/composer_text.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
@@ -36,7 +37,7 @@ import 'no_model_yet.dart';
 /// captured before the await so we never touch [ref] across the async gap.
 Future<void> openPlaygroundDialog(BuildContext context, WidgetRef ref) async {
   final chat = ref.read(chatControllerProvider.notifier);
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
     builder: (_) => const PlaygroundDialog(),
   );

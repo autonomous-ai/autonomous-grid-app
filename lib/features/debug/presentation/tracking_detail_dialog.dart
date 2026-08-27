@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/analytics/analytics_log.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/detail_widgets.dart';
@@ -18,7 +19,7 @@ import '../logic/tracking_format.dart';
 Future<void> showTrackingDetailDialog(
   BuildContext context,
   AnalyticsLogEntry entry,
-) => showDialog<void>(
+) => showAppDialog<void>(
   context: context,
   builder: (_) => _TrackingDetailDialog(opened: entry),
 );

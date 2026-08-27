@@ -152,12 +152,17 @@ class ExtensionCreateButton extends StatelessWidget {
             children: [
               const Icon(Icons.add_rounded, size: 17, color: Colors.white),
               const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+              // A label, not the page's text — the rule `unselectableLabel`
+              // applies to every Material button. This one is an `InkWell`, so
+              // no `ButtonStyle` reaches it and it has to say so itself.
+              SelectionContainer.disabled(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],

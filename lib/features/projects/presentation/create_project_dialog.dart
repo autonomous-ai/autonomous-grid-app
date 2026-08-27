@@ -2,6 +2,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../core/folder_name.dart';
 import '../../../infrastructure/cli/git_providers.dart';
 import '../../../infrastructure/cli/git_repo.dart';
@@ -17,7 +18,7 @@ import '../logic/project.dart';
 /// folder the assistant reads, so a folder is what turns the "Create" button on;
 /// until one is chosen the dialog stays on its first, lighter step.
 Future<Project?> showCreateProjectDialog(BuildContext context) =>
-    showDialog<Project?>(
+    showAppDialog<Project?>(
       context: context,
       builder: (_) => const _CreateProjectDialog(),
     );

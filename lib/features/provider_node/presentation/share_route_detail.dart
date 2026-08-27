@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/theme/share_page_theme.dart';
+import '../../../shared/widgets/selectable_body.dart';
 import '../../models/presentation/serve_local_card.dart';
 import '../../node_setup/logic/node_capabilities.dart';
 import '../../node_setup/logic/node_setup_controller.dart';
@@ -97,11 +98,14 @@ class ShareRouteDetail extends ConsumerWidget {
         const SizedBox(height: ShareMetrics.paneGap),
         Expanded(
           child: SingleChildScrollView(
-            child: switch (route) {
-              ShareRoute.local => _LocalRoute(network: network),
-              ShareRoute.key => _KeyRoute(network: network),
-              ShareRoute.server => ExternalServers(network: network),
-            },
+            // Inside the scroll view, never around it — see [SelectableBody].
+            child: SelectableBody(
+              child: switch (route) {
+                ShareRoute.local => _LocalRoute(network: network),
+                ShareRoute.key => _KeyRoute(network: network),
+                ShareRoute.server => ExternalServers(network: network),
+              },
+            ),
           ),
         ),
       ],
@@ -303,7 +307,9 @@ class LiveShareDetail extends ConsumerWidget {
         const SizedBox(height: ShareMetrics.paneGap),
         Expanded(
           child: SingleChildScrollView(
-            child: ServingEnginesSection(network: network),
+            child: SelectableBody(
+              child: ServingEnginesSection(network: network),
+            ),
           ),
         ),
       ],

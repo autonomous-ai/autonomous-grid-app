@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../infrastructure/cli/git_probe.dart';
 import '../../../../infrastructure/cli/git_providers.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -13,7 +14,7 @@ import '../../logic/plugins_controller.dart';
 ///
 /// Says plainly what it's about to do (download and run someone else's code), so
 /// a user pasting a link from the internet knows what they're agreeing to.
-Future<void> showAddPluginDialog(BuildContext context) => showDialog<void>(
+Future<void> showAddPluginDialog(BuildContext context) => showAppDialog<void>(
   context: context,
   builder: (_) => const _AddPluginDialog(),
 );
