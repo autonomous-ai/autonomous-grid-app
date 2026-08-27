@@ -3,16 +3,8 @@ import 'api_engine_choices.dart';
 import 'backend_detector.dart';
 import 'share_route.dart';
 
-/// How loud a route's badge is.
-///
-/// Two values, because there is exactly one thing on this page worth a colour:
-/// a server already running on this machine, which is the route that is one
-/// press from done. A page where every badge is bright has nothing left to
-/// point with.
-enum ShareBadgeTone { neutral, ready }
-
-/// One route as the rail draws it: what it is called, what it saves you, and
-/// one line describing it in terms of what was actually found on this machine.
+/// One route as the rail draws it: what it is called and one line describing it
+/// in terms of what was actually found on this machine.
 ///
 /// A view model rather than three literals in a `build()`, because every line
 /// here changes with what the machine has — an engine that still needs
@@ -24,15 +16,17 @@ class ShareRouteOffer {
     required this.route,
     required this.title,
     required this.line,
-    this.badge,
-    this.badgeTone = ShareBadgeTone.neutral,
+    this.detected = 0,
   });
 
   final ShareRoute route;
   final String title;
   final String line;
-  final String? badge;
-  final ShareBadgeTone badgeTone;
+
+  /// Engines found on this machine for this route — only the server route ever
+  /// finds any. The count, not a rendering of it: the rail spends it on which
+  /// line to write, and the detail pane on how to open its paragraph.
+  final int detected;
 }
 
 /// The routes this machine can take, in the order the rail shows them.
@@ -61,7 +55,6 @@ List<ShareRouteOffer> buildShareRouteOffers({
       ShareRouteOffer(
         route: ShareRoute.local,
         title: 'Run a model here',
-        badge: 'Private',
         line: needsSetup
             ? 'Sets up the built-in engine first, then runs a model here.'
             : 'Your own hardware does the work. Weights and prompts never '
@@ -71,7 +64,6 @@ List<ShareRouteOffer> buildShareRouteOffers({
       ShareRouteOffer(
         route: ShareRoute.key,
         title: 'Use a key you pay for',
-        badge: 'Instant',
         // Named from what the installed CLI whitelists, never a hopeful list:
         // "your OpenAI key" on a build that serves someone else's is a
         // sentence pointing at a provider this machine cannot reach.
@@ -80,14 +72,7 @@ List<ShareRouteOffer> buildShareRouteOffers({
     ShareRouteOffer(
       route: ShareRoute.server,
       title: 'Share a server you run',
-      badge: external.isEmpty ? null : '${external.length} found',
-      // Green the moment something is found, which is what the design does —
-      // not only when it is already answering. The card's own line separates
-      // the two states ("already running here" against "installed here"); the
-      // badge counts what was found.
-      badgeTone: external.isEmpty
-          ? ShareBadgeTone.neutral
-          : ShareBadgeTone.ready,
+      detected: external.length,
       line: switch ((running.firstOrNull, external.firstOrNull)) {
         // Running and merely installed are a press apart, and saying the wrong
         // one sends the reader looking for a Start button that is already a

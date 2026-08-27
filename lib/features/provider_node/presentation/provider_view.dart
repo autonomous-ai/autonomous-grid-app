@@ -284,7 +284,7 @@ ShareRoute shareRoute(WidgetRef ref) {
   return defaultShareRoute(
     canRunLocal: offers.any((offer) => offer.route == ShareRoute.local),
     serverFound: offers.any(
-      (offer) => offer.route == ShareRoute.server && offer.badge != null,
+      (offer) => offer.route == ShareRoute.server && offer.detected > 0,
     ),
     hasKeyProvider: offers.any((offer) => offer.route == ShareRoute.key),
   );

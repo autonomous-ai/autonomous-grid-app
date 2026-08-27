@@ -42,16 +42,14 @@ class ShareRouteDetail extends ConsumerWidget {
   /// row that is not on the page.
   int get _position => offers.indexWhere((offer) => offer.route == route) + 1;
 
-  /// How many engines were detected here, read off the badge the rail already
-  /// draws, so the paragraph and the card can never disagree about the count.
-  int get _serversFound {
-    final server = offers
-        .where((offer) => offer.route == ShareRoute.server)
-        .firstOrNull;
-    final badge = server?.badge;
-    if (badge == null) return 0;
-    return int.tryParse(badge.split(' ').first) ?? 0;
-  }
+  /// How many engines were detected here, off the same offer the rail draws
+  /// from, so the paragraph and the card can never disagree about the count.
+  int get _serversFound =>
+      offers
+          .where((offer) => offer.route == ShareRoute.server)
+          .firstOrNull
+          ?.detected ??
+      0;
 
   String get _foundPhrase =>
       _serversFound == 1 ? 'one engine' : '$_serversFound engines';

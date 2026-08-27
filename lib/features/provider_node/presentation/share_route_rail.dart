@@ -263,11 +263,14 @@ class _PulseDotState extends State<_PulseDot>
   );
 }
 
-/// One route to press: what it is, what it saves you, and one line of how.
+/// One route to press: what it is, and one line of how.
 ///
-/// The badge carries the benefit in two words so the three cards can be
-/// compared down that column alone — "Private", "Instant", "1 found" answer
-/// "which of these suits me" faster than three sentences do.
+/// It wore a two-word benefit badge for a while — "Private", "Instant", "1
+/// found" — on the argument that three cards compare faster down one column of
+/// chips than across three sentences. They went: the sentence under each title
+/// already says the same thing in words the reader does not have to decode, and
+/// three chips down the right edge of a rail is three more things competing
+/// with the one that is selected.
 class _RouteCard extends StatefulWidget {
   const _RouteCard({
     required this.offer,
@@ -350,24 +353,7 @@ class _RouteCardState extends State<_RouteCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              offer.title,
-                              style: ShareType.cardTitle,
-                            ),
-                          ),
-                          if (offer.badge != null) ...[
-                            const SizedBox(width: 8),
-                            _RouteBadge(
-                              label: offer.badge!,
-                              tone: offer.badgeTone,
-                            ),
-                          ],
-                        ],
-                      ),
+                      Text(offer.title, style: ShareType.cardTitle),
                       const SizedBox(height: 3),
                       Text(offer.line, style: ShareType.cardLine),
                     ],
@@ -376,38 +362,6 @@ class _RouteCardState extends State<_RouteCard> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The two-word benefit on a route card.
-///
-/// Its own widget rather than [BadgePill]: that one is a tinted rim at radius 6
-/// for a badge sitting *in* a list of them, and the design's is a filled chip,
-/// radius 5, no border, at 10px — quieter beside a title, which is the point of
-/// it here.
-class _RouteBadge extends StatelessWidget {
-  const _RouteBadge({required this.label, required this.tone});
-
-  final String label;
-  final ShareBadgeTone tone;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final ready = tone == ShareBadgeTone.ready;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: ready ? SharePalette.readyBadgeFill : SharePalette.badgeFill,
-        borderRadius: BorderRadius.circular(ShareMetrics.badgeRadius),
-      ),
-      child: Text(
-        label.toUpperCase(),
-        style: ShareType.badge.copyWith(
-          color: ready ? SharePalette.readyBadgeInk : SharePalette.badgeInk,
         ),
       ),
     );

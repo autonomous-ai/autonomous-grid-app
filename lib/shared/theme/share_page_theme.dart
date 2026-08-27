@@ -115,16 +115,10 @@ abstract final class SharePalette {
   static Color get idleDot =>
       AppTheme.pick(const Color(0xFFA8AEBB), const Color(0xFF6E6E6E));
 
-  /// A route card's badge. The green pair is worn by one badge on the page —
-  /// the server already running here.
+  /// A quiet chip: today the context window's value. It was the route cards'
+  /// benefit badge too, until those went.
   static Color get badgeFill =>
       AppTheme.pick(const Color(0xFFEDF0F6), const Color(0xFF2A2A2A));
-  static Color get badgeInk =>
-      AppTheme.pick(const Color(0xFF5F636C), const Color(0xFFB4B4B0));
-  static Color get readyBadgeFill =>
-      AppTheme.pick(const Color(0xFFD2F6DD), const Color(0xFF15321F));
-  static Color get readyBadgeInk =>
-      AppTheme.pick(const Color(0xFF006436), const Color(0xFF6FD68F));
 }
 
 /// The mockup's type scale, by the role each size plays rather than by number.
