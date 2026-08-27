@@ -334,17 +334,6 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
                       child: const Text('Choose which models to share →'),
                     ),
                   ),
-                if (!widget.compact && engine.lastVerified.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    // Not in the design, and kept: a model list this app can
-                    // only refresh by shipping a new build is a fact the reader
-                    // needs when the model they are looking for is missing.
-                    'Model list updated ${_prettyDate(engine.lastVerified)}. '
-                    'Update Grid to refresh.',
-                    style: quiet,
-                  ),
-                ],
               ],
             ),
           ],
@@ -600,28 +589,17 @@ class _KeyField extends StatelessWidget {
               ),
         ),
         const SizedBox(height: 4),
-        // The way to the key and the promise about it, on one line under the
-        // field they both belong to. The design puts "Read-only checks only.
-        // No billing changes." here, and this app cannot say it: the key is
-        // used to *answer questions*, which is exactly what bills the account.
-        // What it can say is where the key lives and where the questions go.
-        Wrap(
-          spacing: 14,
-          runSpacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            if (helpUrl != null)
-              TextButton(
-                onPressed: () => onOpenHelp(helpUrl),
-                child: const Text('Where to find your key →'),
-              ),
-            Text(
-              'Your key never leaves this computer. Questions go to '
-              '${provider.label} to be answered.',
-              style: ShareType.note,
+        // The way to the key, and nothing else. The design puts "Read-only
+        // checks only. No billing changes." beside it, which this app cannot
+        // say — the key answers questions, which is what bills the account.
+        if (helpUrl != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => onOpenHelp(helpUrl),
+              child: const Text('Where to find your key →'),
             ),
-          ],
-        ),
+          ),
       ],
     );
   }
@@ -736,30 +714,4 @@ class _ModelPill extends StatelessWidget {
       ),
     );
   }
-}
-
-const _monthAbbr = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-/// `2026-07-08` → `8 Jul 2026`; returns the input unchanged if it isn't an ISO
-/// date, so a reformatted CLI value never blanks the freshness note.
-String _prettyDate(String iso) {
-  final parts = iso.split('-');
-  if (parts.length != 3) return iso;
-  final month = int.tryParse(parts[1]);
-  final day = int.tryParse(parts[2]);
-  if (month == null || day == null || month < 1 || month > 12) return iso;
-  return '$day ${_monthAbbr[month - 1]} ${parts[0]}';
 }
