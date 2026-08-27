@@ -1,26 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../shared/theme/app_theme.dart';
-
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/layouts/shell_state.dart';
-import '../../../shared/widgets/section_scaffold.dart';
+import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/share_page_theme.dart';
+import '../../../shared/widgets/labeled_field.dart';
 import '../../auth/logic/session_controller.dart';
-import '../../messaging/presentation/remote_reach_row.dart';
 import '../../models/logic/engine_setup_controller.dart';
 import '../../network/presentation/enable_provider_card.dart';
 import '../../network/presentation/sharing_locked_view.dart';
+import '../../node_setup/logic/auto_host_controller.dart';
+import '../../node_setup/logic/node_capabilities.dart';
+import '../../node_setup/logic/node_setup_plan.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
-import '../logic/engine_slots.dart';
+import '../logic/api_engine_catalog.dart';
 import '../logic/provider_run_controller.dart';
 import '../../../shared/widgets/selectable_body.dart';
 import '../logic/serving_engines_provider.dart';
-import 'add_engine_options.dart';
+import '../logic/share_route.dart';
+import '../logic/share_route_offer.dart';
 import 'engine_block.dart';
-import 'contribution_summary.dart';
 import 'engine_failure_card.dart';
-import 'serving_engines_section.dart';
+import 'share_route_detail.dart';
+import 'share_route_rail.dart';
 
 /// Provider lifecycle. Enables the provider role when missing, then serves a
 /// model — from a local GGUF (the main flow) or an external OpenAI-compatible
@@ -48,23 +51,304 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
       });
     }
 
-    return SectionScaffold(
-      // The sidebar row's own words — one screen, one name (§5).
-      title: 'Share Intelligence',
-      // Names the grid every sentence on this page is about. It is all that
-      // survives of the scope bar that used to head the body: that block
-      // existed to name *and switch* the grid, and it justified itself by the
-      // Grids tab being developer-only — which stopped being true when Settings
-      // ▸ Grid shipped. The naming is still needed, so it moves into the header
-      // the page already had, as a line rather than a card.
-      subtitle: network == null
-          ? null
-          : 'Put this computer to work on ${network.name}.',
-      // _ServeSection owns its own scrolling: the running engine fills the
-      // height (only its log scrolls), other states scroll as a page.
-      child: const _ServeSection(),
+    return const _ShareIntelligencePage();
+  }
+}
+
+/// Share Intelligence: the three ways in on the left, the one being set up on
+/// the right.
+///
+/// The only section view that does not sit in [SectionScaffold], and the reason
+/// is the rail. That frame draws a page title and a rule across the top, which
+/// is the right shape when a page is one column of content — but here the
+/// heading, the machine's status and the route picker are *one* thing running
+/// down the left, and a second title above them said "Share Intelligence" over
+/// a rail whose own first line already says what the page is for. The top bar
+/// button that opens this page carries the name.
+class _ShareIntelligencePage extends ConsumerWidget {
+  const _ShareIntelligencePage();
+
+  /// Below this the two panes stop being two: the design's 396px rail beside a
+  /// form is most of a narrow window, and both halves end up too tight to read.
+  /// Desktop windows get dragged small (§4), so the layout has to have an
+  /// answer.
+  static const double _splitAt = 940;
+
+  /// The mockup's field: a visible 1px rim at radius 9 on a light fill, where
+  /// the app's own idiom is a borderless capsule at radius 12. Hung over the
+  /// page so every field inside it — the model picker, both name boxes, the API
+  /// key, the endpoint — picks the design up without seven widgets each growing
+  /// a parameter for it.
+  static FieldSkin get _fieldSkin => FieldSkin(
+    fill: SharePalette.fieldFill,
+    rim: SharePalette.fieldRim,
+    radius: ShareMetrics.fieldRadius,
+    // 38px tall at 13.5px text, which is the design's field.
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    hintSize: 13.5,
+    labelStyle: ShareType.fieldLabel,
+    showHelp: false,
+    slimChevron: true,
+  );
+
+  /// The design's buttons and links, for the whole page at once.
+  ///
+  /// Material reads these from the theme, so one override here reaches
+  /// `FilledButton`, `EngineStartButton` and every `TextButton.icon` in the
+  /// forms — including the ones inside widgets this page does not own.
+  ThemeData _pageTheme(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.copyWith(
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: SharePalette.accent,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, ShareMetrics.buttonHeight),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ShareMetrics.fieldRadius),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 13.5,
+            fontWeight: AppFont.semibold,
+          ),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: SharePalette.accent,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          minimumSize: const Size(0, 28),
+          textStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: AppFont.semibold,
+          ),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
     );
   }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    final network = ref.watch(selectedNetworkProvider);
+    if (network == null) return const _NoGridYet();
+
+    // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
+    // consumer isn't allowed to). Installing the engine still needs no grid
+    // permission, so offer the set-up instead of a wall — then stop here, since
+    // a join would be rejected until sharing is on.
+    //
+    // An admin sees the one-tap fix ([EnableProviderCard] grants itself the
+    // role); everyone else gets [SharingLockedView], which explains what they
+    // *can* do here. The two gates read different axes on purpose — see the
+    // note on `NetworkCredential.isProvider` vs `.role`.
+    if (!network.isProvider) return _LockedPage(network: network);
+
+    return Theme(
+      data: _pageTheme(context),
+      child: FieldSkinScope(
+        skin: _fieldSkin,
+        child: ColoredBox(
+          color: SharePalette.pageBg,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final rail = _RailPane(network: network);
+              final detail = _DetailPane(network: network);
+              if (constraints.maxWidth < _splitAt) {
+                return SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Bounded, because a rail that is a whole scrolling
+                      // column has no bottom to pin its footnote to.
+                      SizedBox(height: 520, child: rail),
+                      Divider(height: 1, color: SharePalette.rim),
+                      SizedBox(height: constraints.maxHeight, child: detail),
+                    ],
+                  ),
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(width: ShareMetrics.railWidth, child: rail),
+                  VerticalDivider(width: 1, color: SharePalette.rim),
+                  Expanded(child: detail),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The rail, with the page's own padding and its slightly recessed ground.
+class _RailPane extends ConsumerWidget {
+  const _RailPane({required this.network});
+
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final serving = ref.watch(servingEnginesProvider);
+    final run = ref.watch(providerRunControllerProvider);
+    return ColoredBox(
+      color: SharePalette.railBg,
+      child: Padding(
+        padding: ShareMetrics.railPadding,
+        child: ShareRouteRail(
+          network: network,
+          offers: shareRouteOffers(ref),
+          route: shareRoute(ref),
+          live: serving.isNotEmpty,
+          starting: _startingHere(run, network) || _stoppingHere(run, network),
+        ),
+      ),
+    );
+  }
+}
+
+/// The detail pane: whatever this computer's state actually is, in the order
+/// that state has to be read — what broke, what is in the way, what is running,
+/// and only then the route being set up.
+class _DetailPane extends ConsumerWidget {
+  const _DetailPane({required this.network});
+
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final serving = ref.watch(servingEnginesProvider);
+    final run = ref.watch(providerRunControllerProvider);
+    final busy = _startingHere(run, network) || _stoppingHere(run, network);
+
+    return Padding(
+      padding: ShareMetrics.panePadding,
+      child: switch (run) {
+        // Bad news first: a failure is the only thing on this page that the
+        // reader cannot act on anywhere else.
+        ProviderRunFailed(:final message, :final model) => _FailurePane(
+          message: message,
+          engineLabel: model,
+        ),
+        // An engine on ANOTHER grid: remote has one identity per grid, so
+        // starting one here would leave that one. Say so before offering a
+        // form that would do it silently.
+        ProviderRunActive(:final grid) when grid != network.networkId =>
+          _EngineBusyElsewhere(runningGridId: grid),
+        _ when serving.isNotEmpty || busy => LiveShareDetail(network: network),
+        _ => ShareRouteDetail(
+          network: network,
+          offers: shareRouteOffers(ref),
+          route: shareRoute(ref),
+        ),
+      },
+    );
+  }
+}
+
+bool _startingHere(ProviderRunState run, NetworkCredential network) =>
+    run is ProviderRunActive && run.grid == network.networkId && run.starting;
+
+bool _stoppingHere(ProviderRunState run, NetworkCredential network) =>
+    run is ProviderRunStopping && run.grid == network.networkId;
+
+/// The routes this machine can take, read once so the rail and the pane can
+/// never disagree about which route is which number.
+List<ShareRouteOffer> shareRouteOffers(WidgetRef ref) {
+  final caps = ref.watch(nodeCapabilitiesProvider).asData?.value;
+  return buildShareRouteOffers(
+    canRunLocal: ref.watch(supportsBuiltInEngineProvider),
+    needsSetup: caps != null && buildSetupPlan(caps).isNotEmpty,
+    apiEngines: ref.watch(apiEnginesProvider).asData?.value ?? const [],
+    backends: ref.watch(backendsProvider).asData?.value ?? const [],
+  );
+}
+
+/// The route on show: the reader's pick while it is still on offer, else the
+/// default for this machine.
+///
+/// The guard is not theoretical — a key provider disappears when the CLI is
+/// swapped underneath a running app, and a route selected out of a list it is
+/// no longer in would leave the pane showing a form the rail has no card for.
+ShareRoute shareRoute(WidgetRef ref) {
+  final offers = shareRouteOffers(ref);
+  final picked = ref.watch(shareRouteProvider);
+  if (picked != null && offers.any((offer) => offer.route == picked)) {
+    return picked;
+  }
+  return defaultShareRoute(
+    canRunLocal: offers.any((offer) => offer.route == ShareRoute.local),
+    serverFound: offers.any(
+      (offer) => offer.route == ShareRoute.server && offer.detected > 0,
+    ),
+    hasKeyProvider: offers.any((offer) => offer.route == ShareRoute.key),
+  );
+}
+
+/// A failure, and the two ways out of it.
+class _FailurePane extends ConsumerWidget {
+  const _FailurePane({required this.message, required this.engineLabel});
+
+  final String message;
+  final String? engineLabel;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => SingleChildScrollView(
+    // Inside the scroll view, never around it — see [SelectableBody]. Ported
+    // by hand from main's `93e30c91`, which wrapped the page body this branch
+    // had already replaced.
+    child: SelectableBody(
+      child: EngineFailureCard(
+        message: message,
+        engineLabel: engineLabel,
+        // Clears the failed state so the routes come back; the user then starts
+        // from the one they meant to use. We can't replay the exact join here —
+        // the controller doesn't retain its arguments — and guessing which engine
+        // to restart would be worse than asking.
+        onRetry: () =>
+            ref.read(providerRunControllerProvider.notifier).clearFailure(),
+        onReinstallEngine: () =>
+            ref.read(engineSetupControllerProvider.notifier).run(),
+      ),
+    ),
+  );
+}
+
+/// The page for a grid this user cannot share on.
+class _LockedPage extends StatelessWidget {
+  const _LockedPage({required this.network});
+
+  final NetworkCredential network;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(24),
+    child: SingleChildScrollView(
+      child: SelectableBody(
+        child: network.role == NetworkRole.admin
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  EnableProviderCard(network: network),
+                  const SizedBox(height: 16),
+                  const NodeSetupCard(),
+                ],
+              )
+            // No set-up card here, deliberately. Installing an engine needs no
+            // grid permission, so it *could* be offered — but on a grid you can't
+            // share on, a multi-GB download prepares you for something you still
+            // can't do, and it read as the page's main call to action while the
+            // actual way forward (a grid of your own) sat beside it.
+            : SharingLockedView(network: network),
+      ),
+    ),
+  );
 }
 
 /// What the page shows with no grid picked — the one state where nothing here
@@ -97,172 +381,6 @@ class _NoGridYet extends ConsumerWidget {
   }
 }
 
-/// The "Share Intelligence" body. A machine serves a *union* of engines on a grid
-/// (ADR 0010), so this is a page, not a single running card: auto-routing at the
-/// top (owner-only), then what's already serving (each engine stoppable on its
-/// own), then the always-available ways to add another engine.
-class _ServeSection extends ConsumerStatefulWidget {
-  const _ServeSection();
-
-  @override
-  ConsumerState<_ServeSection> createState() => _ServeSectionState();
-}
-
-class _ServeSectionState extends ConsumerState<_ServeSection> {
-  @override
-  Widget build(BuildContext context) {
-    final network = ref.watch(selectedNetworkProvider);
-
-    if (network == null) {
-      return const _NoGridYet();
-    }
-    return ListView(
-      children: [
-        SelectableBody(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: _children(context, network),
-          ),
-        ),
-      ],
-    );
-  }
-
-  List<Widget> _children(BuildContext context, NetworkCredential network) {
-    final run = ref.watch(providerRunControllerProvider);
-    final serving = ref.watch(servingEnginesProvider);
-
-    final children = <Widget>[
-      // What this computer does while nobody is at it. The setup for it lives
-      // on a developer-gated screen, but whether a bot is answering here is not
-      // a developer's fact — it is the machine's.
-      const RemoteReachRow(),
-    ];
-
-    // Sharing on THIS grid is locked (an admin hasn't turned engines on; a
-    // consumer isn't allowed to). Installing the engine still needs no grid
-    // permission, so offer the set-up instead of a wall — then stop here, since
-    // a join would be rejected until sharing is on.
-    //
-    // An admin sees the one-tap fix ([EnableProviderCard] grants itself the
-    // role); everyone else gets [SharingLockedView], which explains what they
-    // *can* do here. The two gates read different axes on purpose — see the note
-    // on `NetworkCredential.isProvider` vs `.role`.
-    if (!network.isProvider) {
-      if (network.role == NetworkRole.admin) {
-        children.addAll([
-          EnableProviderCard(network: network),
-          const SizedBox(height: 16),
-          const NodeSetupCard(),
-          const SizedBox(height: 16),
-        ]);
-      } else {
-        // No set-up card here, deliberately. Installing an engine needs no grid
-        // permission, so it *could* be offered — but on a grid you can't share
-        // on, a multi-GB download prepares you for something you still can't do,
-        // and it read as the page's main call to action while the actual way
-        // forward (a grid of your own) sat beside it. [SharingLockedView] now
-        // carries the single next step instead.
-        children.addAll([
-          SharingLockedView(network: network),
-          const SizedBox(height: 16),
-        ]);
-      }
-      return children;
-    }
-
-    // What this computer is contributing, above everything else: the tab's whole
-    // reason to exist, previously answerable only by reading the entire page.
-    final startingHere =
-        run is ProviderRunActive &&
-        run.grid == network.networkId &&
-        run.starting;
-    // A stop this machine asked for is still running `grid leave`. It keeps the
-    // serving card on screen — the card is what says "Stopping…" — and keeps the
-    // add-engine cards away, so a new join can't race the leave.
-    final stoppingHere =
-        run is ProviderRunStopping && run.grid == network.networkId;
-    children.add(
-      ContributionSummary(
-        engines: serving,
-        gridName: network.name,
-        starting: startingHere,
-      ),
-    );
-
-    // Something broke — it goes directly under the summary, above everything
-    // optional. It used to sit below the auto-routing card, which put a feature
-    // that announces it has nothing to route *between* "you're sharing nothing"
-    // and the reason why. Bad news first, then the offers.
-    if (run is ProviderRunFailed) {
-      children.addAll([
-        EngineFailureCard(
-          message: run.message,
-          engineLabel: run.model,
-          // Clears the failed state so the add forms come back; the user then
-          // starts from the block they meant to use. We can't replay the exact
-          // join here — the controller doesn't retain its arguments — and
-          // guessing which engine to restart would be worse than asking.
-          onRetry: () =>
-              ref.read(providerRunControllerProvider.notifier).clearFailure(),
-          onReinstallEngine: () =>
-              ref.read(engineSetupControllerProvider.notifier).run(),
-        ),
-        const SizedBox(height: 16),
-      ]);
-    }
-
-    // An engine on ANOTHER grid: remote has one identity per grid, so starting
-    // one here leaves that one — warn before the add forms.
-    if (run is ProviderRunActive && run.grid != network.networkId) {
-      children.addAll([
-        _EngineBusyElsewhere(runningGridId: run.grid),
-        const SizedBox(height: 16),
-      ]);
-    }
-
-    // What's already serving on THIS grid (the union), plus a transient row while
-    // a newly-joined engine is still starting.
-    if (serving.isNotEmpty || startingHere || stoppingHere) {
-      children.addAll([
-        ServingEnginesSection(network: network),
-        const SizedBox(height: 16),
-      ]);
-    }
-
-    children.addAll(
-      _addEngineBlocks(network, serving, startingHere || stoppingHere),
-    );
-
-    // Auto-routing used to sit here. It has moved to the grid's own Overview
-    // (Grids tab), because it is a property of the *grid*, not of this computer:
-    // every router command carries `--grid <id>` and none carries a node, so
-    // turning it on here changed how every machine on the grid is routed and
-    // outlived this app being closed. On a page about this computer, where
-    // everything else stops when the machine does, it was the one control that
-    // didn't — and once the add-engine paths became tabs, it had to repeat under
-    // all three, which is what made the mismatch visible.
-    children.add(const SizedBox(height: 16));
-    return children;
-  }
-
-  /// The ways to add an engine — one row each, in the same words the first-run
-  /// screen uses on its cards ([AddEngineOptions]).
-  ///
-  /// A computer shares **one** engine ([canAddEngine]), so the cards only appear
-  /// while nothing is serving. Once something is, the section is simply absent —
-  /// the serving card above is the whole story, and its Stop button is the way
-  /// to a different engine. The same goes while a join or a stop is [busy] on
-  /// the wire: a card pressed now would race the CLI call already running.
-  List<Widget> _addEngineBlocks(
-    NetworkCredential network,
-    List<ServingEngine> serving,
-    bool busy,
-  ) => busy || !canAddEngine(serving)
-      ? const []
-      : [AddEngineOptions(network: network)];
-}
-
 /// Shown when an engine is already serving a *different* grid. Only one engine
 /// runs at a time, so rather than a Start form that would silently stop it, this
 /// names the busy grid and offers a single Stop so the user is in control.
@@ -277,47 +395,51 @@ class _EngineBusyElsewhere extends ConsumerWidget {
     final runningName =
         ref.watch(sessionProvider).byName(runningGridId)?.name ??
         'another grid';
-    return EngineSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return SingleChildScrollView(
+      child: SelectableBody(
+        child: EngineSurface(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.dns, color: AppPalette.online, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'An engine is already running on $runningName',
-                      style: theme.textTheme.titleMedium,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.dns, color: AppPalette.online, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'An engine is already running on $runningName',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'You can run an engine on only one grid at a time. '
+                          'Stop it to start one on this grid.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'You can run an engine on only one grid at a time. Stop '
-                      'it to start one on this grid.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: () =>
+                      ref.read(providerRunControllerProvider.notifier).stop(),
+                  icon: const Icon(Icons.stop),
+                  label: Text('Stop engine on $runningName'),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed: () =>
-                  ref.read(providerRunControllerProvider.notifier).stop(),
-              icon: const Icon(Icons.stop),
-              label: Text('Stop engine on $runningName'),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

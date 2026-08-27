@@ -19,7 +19,6 @@ class ContextLengthField extends ConsumerWidget {
     required this.model,
     required this.value,
     required this.onChanged,
-    this.inline = false,
   });
 
   /// GGUF filename whose maximum context bounds the slider.
@@ -32,9 +31,6 @@ class ContextLengthField extends ConsumerWidget {
   /// Reports the picked context length (already snapped to 1k) as the user
   /// drags.
   final ValueChanged<int> onChanged;
-
-  /// See [ContextWindowField.inline].
-  final bool inline;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,7 +49,6 @@ class ContextLengthField extends ConsumerWidget {
               ? defaultContextLength(max)
               : value!.clamp(minContextTokens, max),
           onChanged: onChanged,
-          inline: inline,
         );
       },
     );

@@ -245,6 +245,7 @@ class _FieldSurface extends StatelessWidget {
           '',
           fill: fill ?? AppCard.inset,
           outlined: outlined,
+          skin: FieldSkinScope.maybeOf(context),
         ),
         child: Row(
           children: [
@@ -294,7 +295,12 @@ class _FieldSurface extends StatelessWidget {
               ),
             ),
             Icon(
-              Icons.arrow_drop_down,
+              FieldSkinScope.maybeOf(context)?.slimChevron == true
+                  ? Icons.keyboard_arrow_down_rounded
+                  : Icons.arrow_drop_down,
+              // Size 24 (a dropdown's default arrow) so the field matches the
+              // theme's field height instead of shrinking to the 18px icon
+              // theme.
               size: 24,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
