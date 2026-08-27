@@ -80,7 +80,6 @@ ShellCommand agentTerminalCommand({
     ),
     AgentTool.hermes => _hermesTerminalArgs(
       model: model,
-      workdir: workdir,
       approval: approval,
       session: session,
     ),
@@ -205,8 +204,18 @@ List<String> hermesPermissionArgs(AgentApprovalMode mode) => switch (mode) {
   AgentApprovalMode.full => const ['--yolo'],
 };
 
-/// `hermes --tui`: the modern TUI rather than the classic REPL, pointed at this
-/// chat's folder and model.
+/// `hermes --tui`: the modern TUI rather than the classic REPL, on this chat's
+/// model.
+///
+/// **No folder in the argv.** `hermes` has no flag for one — its only
+/// positional is a subcommand — and the pty already opens in the chat's
+/// folder, which is all a program needs to be in it. An `--in <dir>` was
+/// passed here once, measured against 0.20.5; on the 0.19.0 this app installs
+/// it is not a flag at all, so the path fell into the `command` slot and the
+/// session died on `invalid choice: '/Users/…/agent-workspace'` before it
+/// drew anything. The one folder-shaped thing the CLI does take is
+/// `--no-restore-cwd`, which is the *opposite* instruction — stay where the
+/// pty put you rather than `cd` into where a resumed session was recorded.
 ///
 /// **There is no opening prompt in this argv, because `hermes` has no slot for
 /// one.** Its only positional is a subcommand, and free text belongs to
@@ -223,15 +232,13 @@ List<String> hermesPermissionArgs(AgentApprovalMode mode) => switch (mode) {
 /// session), which is what lets that scheme repair itself.
 List<String> _hermesTerminalArgs({
   required String model,
-  required String workdir,
   required AgentApprovalMode approval,
   required AgentSession? session,
 }) => [
   '--tui',
   // Hermes restores a resumed session's recorded directory unless told
-  // otherwise, and the folder this chat is about is the app's to decide.
-  '--in',
-  workdir,
+  // otherwise, and the folder this chat is about is the app's to decide — it
+  // is the one the pty opened in.
   '--no-restore-cwd',
   '-m',
   model,

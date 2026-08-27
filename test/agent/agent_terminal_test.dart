@@ -193,8 +193,10 @@ void main() {
       expect(AgentTool.hermes.hasInteractiveCli, isTrue);
     });
 
-    test('Hermes opens the TUI in this chat\'s folder and model, and does not '
-        'follow the folder a resumed session recorded', () {
+    test('Hermes opens the TUI on this chat\'s model and stays in the folder '
+        'the pty opened in — the folder is never an argument, because `hermes` '
+        'has no flag for one and a bare path lands in its subcommand slot and '
+        'kills the session (0.19.0)', () {
       final command = agentTerminalCommand(
         tool: AgentTool.hermes,
         executable: '/bin/hermes',
@@ -204,7 +206,8 @@ void main() {
       );
       expect(command.executable, '/bin/hermes');
       expect(command.arguments, contains('--tui'));
-      expect(command.arguments, containsAllInOrder(['--in', '/tmp/project']));
+      expect(command.arguments, isNot(contains('--in')));
+      expect(command.arguments, isNot(contains('/tmp/project')));
       expect(command.arguments, contains('--no-restore-cwd'));
       expect(command.arguments, containsAllInOrder(['-m', 'hermes-4']));
     });
