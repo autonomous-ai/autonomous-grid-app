@@ -272,14 +272,17 @@ class ClientAppConfigurator {
       ensureToolCallBudget(editor);
       await _backupThenWrite(config, editor.toString().trimRight());
 
-      // Also drop the pair into `.env` as a fallback for other tools that read
-      // it; current Hermes resolves the grid from config.yaml (its provider
-      // resolution no longer consults `OPENAI_BASE_URL`), so the config write
-      // above is what actually points the agent at this grid.
-      await _upsertEnvVars(env, {
-        'OPENAI_BASE_URL': base,
-        'OPENAI_API_KEY': key,
-      }, 'Hermes');
+      // The grid's credentials must NOT sit in `OPENAI_*`. Hermes reads that
+      // pair as "the user configured OpenAI", and lists a second row for the
+      // grid in `hermes model` — under its own slug, `openai-api`, because
+      // Hermes has no display label for it (`get_label`, `hermes_cli/
+      // providers.py`). So the picker showed the grid twice: once as `Grid`,
+      // once as `openai-api` serving the grid's models. The config write above
+      // is the one that points Hermes at the grid — its provider resolution
+      // stopped consulting `OPENAI_BASE_URL` — so the pair bought nothing.
+      // Dropped, not just left unwritten, so a machine an older build already
+      // wrote it on heals on the next apply.
+      await _dropGridOpenAiVars(env, base);
 
       // The config now names one grid; Hermes's own credential store may still
       // hold keys minted for the ones before it, and it will rotate to them on
@@ -288,7 +291,7 @@ class ClientAppConfigurator {
       // `~/.hermes/auth.json` (see [HermesAuthStore]).
       await HermesAuthStore(home: _home).pruneForeignGrids(base);
       return ApplyOk(
-        'Pointed Hermes at this grid (${_display(config)} + ${_display(env)}).',
+        'Pointed Hermes at this grid (${_display(config)}).',
         note:
             'If Hermes is already open, refresh its model list (or restart '
             'it) to see this grid\'s models.',
@@ -386,12 +389,28 @@ class ClientAppConfigurator {
     String appName,
   ) => EnvFile(env).upsert(vars, addedBy: 'points $appName at this grid');
 
+  /// Clear the `OPENAI_BASE_URL`/`OPENAI_API_KEY` pair an older build wrote
+  /// into Hermes's dotenv to point it at a grid.
+  ///
+  /// Only when the base URL there is a grid's — some grid's relay
+  /// ([isGridRelayBase]), or literally the one being applied, which covers a
+  /// LAN relay whose URL carries no grid id. A user who put their own OpenAI
+  /// key here keeps it. The two go together — leaving the key behind a deleted
+  /// base URL would send a grid token to `api.openai.com`.
+  Future<void> _dropGridOpenAiVars(File env, String base) async {
+    final file = EnvFile(env);
+    final current = (await file.read())['OPENAI_BASE_URL'] ?? '';
+    if (!isGridRelayBase(current) && !sameRelayBase(current, base)) return;
+    await file.remove({'OPENAI_BASE_URL', 'OPENAI_API_KEY'});
+  }
+
   /// Registers this grid as a Hermes named provider under `custom_providers`,
   /// and makes sure it is the **only** grid in the list.
   ///
-  /// Ours is matched by the relay it points at, then by provider name
-  /// ([hermesProviderName], the grid id) so a hand-renamed entry is still
-  /// reused rather than duplicated. Every *other* entry pointing at some grid's
+  /// Ours is matched by the relay it points at, then by name — both
+  /// [kHermesGridDisplayName] and the grid id that older builds wrote there —
+  /// so a re-pointed (or older) entry is reused rather than duplicated. Every
+  /// *other* entry pointing at some grid's
   /// relay ([isGridRelayBase]) is dropped: they are grids the app pointed at
   /// before, and leaving one behind gives Hermes a second Grid credential to
   /// rotate onto — with the wrong grid's key for the endpoint it is calling
@@ -404,17 +423,18 @@ class ClientAppConfigurator {
     required String model,
     required bool responses,
   }) {
-    final name = hermesProviderName(base);
-    // A responses-only grid also carries a stable `provider_key` (so the
-    // `model.provider` selector matches this entry regardless of host) and the
-    // `api_mode` that switches Hermes to the Responses dialect. `extra_headers`
-    // carries a literal Hermes template ([kGridChatIdTemplate]) that Hermes
-    // itself expands from `GRID_CHAT_ID` at `hermes acp` startup — not a value
+    final legacyName = gridIdFromRelayBase(base) ?? Uri.tryParse(base)?.host;
+    // `name` is the whole identity Hermes has for this entry — the row it
+    // prints and the selector it resolves (see [kHermesGridDisplayName]), which
+    // is why it normalises to the [kHermesGridProviderKey] a responses-only
+    // grid points `model.provider` at. Such a grid also carries the `api_mode`
+    // that switches Hermes to the Responses dialect. `extra_headers` carries a
+    // literal Hermes template ([kGridChatIdTemplate]) that Hermes itself
+    // expands from `GRID_CHAT_ID` at `hermes acp` startup — not a value
     // computed here — so every relay call this provider makes is tagged with
     // the conversation that's asking.
     final entry = <String, Object>{
-      'name': name,
-      if (responses) 'provider_key': kHermesGridProviderKey,
+      'name': kHermesGridDisplayName,
       'base_url': base,
       'api_key': key,
       'model': model,
@@ -435,7 +455,10 @@ class ClientAppConfigurator {
       final e = existing[i];
       if (e is! Map) continue;
       final eBase = '${e['base_url'] ?? ''}';
-      if (sameRelayBase(eBase, base) || '${e['name'] ?? ''}' == name) {
+      final eName = '${e['name'] ?? ''}';
+      if (sameRelayBase(eBase, base) ||
+          eName == kHermesGridDisplayName ||
+          (legacyName != null && eName == legacyName)) {
         mine ??= i;
         continue;
       }

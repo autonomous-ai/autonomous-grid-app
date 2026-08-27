@@ -77,12 +77,9 @@ class HermesVisionController extends AsyncNotifier<String?> {
     final network = ref.read(selectedNetworkProvider);
     if (network == null) return _noGrid;
     try {
-      // The same name Grid writes its `custom_providers` entry under, so Hermes
+      // The identity Grid writes its `custom_providers` entry under, so Hermes
       // resolves the model against this grid rather than against a vendor.
-      await policy.write(
-        model: model,
-        provider: hermesProviderName(network.relayBaseUrl),
-      );
+      await policy.write(model: model, provider: kHermesGridProviderKey);
     } on Object catch (error) {
       return "Couldn't set the model for images: $error";
     }
