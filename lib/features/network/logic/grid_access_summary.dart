@@ -27,7 +27,30 @@ enum GridAccessTag {
   const GridAccessTag(this.label);
 
   final String label;
+
+  /// The heading this tag becomes when the list is grouped under it.
+  ///
+  /// Said from the reader's side and in the plural, because a heading names a
+  /// set rather than a row: "Owner" over three rows reads as a label somebody
+  /// forgot to put on each of them.
+  String get groupLabel => switch (this) {
+    GridAccessTag.owner => 'YOURS',
+    GridAccessTag.invited => "YOU'RE INVITED",
+    GridAccessTag.public => 'OPEN TO ANYONE',
+  };
 }
+
+/// The order a grouped list shows the tags in: what is yours, what you were let
+/// into, then what is open to everyone.
+///
+/// Not [GridAccessTag.values], whose order exists for a different job — there
+/// `public` leads because openness is the fact a *row* must not bury. A list
+/// leads with the grids the reader already has a stake in.
+const kGridGroupOrder = [
+  GridAccessTag.owner,
+  GridAccessTag.invited,
+  GridAccessTag.public,
+];
 
 /// The access rule behind a `network_type` wire value, or null when it is one
 /// this app never offers.
