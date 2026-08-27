@@ -187,12 +187,20 @@ class ClaudeTurnCompleted extends ClaudeExecEvent {
 /// and killed the process five seconds into a workflow that had thirty minutes
 /// to go, and the chat read "running in the background" for ever.
 ///
-/// [pending] names what is still running, for the log and the feed. The
-/// parser holds the answer given so far and appends what the second turn adds.
+/// The same holds for a wake-up: Claude Code's own `/loop` is the model
+/// booking `ScheduleWakeup` and ending its turn, and the CLI sleeping the delay
+/// and starting the next turn itself. Measured the same day: under `-p` that
+/// tick fires as long as the process is alive to sleep — so a turn with a
+/// wake-up booked is not over either, until the model books none.
+///
+/// [pending] names what is still running or booked, for the log and the feed.
+/// The parser holds the answer given so far and appends what each later turn
+/// adds.
 class ClaudeTurnWaiting extends ClaudeExecEvent {
   const ClaudeTurnWaiting(this.pending);
 
-  /// One line per task still running, as the CLI describes it.
+  /// One line per task still running or tick still booked, as the CLI
+  /// describes it.
   final List<String> pending;
 }
 

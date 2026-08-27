@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'agent_event.dart';
 import 'agent_question.dart';
 import 'claude_exec_event.dart';
+import 'claude_exec_service.dart' show kClaudeSessionSchedulerTools;
 import 'model_control_tokens.dart';
 
 /// The tools Claude Code uses to change a file. Only these produce a
@@ -89,6 +90,29 @@ class ClaudeStreamParser {
   /// background") removes it from [_calls].
   final _backgroundCalls = <String, AgentActivity>{};
 
+  /// The scheduler calls this turn made, by call id, until their result says
+  /// whether they took: a `ScheduleWakeup` that errored booked nothing.
+  final _scheduling = <String, Map<String, dynamic>>{};
+
+  /// The wake-up the model booked and the CLI has yet to fire — how long it
+  /// asked for and why. Null when none is booked, or once it has fired.
+  ///
+  /// This is Claude Code's own `/loop`: the model ends its turn, the CLI sleeps
+  /// the delay and starts the next turn by itself (`command_lifecycle`, then a
+  /// second `init`). Measured on 2.1.247 (2026-08-27): it works under `-p` as
+  /// long as the process is alive to sleep — which is what a turn that is not
+  /// ended at its first `result` gives it.
+  ({int delaySeconds, String reason})? _wakeup;
+
+  /// Session-only cron jobs alive in this process: `CronCreate` less
+  /// `CronDelete`, both counted only when their result says they took. Like a
+  /// wake-up they fire only while the process lives.
+  var _crons = 0;
+
+  /// How many times this turn has been left waiting, so each wait is its own
+  /// row in the timeline rather than one row moved about.
+  var _waits = 0;
+
   /// The events worth showing from one decoded line. Empty for a line that
   /// carries nothing (reasoning-token counts, rate-limit notices, a shape from
   /// a newer build we don't know) — the parser stays tolerant rather than
@@ -133,6 +157,22 @@ class ClaudeStreamParser {
     return [
       if (id is String && id.isNotEmpty) ClaudeSessionStarted(id),
       if (servers.isNotEmpty) ClaudeServersAnnounced(servers),
+      // A second `init` while waiting is the next turn starting — the tick a
+      // wake-up booked, or the turn that reads a task's notification. The
+      // wake-up has fired (the model books the next one afresh, if it wants
+      // one), and the wait is over.
+      ..._endWait(fired: true),
+    ];
+  }
+
+  /// Settle the open waiting row, if there is one. [fired] says a booked
+  /// wake-up went off, so it is no longer pending.
+  List<ClaudeExecEvent> _endWait({required bool fired}) {
+    if (fired) _wakeup = null;
+    if (!_waiting) return const [];
+    _waiting = false;
+    return [
+      ClaudeActivityEvent(_waitRow.settled(status: AgentActivityStatus.done)),
     ];
   }
 
@@ -149,11 +189,23 @@ class ClaudeStreamParser {
       }
     }
     if (_background.isNotEmpty || !_waiting) return const [];
-    _waiting = false;
-    return [
-      ClaudeActivityEvent(_waitRow.settled(status: AgentActivityStatus.done)),
-    ];
+    // Still waiting on a tick: the row stays up, saying what is left.
+    if (_hasPendingWork) return [ClaudeActivityEvent(_waitRow)];
+    return _endWait(fired: false);
   }
+
+  /// Whether the turn has work the CLI will still act on after a `result`.
+  bool get _hasPendingWork =>
+      _background.isNotEmpty || _wakeup != null || _crons > 0;
+
+  /// What is still pending, one line each — the log's and the feed's account.
+  List<String> get _pending => [
+    ..._background.values,
+    if (_wakeup case final wakeup?)
+      'next tick in ${wakeup.delaySeconds}s'
+          '${wakeup.reason.isEmpty ? '' : ' — ${wakeup.reason}'}',
+    if (_crons > 0) '$_crons scheduled job${_crons == 1 ? '' : 's'}',
+  ];
 
   List<ClaudeExecEvent> _readTaskStarted(Map<String, dynamic> event) {
     final task = '${event['task_id'] ?? ''}';
@@ -188,17 +240,20 @@ class ClaudeStreamParser {
   /// Whether the last `result` left the turn waiting on background work.
   var _waiting = false;
 
-  /// The one feed row that says the turn is waiting, and on what. A fixed id,
-  /// so the notification that ends the wait settles the same row.
+  /// The feed row that says the turn is waiting, and on what. One id per wait
+  /// ([_waits]), so the event that ends it settles the same row and a later
+  /// wait in the same turn gets a row of its own, after the text it follows.
   AgentActivity get _waitRow => AgentActivity(
-    id: 'background-wait',
+    id: 'background-wait-$_waits',
     kind: AgentActivityKind.tool,
-    label: _background.length == 1
+    label: _wakeup != null
+        ? 'Waiting for the next tick'
+        : _background.length == 1
         ? 'Waiting for background work to finish'
         : 'Waiting for ${_background.length} background tasks to finish',
     status: AgentActivityStatus.running,
     tool: 'Background',
-    request: _background.values.join('\n'),
+    request: _pending.join('\n'),
   );
 
   /// A vendor SSE event, forwarded verbatim by the CLI. Only the answer's text
@@ -362,6 +417,7 @@ class ClaudeStreamParser {
       request: claudeToolRequest(name, input),
     );
     _calls[id] = activity;
+    if (kClaudeSessionSchedulerTools.contains(name)) _scheduling[id] = input;
 
     // Recorded whoever ran it: a sub-agent's write changes the same disk, and
     // the undo behind it is the only way back for either.
@@ -421,11 +477,41 @@ class ClaudeStreamParser {
     // A write that failed changed nothing, so there is nothing to offer to open.
     if (path != null && !failed) events.add(ClaudeFileWriteFinished(path));
 
+    if (_scheduling.remove(id) case final input? when !failed) {
+      _bookScheduling(call?.tool, input);
+    }
+
     // What a picture just cost the session, which the reported figure does not
     // say — see [claudeMediaTokens].
     final media = parent == null ? claudeMediaTokens(block['content']) : 0;
     if (media > 0) events.add(ClaudeMediaUsed(media));
     return events;
+  }
+
+  /// A scheduler call that took: a wake-up booked (or cancelled with
+  /// `stop`), a cron job created or deleted.
+  ///
+  /// Counted only from a result that is not an error, because a refused call
+  /// booked nothing — and a wake-up the app then waited for would be a turn
+  /// that never ends.
+  void _bookScheduling(String? tool, Map<String, dynamic> input) {
+    switch (tool) {
+      case 'ScheduleWakeup':
+        if (input['stop'] == true) {
+          _wakeup = null;
+          return;
+        }
+        final delay = input['delaySeconds'];
+        _wakeup = (
+          delaySeconds: delay is num ? delay.round() : 0,
+          reason: '${input['reason'] ?? ''}'.trim(),
+        );
+      case 'CronCreate':
+        _crons++;
+      case 'CronDelete':
+        if (_crons > 0) _crons--;
+      default:
+    }
   }
 
   /// The turn's own last word. `result` is Claude's final answer text — taken as
@@ -444,23 +530,25 @@ class ClaudeStreamParser {
         ..clear()
         ..add(text);
     }
-    if (_background.isEmpty) {
+    if (!_hasPendingWork) {
       return [
         ClaudeMessageEvent(_answer(), settled: _settled()),
         const ClaudeTurnCompleted(),
       ];
     }
-    // Not the end: the CLI will run a second turn once the background work
-    // comes back (see [ClaudeTurnWaiting]). What was said stays said — moved
-    // out of the reach of that turn's own `result` — and the chat is shown
-    // what it is waiting on rather than a bubble that has quietly stopped.
+    // Not the end: the CLI will run another turn when the background work
+    // comes back or the wake-up fires (see [ClaudeTurnWaiting]). What was said
+    // stays said — moved out of the reach of that turn's own `result` — and
+    // the chat is shown what it is waiting on rather than a bubble that has
+    // quietly stopped.
     _sealed.addAll(_completed);
     _completed.clear();
     _waiting = true;
+    _waits++;
     return [
       ClaudeMessageEvent(_answer(), settled: _settled()),
       ClaudeActivityEvent(_waitRow),
-      ClaudeTurnWaiting(List.unmodifiable(_background.values)),
+      ClaudeTurnWaiting(List.unmodifiable(_pending)),
     ];
   }
 
@@ -730,6 +818,12 @@ String claudeToolLabel(String name, Map<String, dynamic> input) {
     'Agent' || 'Task' => input['description'],
     // Which skill, not that a skill ran.
     'Skill' => input['skill'],
+    // The next tick and why, or that the loop is being ended.
+    'ScheduleWakeup' =>
+      input['stop'] == true
+          ? 'stop'
+          : 'in ${input['delaySeconds']}s · ${input['reason'] ?? ''}',
+    'CronCreate' => input['cron'],
     'Glob' || 'Grep' => input['pattern'],
     _ => _fileName(input['file_path'] ?? input['notebook_path']),
   };

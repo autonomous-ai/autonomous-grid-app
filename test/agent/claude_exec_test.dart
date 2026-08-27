@@ -75,6 +75,27 @@ Map<String, dynamic> _result(String text) => {
   'result': text,
 };
 
+/// A `ScheduleWakeup` call — a booking, or `stop: true` to un-book.
+Map<String, dynamic> _wakeupCall(
+  String id, {
+  int delay = 60,
+  bool stop = false,
+}) => {
+  'type': 'tool_use',
+  'id': id,
+  'name': 'ScheduleWakeup',
+  'input': stop
+      ? {'stop': true}
+      : {'delaySeconds': delay, 'prompt': 'tick', 'reason': 'probe'},
+};
+
+Map<String, dynamic> _schedulerCall(String id, String name) => {
+  'type': 'tool_use',
+  'id': id,
+  'name': name,
+  'input': {'cron': '* * * * *', 'prompt': 'tick'},
+};
+
 /// Everything one call produced, since a single line can carry several blocks.
 List<ClaudeExecEvent> _read(
   ClaudeStreamParser parser,
@@ -397,7 +418,7 @@ void main() {
 
       expect((events[0] as ClaudeMessageEvent).text, 'started');
       final waiting = (events[1] as ClaudeActivityEvent).activity;
-      expect(waiting.id, 'background-wait');
+      expect(waiting.id, 'background-wait-1');
       expect(waiting.status, AgentActivityStatus.running);
       expect(waiting.request, 'Deep research');
       expect((events[2] as ClaudeTurnWaiting).pending, ['Deep research']);
@@ -447,7 +468,7 @@ void main() {
       });
 
       final wait = (cleared.single as ClaudeActivityEvent).activity;
-      expect(wait.id, 'background-wait');
+      expect(wait.id, 'background-wait-1');
       expect(wait.status, AgentActivityStatus.done);
       final call = (settled.single as ClaudeActivityEvent).activity;
       expect(call.id, 't-1');
@@ -492,6 +513,101 @@ void main() {
       _read(parser, _taskStarted('b1', 't-1'));
 
       expect(_read(parser, _result('done')).last, isA<ClaudeTurnCompleted>());
+    });
+
+    test(
+      'a booked wake-up keeps the turn open — Claude Code\'s own /loop, '
+      'which used to die with the process five seconds after "scheduled"',
+      () {
+        final parser = ClaudeStreamParser();
+        _read(parser, _assistant(_wakeupCall('w-1', delay: 60)));
+        _read(parser, _toolResult('w-1'));
+
+        final events = _read(parser, _result('scheduled'));
+
+        expect(events.whereType<ClaudeTurnCompleted>(), isEmpty);
+        final wait = (events[1] as ClaudeActivityEvent).activity;
+        expect(wait.label, 'Waiting for the next tick');
+        expect(wait.request, 'next tick in 60s — probe');
+        expect((events[2] as ClaudeTurnWaiting).pending, [
+          'next tick in 60s — probe',
+        ]);
+      },
+    );
+
+    test('the tick is the next init: it settles the wait, its words follow '
+        'the last answer, and a tick that books no wake-up ends the turn', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_wakeupCall('w-1', delay: 60)));
+      _read(parser, _toolResult('w-1'));
+      _read(parser, _result('scheduled'));
+
+      final tick = _read(parser, {
+        'type': 'system',
+        'subtype': 'init',
+        'session_id': 's',
+      });
+      expect(
+        tick.whereType<ClaudeActivityEvent>().single.activity.status,
+        AgentActivityStatus.done,
+      );
+      final events = _read(parser, _result('all quiet'));
+
+      expect(
+        (events.first as ClaudeMessageEvent).text,
+        'scheduled\n\nall quiet',
+      );
+      expect(events.last, isA<ClaudeTurnCompleted>());
+    });
+
+    test('a second wake-up in the same turn is a second wait, with a row of '
+        'its own after the tick\'s words', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_wakeupCall('w-1', delay: 60)));
+      _read(parser, _toolResult('w-1'));
+      _read(parser, _result('scheduled'));
+      _read(parser, {'type': 'system', 'subtype': 'init', 'session_id': 's'});
+      _read(parser, _assistant(_wakeupCall('w-2', delay: 120)));
+      _read(parser, _toolResult('w-2'));
+
+      final events = _read(parser, _result('tick one'));
+
+      final wait = (events[1] as ClaudeActivityEvent).activity;
+      expect(wait.id, 'background-wait-2');
+      expect(wait.request, 'next tick in 120s — probe');
+      expect(events.last, isA<ClaudeTurnWaiting>());
+    });
+
+    test('stop: true un-books the wake-up, and a wake-up the CLI refused '
+        'never booked one — either way the result ends the turn', () {
+      final stopped = ClaudeStreamParser();
+      _read(stopped, _assistant(_wakeupCall('w-1', delay: 60)));
+      _read(stopped, _toolResult('w-1'));
+      _read(stopped, _assistant(_wakeupCall('w-2', stop: true)));
+      _read(stopped, _toolResult('w-2'));
+      expect(_read(stopped, _result('done')).last, isA<ClaudeTurnCompleted>());
+
+      final refused = ClaudeStreamParser();
+      _read(refused, _assistant(_wakeupCall('w-1', delay: 60)));
+      _read(refused, _toolResult('w-1', failed: true));
+      expect(_read(refused, _result('done')).last, isA<ClaudeTurnCompleted>());
+    });
+
+    test('a cron job keeps the turn open until it is deleted — it fires only '
+        'while the process lives', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_schedulerCall('c-1', 'CronCreate')));
+      _read(parser, _toolResult('c-1'));
+      final open = _read(parser, _result('created'));
+      expect((open.last as ClaudeTurnWaiting).pending, ['1 scheduled job']);
+
+      _read(parser, {'type': 'system', 'subtype': 'init', 'session_id': 's'});
+      _read(parser, _assistant(_schedulerCall('c-2', 'CronDelete')));
+      _read(parser, _toolResult('c-2'));
+      expect(
+        _read(parser, _result('deleted')).last,
+        isA<ClaudeTurnCompleted>(),
+      );
     });
 
     test('lines that carry nothing to show are skipped, so a newer build can '

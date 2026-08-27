@@ -170,10 +170,13 @@ const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
 /// nothing. A repeat *inside a chat* is not lost with them — that is `/loop`,
 /// which the app owns and the agent paces with a `grid-loop` block.
 ///
-/// **Taken away on the terminal lane only, since 2026-08-27** — the `-p` lane
-/// stopped passing them in `d6a185c5`. TODO(BE): nothing measured above has
-/// changed for that lane: a `-p` turn still exits with its answer, so a cron
-/// or wake-up booked there still dies with it, and the chat is told otherwise.
+/// **Taken away on the terminal lane only, since 2026-08-27.** The `-p` lane
+/// stopped passing them in `d6a185c5`, and the trap above is closed there the
+/// same day: a turn that books a wake-up or a cron job is not ended at its
+/// `result` any more — the process stays alive to sleep, the tick fires
+/// (`command_lifecycle`, then a second `init`), and the chat reads on. See
+/// [ClaudeTurnWaiting]. The parser still needs these names to know which
+/// calls to watch for.
 const List<String> kClaudeSessionSchedulerTools = [
   'CronCreate',
   'CronDelete',
