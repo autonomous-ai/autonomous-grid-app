@@ -121,10 +121,11 @@ void main() {
       expect(editor.parseAt(['model', 'api_key']).value, _key);
       expect(editor.parseAt(['model', 'default']).value, _model);
       expect(editor.parseAt(['model', 'max_tokens']).value, kHermesMaxTokens);
-      // Registers the grid as a named custom provider.
+      // Registers the grid as a named custom provider: the name is what
+      // `hermes model` prints, the identity rides on provider_key.
       expect(
         editor.parseAt(['custom_providers', 0, 'name']).value,
-        'grid.example',
+        kHermesGridDisplayName,
       );
       expect(editor.parseAt(['custom_providers', 0, 'base_url']).value, _base);
       expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
@@ -189,9 +190,12 @@ void main() {
         kHermesGridProviderKey,
       );
       expect(editor.parseAt(['model', 'default']).value, 'codex:gpt-5.5');
+      // That selector resolves through the entry's own name — Hermes drops a
+      // `provider_key` on a custom_providers entry as an unknown key, so
+      // writing one would only look like it worked.
       expect(
-        editor.parseAt(['custom_providers', 0, 'provider_key']).value,
-        kHermesGridProviderKey,
+        editor.parseAt(['custom_providers', 0, 'name']).value,
+        kHermesGridDisplayName,
       );
       expect(
         editor.parseAt(['custom_providers', 0, 'api_mode']).value,
@@ -297,11 +301,11 @@ void main() {
         await config.writeAsString(
           'model:\n'
           '    provider: custom\n'
-          // `name` is the base_url's host, so this entry matches _base and
-          // takes the replace-in-place branch (not append).
+          // `provider_key` is the base_url's host, so this entry matches
+          // _base and takes the replace-in-place branch (not append).
           'custom_providers:\n'
-          '    - name: grid.example\n'
-          '      provider_key: stale-key\n'
+          '    - name: Stale Grid\n'
+          '      provider_key: grid.example\n'
           '      base_url: https://grid.example/grid-old/relay/v1\n'
           '      api_key: old-key\n'
           '      model: old-model\n'
@@ -322,9 +326,16 @@ void main() {
         );
         expect(editor.parseAt(['custom_providers', 0, 'api_key']).value, _key);
         expect(editor.parseAt(['custom_providers', 0, 'model']).value, _model);
-        // Keys the new entry no longer carries must not survive the swap.
+        // Keys the new entry no longer carries must not survive the swap —
+        // `provider_key` included: Hermes ignores it, and an older build of
+        // this app wrote one.
         expect((list[0] as Map).containsKey('api_mode'), isFalse);
         expect((list[0] as Map).containsKey('provider_key'), isFalse);
+        // …while the name is rewritten, not left stale.
+        expect(
+          editor.parseAt(['custom_providers', 0, 'name']).value,
+          kHermesGridDisplayName,
+        );
         // A nested map value (extra_headers), not just a scalar leaf, still
         // lands correctly at this indent — and, critically, the file this
         // produces is still valid YAML: re-parsing it above didn't throw.
@@ -374,57 +385,53 @@ void main() {
       },
     );
 
+    test('keeps the grid out of OPENAI_* — that pair is what made Hermes list '
+        'the grid a second time, as `openai-api`', () async {
+      final env = File('${home.path}/.hermes/.env');
+      await env.create(recursive: true);
+      await env.writeAsString('# my env\nTELEGRAM_BOT_TOKEN=abc\n');
+
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+
+      final lines = env.readAsLinesSync();
+      expect(lines.any((l) => l.startsWith('OPENAI_')), isFalse);
+      // Unrelated vars + comments are untouched.
+      expect(lines, contains('TELEGRAM_BOT_TOKEN=abc'));
+      expect(lines, contains('# my env'));
+    });
+
     test(
-      'writes OPENAI_BASE_URL + OPENAI_API_KEY into .env, keeping the rest',
+      'clears an OPENAI pair an older build left pointing at a grid',
       () async {
         final env = File('${home.path}/.hermes/.env');
         await env.create(recursive: true);
-        await env.writeAsString('# my env\nTELEGRAM_BOT_TOKEN=abc\n');
-
-        await sut.apply(ClientApp.hermes, _base, _key, [_model]);
-
-        final lines = env.readAsLinesSync();
-        expect(lines, contains('OPENAI_BASE_URL=$_base'));
-        expect(lines, contains('OPENAI_API_KEY=$_key'));
-        // Unrelated vars + comments survive, and the old file is backed up.
-        expect(lines, contains('TELEGRAM_BOT_TOKEN=abc'));
-        expect(lines, contains('# my env'));
-        expect(File('${env.path}.bak').existsSync(), isTrue);
-      },
-    );
-
-    test(
-      'upserts an existing OPENAI_API_KEY line instead of duplicating it',
-      () async {
-        final env = File('${home.path}/.hermes/.env');
-        await env.create(recursive: true);
-        await env.writeAsString('OPENAI_API_KEY=old\nOTHER=keep\n');
+        await env.writeAsString(
+          'OPENAI_BASE_URL=$_base\nOPENAI_API_KEY=old\nOTHER=keep\n',
+        );
 
         await sut.apply(ClientApp.hermes, _base, _key, [_model]);
 
         final content = env.readAsStringSync();
-        expect('OPENAI_API_KEY='.allMatches(content).length, 1); // no duplicate
-        expect(content, contains('OPENAI_API_KEY=$_key'));
+        expect(content, isNot(contains('OPENAI_BASE_URL')));
+        expect(content, isNot(contains('OPENAI_API_KEY')));
         expect(content, contains('OTHER=keep'));
+        expect(File('${env.path}.bak').existsSync(), isTrue);
       },
     );
 
-    test(
-      'leaves commented template lines alone and appends a real one',
-      () async {
-        final env = File('${home.path}/.hermes/.env');
-        await env.create(recursive: true);
-        await env.writeAsString('# OPENAI_API_KEY=sk-example\n');
+    test('leaves an OpenAI key of the user\'s own alone', () async {
+      final env = File('${home.path}/.hermes/.env');
+      await env.create(recursive: true);
+      await env.writeAsString(
+        'OPENAI_BASE_URL=https://api.openai.com/v1\nOPENAI_API_KEY=sk-mine\n',
+      );
 
-        await sut.apply(ClientApp.hermes, _base, _key, [_model]);
+      await sut.apply(ClientApp.hermes, _base, _key, [_model]);
 
-        final lines = env.readAsLinesSync();
-        // The template comment is preserved…
-        expect(lines, contains('# OPENAI_API_KEY=sk-example'));
-        // …and a real, uncommented assignment is appended.
-        expect(lines, contains('OPENAI_API_KEY=$_key'));
-      },
-    );
+      final lines = env.readAsLinesSync();
+      expect(lines, contains('OPENAI_BASE_URL=https://api.openai.com/v1'));
+      expect(lines, contains('OPENAI_API_KEY=sk-mine'));
+    });
   });
 
   group('Codex', () {

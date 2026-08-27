@@ -22,9 +22,10 @@ import 'hermes_config_file.dart';
 ///
 /// [provider] is **not** free text: Hermes resolves it against the built-in
 /// names (`auto`, `openrouter`, `nous`…) and, failing those, against the
-/// `custom_providers` entries in the same file — which is the branch this
-/// depends on. Grid already writes one such entry per grid, so passing that
-/// entry's name is what routes the image back through the grid the chat is
+/// `custom_providers` entries in the same file, matched on that entry's
+/// normalised `name` (`custom_provider_aliases`) — which is the branch this
+/// depends on. Grid already writes one such entry per grid, so passing the name
+/// it writes there is what routes the image back through the grid the chat is
 /// already using (`agent/auxiliary_client.py`, the named-custom branch).
 class HermesVisionPolicy {
   HermesVisionPolicy({String? home}) : _config = HermesConfigFile(home: home);

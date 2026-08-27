@@ -6,7 +6,6 @@ library;
 
 import 'dart:convert';
 
-import '../../../core/relay_identity.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'client_app_detector.dart';
 
@@ -38,9 +37,12 @@ const String kHermesResponsesApiMode = 'codex_responses';
 /// Stable `model.provider` selector for the grid's Hermes provider when a
 /// responses-only model is in play. A **named** provider is required: Hermes
 /// silently downgrades a bare `provider: custom` back to chat-completions on a
-/// non-OpenAI host, but honours `api_mode` on a named `custom_providers` entry
-/// matched by this `provider_key`. Chat-completions grids keep `provider:
-/// custom`, whose base_url trust path needs no named selector.
+/// non-OpenAI host, but honours `api_mode` on a named `custom_providers` entry.
+/// Chat-completions grids keep `provider: custom`, whose base_url trust path
+/// needs no named selector.
+///
+/// Matches [kHermesGridDisplayName] once normalised (lowercased, spaces to
+/// dashes) — that is the alias Hermes resolves it through.
 const String kHermesGridProviderKey = 'grid';
 
 /// The header the relay reads off a Hermes turn's outbound calls to learn
@@ -86,24 +88,30 @@ String openClawSnippet(String base, String key, List<String> models) {
       '}';
 }
 
-/// The Hermes `custom_providers` name for a grid — **its grid id**, so the grid
-/// registers as a named provider Hermes can tell apart from the user's other
-/// grids. Falls back to the relay host for an endpoint that names no grid (a LAN
-/// relay), and to the brand host if [base] can't be parsed at all.
+/// What the grid's Hermes provider is **called** — the `name` of its
+/// `custom_providers` entry. Hermes takes that one field for both jobs at once:
+/// it is the row `hermes model` prints AND, normalised (lowercased, spaces to
+/// dashes), the identity it files the provider's pooled credentials under
+/// (`custom:<name>`, `agent/credential_pool.py`) and resolves a `provider:`
+/// selector against (`custom_provider_aliases`). So it normalises to
+/// [kHermesGridProviderKey], which is what a responses-only grid points
+/// `model.provider` at.
 ///
-/// The id, not the host, and this is not cosmetic: every grid on a deployment
-/// shares one host, while Hermes keys its credential pool by this name
-/// (`custom:<name>`, `agent/credential_pool.py`). Naming by host filed every
-/// grid the user belongs to under one identity, so a credential minted for one
-/// could be handed to another's endpoint — which the relay rejects with
-/// `401 Invalid Grid token: Audience doesn't match`. See [relayIdentityDoc].
-String hermesProviderName(String base) =>
-    gridIdFromRelayBase(base) ??
-    Uri.tryParse(base)?.host ??
-    'grid.autonomous.ai';
+/// Was the grid id, which is what the picker then showed: a row reading
+/// `grid-3378218621364f16` between `Anthropic` and `OpenRouter`. The id was
+/// there to keep each grid's credentials in their own pool — a key minted for
+/// one grid handed to another's endpoint is what the relay answers with
+/// `401 Invalid Grid token: Audience doesn't match` (see [relayIdentityDoc]).
+/// What actually defends that now is [HermesAuthStore.pruneForeignGrids],
+/// which drops a pooled credential by the **base_url** it was minted for, in
+/// whatever pool it sits in — and [ClientAppConfigurator], which keeps exactly
+/// one grid in `custom_providers`. Hermes has no second field to carry the id:
+/// `provider_key` on a `custom_providers` entry is dropped by its config
+/// normaliser as an unknown key (`hermes_cli/config.py`, `_KNOWN_KEYS`).
+const String kHermesGridDisplayName = 'Grid';
 
 /// Pointer to where the grid-identity rules are written down, so the name above
-/// doesn't get "simplified" back to a host by the next reader.
+/// doesn't get "simplified" by the next reader.
 const String relayIdentityDoc = 'core/relay_identity.dart';
 
 /// The `~/.hermes/config.yaml` blocks that point Hermes at a grid: the active
@@ -132,8 +140,7 @@ String hermesConfigSnippet(String base, String key, String model) {
     ..write('  default: $model\n')
     ..write('  max_tokens: $kHermesMaxTokens\n')
     ..write('custom_providers:\n')
-    ..write('  - name: ${hermesProviderName(base)}\n');
-  if (responses) buffer.write('    provider_key: $kHermesGridProviderKey\n');
+    ..write('  - name: $kHermesGridDisplayName\n');
   buffer
     ..write('    base_url: $base\n')
     ..write('    api_key: $key\n')

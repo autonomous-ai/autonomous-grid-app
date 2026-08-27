@@ -59,7 +59,7 @@ void main() {
     expect(config, contains('max_tokens: $kHermesMaxTokens'));
     // Also registers the grid as a named custom provider.
     expect(config, contains('custom_providers:'));
-    expect(config, contains('name: ${hermesProviderName(_base)}'));
+    expect(config, contains('name: $kHermesGridDisplayName'));
     expect(config, contains('model: $_model'));
   });
 
@@ -97,7 +97,9 @@ void main() {
     // the api_mode that switches Hermes onto POST /responses.
     expect(config, contains('provider: $kHermesGridProviderKey\n'));
     expect(config, isNot(contains('provider: custom')));
-    expect(config, contains('provider_key: $kHermesGridProviderKey'));
+    // …and that selector is the entry's own name, normalised — nothing else in
+    // the file carries the identity, so the two must keep matching.
+    expect(kHermesGridDisplayName.toLowerCase(), kHermesGridProviderKey);
     expect(config, contains('api_mode: $kHermesResponsesApiMode'));
     expect(config, contains('default: $codexModel'));
   });
