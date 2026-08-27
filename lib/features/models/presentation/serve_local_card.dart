@@ -380,9 +380,6 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         ContextLengthField(
           model: selected.primary.name,
           value: _ctxSize,
-          // The slider's own box carries the number — see
-          // [ContextWindowField.inline].
-          inline: true,
           onChanged: (tokens) {
             setState(() => _ctxSize = tokens);
             // A machine still carrying a start-on-open record has to open with

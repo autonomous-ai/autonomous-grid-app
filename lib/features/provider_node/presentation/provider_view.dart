@@ -87,6 +87,7 @@ class _ShareIntelligencePage extends ConsumerWidget {
     hintSize: 13.5,
     labelStyle: ShareType.fieldLabel,
     showHelp: false,
+    slimChevron: true,
   );
 
   /// The design's buttons and links, for the whole page at once.

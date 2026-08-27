@@ -21,6 +21,7 @@ class FieldSkin {
     required this.hintSize,
     required this.labelStyle,
     this.showHelp = true,
+    this.slimChevron = false,
   });
 
   final Color fill;
@@ -39,6 +40,11 @@ class FieldSkin {
   /// and a `?` in each is two question marks in one row of a form with nothing
   /// obscure in it.
   final bool showHelp;
+
+  /// Draw a picker's disclosure as a thin chevron rather than Material's solid
+  /// triangle. The design's, and it matches the hairline weight of everything
+  /// else on that page — a filled wedge is the heaviest mark in the form.
+  final bool slimChevron;
 }
 
 /// Hangs a [FieldSkin] over a subtree.
