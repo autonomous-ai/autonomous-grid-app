@@ -49,7 +49,10 @@ class ServerAddressField extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             LabeledField(
-              label: 'Server address',
+              // The design names the *kind* of thing in the label, because
+              // "server address" tells someone who has one where to put it and
+              // tells someone who hasn't nothing at all.
+              label: 'Endpoint, any OpenAI-compatible server',
               controller: controller,
               // The full endpoint, not the base: it is what people have in
               // front of them, so it can be pasted whole. The suffix is cut

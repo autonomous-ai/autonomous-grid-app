@@ -8,9 +8,11 @@ import '../../../infrastructure/state/models/local_files.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/theme/share_page_theme.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/form_plate.dart';
 import '../../../shared/widgets/log_view.dart';
 import '../../../shared/widgets/node_name_field.dart';
 import '../../node_setup/logic/background_model_controller.dart';
@@ -128,11 +130,6 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
     ];
   }
 
-  /// Whether the pre-filled details are open for editing. Shut by default: the
-  /// summary above already says what they are, so opening is for changing them,
-  /// not for reading them.
-  bool _editingDetails = false;
-
   /// Keeps a start-on-open record in step with the form. No-ops unless one is
   /// armed *for this model*.
   ///
@@ -155,16 +152,6 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
 
   /// The name to announce [model] under: what the user typed, or the one
   /// derived from the filename when they left the field alone.
-  /// The window this model will actually start on — the typed value, or the
-  /// default read from the model's own ceiling. Null only while that ceiling is
-  /// still being read, where the summary simply leaves the clause out rather
-  /// than guessing a number the engine might not use.
-  int? _effectiveContext(String model) {
-    if (_ctxSize case final chosen?) return chosen;
-    final max = ref.watch(modelMaxContextProvider(model)).asData?.value;
-    return max == null ? null : defaultContextLength(max);
-  }
-
   String _advertiseName(String model) {
     final typed = _advertise.text.trim();
     return typed.isEmpty ? deriveAdvertiseName(model) : typed;
@@ -334,54 +321,65 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
         ),
       ];
 
+  /// The form, as one plate with its three questions ruled apart: which model,
+  /// what the grid calls it, and how much it remembers.
+  ///
+  /// All three are open. They spent a while behind a "Shared as … Change"
+  /// sentence, on the reasoning that they are defaults nobody edits — true, and
+  /// still the wrong shape: folded away they were *unverifiable*, and a form
+  /// whose one visible control is a dropdown gives the reader nothing to check
+  /// before they press a button that puts this machine on a network. Open, the
+  /// rules do the work the disclosure was doing.
   List<Widget> _serveControls(List<ModelGroup> groups, ModelGroup selected) => [
-    // AppSelectField, not DropdownButtonFormField: Material's popup can't be
-    // made to match the app's floating menus (square, edge-to-edge, no inset).
-    AppSelectField<String>(
-      label: 'Local model',
-      value: selected.primary.name,
-      options: [
-        for (final group in groups)
-          AppSelectOption(
-            value: group.primary.name,
-            label: group.displayName,
-            badges: _modelBadges(group),
+    FormPlate(
+      sections: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // AppSelectField, not DropdownButtonFormField: Material's popup
+            // can't be made to match the app's floating menus (square,
+            // edge-to-edge, no inset).
+            AppSelectField<String>(
+              label: 'Model',
+              value: selected.primary.name,
+              options: [
+                for (final group in groups)
+                  AppSelectOption(
+                    value: group.primary.name,
+                    label: group.displayName,
+                    badges: _modelBadges(group),
+                  ),
+              ],
+              // Reset the context choice so the slider falls back to the new
+              // model's own maximum instead of carrying over the previous one.
+              onChanged: (value) => setState(() {
+                _model = value;
+                _ctxSize = null;
+              }),
+            ),
+            const SizedBox(height: 6),
+            // Under the picker, where somebody who cannot find their model is
+            // already looking — not beside Start, where it competed with the
+            // one button on the form that finishes the job.
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => showModelManager(context),
+                child: const Text('Download or manage models →'),
+              ),
+            ),
+          ],
+        ),
+        FieldPair(
+          first: AdvertiseAsField(
+            controller: _advertise,
+            hintText: 'Qwen3.6-35B-A3B',
           ),
-      ],
-      // Reset the context choice so the slider falls back to the new
-      // model's own maximum instead of carrying over the previous one.
-      onChanged: (value) => setState(() {
-        _model = value;
-        _ctxSize = null;
-      }),
-    ),
-    const SizedBox(height: 10),
-    // Every one of these is pre-filled correctly from the model itself, so most
-    // starts never touch any of them. Folding them away was right and not
-    // enough: hidden, they were also *unverifiable* — you could not find out
-    // what name the grid would see without opening a section. A sentence says
-    // it in a line and still opens.
-    _DetailsSummary(
-      advertiseAs: _advertiseName(selected.primary.name),
-      nodeName: _nodeName.text.trim(),
-      contextTokens: _effectiveContext(selected.primary.name),
-      open: _editingDetails,
-      onToggle: () => setState(() => _editingDetails = !_editingDetails),
-    ),
-    if (_editingDetails) ...[
-      const SizedBox(height: 10),
-      _DetailsPanel(
-        names: [
-          AdvertiseAsField(controller: _advertise, hintText: 'Qwen3.6-35B-A3B'),
-          const SizedBox(height: 14),
-          NodeNameField(controller: _nodeName),
-        ],
-        window: ContextLengthField(
+          second: NodeNameField(controller: _nodeName),
+        ),
+        ContextLengthField(
           model: selected.primary.name,
           value: _ctxSize,
-          // The panel and the summary both carry the number already — see
-          // [ContextWindowField.inline].
-          inline: true,
           onChanged: (tokens) {
             setState(() => _ctxSize = tokens);
             // A machine still carrying a start-on-open record has to open with
@@ -389,9 +387,9 @@ class _ServeLocalCardState extends ConsumerState<ServeLocalCard> {
             _refreshAutoServe(selected.primary.name);
           },
         ),
-      ),
-    ],
-    const SizedBox(height: 16),
+      ],
+    ),
+    const SizedBox(height: 18),
     _ServeActions(
       selected: selected,
       onStart: () => _start(selected.primary.name),
@@ -440,7 +438,7 @@ class _ServeActions extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         Wrap(
-          spacing: 8,
+          spacing: 14,
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
@@ -456,145 +454,16 @@ class _ServeActions extends StatelessWidget {
                 icon: const Icon(Icons.download_outlined, size: 18),
                 label: const Text('Finish downloading'),
               ),
-            TextButton.icon(
-              onPressed: onManage,
-              icon: const Icon(Icons.tune, size: 18),
-              label: const Text('Download or manage models'),
-            ),
+            if (selected.isComplete)
+              Text(
+                // What a first-time host actually wants to know before
+                // pressing it, which is that pressing it is not a commitment.
+                'You can stop at any time.',
+                style: ShareType.buttonHelper,
+              ),
           ],
         ),
       ],
-    );
-  }
-}
-
-/// The three pre-filled details, as one sentence you can read or open.
-///
-/// This replaced a "Names and context window" expander, and the difference is
-/// not that it is shorter. A disclosure hides a *decision*; these are not
-/// decisions, they are defaults derived from the model and the machine, and the
-/// question a person actually has about a default is "what is it?" — which a
-/// closed expander is the one shape that cannot answer. Read it in a line,
-/// press Change only if it is wrong.
-///
-/// It also puts the weight back where it belongs. The model picker is the one
-/// real choice in this form; three full-width fields under it were drawn at
-/// exactly the same size, so nothing on the card looked more important than
-/// anything else.
-class _DetailsSummary extends StatelessWidget {
-  const _DetailsSummary({
-    required this.advertiseAs,
-    required this.nodeName,
-    required this.contextTokens,
-    required this.open,
-    required this.onToggle,
-  });
-
-  final String advertiseAs;
-  final String nodeName;
-
-  /// Null while the model's ceiling is still being read.
-  final int? contextTokens;
-
-  final bool open;
-  final VoidCallback onToggle;
-
-  /// Written as the grid will see it, not as the fields are labelled. "Model
-  /// name shown to the grid" is the right label above an input and the wrong
-  /// words in a sentence, where what matters is the name itself.
-  String get _sentence {
-    final from = nodeName.isEmpty ? 'this computer' : nodeName;
-    final window = contextTokens == null
-        ? ''
-        : ', remembering ${formatContextLength(contextTokens!)}';
-    return 'Shared as “$advertiseAs” from “$from”$window.';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            _sentence,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: AppPalette.textSecondary,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        // A text button, not a chevron: the row is a sentence, and a disclosure
-        // arrow on a sentence promises more words rather than the fields that
-        // actually open.
-        TextButton(
-          onPressed: onToggle,
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            minimumSize: const Size(0, 28),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(open ? 'Done' : 'Change'),
-        ),
-      ],
-    );
-  }
-}
-
-/// The opened details, as one plate rather than a run of loose fields.
-///
-/// Open, the three settings used to flow at the same level as the model picker
-/// and the Start button, so a form with **one** decision in it looked like a
-/// form with six. Nothing said the fields belonged to the sentence that revealed
-/// them, or to each other.
-///
-/// A plate says both at once, and its two surfaces are picked by measurement
-/// rather than by taste.
-///
-/// **Lifted, not recessed.** [AdvertiseAsField] and [NodeNameField] both fill
-/// themselves [AppCard.inset]; a recessed plate would be that same `#F7F7F5`
-/// and the fields would vanish into it. White keeps them readable as insets.
-///
-/// **Rimmed with [AppGlass.lift], not [AppCard.hair].** In light this plate is
-/// `#FFFFFF` on a block that is *also* `#FFFFFF` ([AppGlass.surfaceFill]) — 1:1,
-/// so fill does no work at all here and the edge is the whole separation (§2).
-/// `hair` is 6% black and disappears on a white pane, which is the case `lift`
-/// exists for. The shadow carries the rest.
-///
-/// A rule splits the two questions inside it, because what the grid calls this
-/// and how much it remembers are not the same kind of setting.
-class _DetailsPanel extends StatelessWidget {
-  const _DetailsPanel({required this.names, required this.window});
-
-  /// The two "what the grid sees" fields.
-  final List<Widget> names;
-
-  /// The context-window control, which answers a different question.
-  final Widget window;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppCard.base,
-        borderRadius: BorderRadius.circular(AppCard.radius),
-        border: Border.all(color: AppGlass.lift),
-        boxShadow: AppGlass.cardShadow,
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ...names,
-          const SizedBox(height: 16),
-          Divider(height: 1, thickness: 1, color: AppPalette.divider),
-          const SizedBox(height: 15),
-          window,
-        ],
-      ),
     );
   }
 }

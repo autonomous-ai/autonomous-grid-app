@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/context_length.dart';
 import '../theme/app_theme.dart';
+import '../theme/share_page_theme.dart';
 import 'app_spinner.dart';
 
-/// The "Context window" setting: a collapsed tile showing the current value,
-/// opening onto a slider from 4k to [max].
+/// The "Memory for context" setting: the name and the value on one row, the
+/// sentence under it, and a slider from 4k to [max] beneath both.
 ///
 /// Shared because both engine cards ask the same question and §5 wants one
 /// wording and one control for it. They differ only in where [max] comes from —
@@ -19,7 +19,6 @@ class ContextWindowField extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.note,
-    this.inline = false,
   });
 
   /// The ceiling: the most this engine can actually serve.
@@ -36,42 +35,13 @@ class ContextWindowField extends StatelessWidget {
   /// where [max] came from and whether it can be trusted.
   final String? note;
 
-  /// Draw the slider directly, with a plain label instead of the recessed tile.
-  ///
-  /// For a caller that has *already* folded this away. The tile is a disclosure,
-  /// and a disclosure inside a disclosure inside a disclosure is what the local
-  /// engine form had become: open the row, open "Names and context window",
-  /// then open a boxed tile with its own gear icon to reach one slider. Nesting
-  /// is what made that form read as clutter rather than as three settings.
-  final bool inline;
-
   @override
   Widget build(BuildContext context) {
-    final slider = _SliderAndBox(
+    return _SliderAndValue(
       max: max,
       value: value,
       note: note,
       onChanged: (tokens) => onChanged(snapContextLength(tokens, max)),
-    );
-    if (!inline) {
-      return ContextWindowTile(
-        valueLabel: formatContextLength(value),
-        child: slider,
-      );
-    }
-    final theme = Theme.of(context);
-    // No value on this header. The box beside the slider holds the exact number
-    // and can be typed into; a rounded copy of it two lines above was a second
-    // reading of one setting, and the two disagreed on sight — "200k" over
-    // "204800" looks like two different numbers to anyone not doing the
-    // arithmetic.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Context window', style: theme.textTheme.bodySmall),
-        const SizedBox(height: 6),
-        slider,
-      ],
     );
   }
 }
@@ -162,14 +132,17 @@ class ContextWindowTile extends StatelessWidget {
   }
 }
 
-/// The slider from 4k to [max], plus a box for typing the exact number.
+/// The slider from 4k to [max], with the value stated beside the setting's
+/// name.
 ///
-/// Two controls for one value, because they answer different needs: dragging is
-/// how you find a size when you don't have one in mind, and typing is how you
-/// enter the number your server was actually launched with. A slider alone
-/// cannot reliably land on 40960, and a box alone gives no sense of the range.
-class _SliderAndBox extends StatefulWidget {
-  const _SliderAndBox({
+/// The value used to be a box you could type into, on the argument that a
+/// server launched with `--ctx-size 40960` cannot be matched by dragging. That
+/// argument moved out from under it: the endpoint form picks its window from a
+/// list now, and a *local* model's window is a choice about memory rather than
+/// a number to match — every value the slider offers is one 1k step away from
+/// the last, so the drag reaches all of them.
+class _SliderAndValue extends StatelessWidget {
+  const _SliderAndValue({
     required this.max,
     required this.value,
     required this.note,
@@ -184,159 +157,163 @@ class _SliderAndBox extends StatefulWidget {
   final ValueChanged<int> onChanged;
 
   @override
-  State<_SliderAndBox> createState() => _SliderAndBoxState();
-}
-
-class _SliderAndBoxState extends State<_SliderAndBox> {
-  late final _typed = TextEditingController(text: '${widget.value}');
-  final _focus = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _focus.addListener(() {
-      // Committing on blur as well as on Enter: a person who types a number and
-      // then reaches for Start has said what they meant, and losing it there
-      // would be silent.
-      if (!_focus.hasFocus) _commit();
-    });
-  }
-
-  @override
-  void didUpdateWidget(_SliderAndBox old) {
-    super.didUpdateWidget(old);
-    // Follow the slider, but never rewrite the box under someone's cursor.
-    if (widget.value != old.value && !_focus.hasFocus) {
-      _typed.text = '${widget.value}';
-    }
-  }
-
-  @override
-  void dispose() {
-    _typed.dispose();
-    _focus.dispose();
-    super.dispose();
-  }
-
-  /// Take what was typed, or put back what the value actually is.
-  ///
-  /// Nothing is reported per keystroke: typing `8192` passes through `8`, and a
-  /// value clamped to the 4k floor mid-word would fight the person typing it.
-  void _commit() {
-    final typed = int.tryParse(_typed.text.trim());
-    if (typed == null) {
-      _typed.text = '${widget.value}';
-      return;
-    }
-    final settled = snapContextLength(typed, widget.max);
-    _typed.text = '$settled';
-    if (settled != widget.value) widget.onChanged(settled);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final endLabel = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
-    );
+    AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'How much of your conversation the model can remember and use when it '
-          'replies. Higher remembers more but uses more memory.',
-          style: endLabel,
-        ),
-        if (widget.note case final line?) ...[
-          const SizedBox(height: 4),
-          Text(line, style: endLabel),
-        ],
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Slider(
-                value: widget.value.toDouble().clamp(
-                  minContextTokens.toDouble(),
-                  widget.max.toDouble(),
-                ),
-                min: minContextTokens.toDouble(),
-                max: widget.max.toDouble(),
-                label: formatContextLength(widget.value),
-                onChanged: (v) => widget.onChanged(v.round()),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Memory for context', style: ShareType.fieldLabel),
+                  const SizedBox(height: 3),
+                  Text(
+                    'How much of a conversation the model can hold in mind. '
+                    'More context, more RAM.',
+                    style: ShareType.note,
+                  ),
+                  if (note case final line?) ...[
+                    const SizedBox(height: 4),
+                    Text(line, style: ShareType.note),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            _TokenBox(controller: _typed, focus: _focus, onCommit: _commit),
+            const SizedBox(width: 16),
+            _ValuePill(tokens: value),
           ],
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              Text(formatContextLength(minContextTokens), style: endLabel),
-              const Spacer(),
-              Text(formatContextLength(widget.max), style: endLabel),
-            ],
+        // The three parts of this setting had been stacked flush: name,
+        // sentence, track, marks, with nothing between them. It read as one
+        // dense block rather than as a control with a label — the field rows
+        // above it each get a gap this size between label and box.
+        const SizedBox(height: 14),
+        SliderTheme(
+          // The design's slider: a 5px track, and a white thumb ringed in
+          // accent rather than filled with it. Material's default is a fatter
+          // track and a solid dot, which on this page read as a different
+          // family of control from everything around it.
+          data: SliderThemeData(
+            trackHeight: 5,
+            activeTrackColor: SharePalette.accent,
+            inactiveTrackColor: SharePalette.track,
+            thumbColor: Colors.white,
+            overlayColor: SharePalette.accentRing,
+            thumbShape: const _RingThumb(),
+            trackShape: const RoundedRectSliderTrackShape(),
           ),
+          child: Slider(
+            value: value.toDouble().clamp(
+              minContextTokens.toDouble(),
+              max.toDouble(),
+            ),
+            min: minContextTokens.toDouble(),
+            max: max.toDouble(),
+            label: formatContextLength(value),
+            // Edge to edge, as the design draws it. Material insets a slider by
+            // the width of its own thumb so the handle never overhangs its box;
+            // here that left the track short of both margins and the end marks
+            // pointing at nothing. The thumb's 8px does overhang now, and the
+            // section's 20px padding is what absorbs it.
+            padding: EdgeInsets.zero,
+            onChanged: (v) => onChanged(v.round()),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Text(
+              '${formatContextLength(minContextTokens)} · lightest',
+              style: ShareType.note,
+            ),
+            const Spacer(),
+            Text(
+              '${formatContextLength(max)} · heaviest',
+              style: ShareType.note,
+            ),
+          ],
         ),
       ],
     );
   }
 }
 
-/// The exact-number box: digits only, wide enough for the largest window the
-/// slider can reach.
-///
-/// Sized for **seven digits** (1048576), not six: a 92px box fitted `204800`
-/// and then clipped a megabyte-scale number into `2048C…`, which is not a
-/// wrong number on screen so much as a plausible-looking one.
-///
-/// No unit suffix inside the box, for the same reason — it competes with the
-/// digits for a width that has to hold the worst case, and the tile it sits in
-/// is already titled "Context window" with the k/M scale at both ends of the
-/// slider.
-class _TokenBox extends StatelessWidget {
-  const _TokenBox({
-    required this.controller,
-    required this.focus,
-    required this.onCommit,
-  });
+/// The window as the reader reads it: "200k tokens" on a quiet chip.
+class _ValuePill extends StatelessWidget {
+  const _ValuePill({required this.tokens});
 
-  final TextEditingController controller;
-  final FocusNode focus;
-  final VoidCallback onCommit;
+  final int tokens;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SizedBox(
-      width: 104,
-      child: TextField(
-        controller: controller,
-        focusNode: focus,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        textAlign: TextAlign.right,
-        // Tabular figures: the number changes as the slider moves, and
-        // proportional digits make it jitter sideways while it does.
-        style: theme.textTheme.bodyMedium?.copyWith(
+    AppTheme.watch(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: SharePalette.badgeFill,
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Text(
+        '${formatContextLength(tokens)} tokens',
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: AppFont.semibold,
+          color: SharePalette.ink,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
-        onSubmitted: (_) => onCommit(),
-        decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: AppPalette.cardBg,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 8,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppControl.radius),
-            borderSide: BorderSide.none,
-          ),
-        ),
       ),
+    );
+  }
+}
+
+/// The design's slider handle: white, ringed in accent, with a soft drop.
+///
+/// Material's `RoundSliderThumbShape` fills the thumb with the active colour,
+/// which reads as a dot *on* the track rather than a handle *over* it.
+class _RingThumb extends SliderComponentShape {
+  const _RingThumb();
+
+  static const double _radius = 8;
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) =>
+      const Size.fromRadius(_radius);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final canvas = context.canvas;
+    canvas.drawCircle(
+      center.translate(0, 1),
+      _radius,
+      Paint()
+        ..color = SharePalette.ink.withValues(alpha: 0.22)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    canvas.drawCircle(center, _radius, Paint()..color = Colors.white);
+    canvas.drawCircle(
+      center,
+      _radius - 0.75,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = SharePalette.accent,
     );
   }
 }

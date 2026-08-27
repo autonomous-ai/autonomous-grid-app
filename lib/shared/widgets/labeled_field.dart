@@ -3,6 +3,63 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 
+/// A field's chrome, when a screen needs one other than the app's own.
+///
+/// The app draws a field as a soft borderless capsule, radius 12, filled
+/// [AppPalette.cardBg]. Share Intelligence was designed with a *visible* field:
+/// a 1px rim, radius 9, a lighter fill, and a smaller label. Rather than plumb
+/// six numbers through seven widgets, the page hangs one of these over its
+/// subtree and every field built through [labeledFieldDecoration] picks it up.
+///
+/// Null everywhere else, which is what keeps the rest of the app untouched.
+class FieldSkin {
+  const FieldSkin({
+    required this.fill,
+    required this.rim,
+    required this.radius,
+    required this.contentPadding,
+    required this.hintSize,
+    required this.labelStyle,
+    this.showHelp = true,
+    this.slimChevron = false,
+  });
+
+  final Color fill;
+  final Color rim;
+  final double radius;
+  final EdgeInsets contentPadding;
+  final double hintSize;
+
+  /// The label above the control — a field's chrome includes what names it.
+  final TextStyle labelStyle;
+
+  /// Whether a field that has a help tooltip still shows the glyph for it.
+  ///
+  /// False on Share Intelligence, where the design draws a bare field: the two
+  /// name boxes sit side by side under labels that already say what they are,
+  /// and a `?` in each is two question marks in one row of a form with nothing
+  /// obscure in it.
+  final bool showHelp;
+
+  /// Draw a picker's disclosure as a thin chevron rather than Material's solid
+  /// triangle. The design's, and it matches the hairline weight of everything
+  /// else on that page — a filled wedge is the heaviest mark in the form.
+  final bool slimChevron;
+}
+
+/// Hangs a [FieldSkin] over a subtree.
+class FieldSkinScope extends InheritedWidget {
+  const FieldSkinScope({super.key, required this.skin, required super.child});
+
+  final FieldSkin skin;
+
+  static FieldSkin? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FieldSkinScope>()?.skin;
+
+  @override
+  bool updateShouldNotify(FieldSkinScope oldWidget) => oldWidget.skin != skin;
+}
+
 /// A field's label, sitting still above the control it names.
 ///
 /// Material floats a `labelText` *inside* the field and animates it up to the
@@ -21,15 +78,19 @@ class FieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final skin = FieldSkinScope.maybeOf(context);
     return Padding(
       padding: const EdgeInsets.only(left: 2, bottom: 8),
       child: Text(
         text,
-        style: TextStyle(
-          fontSize: 12.5,
-          fontWeight: AppFont.medium,
-          color: AppPalette.textSecondary,
-        ),
+        style:
+            skin?.labelStyle ??
+            TextStyle(
+              fontSize: 12.5,
+              fontWeight: AppFont.medium,
+              color: AppPalette.textSecondary,
+            ),
       ),
     );
   }
@@ -122,6 +183,7 @@ class LabeledField extends StatelessWidget {
             hint,
             fill: fill,
             hasError: error != null,
+            skin: FieldSkinScope.maybeOf(context),
           ),
         ),
         if (error != null) _FieldError(error!),
@@ -144,10 +206,14 @@ InputDecoration labeledFieldDecoration(
   Color? fill,
   bool hasError = false,
   bool outlined = false,
+  FieldSkin? skin,
 }) {
+  // A skin rims the field at rest; [outlined] is the app's own way of asking
+  // for the same thing, so either one turns the hairline on.
+  final rimmed = outlined || skin != null;
   OutlineInputBorder border(Color color, [double width = 1]) =>
       OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(skin?.radius ?? 12),
         borderSide: width == 0
             ? BorderSide.none
             : BorderSide(color: color, width: width),
@@ -155,13 +221,15 @@ InputDecoration labeledFieldDecoration(
   return InputDecoration(
     hintText: hint,
     filled: true,
-    fillColor: fill ?? AppPalette.cardBg,
+    fillColor: skin?.fill ?? fill ?? AppPalette.cardBg,
     hintStyle: TextStyle(
-      fontSize: 14,
+      fontSize: skin?.hintSize ?? 14,
       height: 1.4,
       color: AppPalette.textFaint,
     ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+    contentPadding:
+        skin?.contentPadding ??
+        const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
     // The error hairline shows whether or not the field has focus — an error the
     // user has to click back into the field to see is an error they won't see.
     border: border(Colors.transparent, 0),
@@ -174,12 +242,12 @@ InputDecoration labeledFieldDecoration(
     enabledBorder: hasError
         ? border(fieldErrorInk(), 1.5)
         : border(
-            outlined ? AppPalette.divider : Colors.transparent,
-            outlined ? 1 : 0,
+            rimmed ? (skin?.rim ?? AppPalette.divider) : Colors.transparent,
+            rimmed ? 1 : 0,
           ),
     disabledBorder: border(
-      outlined ? AppPalette.divider : Colors.transparent,
-      outlined ? 1 : 0,
+      rimmed ? (skin?.rim ?? AppPalette.divider) : Colors.transparent,
+      rimmed ? 1 : 0,
     ),
     focusedBorder: border(hasError ? fieldErrorInk() : AppPalette.accent, 1.5),
   );
