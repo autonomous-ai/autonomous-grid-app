@@ -96,9 +96,6 @@ enum AgentTool {
   /// parsed on the way through — a pty carries the bytes and an emulator draws
   /// them.
   ///
-  /// False for Hermes, which has no interactive CLI this app drives: it speaks
-  /// ACP, and its chat is built out of those events.
-  ///
   /// **A capability, not the choice.** Whether a given chat is actually drawn
   /// that way is `AgentChatSurface`, which the user sets once on Appearance and
   /// a chat then fixes when it starts — see `agentChatSurface`. This is only
@@ -106,10 +103,16 @@ enum AgentTool {
   ///
   /// It is *not* the whole story of how a chat reaches these two either. A turn
   /// the app sends by itself — a goal's next step, a loop's beat, a scheduled
-  /// task — has no keyboard behind it and still goes out through the one-shot
-  /// lane (`claude -p` / `codex exec`).
-  bool get hasInteractiveCli =>
-      this == AgentTool.claude || this == AgentTool.codex;
+  /// task — has no keyboard behind it and still goes out through the headless
+  /// lane (`claude -p` / `codex app-server` / ACP).
+  ///
+  /// **Nor is it the whole story for Hermes.** All three have an interactive CLI
+  /// now (`hermes --tui`, 0.20.5), but Hermes's is a Node bundle where the rest
+  /// of it is Python — so whether this computer can actually draw it is a
+  /// runtime question, answered by `hermesTuiReadyProvider` and applied in
+  /// `agentChatSurface`. This getter says the program exists; it does not
+  /// promise this machine can start it.
+  bool get hasInteractiveCli => true;
 
   /// Whether this agent can look at a picture by **opening the file itself**.
   ///

@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/cli/agent_session_files.dart';
-import '../../../infrastructure/cli/agent_session_id.dart';
+import '../../../infrastructure/cli/agent_session_source.dart';
+import '../../../infrastructure/cli/agent_session_sources.dart';
 import '../../../infrastructure/cli/codex_rollouts.dart';
+import '../../../infrastructure/cli/host_environment.dart';
 import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/mcp/grid_mcp_provider.dart';
 import '../../../infrastructure/mcp/grid_mcp_server.dart';
@@ -15,6 +17,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/terminal/terminal_session.dart';
 import 'adapters/agent_grid_setup.dart';
 import 'adapters/agent_terminal_command.dart';
+import 'adapters/agent_turn_env.dart';
 import 'adapters/claude_tool.dart';
 import 'adapters/codex_tool.dart';
 import '../../chat/logic/import/claude_session_parser.dart';
@@ -92,8 +95,8 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
 
   /// Which run of a chat's terminal is the current one.
   ///
-  /// Two things outlive the launch that started them — [_learnCodexSession] can
-  /// be waiting minutes for a rollout, and [_pasteWhenReady] for a prompt — and
+  /// Two things outlive the launch that started them — [_learnSession] can be
+  /// waiting minutes for a session to exist, and [_pasteWhenReady] for a prompt — and
   /// a relaunch reuses the **same** `TerminalSession` object, so identity alone
   /// cannot tell either of them that the run they belong to has been replaced.
   /// This can: it is bumped once per launch, and both stop when it moves.
@@ -198,25 +201,33 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       // routinely it doesn't, and what `--resume` on a session that is gone
       // costs. A stale one falls through to a new conversation, which is what
       // this chat was going to get anyway.
+      final source = _sourceFor(tool, executable);
       final resumeId = await _resumableId(
+        source,
         tool,
         _pointFor(sessions, tool, workdir)?.sessionId,
       );
       // The chat was closed while its agent's history was being read.
       if (!ref.mounted) return;
 
-      // What the CLI should be holding when it opens. Claude Code is handed an
-      // id the app made up; Codex has no way to be told one, so it can only be
-      // *resumed* with an id read back off a rollout it wrote (see
-      // [_learnCodexSession]).
-      final handle = switch ((tool, resumeId)) {
-        (_, final id?) => (id: id, resume: true),
-        (AgentTool.claude, _) => (id: newAgentSessionId(), resume: false),
+      // What the CLI should be holding when it opens. Which of the three shapes
+      // this takes is the source's to say — see [AgentSessionSource]: Claude
+      // Code is handed an id the app made up, while Codex and Hermes can only be
+      // *resumed* with one that was read back after the fact.
+      final minted = resumeId == null ? source.mint() : null;
+      final handle = switch ((resumeId, minted)) {
+        (final id?, _) => (id: id, resume: true),
+        (_, final id?) => (id: id, resume: false),
         _ => null,
       };
       // Taken here rather than earlier: everything above can still return, and
       // a message consumed by an attempt that never started the CLI would be
       // lost with nothing on screen to say so.
+      //
+      // Read without removing — see the `prompt:` argument below for why the
+      // one agent that cannot carry it in argv has to keep it until a poller
+      // has actually taken it.
+      final opening = tool == AgentTool.hermes ? _openingPrompts[chatId] : null;
       final command = agentTerminalCommand(
         tool: tool,
         executable: executable,
@@ -226,18 +237,27 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         mcpConfigPath: setup.mcpConfig,
         config: setup.config,
         session: handle,
-        prompt: _openingPrompts.remove(chatId),
+        // Hermes has no argv slot to put this in — its only positional is a
+        // subcommand — so its opening message is held back here and pasted once
+        // the TUI has taken the keyboard, exactly as a handover is. Kept in the
+        // map until a poller has it: consuming it for an argv that ignores it is
+        // how the first thing the user said came to be thrown away.
+        prompt: opening == null ? _openingPrompts.remove(chatId) : null,
       );
       _running[chatId] = tool;
       // Told before the process starts, because the id *is* the flag it starts
       // with: written down now, a chat that is closed mid-answer still knows
       // what to resume.
       if (handle != null && !handle.resume) onSessionId?.call(handle.id);
-      // Codex's own id can only be found by watching for the file it writes, so
-      // the listing has to be taken before the spawn below.
-      final rollouts = tool == AgentTool.codex && resumeId == null
-          ? await _rollouts.snapshot()
-          : null;
+      // Opened before the spawn below, because a source that has to *find* its
+      // session can only tell the new one from the rest by having looked first.
+      // Whether this is a real watch or one that settles at once is the source's
+      // own call — see [AgentSessionSource.watch].
+      final watch = await source.watch(
+        chatId: chatId,
+        workdir: workdir,
+        resuming: handle?.resume ?? false,
+      );
       // Handed back only now: a setup that failed above leaves the CLI that is
       // still running with the tools it had.
       _revokeTools(chatId);
@@ -273,15 +293,13 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
           environment: setup.environment,
           onError: _logStartFailure,
         );
-        _learnCodexSession(
-          rollouts,
-          chatId,
-          workdir,
-          session,
-          onSessionId,
-          generation,
-        );
-        if (handover != null) {
+        _learnSession(watch, chatId, session, onSessionId, generation);
+        // The opening message first when there is one: a chat that has not been
+        // spoken in yet has no conversation to hand over, so the two are never
+        // both worth pasting, and the user's own sentence is the one they are
+        // waiting to see.
+        _pasteOpening(chatId, session, opening, generation);
+        if (opening == null && handover != null) {
           _pasteWhenReady(chatId, session, handover, generation);
         }
         return;
@@ -296,14 +314,8 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       _sessions[chatId] = session;
       session.start(onError: _logStartFailure);
       _publish();
-      _learnCodexSession(
-        rollouts,
-        chatId,
-        workdir,
-        session,
-        onSessionId,
-        generation,
-      );
+      _learnSession(watch, chatId, session, onSessionId, generation);
+      _pasteOpening(chatId, session, opening, generation);
     } finally {
       _opening.remove(chatId);
     }
@@ -384,13 +396,21 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     }
   }
 
-  /// Pastes [text] at the new CLI's prompt as soon as it has one, and leaves it
-  /// there **unsent**.
+  /// Pastes [text] at the new CLI's prompt as soon as it has one.
   ///
-  /// Unsent because the handover is the user's to send: it is their prompt, it
-  /// spends their tokens, and a chat that fires a turn nobody typed the moment
-  /// they change a picker is the shape of an app that has been taken over. They
-  /// press Enter, or they delete it and start clean.
+  /// **[submit] is the whole difference between the two things that come through
+  /// here, and it turns on who already pressed Enter.**
+  ///
+  /// A *handover* is left unsent: it is a conversation the user never asked to
+  /// send, it spends their tokens, and a chat that fires a turn nobody typed the
+  /// moment they change a picker is the shape of an app that has been taken
+  /// over. They press Enter, or they delete it and start clean.
+  ///
+  /// An *opening message* is sent, because they pressed Enter on it already —
+  /// in the app's own composer, which is what created the chat. The other two
+  /// agents receive it as the CLI's own argument and so open with it already
+  /// asked; asking for a second Enter here would make one gesture mean two
+  /// different things depending on which agent answered.
   ///
   /// The wait is for [TerminalSession.takesPaste] rather than a fixed delay —
   /// an agent CLI prints a banner, an update notice and a tips box before it
@@ -400,15 +420,51 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// handover, and a paste that lands minutes later would land in the middle of
   /// whatever the user had since typed.
   ///
-  /// The opening message of a chat is *not* delivered this way — it is the
-  /// CLI's own first argument, which needs no prompt to exist yet and cannot be
-  /// eaten by a first-run dialog. See [prime].
+  /// The opening message of a chat is *not* delivered this way **for Claude
+  /// Code and Codex** — it is the CLI's own first argument, which needs no
+  /// prompt to exist yet and cannot be eaten by a first-run dialog. See [prime].
+  ///
+  /// **Hermes has no such argument** and so does come through here. `hermes`
+  /// takes a subcommand as its only positional and reserves free text for
+  /// `-z/--oneshot`, which is a different, non-TUI mode; measured on 0.20.5.
+  /// That makes [TerminalSession.takesPaste] load-bearing rather than a
+  /// convenience — it is the only thing standing between the opening message
+  /// and a pty that has not read a byte yet.
+  /// Hands a Hermes chat's opening message to the paste poller, and only then
+  /// takes it out of [_openingPrompts].
+  ///
+  /// The removal is the point. Consuming the message where the argv is built —
+  /// which is right for the two CLIs that carry it as an argument — threw it
+  /// away for the one that does not, and the user got a terminal with an empty
+  /// prompt and no sign that the sentence they had already pressed Send on had
+  /// ever existed. Held until a poller owns it, so an attempt that returns
+  /// before this line leaves the message for the next one.
+  void _pasteOpening(
+    String chatId,
+    TerminalSession session,
+    String? opening,
+    int generation,
+  ) {
+    if (opening == null) return;
+    _openingPrompts.remove(chatId);
+    // **Sent, unlike a handover.** The two look alike from here and are not:
+    // a handover is a conversation the user never asked to send, so it waits at
+    // the prompt for them to decide. This is the sentence they already pressed
+    // Send on — and for the other two agents it goes in as the CLI's own
+    // argument, which opens the session with it *already asked*. Leaving it
+    // unsent here would make the same gesture mean two different things
+    // depending on which agent the chat happens to be using, and would ask the
+    // user to press Enter on a message they had already sent once.
+    _pasteWhenReady(chatId, session, opening, generation, submit: true);
+  }
+
   void _pasteWhenReady(
     String chatId,
     TerminalSession session,
     String text,
-    int generation,
-  ) {
+    int generation, {
+    bool submit = false,
+  }) {
     unawaited(() async {
       final deadline = DateTime.now().add(_pasteWindow);
       while (DateTime.now().isBefore(deadline)) {
@@ -416,7 +472,16 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
             _watch[chatId] != generation) {
           return;
         }
-        if (session.paste(text)) return;
+        if (session.paste(text)) {
+          // Enter, written straight to the pty — the same byte the keyboard
+          // sends, ordered behind the paste because both leave through the one
+          // `pty.write` queue. Measured against `hermes --tui` 0.20.5 with the
+          // screen reconstructed rather than inferred: the pasted line moves
+          // into the transcript and the turn starts, with no delay needed
+          // between the two writes.
+          if (submit) session.insert('\r');
+          return;
+        }
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
       ref
@@ -440,14 +505,25 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// that exited before it drew (see [AgentSessionFiles]). Both the id and the
   /// screen are replaced by the launch that follows, so the chat repairs
   /// itself rather than staying broken for good.
-  Future<String?> _resumableId(AgentTool tool, String? sessionId) async {
+  /// Where this agent's session ids come from — see [AgentSessionSource] for
+  /// why the three differ and which parts of the problem they share.
+  ///
+  /// Built per launch rather than held as a field because Hermes's needs the
+  /// resolved binary, and that is the path providers' to own.
+  AgentSessionSource _sourceFor(AgentTool tool, String executable) =>
+      switch (tool) {
+        AgentTool.claude => ClaudeSessionSource(_sessionFiles),
+        AgentTool.codex => CodexSessionSource(_sessionFiles, _rollouts),
+        AgentTool.hermes => HermesSessionSource(executable),
+      };
+
+  Future<String?> _resumableId(
+    AgentSessionSource source,
+    AgentTool tool,
+    String? sessionId,
+  ) async {
     if (sessionId == null || sessionId.isEmpty) return null;
-    final held = switch (tool) {
-      AgentTool.claude => await _sessionFiles.claudeHolds(sessionId),
-      AgentTool.codex => await _sessionFiles.codexHolds(sessionId),
-      AgentTool.hermes => false,
-    };
-    if (held) return sessionId;
+    if (await source.holds(sessionId)) return sessionId;
     ref
         .read(appLogProvider)
         .info(
@@ -458,45 +534,55 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     return null;
   }
 
-  /// Reads back the id Codex gave this chat's session, and hands it to
+  /// Reads back the id this chat's CLI ended up under, and hands it to
   /// [onSessionId].
   ///
-  /// Not awaited by [ensure], and it cannot be: Codex writes its rollout on the
-  /// **first turn**, not at start-up (see [CodexRollouts.discover]), so this may
-  /// be waiting for as long as it takes the user to type. The chat is usable
-  /// throughout — all this decides is whether *tomorrow's* launch continues the
-  /// conversation or starts another.
+  /// Not awaited by [ensure], and it cannot be: neither Codex nor Hermes records
+  /// a session until the **first turn**, not at start-up, so this may be waiting
+  /// for as long as it takes the user to type. The chat is usable throughout —
+  /// all this decides is whether *tomorrow's* launch continues the conversation
+  /// or starts another.
   ///
-  /// It stops when the terminal it is watching stops being this chat's: closed,
-  /// restarted, or handed to another agent. Otherwise a chat opened and left
-  /// alone would keep a directory listing going for the life of the app, and a
-  /// restarted one would have two watchers racing to name it.
-  void _learnCodexSession(
-    Set<String>? before,
+  /// It stops on three conditions, and each of them was a bug before it was a
+  /// condition. The terminal is still this chat's — not closed, restarted, or
+  /// handed to another agent, or a chat opened and left alone would keep polling
+  /// for the life of the app and a restarted one would have two watchers racing
+  /// to name it. The generation still matches, for the same reason. And
+  /// [kAgentSessionWatchWindow] has not run out, which is the clock the Codex
+  /// watch never had.
+  void _learnSession(
+    AgentSessionWatch watch,
     String chatId,
-    String workdir,
     TerminalSession session,
     ValueChanged<String>? onId,
     int generation,
   ) {
-    if (before == null || onId == null) return;
+    if (onId == null) return;
     unawaited(
-      _rollouts
-          .discover(
-            before: before,
-            workdir: workdir,
+      watch
+          .settle(
             keepWaiting: () =>
                 identical(_sessions[chatId], session) &&
                 _watch[chatId] == generation,
+            deadline: kAgentSessionWatchWindow,
           )
           .then((id) {
             if (id == null) {
+              // A watch that settles at once had nothing to look for — Claude
+              // Code's id was minted and reported before the process started,
+              // and a resumed session already has the name it keeps. Saying "no
+              // session was learned" there would be false for the two commonest
+              // launches in the app, which is how a log line stops being read.
+              if (watch is SettledSessionWatch) return;
+              // Not an error, and deliberately not phrased as one: the common
+              // case is a terminal the user opened and closed without saying
+              // anything, which has no session to have learned.
               return ref
                   .read(appLogProvider)
                   .info(
                     'agent',
-                    'the Codex terminal closed before it started a session; '
-                        'this chat will begin a new one next time',
+                    'no session was learned for chat $chatId; it will begin a '
+                        'new conversation next time',
                   );
             }
             onId(id);
@@ -612,6 +698,32 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     required NetworkCredential network,
     required String chatId,
   }) async {
+    if (tool == AgentTool.hermes) {
+      // Pointed at the grid exactly the way every other Hermes spawn in this app
+      // points it — `hermesEnvironment()` for `HERMES_HOME` and the `PATH`,
+      // `gridTurnEnv` for the grid and its token — and given neither an MCP
+      // config nor `-c` overrides, which are the other two CLIs' shapes and mean
+      // nothing to `hermes`.
+      //
+      // **`HERMES_HOME` is the load-bearing half**, and leaving this arm out is
+      // not a missing nicety: without it the TUI reads the user's own `~/.hermes`
+      // instead of the profile the app writes, so the chat answers on whichever
+      // grid they last set up by hand — and the session it records lands
+      // somewhere `HermesSessionSource` never looks, so resume silently never
+      // matches. The `PATH` half matters just as much here: it is the only thing
+      // that puts Node on the search path of the one process that needs it (see
+      // `HostEnvironment.nvmBins`), so without it the preflight in
+      // `node_probe.dart` is measuring an environment the spawn never gets.
+      return (
+        environment: {
+          ...HostEnvironment.hermesEnvironment(),
+          ...gridTurnEnv(chatId),
+        },
+        mcpConfig: null,
+        config: const <String>[],
+        mcpToken: null,
+      );
+    }
     if (tool == AgentTool.codex) {
       final codex = await codexGridSetup(
         ref,

@@ -185,11 +185,100 @@ void main() {
       );
     });
 
-    test('Hermes has no interactive CLI to run, and the capability says so — a '
-        'chat with it must never reach this lane', () {
+    test('all three agents have an interactive CLI now — `hermes --tui` landed '
+        'in 0.20.5, so whether *this computer* can run one is the runtime '
+        'question instead (see hermesTuiReadyProvider)', () {
       expect(AgentTool.claude.hasInteractiveCli, isTrue);
       expect(AgentTool.codex.hasInteractiveCli, isTrue);
-      expect(AgentTool.hermes.hasInteractiveCli, isFalse);
+      expect(AgentTool.hermes.hasInteractiveCli, isTrue);
+    });
+
+    test('Hermes opens the TUI in this chat\'s folder and model, and does not '
+        'follow the folder a resumed session recorded', () {
+      final command = agentTerminalCommand(
+        tool: AgentTool.hermes,
+        executable: '/bin/hermes',
+        model: 'hermes-4',
+        workdir: '/tmp/project',
+        approval: AgentApprovalMode.ask,
+      );
+      expect(command.executable, '/bin/hermes');
+      expect(command.arguments, contains('--tui'));
+      expect(command.arguments, containsAllInOrder(['--in', '/tmp/project']));
+      expect(command.arguments, contains('--no-restore-cwd'));
+      expect(command.arguments, containsAllInOrder(['-m', 'hermes-4']));
+    });
+
+    test('Hermes carries no opening prompt, because its only positional is a '
+        'subcommand — the first message is pasted once the TUI takes the '
+        'keyboard instead', () {
+      final command = agentTerminalCommand(
+        tool: AgentTool.hermes,
+        executable: '/bin/hermes',
+        model: 'hermes-4',
+        workdir: '/tmp/project',
+        approval: AgentApprovalMode.ask,
+        prompt: 'hello there',
+      );
+      expect(command.arguments, isNot(contains('hello there')));
+    });
+
+    test('Hermes resumes by the title the app pinned — the branch every launch '
+        'after the first takes, since its id is never minted', () {
+      final args = agentTerminalCommand(
+        tool: AgentTool.hermes,
+        executable: '/bin/hermes',
+        model: 'hermes-4',
+        workdir: '/tmp/project',
+        approval: AgentApprovalMode.ask,
+        session: (id: 'grid-abc', resume: true),
+      ).arguments;
+      expect(args, containsAllInOrder(['--resume', 'grid-abc']));
+    });
+
+    test('Hermes is handed none of the other two CLIs\' shapes — an unknown '
+        'flag kills the session before the TUI draws', () {
+      final args = agentTerminalCommand(
+        tool: AgentTool.hermes,
+        executable: '/bin/hermes',
+        model: 'hermes-4',
+        workdir: '/tmp/project',
+        approval: AgentApprovalMode.ask,
+        mcpConfigPath: '/tmp/turn.json',
+        config: const ['model_provider="grid-app"'],
+      ).arguments;
+      for (final flag in const [
+        '--session-id',
+        '--mcp-config',
+        '--strict-mcp-config',
+        '--disallowedTools',
+        '-c',
+        '-C',
+        '-s',
+        '-p',
+      ]) {
+        expect(args, isNot(contains(flag)), reason: flag);
+      }
+    });
+
+    test('only full access loosens the Hermes gate; the other three modes pass '
+        'nothing, because its own default gate is the asking one', () {
+      List<String> argsFor(AgentApprovalMode mode) => agentTerminalCommand(
+        tool: AgentTool.hermes,
+        executable: '/bin/hermes',
+        model: 'hermes-4',
+        workdir: '/tmp/project',
+        approval: mode,
+      ).arguments;
+
+      expect(argsFor(AgentApprovalMode.full), contains('--yolo'));
+      for (final mode in [
+        AgentApprovalMode.readOnly,
+        AgentApprovalMode.ask,
+        AgentApprovalMode.plan,
+      ]) {
+        expect(argsFor(mode), isNot(contains('--yolo')), reason: '$mode');
+      }
     });
   });
 

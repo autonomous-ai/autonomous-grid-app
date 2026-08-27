@@ -78,10 +78,12 @@ ShellCommand agentTerminalCommand({
       session: session,
       prompt: prompt,
     ),
-    // Hermes has no interactive CLI this app drives — it speaks ACP, and that
-    // is the whole of it. [AgentTool.hasInteractiveCli] is what keeps a chat
-    // from ever reaching here with it.
-    AgentTool.hermes => const <String>[],
+    AgentTool.hermes => _hermesTerminalArgs(
+      model: model,
+      workdir: workdir,
+      approval: approval,
+      session: session,
+    ),
   },
 );
 
@@ -179,3 +181,60 @@ List<String> _codexTerminalArgs({
     if (prompt != null && !(session?.resume ?? false)) prompt,
   ];
 }
+
+/// How much of this computer an interactive Hermes session may touch.
+///
+/// **Three of the four modes pass nothing, and that is deliberate.** Hermes's
+/// own default gate is the asking one — it stops at what needs a yes and renders
+/// the question as a modal panel in its TUI, where the user answers from the
+/// keyboard. That is exactly what "read only", "ask first" and "plan" describe
+/// from this side.
+///
+/// `-t/--toolsets` and `--safe-mode` are **deliberately not mapped**. They are
+/// real enforcement rather than a hint, and the toolset names this build accepts
+/// have not been measured; a flag guessed here would be the app promising a
+/// narrower session than it actually asked for. Until they are measured, the
+/// honest mapping is the one that changes nothing.
+///
+/// See `codexApprovalPolicy` and `claudePermissionArgs` for the other two, and
+/// `decideAgentPermission` for the lane where the app is the gate instead.
+List<String> hermesPermissionArgs(AgentApprovalMode mode) => switch (mode) {
+  AgentApprovalMode.readOnly ||
+  AgentApprovalMode.ask ||
+  AgentApprovalMode.plan => const [],
+  AgentApprovalMode.full => const ['--yolo'],
+};
+
+/// `hermes --tui`: the modern TUI rather than the classic REPL, pointed at this
+/// chat's folder and model.
+///
+/// **There is no opening prompt in this argv, because `hermes` has no slot for
+/// one.** Its only positional is a subcommand, and free text belongs to
+/// `-z/--oneshot`, which is a different mode that never draws the TUI (measured
+/// on 0.20.5). So a terminal chat with Hermes delivers its first message the way
+/// a handover is delivered — pasted once the program has taken the keyboard, see
+/// `AgentTerminals._pasteWhenReady`. That is the one place this lane is weaker
+/// than the other two, and it is a property of the CLI rather than a choice.
+///
+/// [session] is resumed by **title**, not by id: the app renames the session it
+/// discovers to a name of its own and resumes that from then on — see
+/// `HermesSessionSource`. `--resume` takes either, and a missing one is not
+/// fatal here (Hermes prints `· error: session not found` and opens a fresh
+/// session), which is what lets that scheme repair itself.
+List<String> _hermesTerminalArgs({
+  required String model,
+  required String workdir,
+  required AgentApprovalMode approval,
+  required AgentSession? session,
+}) => [
+  '--tui',
+  // Hermes restores a resumed session's recorded directory unless told
+  // otherwise, and the folder this chat is about is the app's to decide.
+  '--in',
+  workdir,
+  '--no-restore-cwd',
+  '-m',
+  model,
+  if (session != null) ...['--resume', session.id],
+  ...hermesPermissionArgs(approval),
+];

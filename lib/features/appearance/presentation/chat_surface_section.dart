@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/node_probe.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_segmented.dart';
@@ -13,9 +14,9 @@ import '../../network/presentation/grid_overview_widgets.dart';
 /// One control for every assistant, here on Appearance, because the question
 /// is about how the *person* wants to read a chat rather than about any one
 /// agent — it used to sit on each agent's card and asked the same thing three
-/// times. Hermes has no program to open and always shows messages; the
-/// subtitle says so rather than greying anything out, since the choice still
-/// applies to the other two.
+/// times. The one condition — Hermes's program needs a Node.js this Mac may
+/// not have — is said in the subtitle rather than greyed out, since the choice
+/// still applies to the other two whatever the answer is here.
 class ChatSurfaceSection extends ConsumerWidget {
   const ChatSurfaceSection({super.key});
 
@@ -26,16 +27,20 @@ class ChatSurfaceSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionHeading(
+        SectionHeading(
           title: 'How new chats look',
           // Says *when* it applies, on the heading itself. A chat keeps the
           // shape it started in, so someone who switches this and reopens
           // yesterday's chat would otherwise read the unchanged chat as the
-          // setting not working.
+          // setting not working. The Node.js line is the one honest caveat:
+          // a Hermes chat on a Mac without it opens as messages, and a user
+          // who chose Terminal would otherwise read that as the setting
+          // ignored.
           subtitle:
               'Applies to the next chat you start, with any assistant. Ones '
-              'already open keep the shape they began in. Hermes always shows '
-              'messages — it has no command-line app to open.',
+              'already open keep the shape they began in. Hermes’s own app '
+              'needs Node.js $kHermesTuiNodeMajor or newer on this Mac; '
+              'without it, a Hermes chat shows messages instead.',
         ),
         const SizedBox(height: 12),
         AppSegmented(

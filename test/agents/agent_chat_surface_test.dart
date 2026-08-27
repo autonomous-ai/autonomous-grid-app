@@ -17,13 +17,32 @@ void main() {
     });
 
     test(
-      'Hermes has no program to open, so it stays a message list whatever is '
+      'Hermes draws its own program like the other two — `hermes --tui` exists '
+      'as of 0.20.5, so the capability is no longer what separates it',
+      () {
+        expect(agentChatSurface(AgentTool.hermes), AgentChatSurface.terminal);
+        expect(
+          agentChatSurface(AgentTool.hermes, chosen: AgentChatSurface.terminal),
+          AgentChatSurface.terminal,
+        );
+      },
+    );
+
+    test(
+      'a computer that cannot run the program stays a message list whatever is '
       'asked of it — offering a terminal it cannot draw would be a lie on '
       'screen',
       () {
-        expect(agentChatSurface(AgentTool.hermes), AgentChatSurface.list);
         expect(
-          agentChatSurface(AgentTool.hermes, chosen: AgentChatSurface.terminal),
+          agentChatSurface(AgentTool.hermes, terminalAvailable: false),
+          AgentChatSurface.list,
+        );
+        expect(
+          agentChatSurface(
+            AgentTool.hermes,
+            chosen: AgentChatSurface.terminal,
+            terminalAvailable: false,
+          ),
           AgentChatSurface.list,
         );
       },
@@ -87,17 +106,35 @@ void main() {
       },
     );
 
-    test('Hermes stays a message list whatever the setting says — it has no '
-        'program to open, and drawing an empty terminal would look broken', () {
-      container
-          .read(chatPrefsProvider.notifier)
-          .setChatSurface(AgentChatSurface.terminal);
+    test(
+      'on a Mac that cannot run Hermes\'s own program, Hermes stays a message '
+      'list whatever the setting says — but only once the probe has said so, '
+      'because a chat that flips shape while the probe runs reads as a bug',
+      () async {
+        final probed = ProviderContainer(
+          overrides: [
+            chatPrefsStoreProvider.overrideWithValue(
+              ChatPrefsStore(file: File('${dir.path}/chat_prefs.json')),
+            ),
+            hermesTuiReadyProvider.overrideWith((ref) async => false),
+          ],
+        );
+        addTearDown(probed.dispose);
+        probed
+            .read(chatPrefsProvider.notifier)
+            .setChatSurface(AgentChatSurface.terminal);
 
-      expect(
-        container.read(agentChatSurfaceProvider(AgentTool.hermes)),
-        AgentChatSurface.list,
-      );
-    });
+        expect(
+          probed.read(agentChatSurfaceProvider(AgentTool.hermes)),
+          AgentChatSurface.terminal,
+        );
+        await probed.read(hermesTuiReadyProvider.future);
+        expect(
+          probed.read(agentChatSurfaceProvider(AgentTool.hermes)),
+          AgentChatSurface.list,
+        );
+      },
+    );
 
     test('the choice survives a restart', () {
       container

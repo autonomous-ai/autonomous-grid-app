@@ -9,6 +9,7 @@ import 'package:xterm/xterm.dart';
 import '../../infrastructure/cli/host_environment.dart';
 import '../theme/app_theme.dart';
 import 'grid_terminal.dart';
+import 'terminal_ime.dart';
 import 'terminal_shell.dart';
 
 /// What the shell behind a terminal is doing.
@@ -114,6 +115,45 @@ class TerminalSession {
   /// still writing to it, and the second report says nothing the first didn't.
   bool _drawFailed = false;
 
+  /// Whether the program **now** in this pty has turned bracketed paste on
+  /// since it started — see [takesPaste].
+  ///
+  /// Armed per *process*, and that is the whole point of the field existing
+  /// rather than reading `terminal.bracketedPasteMode` directly. The emulator
+  /// outlives the program: [relaunch] reuses this same [Terminal], and it
+  /// cancels [_output] before killing the pty, so the dying CLI's `ESC[?2004l`
+  /// can never reach the parser. The mode a previous program left on is
+  /// therefore still set the instant the next one is spawned, and a gate built
+  /// on it opens before the new program has read a single byte.
+  ///
+  /// Reset in [start], which is the one path [restart] and [relaunch] both go
+  /// through. Measured on `claude` 2.1.245, `codex` and `hermes` 0.20.5: all
+  /// three emit `ESC[?2004l` in a reset burst as they come up and only then
+  /// `ESC[?2004h` once input is live, so the sequence this watches for is
+  /// unambiguous rather than merely likely.
+  ///
+  /// **Set from the bytes, never from `terminal.bracketedPasteMode`**, and that
+  /// distinction is the whole fix rather than a refinement of it. Nothing ever
+  /// clears the emulator's copy of the mode between two programs — [relaunch]
+  /// cancels [_output] before it kills the pty, so the dying CLI's `ESC[?2004l`
+  /// has nowhere to arrive — and [relaunch] also books its `\r\n` flush *before*
+  /// [start] clears this field. Reading the emulator would therefore re-arm one
+  /// event-loop turn later off the previous program's flag, which is the exact
+  /// bug this exists to close, reintroduced by the reset that was meant to close
+  /// it.
+  bool _pasteArmed = false;
+
+  /// What a program writes when it turns bracketed paste on.
+  static const _pasteEnable = '\x1b[?2004h';
+
+  /// The tail of the last chunk, kept only until [_pasteArmed] is set.
+  ///
+  /// A pty hands over whatever a `read()` returned, so an escape sequence can be
+  /// split across two chunks — rarely, but a rare miss here is an opening
+  /// message that never arrives and no way to tell why. Seven characters is one
+  /// short of [_pasteEnable], which is every split that can hide it.
+  String _pasteCarry = '';
+
   /// Output that has arrived but not been drawn yet — see [_write].
   final StringBuffer _pending = StringBuffer();
 
@@ -130,6 +170,13 @@ class TerminalSession {
   /// screen is for the user, and a log that only repeats it diagnoses nothing.
   void start({required void Function(Object error, StackTrace stack) onError}) {
     if (_shell is ShellRunning) return;
+
+    // Whatever the last program left set on the emulator says nothing about the
+    // one about to be spawned — see [_pasteArmed]. Cleared here rather than in
+    // [restart] and [relaunch] separately, because this is the one path both of
+    // them end in, and a third caller added later would otherwise miss it.
+    _pasteArmed = false;
+    _pasteCarry = '';
 
     // A project whose folder has been moved or deleted is a state this app
     // already knows about (`missingProjectFoldersProvider`), and a pty told to
@@ -201,8 +248,14 @@ class TerminalSession {
 
       unawaited(pty.exitCode.then((code) => _onExit(pty, code)));
 
-      terminal.onOutput = (data) =>
-          pty.write(const Utf8Encoder().convert(data));
+      terminal.onOutput = (data) {
+        // TEMPORARY — the one choke point every byte bound for the program goes
+        // through, whichever path put it there: xterm's own key handling, and
+        // the IME layer's rewrites. Tracing here is what tells a rub-out that
+        // was *computed* from one that was actually *sent*.
+        traceIme('pty<-', showBytes(data));
+        pty.write(const Utf8Encoder().convert(data));
+      };
       // xterm counts columns then rows; a pty is sized rows then columns.
       // Passing them straight through swaps the two on every resize.
       terminal.onResize = (w, h, pw, ph) => pty.resize(h, w);
@@ -237,8 +290,29 @@ class TerminalSession {
   /// pty's output: a line like `[Terminal closed]` written straight to the
   /// emulator would otherwise overtake the output still waiting in front of it.
   void _write(String data) {
+    _armPasteFrom(data);
     _pending.write(data);
     _flush ??= Timer(Duration.zero, _drawPending);
+  }
+
+  /// Looks for [_pasteEnable] in bytes on their way to the screen — see
+  /// [_pasteArmed].
+  ///
+  /// Costs a substring search per chunk, and only until the program has taken
+  /// the keyboard: once armed this returns on its first line for the rest of the
+  /// session, so a CLI streaming an answer pays nothing for it.
+  void _armPasteFrom(String data) {
+    if (_pasteArmed) return;
+    final window = _pasteCarry + data;
+    if (window.contains(_pasteEnable)) {
+      _pasteArmed = true;
+      _pasteCarry = '';
+      return;
+    }
+    const keep = _pasteEnable.length - 1;
+    _pasteCarry = window.length > keep
+        ? window.substring(window.length - keep)
+        : window;
   }
 
   /// Draws everything that has arrived since the last turn.
@@ -280,12 +354,18 @@ class TerminalSession {
   /// Whether the program in this pty is ready to be pasted into.
   ///
   /// A TUI enables bracketed paste (`ESC[?2004h`) as it takes the keyboard, so
-  /// this is also the closest thing either agent CLI offers to "the prompt is
-  /// up". There is no other signal: an agent's CLI prints a banner, an update
-  /// notice and a tips box before it draws its composer, and anything written
-  /// into the pty before then is read by whatever was on screen at the time —
-  /// or by nothing at all.
-  bool get takesPaste => _shell is ShellRunning && terminal.bracketedPasteMode;
+  /// this is also the closest thing any of the three agent CLIs offers to "the
+  /// prompt is up". There is no other signal: an agent's CLI prints a banner, an
+  /// update notice and a tips box before it draws its composer, and anything
+  /// written into the pty before then is read by whatever was on screen at the
+  /// time — or by nothing at all.
+  ///
+  /// **[_pasteArmed], not `terminal.bracketedPasteMode`.** The mode is the
+  /// emulator's, and the emulator outlives the program; reading it directly
+  /// answered for whichever CLI ran here last, which is why a handover into a
+  /// relaunched session used to open the gate before the new program had read a
+  /// byte and paste into nothing at all.
+  bool get takesPaste => _shell is ShellRunning && _pasteArmed;
 
   /// Puts [text] at the prompt as a **paste**, and leaves it there unsent.
   ///
@@ -298,7 +378,15 @@ class TerminalSession {
   ///
   /// False when there is nobody at the prompt yet — see [takesPaste].
   bool paste(String text) {
-    if (!takesPaste) return false;
+    // Both, and the second is not redundant. [takesPaste] says this program has
+    // taken the keyboard at least once; `bracketedPasteMode` says it is framing
+    // pastes *now*, and a TUI turns the mode off around its own modal prompts.
+    // `Terminal.paste` degrades rather than refusing when it is off — it falls
+    // through to `textInput`, so every newline arrives as Enter and a handover
+    // sends itself one line at a time, which is the one thing this method exists
+    // to prevent. Returning false instead leaves the caller's poller to try
+    // again once the dialog is gone.
+    if (!takesPaste || !terminal.bracketedPasteMode) return false;
     terminal.paste(text);
     return true;
   }

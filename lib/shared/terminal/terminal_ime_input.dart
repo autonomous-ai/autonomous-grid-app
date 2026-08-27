@@ -3,6 +3,9 @@ import 'package:flutter/widgets.dart';
 
 import 'terminal_ime.dart';
 
+const _trace = traceIme;
+const _show = showBytes;
+
 /// The terminal's text input, taken off `xterm` so an input method can rewrite
 /// what it has already typed.
 ///
@@ -151,6 +154,10 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     final connection = _connection;
     if (connection == null || _sent.isEmpty) return;
     final kept = _sent.characters.skipLast(1).toString();
+    _trace(
+      'rubOut',
+      'sent=${_show(_sent)} -> ${_show(kept)} (field rewritten)',
+    );
     _sent = kept;
     connection.setEditingState(
       TextEditingValue(
@@ -182,6 +189,12 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
           keyboard.isAltPressed,
       composing: _composing,
     );
+    _trace(
+      'key',
+      '${event.runtimeType} ${event.logicalKey.debugName} '
+          'char=${event.character == null ? "null" : _show(event.character!)} '
+          'composing=$_composing => $lane',
+    );
     if (lane == TerminalKeyLane.input) {
       return KeyEventResult.skipRemainingHandlers;
     }
@@ -210,6 +223,11 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
     // ([terminalKeyLane]).
     _composing = value.composing.isValid && !value.composing.isCollapsed;
     final edit = terminalEdit(_sent, value.text);
+    _trace(
+      'update',
+      'sent=${_show(_sent)} -> platform=${_show(value.text)} '
+          'composing=${value.composing} => emit=${_show(edit)}',
+    );
     _sent = value.text;
     if (edit.isEmpty) return;
     widget.onInput(edit);
@@ -277,8 +295,20 @@ class _ImeTerminalInputState extends State<ImeTerminalInput>
   @override
   void performSelector(String selectorName) {
     final connection = _connection;
-    if (connection == null || _composing) return;
+    if (connection == null || _composing) {
+      _trace(
+        'selector',
+        '$selectorName DROPPED (connection=${connection != null} '
+            'composing=$_composing)',
+      );
+      return;
+    }
     final input = terminalSelectorInput(selectorName);
+    _trace(
+      'selector',
+      '$selectorName composing=$_composing sent=${_show(_sent)} '
+          '=> ${input == null ? "(ignored)" : _show(input)}',
+    );
     if (input == null) return;
     // The field no longer describes the line — the program has just been told
     // something the field wasn't.

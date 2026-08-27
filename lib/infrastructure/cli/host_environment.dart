@@ -230,11 +230,68 @@ class HostEnvironment {
     for (final dir in _loginShellPath()) {
       add(dir);
     }
+    // Every Node that nvm manages, newest first — and *after* the login shell,
+    // so a user who has chosen a version keeps it and this only fills a gap.
+    //
+    // Needed because `hermes --tui` is a Node bundle (≥20) while the rest of
+    // Hermes is Python: the ACP lane runs perfectly on a machine where the TUI
+    // cannot start at all. nvm's initialisation usually lives in `.zshrc`, which
+    // `-lc` above does not source — it is a *login*, non-interactive shell — so
+    // the probe finds Node only on the machines that happen to set it up in a
+    // profile instead. Listing the versions directory covers the rest.
+    for (final dir in _nvmBins()) {
+      add(dir);
+    }
     for (final dir in _split(Platform.environment['PATH'])) {
       add(dir);
     }
     return dirs.join(_sep);
   }
+
+  /// `~/.nvm/versions/node/*/bin`, newest version first.
+  ///
+  /// Sorted by the version in the directory name rather than by mtime: a
+  /// reinstall touches an old version's directory without making it the one the
+  /// user wants, and "newest" here has to mean the highest version or the
+  /// ordering is arbitrary. Best-effort — an unreadable or absent nvm is simply
+  /// no directories, which is the state this exists to improve on.
+  static List<String> _nvmBins() {
+    if (Platform.isWindows) return const [];
+    final root = Directory('${GridPaths.userHome}/.nvm/versions/node');
+    if (!root.existsSync()) return const [];
+    try {
+      final versions =
+          root
+              .listSync()
+              .whereType<Directory>()
+              .map((d) => d.path.split(Platform.pathSeparator).last)
+              .where((name) => name.startsWith('v'))
+              .toList()
+            ..sort((a, b) => _compareVersions(b, a));
+      return [for (final v in versions) '${root.path}/$v/bin'];
+    } on FileSystemException {
+      return const [];
+    }
+  }
+
+  /// Compares `v24.13.0`-shaped names numerically, so `v9` sorts below `v20`
+  /// where a string comparison would put it on top.
+  static int _compareVersions(String a, String b) {
+    final left = _versionParts(a);
+    final right = _versionParts(b);
+    for (var i = 0; i < 3; i++) {
+      final diff = (i < left.length ? left[i] : 0).compareTo(
+        i < right.length ? right[i] : 0,
+      );
+      if (diff != 0) return diff;
+    }
+    return 0;
+  }
+
+  static List<int> _versionParts(String name) => [
+    for (final part in name.substring(1).split('.'))
+      int.tryParse(part.split('-').first) ?? 0,
+  ];
 
   /// The user's `PATH` as their login shell sees it (profile loaded). `-lc`
   /// (login, non-interactive) mirrors [GridResolver] and avoids interactive

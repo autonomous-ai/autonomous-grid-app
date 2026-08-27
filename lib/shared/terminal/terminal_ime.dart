@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -6,6 +8,49 @@ import 'package:flutter/widgets.dart';
 /// `\x7f` (DEL), not `\b`: it is what a terminal sends for Backspace, and what
 /// an agent's TUI is listening for.
 const String kTerminalDelete = '\x7f';
+
+/// TEMPORARY — traces the input path so the Vietnamese rewrite can be fixed
+/// against evidence rather than against a model of how macOS ought to behave.
+///
+/// Headless tests report PASS for this whole class of bug, so the only place the
+/// truth exists is a running app with a real input method attached. One flag to
+/// turn the whole thing off once the fix is measured.
+const bool kTraceTerminalIme = true;
+
+final File _traceFile = File(
+  '${Platform.environment['HOME']}/.grid/app/ime-trace.log',
+);
+
+void traceIme(String event, String detail) {
+  if (!kTraceTerminalIme) return;
+  final line = '[ime] ${DateTime.now().toIso8601String()} $event  $detail\n';
+  debugPrint(line.trimRight());
+  try {
+    _traceFile.parent.createSync(recursive: true);
+    _traceFile.writeAsStringSync(line, mode: FileMode.append, flush: true);
+  } on Object {
+    // A diagnostic that throws would be worse than one that misses a line.
+  }
+}
+
+/// Renders a string so an escape or a combining mark is legible in the log.
+String showBytes(String text) {
+  final buffer = StringBuffer();
+  for (final unit in text.runes) {
+    if (unit == 0x7f) {
+      buffer.write('<DEL>');
+    } else if (unit < 0x20) {
+      buffer.write('<${unit.toRadixString(16).padLeft(2, '0')}>');
+    } else if (unit > 0x7e) {
+      buffer.write(
+        '${String.fromCharCode(unit)}(U+${unit.toRadixString(16).toUpperCase()})',
+      );
+    } else {
+      buffer.write(String.fromCharCode(unit));
+    }
+  }
+  return '"$buffer"';
+}
 
 /// Which of the two keyboards a key belongs to.
 ///
