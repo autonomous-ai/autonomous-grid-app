@@ -15,19 +15,21 @@ import 'grid_web_skill.dart';
 /// plain list of what could not be checked. The last one matters most: an answer
 /// that hides its gaps is the one that gets acted on.
 ///
-/// No scripts of its own; it drives `grid-web`'s.
+/// No scripts of its own; it drives `grid-web`'s — which are standard library
+/// only, so this card names no package runner either. ⚠️ Removing it from one
+/// guide and not the other would leave this one telling an agent to provision a
+/// package for a script that no longer uses it.
 const String kGridResearchSkillName = 'grid-research';
 
 /// The `grid-research` skill as it lands in [skillDir]. The card names
 /// `grid-web`'s scripts by absolute path, so it is built from where that skill
 /// sits rather than being a constant.
-GridSkillFiles gridResearchSkillFiles(Directory skillDir, {String? uvPath}) {
+GridSkillFiles gridResearchSkillFiles(Directory skillDir) {
   // Sibling of this skill's own folder: the installer writes every builtin into
   // the same parent, so `grid-web`'s scripts are one folder over.
   final webScripts = '${skillDir.parent.path}/$kGridWebSkillName/scripts';
   return GridSkillFiles(
     card: gridResearchSkillMd(
-      uvPath: uvPath ?? gridWebUvPath(),
       searchScriptPath: '$webScripts/search.py',
       readScriptPath: '$webScripts/read.py',
     ),
@@ -38,7 +40,6 @@ GridSkillFiles gridResearchSkillFiles(Directory skillDir, {String? uvPath}) {
 /// "is it true that", "what are the options" — not on the word "research",
 /// which is not what people type.
 String gridResearchSkillMd({
-  required String uvPath,
   required String searchScriptPath,
   required String readScriptPath,
 }) =>
@@ -64,7 +65,7 @@ the words a vendor uses, the words a critic uses, and the plain words the user
 used. Each surfaces a different set of pages.
 
 ```
-"$uvPath" run --with ddgs --no-project python3 "$searchScriptPath" "<query>"
+python3 "$searchScriptPath" "<query>"
 ```
 
 ## 2. Read the pages, don't trust the snippets
@@ -74,7 +75,7 @@ four that look most likely to hold the answer — including at least one that
 disagrees with the others, if there is one.
 
 ```
-"$uvPath" run --no-project python3 "$readScriptPath" "<url>"
+python3 "$readScriptPath" "<url>"
 ```
 
 ## 3. Reconcile, don't average

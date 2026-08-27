@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -36,13 +37,13 @@ class ApiEngineBlock extends ConsumerWidget {
   final NetworkCredential network;
 
   /// Drop the block's own icon/title/subtitle — see [EngineBlock.headerless].
-  /// Set by the Model Engines page, where the add-engine picker above already
+  /// Set by the Share models page, where the add-engine picker above already
   /// names this path. Onboarding leaves it off: there the block stands alone.
   final bool headerless;
 
   /// Trims the secondary copy (the model-freshness line) for a first-run
   /// context like onboarding, where the full form reads as a wall of text next
-  /// to the other one-line options. The Model Engines screen keeps the full
+  /// to the other one-line options. The Share models screen keeps the full
   /// detail (`compact: false`).
   final bool compact;
 
@@ -623,9 +624,9 @@ class _ModelMultiSelect extends StatelessWidget {
     if (selected.length == offered) {
       return offered == models.length
           ? 'All available models ($offered)'
-          : 'All $offered models left to share';
+          : 'All $offered ${plural(offered, 'model')} left to share';
     }
-    return '${selected.length} of $offered models';
+    return '${selected.length} of $offered ${plural(offered, 'model')}';
   }
 }
 

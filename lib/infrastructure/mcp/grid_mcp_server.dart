@@ -309,15 +309,12 @@ Map<String, String> get kGridGuides => {
   // move these with it.
   'web': skillCardBody(
     gridWebSkillMd(
-      uvPath: gridWebUvPath(),
       searchScriptPath: gridAgentScriptPath('search.py'),
       readScriptPath: gridAgentScriptPath('read.py'),
-      browseScriptPath: gridAgentScriptPath('browse.py'),
     ),
   ),
   'research': skillCardBody(
     gridResearchSkillMd(
-      uvPath: gridWebUvPath(),
       searchScriptPath: gridAgentScriptPath('search.py'),
       readScriptPath: gridAgentScriptPath('read.py'),
     ),

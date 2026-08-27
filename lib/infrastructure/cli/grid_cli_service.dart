@@ -1,5 +1,24 @@
 import 'parsers/download_progress.dart';
 
+/// How a one-shot command ended, beyond its exit code.
+///
+/// The app's own "it never ran" cases cannot be encoded in [CliResult.exitCode]:
+/// `Process.run` reports a signal death as a *negative* exit code, so the -1 a
+/// timeout used to carry was indistinguishable from SIGHUP — and preflight duly
+/// told users their helper had "crashed (signal 1)" when it had simply taken
+/// longer than 60s.
+enum CliOutcome {
+  /// The process ran and exited on its own — [CliResult.exitCode] is real.
+  completed,
+
+  /// The process was still running when the app's ceiling elapsed.
+  timedOut,
+
+  /// The process never started: the binary is gone, unreadable, or built for a
+  /// CPU this machine can't execute ("Bad CPU type in executable").
+  spawnFailed,
+}
+
 /// Result of a one-shot lifecycle command (source 2 in the contract).
 /// Success is `exitCode == 0`; on failure the CLI writes to stderr
 /// (cli.py:1076). We never parse stdout on success — read `~/.grid` instead.
@@ -8,13 +27,20 @@ class CliResult {
     required this.exitCode,
     required this.stdout,
     required this.stderr,
+    this.outcome = CliOutcome.completed,
   });
 
+  /// The process's exit code — meaningful only when [outcome] is
+  /// [CliOutcome.completed]; a placeholder otherwise.
   final int exitCode;
   final String stdout;
   final String stderr;
 
-  bool get ok => exitCode == 0;
+  /// Whether this result is an exit code at all, or the app giving up on a
+  /// process that timed out or never started.
+  final CliOutcome outcome;
+
+  bool get ok => outcome == CliOutcome.completed && exitCode == 0;
 
   String get errorMessage {
     final err = stderr.trim();

@@ -277,11 +277,11 @@ class HermesGridLink {
         return 'This grid only shares AI that Claude Code or Codex answers, so '
             'the Hermes assistant has nothing to run on here. Switch the '
             'assistant, or share a model on this computer '
-            '($kModelEnginesPlace).';
+            '($kShareModelsPlace).';
       }
       return "This grid isn't sharing any AI yet, so the assistant would have "
           'nothing to answer with. Start sharing on this computer '
-          '($kModelEnginesPlace), then try again.';
+          '($kShareModelsPlace), then try again.';
     }
     return point(grid, model);
   }

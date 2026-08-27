@@ -117,7 +117,15 @@ mixin _ChatSend on _ChatSessions {
     // guards one instruction running away, not a conversation. A turn the app
     // sends on their behalf ([continuing]) is what the budget is *for*, so it
     // leaves the count alone.
-    if (!continuing) state = state.withCarriedOn(target.id, 0);
+    if (!continuing) {
+      state = state.withCarriedOn(target.id, 0);
+      // Count the message the user actually typed — once, here, before routing
+      // splits between the agent (which keeps context and answers most text
+      // turns) and the grid's chat API. Counting inside either sender would miss
+      // whichever turns take the other path. A Chat-tab turn never uses the
+      // local smoke-test transport, so it is never is_local.
+      ref.read(analyticsProvider).chatMessageSent(model: model, isLocal: false);
+    }
 
     // Auto agent: the grid picks which installed assistant answers, and it runs
     // on the grid's auto model — the one model every agent can use, so the

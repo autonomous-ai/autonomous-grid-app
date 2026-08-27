@@ -57,6 +57,10 @@ class GridCliServiceImpl implements GridCliService {
   /// through it, screens gated on it like preflight) forever.
   static const _runTimeout = Duration(seconds: 60);
 
+  /// Stand-in for a process that never reported one. Read [CliResult.outcome],
+  /// not this, to tell the two no-exit cases apart.
+  static const _noExitCode = -1;
+
   @override
   Future<CliResult> run(List<String> args, {Duration? timeout}) async {
     try {
@@ -73,9 +77,22 @@ class GridCliServiceImpl implements GridCliService {
       );
     } on TimeoutException {
       return const CliResult(
-        exitCode: -1,
+        exitCode: _noExitCode,
         stdout: '',
         stderr: 'grid command timed out.',
+        outcome: CliOutcome.timedOut,
+      );
+    } on ProcessException catch (e) {
+      // The binary resolved but the OS refused to start it — a deleted sidecar,
+      // a permissions problem, or an executable built for another CPU (an Intel
+      // DMG on an Apple Silicon Mac with no Rosetta). Uncaught, this threw
+      // straight out of the preflight provider and put the raw exception on
+      // screen; a failed result lets callers say something a user can act on.
+      return CliResult(
+        exitCode: _noExitCode,
+        stdout: '',
+        stderr: e.message,
+        outcome: CliOutcome.spawnFailed,
       );
     }
   }

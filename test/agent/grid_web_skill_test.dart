@@ -14,10 +14,8 @@ void main() {
   tearDown(() => tmp.delete(recursive: true));
 
   String card() => gridWebSkillMd(
-    uvPath: '/grid/bin/uv',
     searchScriptPath: '/skills/grid-web/scripts/search.py',
     readScriptPath: '/skills/grid-web/scripts/read.py',
-    browseScriptPath: '/skills/grid-web/scripts/browse.py',
   );
 
   group('the grid-web skill card is what makes the agent reach for it', () {
@@ -32,39 +30,42 @@ void main() {
       expect(md.toLowerCase(), contains('read'));
     });
 
-    test('spells out all three runnable commands with the real uv and script '
-        'paths', () {
+    test('spells out both runnable commands, with no package runner in front '
+        'of either', () {
       final md = card();
-      expect(
-        md,
-        contains(
-          '"/grid/bin/uv" run --with ddgs python3 '
-          '"/skills/grid-web/scripts/search.py"',
-        ),
-      );
-      expect(
-        md,
-        contains(
-          '"/grid/bin/uv" run --with trafilatura python3 '
-          '"/skills/grid-web/scripts/read.py"',
-        ),
-      );
-      expect(
-        md,
-        contains(
-          '"/grid/bin/uv" run --with playwright --with trafilatura python3 '
-          '"/skills/grid-web/scripts/browse.py"',
-        ),
-      );
-      // The one-time browser download is named, so the agent can run it rather
-      // than dead-end when browse reports it's needed.
-      expect(md, contains('playwright install chromium'));
+      // Both scripts are standard-library only, so the guide naming a package
+      // runner would tell an agent to provision a package nothing uses
+      // (public-repo ADR 0036 D-g).
+      expect(md, contains('python3 "/skills/grid-web/scripts/search.py"'));
+      expect(md, contains('python3 "/skills/grid-web/scripts/read.py"'));
+      for (final runner in ['uv', '--with', 'run --no-project']) {
+        expect(
+          md,
+          isNot(contains(runner)),
+          reason: 'the web guide still names a package runner: $runner',
+        );
+      }
     });
 
-    test('leads with the light tools and marks browse as the heavy fallback — '
-        'so the agent tries read before spinning up a browser', () {
-      expect(card(), contains('try `read` first'));
-      expect(card().toLowerCase(), contains('heavier'));
+    test('the browser fallback is gone from the card, download and all', () {
+      // Its whole cost was visible here: a second command, a heavier path to
+      // choose between, and a ~170 MB download asked for mid-answer.
+      final md = card();
+      for (final gone in [
+        'browse',
+        'playwright',
+        'chromium',
+        'exit 3',
+        'headless',
+      ]) {
+        expect(md.toLowerCase(), isNot(contains(gone)));
+      }
+    });
+
+    test('says a JS-built page needs nothing extra — the reason browse could '
+        'be deleted at all', () {
+      expect(card(), contains('JavaScript'));
+      expect(card(), contains('nothing to download'));
     });
 
     test('is honest that X search needs a login — never sells a partial one as '
@@ -73,40 +74,42 @@ void main() {
       expect(card(), contains('X/Twitter'));
     });
 
-    test('all three scripts degrade to a typed exit, never a crash', () {
-      expect(kGridWebSearchScript, contains('from ddgs import DDGS'));
+    test('both scripts degrade to a typed exit, never a crash', () {
+      // Both reach the web through the grid now, and both are exercised by
+      // running them (`grid_web_search_script_test.dart`,
+      // `grid_web_read_script_test.dart`). What is asserted here is only that
+      // each still has a typed exit for "not available here".
       expect(kGridWebSearchScript, contains('return 2'));
-      // Read pulls the article body, then falls back to page metadata (a tweet's
-      // text lives there), and never throws on a missing reader.
-      expect(kGridWebReadScript, contains('import trafilatura'));
-      expect(kGridWebReadScript, contains('extract_metadata'));
       expect(kGridWebReadScript, contains('return 2'));
-      // Browse detects a missing browser and asks for the one-time install
-      // (exit 3) rather than blocking a turn on a silent download.
-      expect(kGridWebBrowseScript, contains('sync_playwright'));
-      expect(kGridWebBrowseScript, contains('return 3'));
+    });
+
+    test('a page that refused stays distinguishable from a page with nothing '
+        'on it', () {
+      // The false negative this exists to prevent: an agent told "there is
+      // nothing on that page" about a page that turned it away.
+      expect(kGridWebReadScript, contains("couldn't read the page"));
+      expect(kGridWebReadScript, contains('No readable text found'));
     });
   });
-
   group('the installer lays the skill down where the agent looks', () {
     test('writes the card and both scripts under the given folder', () async {
       final dir = Directory('${tmp.path}/grid-web');
-      await writeSkillFolder(dir, gridWebSkillFiles(dir, uvPath: '/uv'));
+      await writeSkillFolder(dir, gridWebSkillFiles(dir));
 
       expect(File('${dir.path}/SKILL.md').existsSync(), isTrue);
       expect(File('${dir.path}/scripts/search.py').existsSync(), isTrue);
       expect(File('${dir.path}/scripts/read.py').existsSync(), isTrue);
-      expect(File('${dir.path}/scripts/browse.py').existsSync(), isTrue);
+      expect(File('${dir.path}/scripts/browse.py').existsSync(), isFalse);
     });
 
     test('a rewrite wipes the old copy first, so a stale file never lingers '
         'beside the current one', () async {
       final dir = Directory('${tmp.path}/grid-web');
-      await writeSkillFolder(dir, gridWebSkillFiles(dir, uvPath: '/uv'));
+      await writeSkillFolder(dir, gridWebSkillFiles(dir));
       final stale = File('${dir.path}/scripts/old_prototype.py');
       await stale.writeAsString('# left over');
 
-      await writeSkillFolder(dir, gridWebSkillFiles(dir, uvPath: '/uv'));
+      await writeSkillFolder(dir, gridWebSkillFiles(dir));
 
       expect(stale.existsSync(), isFalse);
       expect(File('${dir.path}/scripts/search.py').existsSync(), isTrue);

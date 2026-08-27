@@ -1,3 +1,4 @@
+import '../../../shared/copy/plural.dart';
 import 'code_task.dart';
 import 'task_event.dart';
 
@@ -159,7 +160,7 @@ String taskVerdict(CodeTask task) => taskEndedLine(
 /// " (12 turns, 34.5s)" — each part dropped unless it is usable.
 String _effort(int? turns, int? durationMs) {
   final parts = [
-    if (turns != null) '$turns turns',
+    if (turns != null) '$turns ${plural(turns, 'turn')}',
     if (durationMs != null) '${(durationMs / 1000).toStringAsFixed(1)}s',
   ];
   return parts.isEmpty ? '' : ' (${parts.join(', ')})';

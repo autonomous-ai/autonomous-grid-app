@@ -50,7 +50,7 @@ class LocalOption extends ConsumerWidget {
 
 /// One option, on a surface of its own with the gap to the next one built in.
 ///
-/// A surface each, not the single hairline-split block the Model Engines tab
+/// A surface each, not the single hairline-split block the Share models tab
 /// uses: that one reads as a list to work through, which is the wrong shape for
 /// a screen whose whole job is one decision.
 class _Option extends StatelessWidget {

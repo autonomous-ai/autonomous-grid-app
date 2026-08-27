@@ -13,6 +13,7 @@
 library;
 
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../shared/copy/plural.dart';
 import 'agent_step_label.dart';
 
 /// One sub-agent's run: the row that started it, and what it has done since.
@@ -146,7 +147,7 @@ int runTailStart(List<AgentActivity> ordered, int shown) {
 }
 
 /// How many steps a sub-agent ran, said in words rather than as a bare number.
-String _stepCount(int total) => total == 1 ? '1 step' : '$total steps';
+String _stepCount(int total) => '$total ${plural(total, 'step')}';
 
 /// The live line under a working sub-agent's row: how much it has done, and
 /// what it is doing now.

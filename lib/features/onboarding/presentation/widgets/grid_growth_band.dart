@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../logic/grid_growth.dart';
+import 'grid_canvas.dart';
 import 'grid_growth_painter.dart';
 
-/// The welcome screen's one picture: computers arriving one by one, wiring
-/// themselves into a single grid, and the capacity ring around it filling as
-/// they do.
+/// The welcome screen's one picture: computers arriving, wiring themselves into
+/// a single grid, and that grid outgrowing the frame.
 ///
 /// It is the argument of the screen, not decoration — "every machine makes it
 /// stronger" is a claim, and this is the demonstration running beside it. Which
-/// is why the ring and the numbers come off the same timeline the machines do
-/// (see [growthAt]): they cannot say more than the picture shows.
+/// is why the numbers under it come off the same clock the machines do: they
+/// cannot say more than the picture shows.
+///
+/// Pure decoration to a screen reader, though — everything it says that is
+/// actually information is repeated as real text in the rail below, so the
+/// canvas itself is excluded rather than described.
 class GridGrowthBand extends StatelessWidget {
   const GridGrowthBand({super.key, required this.animation});
 
-  /// The screen's timeline, 0 → 1 across one [kWelcomeLoopSeconds] turn.
+  /// The screen's timeline, 0 → 1 across one turn.
   final Animation<double> animation;
 
   @override
@@ -25,19 +28,18 @@ class GridGrowthBand extends StatelessWidget {
     // a recessed fill would draw a frame around the one thing that is supposed
     // to feel like it has no edges. It sits straight on the window ground, over
     // the same backdrop the rest of the pre-app screens use.
+    //
+    // No `AnimatedBuilder` either, deliberately. The painter repaints off the
+    // animation directly, so this widget rebuilds only when the theme flips or
+    // the window resizes — which is what lets the painter keep its laid-out text
+    // and its position buffers between frames instead of rebuilding them sixty
+    // times a second.
     return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (context, _) => CustomPaint(
+      child: ExcludeSemantics(
+        child: CustomPaint(
           painter: GridGrowthPainter(
-            seconds: animation.value * kWelcomeLoopSeconds,
-            pill: AppPalette.cardBg,
-            hair: AppCard.insetHair,
-            bolt: AppPalette.brandBolt,
-            online: AppPalette.online,
-            label: AppPalette.textSecondary,
-            faint: AppPalette.textFaint,
-            isDark: AppTheme.isDark,
+            clock: animation,
+            colors: GridPalette.resolve(),
           ),
           size: Size.infinite,
         ),

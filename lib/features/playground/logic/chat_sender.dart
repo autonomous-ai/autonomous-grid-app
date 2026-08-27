@@ -3,8 +3,6 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../infrastructure/analytics/analytics_events.dart';
-import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/api/models/media_event.dart';
 import '../../../infrastructure/cli/agent_event.dart';
@@ -273,11 +271,6 @@ class DefaultChatSender implements ChatSender {
     // Nothing to resume: every relay call is a whole request on its own.
     AgentResumePoint? resume,
   }) {
-    // Every request from both the Playground and the Chat tab funnels through
-    // here — the one place that counts a message sent, once, whatever it is.
-    _ref
-        .read(analyticsProvider)
-        .chatMessageSent(model: model, isLocal: localBaseUrl != null);
     // The local smoke test and relay text both hit chat/completions; only the
     // base URL differs (the local engine has no `/relay/v1` prefix).
     if (localBaseUrl != null) {

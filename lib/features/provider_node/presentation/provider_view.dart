@@ -49,7 +49,7 @@ class _ProviderViewState extends ConsumerState<ProviderView> {
 
     return SectionScaffold(
       // The sidebar row's own words — one screen, one name (§5).
-      title: 'Model engines',
+      title: 'Share models',
       // Names the grid every sentence on this page is about. It is all that
       // survives of the scope bar that used to head the body: that block
       // existed to name *and switch* the grid, and it justified itself by the
@@ -96,7 +96,7 @@ class _NoGridYet extends ConsumerWidget {
   }
 }
 
-/// The "Model engines" body. A machine serves a *union* of engines on a grid
+/// The "Share models" body. A machine serves a *union* of engines on a grid
 /// (ADR 0010), so this is a page, not a single running card: auto-routing at the
 /// top (owner-only), then what's already serving (each engine stoppable on its
 /// own), then the always-available ways to add another engine.

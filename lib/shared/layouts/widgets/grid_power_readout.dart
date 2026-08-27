@@ -9,6 +9,7 @@ import '../../../features/network/logic/member_providers.dart';
 import '../../../features/network/logic/grid_activity.dart';
 import '../../../features/network/logic/node_metrics.dart'
     show answeredWindowLabel, formatCount;
+import '../../copy/plural.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/ring_gauge.dart';
 import '../../widgets/status_dot.dart';
@@ -185,7 +186,7 @@ class _GridPowerReadoutState extends ConsumerState<GridPowerReadout> {
           // Nothing online, so nothing to report. It used to become an offer to
           // start hosting, because vanishing took the last thing on screen away
           // at the moment the grid needed a machine. That reasoning retires with
-          // the move: Model engines is a permanent control on the top bar now,
+          // the move: Share models is a permanent control on the top bar now,
           // so the offer is already on screen whether or not this reports
           // anything.
           ? const SizedBox.shrink()
@@ -337,7 +338,8 @@ String _semanticsLabel(
     // point two em" is a riddle, and this is the one place with room to say it
     // properly.
     if (power.answered case final answered?)
-      '${answered.totalTokens} tokens handled, '
+      '${answered.totalTokens} ${plural(answered.totalTokens, 'token')} '
+          'handled, '
           '${answered.freshInputTokens} in, '
           '${answered.tokensCached} from cache, '
           '${answered.tokensOut} out'
@@ -360,7 +362,8 @@ String _semanticsLabel(
     // again to find out — it costs a clause and the pill's own quiet is
     // unaffected.
     if (activity.isBusy)
-      'working at about ${activity.rateTokS!.round()} tokens a second'
+      'working at about ${activity.rateTokS!.round()} '
+          '${plural(activity.rateTokS!.round(), 'token')} a second'
     else if (activity.idleFor(DateTime.now()) case final since?)
       'idle for ${since.inMinutes} ${plural(since.inMinutes, 'minute')}'
     else

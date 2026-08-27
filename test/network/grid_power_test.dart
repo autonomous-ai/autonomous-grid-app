@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/network/logic/grid_power_provider.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
+import 'package:grid_app/shared/copy/plural.dart';
 
 OverviewNode _node({
   String name = 'n',

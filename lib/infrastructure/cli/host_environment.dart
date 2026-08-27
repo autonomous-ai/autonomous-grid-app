@@ -53,14 +53,106 @@ class HostEnvironment {
   /// `hermes` the user ran themselves. See [AgentHomes] for what stays shared.
   static String get hermesHome => AgentHomes.hermesProfile(GridPaths.userHome);
 
-  /// The spawn environment for a Hermes process: the augmented [path],
-  /// [hermesHome] and — on Windows — [gitBash], merged over the inherited
-  /// environment. Used by every service that launches `hermes`, so none can
-  /// forget `HERMES_HOME` and read the wrong config directory.
+  /// What **every** agent Grid spawns inherits: this process's environment with
+  /// the augmented [path] over it, plus the grid the app is on
+  /// ([relayUrlVar] / [relayTokenVar], from [adoptGrid]) — the pair the web
+  /// scripts read to search through the grid instead of from the user's own
+  /// machine.
+  ///
+  /// [environment] stands in for `Platform.environment`, for tests only: what
+  /// this function does to an inherited value is most of its behaviour, and a
+  /// test cannot set a variable on its own process.
+  ///
+  /// The app launches three different agents — Claude Code, Codex and Hermes —
+  /// and each builds the rest of its child environment for itself, because the
+  /// rest is genuinely per-agent. This is the part that is true of all three,
+  /// and it is one function so that a variable every Grid agent needs is set
+  /// once and no spawn path can omit it: a missing environment variable is not
+  /// an error anywhere, so a variable added to two sites out of three takes the
+  /// capability away from the third in silence, with nothing to alarm on. Same
+  /// reason [hermesEnvironment] is one function rather than a line repeated in
+  /// every service that launches `hermes`.
+  ///
+  /// Merged **under** each agent's own map, so a turn's own variables win.
+  ///
+  /// ⚠️ **TODO(BE): on Windows this drops the inherited map's
+  /// case-insensitivity.** `Platform.environment` is a case-insensitive map
+  /// there and an ordinary one everywhere else (dart:io's
+  /// `_CaseInsensitiveStringMap`), and spreading it into a literal makes a
+  /// plain case-sensitive copy that keeps the OS's own spelling — usually
+  /// `Path`. `'PATH'` below is then a **second** key rather than an override,
+  /// and which one the child resolves is not decided here; the same blind spot
+  /// makes [claudeExecEnvironment]'s removal an exact-match one. Pre-existing:
+  /// all three spawn sites spelled this the same way before they shared this
+  /// function, and it is left alone here on purpose — this is a prefactor and
+  /// must not move Windows behaviour. Masked so far because a Windows GUI app
+  /// inherits a usable `PATH` anyway, which is the whole reason this class
+  /// exists on macOS and Linux and not there.
+  static Map<String, String> agentEnvironment({
+    Map<String, String>? environment,
+  }) {
+    final env = {...(environment ?? Platform.environment), 'PATH': path()};
+    // Grid's own two names, and only ever Grid's. Stripped first and then set
+    // from [adoptGrid], so what an agent reads is the grid the app is on right
+    // now — never one this process happened to inherit. That is not tidiness:
+    // a stale `GRID_RELAY_TOKEN` in a developer's shell is a credential for
+    // somebody else's grid, and a script that found it would post a person's
+    // searches there. It is the same hazard [claudeExecEnvironment]'s
+    // `dropEnvironment` exists for, one variable over.
+    env.remove(relayUrlVar);
+    env.remove(relayTokenVar);
+    final url = _relayBaseUrl;
+    final token = _relayToken;
+    // Both or neither, always. A URL with no token is a script posting
+    // unauthenticated and being refused; a token with no URL is nothing at all.
+    // Half a pair is the shape that produces a confusing failure instead of the
+    // clear "web search needs a grid" the scripts print when both are absent.
+    if (url != null && url.isNotEmpty && token != null && token.isNotEmpty) {
+      env[relayUrlVar] = url;
+      env[relayTokenVar] = token;
+    }
+    return env;
+  }
+
+  /// Where an agent's scripts reach this grid, and what they present to it.
+  ///
+  /// The relay base (`…/relay/v1`) and the per-grid access token. The access
+  /// token and not the session token, for two reasons that are both the
+  /// relay's: it is the only credential the relay can verify — it holds no
+  /// signing key, and a session token is HS256 — and it lives a year rather
+  /// than a day, which suits a process that starts, runs one command and exits.
+  static const String relayUrlVar = 'GRID_RELAY_URL';
+  static const String relayTokenVar = 'GRID_RELAY_TOKEN';
+
+  static String? _relayBaseUrl;
+  static String? _relayToken;
+
+  /// Tell every agent Grid spawns from now on which grid it is on.
+  ///
+  /// Called wherever the selected grid is resolved, with nulls when there is no
+  /// grid — passing null is how the pair is *taken away*, and it has to be,
+  /// because signing out or leaving a grid must not leave a live token in the
+  /// environment of the next agent. Same shape as [adoptGridGit]: state the app
+  /// learns once, read by a builder that cannot ask for it.
+  ///
+  /// ⚠️ Claude Code and Codex take a fresh environment every turn, so they
+  /// follow a grid switch immediately. **The Hermes gateway does not** — it is
+  /// long-lived and takes its environment at start, so it keeps the previous
+  /// grid's token until it restarts. Known and accepted (public-repo ADR 0036
+  /// D-e); the token still names a grid the person is a member of, so the worst
+  /// case is a search attributed to the grid they just left.
+  static void adoptGrid({String? relayBaseUrl, String? relayToken}) {
+    _relayBaseUrl = relayBaseUrl;
+    _relayToken = relayToken;
+  }
+
+  /// The spawn environment for a Hermes process: [agentEnvironment], plus
+  /// [hermesHome] and — on Windows — [gitBash]. Used by every service that
+  /// launches `hermes`, so none can forget `HERMES_HOME` and read the wrong
+  /// config directory.
   static Map<String, String> hermesEnvironment() {
     final env = {
-      ...Platform.environment,
-      'PATH': path(),
+      ...agentEnvironment(),
       'HERMES_HOME': hermesHome,
       ...gitEnvironment(),
     };

@@ -26,7 +26,7 @@ enum ChoiceRowAction {
 /// real target a small button inside each. As a row the whole strip is the
 /// target, the button goes, and the same four options cost a third of the height.
 ///
-/// Shared between the first-run screen and the Model Engines tab on purpose:
+/// Shared between the first-run screen and the Share models tab on purpose:
 /// they offer the *same* ways onto a grid, and a user who picked one on the way
 /// in should meet it wearing the same clothes later.
 class ChoiceRow extends StatelessWidget {

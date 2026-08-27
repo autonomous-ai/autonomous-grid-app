@@ -29,11 +29,20 @@ Directory gridAgentScriptsDir() =>
 Map<String, String> gridAgentScripts() => const {
   'search.py': kGridWebSearchScript,
   'read.py': kGridWebReadScript,
-  'browse.py': kGridWebBrowseScript,
   'serve.py': kGridServeScript,
 };
 
-/// Writes them, skipping any that already match.
+/// Scripts Grid used to write here and no longer does.
+///
+/// `browse.py` drove a headless Chromium through Playwright, and asked the user
+/// for a ~170 MB download the first time a page needed one. Reading goes through
+/// the grid now, so it is gone — but an install from before that still has the
+/// file, and a file an agent can find is a file an agent can run. Deleting it is
+/// what makes "the browser download is gone" true on a machine that already had
+/// it, rather than only on a fresh one.
+const Set<String> kRetiredGridAgentScripts = {'browse.py'};
+
+/// Writes them, skipping any that already match, and removes any retired one.
 ///
 /// Rewritten when the content differs rather than every launch, for the reason
 /// the installer checks the same thing: the file's modification time is
@@ -58,6 +67,12 @@ Future<void> ensureGridAgentScripts({
         continue;
       }
       await file.writeAsString(entry.value, flush: true);
+    }
+    for (final name in kRetiredGridAgentScripts) {
+      final stale = File('${dir.path}/$name');
+      if (await stale.exists()) {
+        await stale.delete();
+      }
     }
   } on FileSystemException catch (error) {
     log?.call('agent scripts: ${error.message} (${dir.path})');

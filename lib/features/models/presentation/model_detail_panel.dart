@@ -7,6 +7,7 @@ import '../../../infrastructure/api/model_catalog_client.dart';
 import '../../../infrastructure/api/models/model_detail.dart';
 import '../../../infrastructure/api/models/model_icon_service.dart';
 import '../../../infrastructure/providers.dart';
+import '../../../shared/copy/setup_hints.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/error_box.dart';
@@ -272,10 +273,11 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
       ? files.first
       : '${stripSplitSuffix(files.first)} (${files.length} parts)';
 
-  /// Why Delete is off. Names where to stop it — "Model engines" is the top
-  /// bar button's own label, so the sentence points somewhere that exists.
+  /// Why Delete is off. Names where to stop it from [kShareModelsPlace], the
+  /// top bar button's own label, so the sentence points somewhere that exists.
   static const _inUseReason =
-      'This model is running right now. Stop it in Model engines to delete it.';
+      'This model is running right now. Stop it from $kShareModelsPlace to '
+      'delete it.';
 
   /// The pills for one version. Quantisation and size are facts, so they stay
   /// neutral; the two badges that carry a verdict — will it run here, is it
