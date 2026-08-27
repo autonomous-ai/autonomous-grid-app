@@ -688,6 +688,11 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
   /// turn: the CLI opens its MCP connection once and holds it, so its grant has
   /// to outlive every turn the app sends into the same chat beside it. See
   /// [GridMcpServer.mintSessionToken].
+  ///
+  /// Claude Code and Codex open in [HostEnvironment.terminalEnvironment] — the
+  /// one-shot lanes' environment under the session's own — so a terminal and a
+  /// chat on the same agent see the same `PATH` and the same grid. Hermes
+  /// already builds on that base through `hermesEnvironment()`.
   Future<
     ({
       Map<String, String> environment,
@@ -737,7 +742,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         session: true,
       );
       return (
-        environment: codex.environment,
+        environment: HostEnvironment.terminalEnvironment(codex.environment),
         mcpConfig: null,
         config: codex.config,
         mcpToken: codex.mcpToken,
@@ -751,7 +756,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       session: true,
     );
     return (
-      environment: claude.environment,
+      environment: HostEnvironment.terminalEnvironment(claude.environment),
       mcpConfig: claude.mcpConfig,
       config: const <String>[],
       mcpToken: claude.mcpToken,

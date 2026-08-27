@@ -533,6 +533,29 @@ void main() {
     });
   });
 
+  group('terminalEnvironment — a terminal and a chat see the same machine', () {
+    test('the pty gets the one-shot lanes\' base — repaired PATH, no inherited '
+        'agent session — with the session\'s own grid variables on top', () {
+      final env = HostEnvironment.terminalEnvironment(
+        const {'GRID_CHAT_ID': 'chat-1', 'ANTHROPIC_MODEL': 'grid:m'},
+        host: const {
+          'PATH': '/usr/bin:/bin',
+          'HOME': '/Users/x',
+          'CLAUDECODE': '1',
+          'CLAUDE_CODE_SESSION_ID': 'parent',
+          'ANTHROPIC_MODEL': 'stale',
+        },
+      );
+
+      expect(env['PATH'], HostEnvironment.path());
+      expect(env['HOME'], '/Users/x');
+      expect(env['GRID_CHAT_ID'], 'chat-1');
+      expect(env['ANTHROPIC_MODEL'], 'grid:m');
+      expect(env.containsKey('CLAUDECODE'), isFalse);
+      expect(env.containsKey('CLAUDE_CODE_SESSION_ID'), isFalse);
+    });
+  });
+
   group('withoutInheritedAgentSession — a chat opens a session of its own', () {
     test("another Claude Code session's name and message pipe do not travel "
         'into the CLI this app starts', () {

@@ -124,6 +124,27 @@ class HostEnvironment {
   static const String relayUrlVar = 'GRID_RELAY_URL';
   static const String relayTokenVar = 'GRID_RELAY_TOKEN';
 
+  /// The environment an agent's **interactive** session (a pty) opens in:
+  /// [agentEnvironment] — the repaired `PATH`, the grid's relay pair — with
+  /// the session's own [grid] variables over it, and another agent session's
+  /// identity taken out of the host first ([withoutInheritedAgentSession]).
+  ///
+  /// The same base as every one-shot turn, and that is the point: the pty
+  /// used to get the app's raw environment plus the grid's variables, so a
+  /// Claude Code or Codex terminal ran with whatever `PATH` a packaged app
+  /// had inherited (no `/usr/local/bin`, no nvm — the reason `agentEnvironment`
+  /// exists) while the same agent's chat turns ran with it fixed. Two lanes,
+  /// one environment. [host] is for tests; the app passes nothing.
+  static Map<String, String> terminalEnvironment(
+    Map<String, String> grid, {
+    Map<String, String>? host,
+  }) => {
+    ...agentEnvironment(
+      environment: withoutInheritedAgentSession(host ?? Platform.environment),
+    ),
+    ...grid,
+  };
+
   static String? _relayBaseUrl;
   static String? _relayToken;
 
