@@ -21,14 +21,23 @@ import 'agent_catalog.dart';
 /// there is no program to draw, and offering the option would be offering
 /// something that cannot happen (§5).
 ///
-/// [chosen] null falls to the agent's own default — the terminal. **Deliberately
-/// not the setting**: a chat that recorded no surface is one that started
-/// before the setting existed, and reading the live value there would take a
-/// running terminal chat's conversation off screen the moment someone changed
-/// their mind about the *next* chat. For a chat that is already under way, pass
-/// [recordedChatSurface] rather than the raw record: the transcript settles
-/// most of the chats that recorded nothing, and the default is only for the
-/// ones it cannot.
+/// [chosen] null falls to **the terminal**, and that is deliberately *not* the
+/// surface the app now ships (`ChatPrefs.chatSurface`, which is the list). The
+/// two are different questions:
+///
+///  - What should a chat the user is *about to start* be? Their setting.
+///  - What was a chat that recorded nothing? A terminal — because the record
+///    began on 2026-08-26 and, once [recordedChatSurface] has used the
+///    transcript to settle every chat that has one, the only chats left with
+///    nothing are the terminal chats of the two days before it.
+///
+/// Falling back to the shipped default here would redraw those as an empty
+/// message list, which is the conversation disappearing rather than moving.
+/// Reading the *live setting* here would do the same to a running terminal chat
+/// the moment someone changed their mind about the next one.
+///
+/// So: for a chat already under way, pass [recordedChatSurface] rather than the
+/// raw record.
 /// [terminalAvailable] is the runtime half of the same question, and it is false
 /// only for an agent whose interactive CLI this computer cannot actually run.
 /// Hermes is the one that has such a condition: `hermes --tui` is a Node bundle

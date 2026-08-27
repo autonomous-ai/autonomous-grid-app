@@ -81,9 +81,30 @@ void main() {
       dir.deleteSync(recursive: true);
     });
 
-    test('an agent nobody has set follows its default', () {
+    test('a fresh install opens chats as messages — the terminal gives up the '
+        'step feed, the plan, the Open button and the transcript, so it is a '
+        'choice to make rather than one to be handed', () {
       expect(
         container.read(agentChatSurfaceProvider(AgentTool.claude)),
+        AgentChatSurface.list,
+      );
+      expect(
+        container.read(agentChatSurfaceProvider(AgentTool.codex)),
+        AgentChatSurface.list,
+      );
+    });
+
+    test('the setting still reaches every agent that can honour it', () {
+      container
+          .read(chatPrefsProvider.notifier)
+          .setChatSurface(AgentChatSurface.terminal);
+
+      expect(
+        container.read(agentChatSurfaceProvider(AgentTool.claude)),
+        AgentChatSurface.terminal,
+      );
+      expect(
+        container.read(agentChatSurfaceProvider(AgentTool.codex)),
         AgentChatSurface.terminal,
       );
     });
@@ -149,18 +170,21 @@ void main() {
       expect(reread.chatSurface, AgentChatSurface.list);
     });
 
-    test('a surface this build no longer knows falls back to the terminal — '
-        'what the app has always shown — rather than to nothing', () {
-      File(
-        '${dir.path}/chat_prefs.json',
-      ).writeAsStringSync('{"chatSurface": "hologram"}');
+    test(
+      'a surface this build no longer knows lands where a fresh install does, '
+      'not somewhere odd',
+      () {
+        File(
+          '${dir.path}/chat_prefs.json',
+        ).writeAsStringSync('{"chatSurface": "hologram"}');
 
-      final reread = ChatPrefsStore(
-        file: File('${dir.path}/chat_prefs.json'),
-      ).load();
+        final reread = ChatPrefsStore(
+          file: File('${dir.path}/chat_prefs.json'),
+        ).load();
 
-      expect(reread.chatSurface, AgentChatSurface.terminal);
-    });
+        expect(reread.chatSurface, AgentChatSurface.list);
+      },
+    );
   });
 
   group('a chat keeps the shape it started in', () {
@@ -188,8 +212,10 @@ void main() {
     );
 
     test(
-      'a chat saved before the setting existed reads back as no choice at all, '
-      'and with nothing in its transcript keeps the shape it has always had',
+      'a chat that recorded nothing and has an empty transcript still opens as '
+      'a terminal, even though a fresh install now ships the message list — '
+      'those are the terminal chats from before the record began, and the '
+      'shipped default would redraw them as an empty page',
       () {
         final legacy = Conversation.fromJson({
           'id': '1',

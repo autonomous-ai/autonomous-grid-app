@@ -20,7 +20,7 @@ class ChatPrefs {
     this.detail = AgentDetailMode.stepsCommands,
     this.themeMode = ThemeMode.light,
     this.chatAgent = defaultChatAgent,
-    this.chatSurface = AgentChatSurface.terminal,
+    this.chatSurface = AgentChatSurface.list,
     this.agentBrowser = false,
     this.uiFontFamily,
     this.codeFontFamily,
@@ -98,6 +98,18 @@ class ChatPrefs {
   /// It governs the next chat only. A chat writes its surface down when it
   /// starts (`Conversation.surface`) because the two surfaces keep the
   /// conversation in different places — see [AgentChatSurface].
+  ///
+  /// **Ships as [AgentChatSurface.list].** The terminal is the agent's real
+  /// interface and it stays one flip away, but it is the surface that gives up
+  /// everything the app draws — the step feed, the plan, the Open button behind
+  /// a file change, `/goal` and `/loop`, and a transcript the sidebar can search
+  /// — so it is a choice to make rather than one to be handed. The default a
+  /// non-technical user never touches (§0) should be the one that explains
+  /// itself.
+  ///
+  /// Deliberately **not** the same value `agentChatSurface` falls back on for a
+  /// chat that recorded no surface: those are older chats that really were
+  /// terminals, and reading this default there would empty them. See its doc.
   final AgentChatSurface chatSurface;
 
   /// Whether an agent may drive a browser this app opens for it.
@@ -251,14 +263,15 @@ class ChatPrefs {
     return AgentDetailMode.stepsCommands;
   }
 
-  /// A missing or unrecognised value reads as [AgentChatSurface.terminal] —
-  /// what the app has always shown for the agents that can draw one — so a
-  /// hand-edited file never lands somewhere odd.
+  /// A missing or unrecognised value reads as the shipped default
+  /// ([AgentChatSurface.list]) — the same rule [_themeModeFrom] follows, so a
+  /// hand-edited or corrupt file lands where a fresh install does rather than
+  /// somewhere odd.
   static AgentChatSurface _surfaceFrom(Object? raw) {
     for (final surface in AgentChatSurface.values) {
       if (surface.name == raw) return surface;
     }
-    return AgentChatSurface.terminal;
+    return AgentChatSurface.list;
   }
 
   static AgentApprovalMode _approvalFrom(Object? raw) {
