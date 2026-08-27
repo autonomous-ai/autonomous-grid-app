@@ -20,7 +20,7 @@ class ChatPrefs {
     this.detail = AgentDetailMode.stepsCommands,
     this.themeMode = ThemeMode.light,
     this.chatAgent = defaultChatAgent,
-    this.agentSurface = const {},
+    this.chatSurface = AgentChatSurface.terminal,
     this.agentBrowser = false,
     this.uiFontFamily,
     this.codeFontFamily,
@@ -86,19 +86,19 @@ class ChatPrefs {
   /// no-longer-installed id falls back to whatever is installed.
   final String chatAgent;
 
-  /// How a **new** chat with a given agent is drawn — its id (`claude`,
-  /// `codex`) to the surface the user picked for it.
+  /// How a new chat is drawn — as the app's own message list, or as the
+  /// agent's command-line program — for every agent that can offer both.
   ///
-  /// **Only the agents the user has actually changed are in here**, so an agent
-  /// they never touched follows whatever this build's default is rather than
-  /// being frozen on the value that happened to be default the day the file was
-  /// first written. Same reason a missing key is not an error: it is the normal
-  /// state, and it is what lets the default move.
+  /// One value for the whole app, set on the Appearance screen. It is a
+  /// preference about *how the person wants to read a chat*, not a fact about
+  /// any one agent, so asking it three times over on three cards had someone
+  /// answering the same question three times. An agent with no program to open
+  /// (Hermes) ignores it and draws the list — see `agentChatSurface`.
   ///
   /// It governs the next chat only. A chat writes its surface down when it
   /// starts (`Conversation.surface`) because the two surfaces keep the
   /// conversation in different places — see [AgentChatSurface].
-  final Map<String, AgentChatSurface> agentSurface;
+  final AgentChatSurface chatSurface;
 
   /// Whether an agent may drive a browser this app opens for it.
   ///
@@ -140,7 +140,7 @@ class ChatPrefs {
     AgentDetailMode? detail,
     ThemeMode? themeMode,
     String? chatAgent,
-    Map<String, AgentChatSurface>? agentSurface,
+    AgentChatSurface? chatSurface,
     bool? agentBrowser,
     String? uiFontFamily,
     String? codeFontFamily,
@@ -155,7 +155,7 @@ class ChatPrefs {
     detail: detail ?? this.detail,
     themeMode: themeMode ?? this.themeMode,
     chatAgent: chatAgent ?? this.chatAgent,
-    agentSurface: agentSurface ?? this.agentSurface,
+    chatSurface: chatSurface ?? this.chatSurface,
     agentBrowser: agentBrowser ?? this.agentBrowser,
     // The `?? this.x` idiom can't express "back to the system font" — passing
     // null reads as "leave it alone" — so going back to the default needs a flag
@@ -178,7 +178,7 @@ class ChatPrefs {
     detail: _detailFrom(json['detail']),
     themeMode: _themeModeFrom(json['themeMode']),
     chatAgent: json['chatAgent'] as String? ?? defaultChatAgent,
-    agentSurface: _surfacesFrom(json['agentSurface']),
+    chatSurface: _surfaceFrom(json['chatSurface']),
     // Anything but a stored `true` reads as off: a corrupt or hand-edited file
     // must never be what turns a browser on.
     agentBrowser: json['agentBrowser'] == true,
@@ -205,9 +205,7 @@ class ChatPrefs {
     'detail': detail.name,
     'themeMode': themeMode.name,
     'chatAgent': chatAgent,
-    'agentSurface': {
-      for (final entry in agentSurface.entries) entry.key: entry.value.name,
-    },
+    'chatSurface': chatSurface.name,
     'agentBrowser': agentBrowser,
     'uiFontFamily': uiFontFamily,
     'codeFontFamily': codeFontFamily,
@@ -253,39 +251,14 @@ class ChatPrefs {
     return AgentDetailMode.stepsCommands;
   }
 
-  /// The stored per-agent surfaces, keeping only the entries this build can
-  /// still read.
-  ///
-  /// A name this build has dropped is left out rather than defaulted: the entry
-  /// exists to say "not the default", and inventing a value for it would be
-  /// inventing a choice the user never made. Left out, the agent simply follows
-  /// its default — and the raw entry is not written back, so a downgrade and an
-  /// upgrade do not quietly trade choices.
-  static Map<String, AgentChatSurface> _surfacesFrom(Object? raw) {
-    if (raw is! Map) return const {};
-    final surfaces = <String, AgentChatSurface>{};
-    for (final entry in raw.entries) {
-      if (entry.key is! String) continue;
-      for (final surface in AgentChatSurface.values) {
-        if (surface.name == entry.value) {
-          surfaces[entry.key as String] = surface;
-        }
-      }
+  /// A missing or unrecognised value reads as [AgentChatSurface.terminal] —
+  /// what the app has always shown for the agents that can draw one — so a
+  /// hand-edited file never lands somewhere odd.
+  static AgentChatSurface _surfaceFrom(Object? raw) {
+    for (final surface in AgentChatSurface.values) {
+      if (surface.name == raw) return surface;
     }
-    return Map.unmodifiable(surfaces);
-  }
-
-  /// Two per-agent maps holding the same choices. Hand-rolled rather than
-  /// pulled from `package:collection`, which this app does not depend on.
-  static bool _sameSurfaces(
-    Map<String, AgentChatSurface> a,
-    Map<String, AgentChatSurface> b,
-  ) {
-    if (a.length != b.length) return false;
-    for (final entry in a.entries) {
-      if (b[entry.key] != entry.value) return false;
-    }
-    return true;
+    return AgentChatSurface.terminal;
   }
 
   static AgentApprovalMode _approvalFrom(Object? raw) {
@@ -313,7 +286,7 @@ class ChatPrefs {
       other.detail == detail &&
       other.themeMode == themeMode &&
       other.chatAgent == chatAgent &&
-      _sameSurfaces(other.agentSurface, agentSurface) &&
+      other.chatSurface == chatSurface &&
       other.agentBrowser == agentBrowser &&
       other.uiFontFamily == uiFontFamily &&
       other.codeFontFamily == codeFontFamily &&
@@ -328,13 +301,7 @@ class ChatPrefs {
     detail,
     themeMode,
     chatAgent,
-    // Order-independent, so two maps that differ only in insertion order —
-    // which JSON round-tripping is free to produce — hash alike, as `==` above
-    // already reports them.
-    Object.hashAllUnordered([
-      for (final entry in agentSurface.entries)
-        '${entry.key}:${entry.value.name}',
-    ]),
+    chatSurface,
     agentBrowser,
     uiFontFamily,
     codeFontFamily,
@@ -441,14 +408,9 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
 
   void setChatAgent(String id) => _update(state.copyWith(chatAgent: id));
 
-  /// How new chats with [agentId] are drawn. Stored per agent because the
-  /// default differs per agent — the two with an interactive CLI open in it,
-  /// Hermes has none to open.
-  void setAgentSurface(String agentId, AgentChatSurface surface) => _update(
-    state.copyWith(
-      agentSurface: Map.unmodifiable({...state.agentSurface, agentId: surface}),
-    ),
-  );
+  /// How new chats are drawn, for every agent that can draw them both ways.
+  void setChatSurface(AgentChatSurface surface) =>
+      _update(state.copyWith(chatSurface: surface));
 
   void setAgentBrowser(bool allowed) =>
       _update(state.copyWith(agentBrowser: allowed));

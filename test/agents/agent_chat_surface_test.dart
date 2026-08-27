@@ -68,40 +68,61 @@ void main() {
       );
     });
 
-    test('setting one agent moves that agent and no other — the default is per '
-        'agent, so Codex must not follow a choice made about Claude Code', () {
-      container
-          .read(chatPrefsProvider.notifier)
-          .setAgentSurface(AgentTool.claude.id, AgentChatSurface.list);
-
-      expect(
-        container.read(agentChatSurfaceProvider(AgentTool.claude)),
-        AgentChatSurface.list,
-      );
-      expect(
-        container.read(agentChatSurfaceProvider(AgentTool.codex)),
-        AgentChatSurface.terminal,
-      );
-    });
-
     test(
-      'the choice survives a restart, and only the agents actually changed are '
-      'written down — an untouched agent must keep following the default '
-      'rather than freezing today\'s',
+      'one setting moves every agent that can follow it — it is set once '
+      'on Appearance, so Codex must not keep a shape Claude Code has left',
       () {
         container
             .read(chatPrefsProvider.notifier)
-            .setAgentSurface(AgentTool.codex.id, AgentChatSurface.list);
+            .setChatSurface(AgentChatSurface.list);
 
-        final reread = ChatPrefsStore(
-          file: File('${dir.path}/chat_prefs.json'),
-        ).load();
-
-        expect(reread.agentSurface, {
-          AgentTool.codex.id: AgentChatSurface.list,
-        });
+        expect(
+          container.read(agentChatSurfaceProvider(AgentTool.claude)),
+          AgentChatSurface.list,
+        );
+        expect(
+          container.read(agentChatSurfaceProvider(AgentTool.codex)),
+          AgentChatSurface.list,
+        );
       },
     );
+
+    test('Hermes stays a message list whatever the setting says — it has no '
+        'program to open, and drawing an empty terminal would look broken', () {
+      container
+          .read(chatPrefsProvider.notifier)
+          .setChatSurface(AgentChatSurface.terminal);
+
+      expect(
+        container.read(agentChatSurfaceProvider(AgentTool.hermes)),
+        AgentChatSurface.list,
+      );
+    });
+
+    test('the choice survives a restart', () {
+      container
+          .read(chatPrefsProvider.notifier)
+          .setChatSurface(AgentChatSurface.list);
+
+      final reread = ChatPrefsStore(
+        file: File('${dir.path}/chat_prefs.json'),
+      ).load();
+
+      expect(reread.chatSurface, AgentChatSurface.list);
+    });
+
+    test('a surface this build no longer knows falls back to the terminal — '
+        'what the app has always shown — rather than to nothing', () {
+      File(
+        '${dir.path}/chat_prefs.json',
+      ).writeAsStringSync('{"chatSurface": "hologram"}');
+
+      final reread = ChatPrefsStore(
+        file: File('${dir.path}/chat_prefs.json'),
+      ).load();
+
+      expect(reread.chatSurface, AgentChatSurface.terminal);
+    });
   });
 
   group('a chat keeps the shape it started in', () {

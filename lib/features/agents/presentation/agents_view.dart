@@ -13,7 +13,6 @@ import '../logic/agent_grid_support.dart';
 import '../logic/agent_install_controller.dart';
 import '../logic/agent_status.dart';
 import 'agent_browser_row.dart';
-import 'agent_surface_row.dart';
 import 'hermes_vision_block.dart';
 
 /// The assistants this computer can run, one of which starts your next chat.
@@ -197,13 +196,9 @@ class _AgentCardState extends ConsumerState<_AgentCard> {
                     _Action(tool: tool, installed: installed),
                   ],
                 ),
-                // Only the two with a program to open, and only while one is
-                // the agent answering: the card is a tap target for switching
+                // Only on the agent that can drive one, and only while it is
+                // the one answering: the card is a tap target for switching
                 // agents, and the active card is the one that isn't.
-                if (tool.hasInteractiveCli && isActive)
-                  AgentSurfaceRow(tool: tool),
-                // Only on the agent that can drive one, and only while it is the
-                // one answering, for the same reason.
                 if (tool == AgentTool.claude && isActive)
                   const AgentBrowserRow(),
                 // Hermes alone, and for the same two reasons as the row above:

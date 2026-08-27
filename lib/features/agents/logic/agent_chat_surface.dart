@@ -29,15 +29,18 @@ AgentChatSurface agentChatSurface(AgentTool tool, {AgentChatSurface? chosen}) {
   return chosen ?? AgentChatSurface.terminal;
 }
 
-/// The surface a **new** chat with [tool] will start in — the user's setting for
-/// that agent, or the agent's default until they change it.
+/// The surface a **new** chat with [tool] will start in — the one setting on
+/// the Appearance screen, as far as [tool] can honour it.
+///
+/// Still asked per agent, not because the setting is: Hermes cannot draw a
+/// terminal, so the answer for it is the list whatever the setting says, and a
+/// caller that read the setting directly would start a Hermes chat in a
+/// surface that does not exist.
 final agentChatSurfaceProvider = Provider.family<AgentChatSurface, AgentTool>((
   ref,
   tool,
 ) {
-  final chosen = ref.watch(
-    chatPrefsProvider.select((p) => p.agentSurface[tool.id]),
-  );
+  final chosen = ref.watch(chatPrefsProvider.select((p) => p.chatSurface));
   return agentChatSurface(tool, chosen: chosen);
 });
 
@@ -69,27 +72,3 @@ final openChatSurfaceProvider = Provider<AgentChatSurface>((ref) {
 final openChatInTerminalProvider = Provider<bool>(
   (ref) => ref.watch(openChatSurfaceProvider) == AgentChatSurface.terminal,
 );
-
-/// The control's name for each surface.
-String agentChatSurfaceLabel(AgentChatSurface surface) => switch (surface) {
-  AgentChatSurface.list => 'Messages',
-  AgentChatSurface.terminal => 'Terminal',
-};
-
-/// What picking it actually changes, in one line under the control.
-///
-/// Both surfaces stop and ask before the assistant runs a command or changes a
-/// file — they differ in **who does the asking**, not in whether anyone does.
-/// The list asks with the app's own card; the terminal asks in the CLI's words
-/// and takes the answer from the keyboard. Copy must not imply the quieter
-/// option is the looser one: it isn't, and a user who believed that would pick
-/// the wrong one for the wrong reason.
-String agentChatSurfaceDetail(AgentChatSurface surface) => switch (surface) {
-  AgentChatSurface.list =>
-    'One bubble per turn with the steps listed under it, like Hermes. It asks '
-        'here, on a card, before it runs a command or changes a file.',
-  AgentChatSurface.terminal =>
-    "The assistant's own command-line app, live. It asks in its own words and "
-        'you answer with the keyboard; typing mid-answer reaches the turn that '
-        'is running.',
-};

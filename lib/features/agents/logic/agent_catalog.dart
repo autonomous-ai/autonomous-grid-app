@@ -100,9 +100,9 @@ enum AgentTool {
   /// ACP, and its chat is built out of those events.
   ///
   /// **A capability, not the choice.** Whether a given chat is actually drawn
-  /// that way is `AgentChatSurface`, which the user sets per agent and a chat
-  /// then fixes when it starts — see `agentChatSurface`. This is only the half
-  /// that says the choice exists at all.
+  /// that way is `AgentChatSurface`, which the user sets once on Appearance and
+  /// a chat then fixes when it starts — see `agentChatSurface`. This is only
+  /// the half that says the choice exists at all.
   ///
   /// It is *not* the whole story of how a chat reaches these two either. A turn
   /// the app sends by itself — a goal's next step, a loop's beat, a scheduled
