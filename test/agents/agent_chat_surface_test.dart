@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
 import 'package:grid_app/features/agents/logic/agent_chat_surface.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
+import 'package:grid_app/features/playground/logic/chat_message.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/state/chat_prefs_store.dart';
 
@@ -188,7 +189,7 @@ void main() {
 
     test(
       'a chat saved before the setting existed reads back as no choice at all, '
-      'and so keeps the shape it has always had',
+      'and with nothing in its transcript keeps the shape it has always had',
       () {
         final legacy = Conversation.fromJson({
           'id': '1',
@@ -199,12 +200,59 @@ void main() {
         });
 
         expect(legacy.surface, isNull);
+        expect(recordedChatSurface(legacy), isNull);
         expect(
           agentChatSurface(AgentTool.claude, chosen: legacy.surface),
           AgentChatSurface.terminal,
         );
       },
     );
+
+    test(
+      'a chat saved before the setting existed with a transcript is a message '
+      'list, whatever its agent opens in today — a terminal chat writes no '
+      'messages, so the messages are the proof, and defaulting it to the '
+      'terminal put 188 of them nowhere on screen',
+      () {
+        final legacy =
+            Conversation.fromJson({
+              'id': '1',
+              'title': 'Old chat',
+              'model': 'qwen',
+              'agent': AgentTool.claude.id,
+              'createdAt': '2026-08-01T00:00:00Z',
+              'updatedAt': '2026-08-01T00:00:00Z',
+            }).copyWith(
+              messages: const [ChatMessage(role: ChatRole.user, text: 'hi')],
+            );
+
+        expect(recordedChatSurface(legacy), AgentChatSurface.list);
+        expect(
+          agentChatSurface(
+            AgentTool.claude,
+            chosen: recordedChatSurface(legacy),
+          ),
+          AgentChatSurface.list,
+        );
+      },
+    );
+
+    test('a recorded surface outranks the transcript — a chat born a terminal '
+        'stays one even if a turn lands in its messages', () {
+      final chat =
+          Conversation.fromJson({
+            'id': '1',
+            'title': 'Chat',
+            'model': 'qwen',
+            'surface': 'terminal',
+            'createdAt': '2026-08-26T00:00:00Z',
+            'updatedAt': '2026-08-26T00:00:00Z',
+          }).copyWith(
+            messages: const [ChatMessage(role: ChatRole.user, text: 'hi')],
+          );
+
+      expect(recordedChatSurface(chat), AgentChatSurface.terminal);
+    });
 
     test(
       'a surface this build no longer knows reads as no choice rather than as '

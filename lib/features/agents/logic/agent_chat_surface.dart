@@ -4,6 +4,7 @@ import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/node_probe.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
+import '../../chat/logic/conversation.dart';
 import 'active_chat_agent.dart';
 import 'agent_catalog.dart';
 
@@ -20,11 +21,14 @@ import 'agent_catalog.dart';
 /// there is no program to draw, and offering the option would be offering
 /// something that cannot happen (§5).
 ///
-/// [chosen] null falls to the agent's own default — the terminal for the two
-/// that have one. **Deliberately not the setting**: a chat that recorded no
-/// surface is one that started before the setting existed, and reading the live
-/// value there would take a running terminal chat's conversation off screen the
-/// moment someone changed their mind about the *next* chat.
+/// [chosen] null falls to the agent's own default — the terminal. **Deliberately
+/// not the setting**: a chat that recorded no surface is one that started
+/// before the setting existed, and reading the live value there would take a
+/// running terminal chat's conversation off screen the moment someone changed
+/// their mind about the *next* chat. For a chat that is already under way, pass
+/// [recordedChatSurface] rather than the raw record: the transcript settles
+/// most of the chats that recorded nothing, and the default is only for the
+/// ones it cannot.
 /// [terminalAvailable] is the runtime half of the same question, and it is false
 /// only for an agent whose interactive CLI this computer cannot actually run.
 /// Hermes is the one that has such a condition: `hermes --tui` is a Node bundle
@@ -92,6 +96,21 @@ final agentChatSurfaceProvider = Provider.family<AgentChatSurface, AgentTool>((
   );
 });
 
+/// The surface [chat] is known to be in — what it recorded, else what its
+/// transcript proves.
+///
+/// A chat that recorded nothing started before the record existed (2026-08-26),
+/// and its messages settle it: a terminal chat commits nothing to
+/// `Conversation.messages`, so a transcript with anything in it is a message
+/// list whatever its agent's default is today. Reading the default there was
+/// the bug — every chat from before that day has a transcript, and the default
+/// opened each one as an empty terminal with 188 messages nowhere on screen.
+/// Only an empty transcript is left to the default, which is the one case the
+/// default was written for: the terminal chats of the two days before the
+/// record began.
+AgentChatSurface? recordedChatSurface(Conversation chat) =>
+    chat.surface ?? (chat.messages.isEmpty ? null : AgentChatSurface.list);
+
 /// The surface the chat **on screen** is drawn in.
 ///
 /// A chat draws the way it was drawn when it started: the surface is written
@@ -101,16 +120,20 @@ final agentChatSurfaceProvider = Provider.family<AgentChatSurface, AgentTool>((
 final openChatSurfaceProvider = Provider<AgentChatSurface>((ref) {
   final tool = ref.watch(activeChatAgentProvider);
   final open = ref.watch(
-    chatSessionsProvider.select(
-      (s) => (started: s.active != null, surface: s.active?.surface),
-    ),
+    chatSessionsProvider.select((s) {
+      final active = s.active;
+      return (
+        started: active != null,
+        chosen: active == null ? null : recordedChatSurface(active),
+      );
+    }),
   );
   // Nothing open: what is in front of the user is a composer, and pressing Send
   // starts a chat the setting decides the shape of.
   if (!open.started) return ref.watch(agentChatSurfaceProvider(tool));
   return agentChatSurface(
     tool,
-    chosen: open.surface,
+    chosen: open.chosen,
     terminalAvailable: _terminalAvailable(ref, tool),
   );
 });

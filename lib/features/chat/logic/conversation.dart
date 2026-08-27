@@ -125,7 +125,7 @@ class Conversation {
 
   /// How this chat is **drawn** — written down when it started, like [agent],
   /// and never changed after. Null for a chat saved before the setting existed,
-  /// which then follows its agent's default (see `agentChatSurface`).
+  /// which is then settled by its transcript (see `recordedChatSurface`).
   ///
   /// It has to be the chat's own and not the app's, because the two surfaces
   /// keep the conversation in **different places**: a message list is
