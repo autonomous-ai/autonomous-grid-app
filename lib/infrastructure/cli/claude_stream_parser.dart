@@ -44,8 +44,10 @@ const Map<String, String> kClaudePhrasedTools = {
 /// own SSE events (`content_block_delta` and friends); `assistant` and `user`
 /// carry completed content blocks — `thinking`, `text`, `tool_use`, and
 /// `tool_result` respectively; `result` closes the turn with the final answer,
-/// `is_error`, and the cost. `rate_limit_event` and `system`/`thinking_tokens`
-/// ride along and carry nothing to show.
+/// `is_error`, and the cost — unless `system`/`background_tasks_changed` has
+/// said work is still running, in which case it closes only the model's turn
+/// and a second one follows (see [ClaudeTurnWaiting]). `rate_limit_event` and
+/// `system`/`thinking_tokens` ride along and carry nothing to show.
 class ClaudeStreamParser {
   /// Finished `text` blocks, in the order Claude closed them. Joined with the
   /// still-streaming [_partial] to make the answer shown so far.
@@ -68,6 +70,24 @@ class ClaudeStreamParser {
   /// rather than a derived key so two thoughts in a row can't collide onto one
   /// feed row (the activity log upserts by id).
   var _thoughts = 0;
+
+  /// Passages closed by an earlier `result` of this same turn — the answer
+  /// Claude gave before its background work came back. Kept apart from
+  /// [_completed] because a `result` line *replaces* the blocks it closes, and
+  /// the second turn's `result` must replace only its own. See
+  /// [ClaudeTurnWaiting].
+  final _sealed = <String>[];
+
+  /// What the CLI says is still running in the background, by task id — the
+  /// whole list, as its last `background_tasks_changed` line stated it. Empty
+  /// is the CLI saying nothing is, which is what lets a `result` close the turn.
+  final _background = <String, String>{};
+
+  /// The tool call each background task was started by, so its notification
+  /// can settle that row with the real outcome. Captured at `task_started`,
+  /// which arrives *before* the call's own placeholder result ("launched in
+  /// background") removes it from [_calls].
+  final _backgroundCalls = <String, AgentActivity>{};
 
   /// The events worth showing from one decoded line. Empty for a line that
   /// carries nothing (reasoning-token counts, rate-limit notices, a shape from
@@ -95,8 +115,19 @@ class ClaudeStreamParser {
     };
   }
 
-  List<ClaudeExecEvent> _readSystem(Map<String, dynamic> event) {
-    if (event['subtype'] != 'init') return const [];
+  List<ClaudeExecEvent> _readSystem(Map<String, dynamic> event) =>
+      switch (event['subtype']) {
+        'init' => _readInit(event),
+        'background_tasks_changed' => _readBackgroundTasks(event['tasks']),
+        'task_started' => _readTaskStarted(event),
+        'task_notification' => _readTaskNotification(event),
+        _ => const [],
+      };
+
+  /// The session opening — or, after background work, re-opening: the CLI
+  /// starts the turn that reads a task's notification with a second `init`
+  /// carrying the same id, so this is read the same way both times.
+  List<ClaudeExecEvent> _readInit(Map<String, dynamic> event) {
     final id = event['session_id'];
     final servers = claudeServerStatuses(event['mcp_servers']);
     return [
@@ -104,6 +135,71 @@ class ClaudeStreamParser {
       if (servers.isNotEmpty) ClaudeServersAnnounced(servers),
     ];
   }
+
+  /// The CLI's own list of what is running in the background, replacing the
+  /// last one wholesale. An emptied list settles the waiting row, if one is up.
+  List<ClaudeExecEvent> _readBackgroundTasks(Object? tasks) {
+    _background.clear();
+    if (tasks is List) {
+      for (final task in tasks) {
+        if (task is! Map) continue;
+        final id = '${task['task_id'] ?? ''}';
+        if (id.isEmpty) continue;
+        _background[id] = '${task['description'] ?? task['task_type'] ?? id}';
+      }
+    }
+    if (_background.isNotEmpty || !_waiting) return const [];
+    _waiting = false;
+    return [
+      ClaudeActivityEvent(_waitRow.settled(status: AgentActivityStatus.done)),
+    ];
+  }
+
+  List<ClaudeExecEvent> _readTaskStarted(Map<String, dynamic> event) {
+    final task = '${event['task_id'] ?? ''}';
+    final call = _calls['${event['tool_use_id'] ?? ''}'];
+    // Only the tasks the CLI itself lists as background: a sub-agent's own
+    // shell command is reported through the same line and is nobody's to wait
+    // for.
+    if (call != null && _background.containsKey(task)) {
+      _backgroundCalls[task] = call;
+    }
+    return const [];
+  }
+
+  /// A background task finished: the row of the call that started it gets the
+  /// outcome, replacing the "launched in background" its own result carried.
+  List<ClaudeExecEvent> _readTaskNotification(Map<String, dynamic> event) {
+    final call = _backgroundCalls.remove('${event['task_id'] ?? ''}');
+    if (call == null) return const [];
+    final failed = event['status'] != 'completed';
+    return [
+      ClaudeActivityEvent(
+        call.settled(
+          status: failed
+              ? AgentActivityStatus.failed
+              : AgentActivityStatus.done,
+          result: claudeToolResult(event['summary']),
+        ),
+      ),
+    ];
+  }
+
+  /// Whether the last `result` left the turn waiting on background work.
+  var _waiting = false;
+
+  /// The one feed row that says the turn is waiting, and on what. A fixed id,
+  /// so the notification that ends the wait settles the same row.
+  AgentActivity get _waitRow => AgentActivity(
+    id: 'background-wait',
+    kind: AgentActivityKind.tool,
+    label: _background.length == 1
+        ? 'Waiting for background work to finish'
+        : 'Waiting for ${_background.length} background tasks to finish',
+    status: AgentActivityStatus.running,
+    tool: 'Background',
+    request: _background.values.join('\n'),
+  );
 
   /// A vendor SSE event, forwarded verbatim by the CLI. Only the answer's text
   /// deltas are read: thinking deltas would flood the feed a character at a
@@ -348,9 +444,23 @@ class ClaudeStreamParser {
         ..clear()
         ..add(text);
     }
+    if (_background.isEmpty) {
+      return [
+        ClaudeMessageEvent(_answer(), settled: _settled()),
+        const ClaudeTurnCompleted(),
+      ];
+    }
+    // Not the end: the CLI will run a second turn once the background work
+    // comes back (see [ClaudeTurnWaiting]). What was said stays said — moved
+    // out of the reach of that turn's own `result` — and the chat is shown
+    // what it is waiting on rather than a bubble that has quietly stopped.
+    _sealed.addAll(_completed);
+    _completed.clear();
+    _waiting = true;
     return [
       ClaudeMessageEvent(_answer(), settled: _settled()),
-      const ClaudeTurnCompleted(),
+      ClaudeActivityEvent(_waitRow),
+      ClaudeTurnWaiting(List.unmodifiable(_background.values)),
     ];
   }
 
@@ -362,7 +472,11 @@ class ClaudeStreamParser {
   /// can overrun its stop token, and what comes after is not the agent's — see
   /// [stripControlTokens].
   String _answer() => stripControlTokens(
-    [..._completed, if (_partial.isNotEmpty) _partial.toString()].join('\n\n'),
+    [
+      ..._sealed,
+      ..._completed,
+      if (_partial.isNotEmpty) _partial.toString(),
+    ].join('\n\n'),
   );
 
   /// The answer up to the last **finished** block — no half-written sentence.
@@ -373,7 +487,8 @@ class ClaudeStreamParser {
   /// splits the agent's own words mid-syllable — a half-written word above the
   /// step,
   /// "y vài ph" below it.
-  String _settled() => stripControlTokens(_completed.join('\n\n'));
+  String _settled() =>
+      stripControlTokens([..._sealed, ..._completed].join('\n\n'));
 }
 
 /// The condition and reason inside one `Stop hook feedback:` message, or null

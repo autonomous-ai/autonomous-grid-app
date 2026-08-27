@@ -39,6 +39,42 @@ Map<String, dynamic> _toolResult(String id, {bool failed = false}) => {
   },
 };
 
+/// A backgrounded `Agent` call, as the model makes it.
+Map<String, dynamic> _agentCall(String id) => {
+  'type': 'tool_use',
+  'id': id,
+  'name': 'Agent',
+  'input': {'prompt': 'probe', 'run_in_background': true},
+};
+
+/// The CLI's whole list of what is running in the background.
+Map<String, dynamic> _backgroundTasks(List<(String, String)> tasks) => {
+  'type': 'system',
+  'subtype': 'background_tasks_changed',
+  'tasks': [
+    for (final (id, description) in tasks)
+      {
+        'task_id': id,
+        'task_type': 'local_workflow',
+        'description': description,
+      },
+  ],
+};
+
+Map<String, dynamic> _taskStarted(String task, String call) => {
+  'type': 'system',
+  'subtype': 'task_started',
+  'task_id': task,
+  'tool_use_id': call,
+};
+
+Map<String, dynamic> _result(String text) => {
+  'type': 'result',
+  'subtype': 'success',
+  'is_error': false,
+  'result': text,
+};
+
 /// Everything one call produced, since a single line can carry several blocks.
 List<ClaudeExecEvent> _read(
   ClaudeStreamParser parser,
@@ -68,15 +104,13 @@ void main() {
       expect(args, containsAllInOrder(['--resume', 'sess-1']));
     });
 
-    test('every turn takes away the session-only schedulers, which would '
-        'report a job scheduled and then never fire it', () {
+    test('a turn with nothing to take away passes no --disallowedTools at '
+        'all — a bare flag is an empty list the CLI has to make sense of', () {
       final args = claudeExecArgs(model: 'm');
-      final flag = args.indexOf('--disallowedTools');
-      expect(flag, isNot(-1));
-      expect(
-        args.sublist(flag + 1, flag + 1 + kClaudeSessionSchedulerTools.length),
-        kClaudeSessionSchedulerTools,
-      );
+      expect(args, isNot(contains('--disallowedTools')));
+      for (final tool in kClaudeSessionSchedulerTools) {
+        expect(args, isNot(contains(tool)));
+      }
     });
 
     test('the wake-up timer goes with the cron tools: it is the one an agent '
@@ -84,20 +118,14 @@ void main() {
       expect(kClaudeSessionSchedulerTools, contains('ScheduleWakeup'));
     });
 
-    test('a relay turn drops the web tools onto that same flag — a second '
-        '--disallowedTools would be the CLI\'s to reconcile', () {
+    test('a relay turn takes away the web tools on one --disallowedTools — a '
+        'second would be the CLI\'s to reconcile', () {
       final args = claudeExecArgs(model: 'm', withoutServerWebTools: true);
       expect(args.where((a) => a == '--disallowedTools'), hasLength(1));
       final flag = args.indexOf('--disallowedTools');
       expect(
-        args.sublist(
-          flag + 1,
-          flag +
-              1 +
-              kClaudeSessionSchedulerTools.length +
-              kClaudeServerWebTools.length,
-        ),
-        [...kClaudeSessionSchedulerTools, ...kClaudeServerWebTools],
+        args.sublist(flag + 1, flag + 1 + kClaudeServerWebTools.length),
+        kClaudeServerWebTools,
       );
     });
 
@@ -355,6 +383,115 @@ void main() {
         'result': 'API Error: 404 Not Found',
       });
       expect((event as ClaudeTurnFailed).message, contains('404'));
+    });
+
+    test('a result that leaves background work running is not the end: the '
+        'answer stands, a waiting row goes up, and the turn stays open', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_agentCall('t-1')));
+      _read(parser, _backgroundTasks([('w1', 'Deep research')]));
+      _read(parser, _taskStarted('w1', 't-1'));
+      _read(parser, _toolResult('t-1'));
+
+      final events = _read(parser, _result('started'));
+
+      expect((events[0] as ClaudeMessageEvent).text, 'started');
+      final waiting = (events[1] as ClaudeActivityEvent).activity;
+      expect(waiting.id, 'background-wait');
+      expect(waiting.status, AgentActivityStatus.running);
+      expect(waiting.request, 'Deep research');
+      expect((events[2] as ClaudeTurnWaiting).pending, ['Deep research']);
+      expect(events.whereType<ClaudeTurnCompleted>(), isEmpty);
+    });
+
+    test('the second turn appends to the first answer instead of replacing '
+        'it, and its result is the one that ends the turn', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _backgroundTasks([('w1', 'Deep research')]));
+      _read(parser, _result('started'));
+
+      _read(parser, _backgroundTasks(const []));
+      _read(parser, {'type': 'system', 'subtype': 'init', 'session_id': 's'});
+      final streamed = _read(parser, _delta('The workflow found'));
+      expect(
+        (streamed.single as ClaudeMessageEvent).text,
+        'started\n\nThe workflow found',
+      );
+      final events = _read(parser, _result('The workflow found X.'));
+
+      expect(
+        (events.first as ClaudeMessageEvent).text,
+        'started\n\nThe workflow found X.',
+      );
+      expect(events.last, isA<ClaudeTurnCompleted>());
+    });
+
+    test('the background list emptying settles the waiting row, and the '
+        'task\'s notification settles the call that started it with the real '
+        'outcome — not the "launched in background" placeholder', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_agentCall('t-1')));
+      _read(parser, _backgroundTasks([('w1', 'probe')]));
+      _read(parser, _taskStarted('w1', 't-1'));
+      _read(parser, _toolResult('t-1'));
+      _read(parser, _result('started'));
+
+      final cleared = _read(parser, _backgroundTasks(const []));
+      final settled = _read(parser, {
+        'type': 'system',
+        'subtype': 'task_notification',
+        'task_id': 'w1',
+        'tool_use_id': 't-1',
+        'status': 'completed',
+        'summary': 'Dynamic workflow "probe" completed',
+      });
+
+      final wait = (cleared.single as ClaudeActivityEvent).activity;
+      expect(wait.id, 'background-wait');
+      expect(wait.status, AgentActivityStatus.done);
+      final call = (settled.single as ClaudeActivityEvent).activity;
+      expect(call.id, 't-1');
+      expect(call.status, AgentActivityStatus.done);
+      expect(call.result, contains('completed'));
+    });
+
+    test('a failed background task marks its call failed, and a notification '
+        'for a task nobody waited on shows nothing', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_agentCall('t-1')));
+      _read(parser, _backgroundTasks([('w1', 'probe')]));
+      _read(parser, _taskStarted('w1', 't-1'));
+
+      final failed = _read(parser, {
+        'type': 'system',
+        'subtype': 'task_notification',
+        'task_id': 'w1',
+        'status': 'failed',
+        'summary': 'boom',
+      });
+      expect(
+        (failed.single as ClaudeActivityEvent).activity.status,
+        AgentActivityStatus.failed,
+      );
+      expect(
+        _read(parser, {
+          'type': 'system',
+          'subtype': 'task_notification',
+          'task_id': 'unknown',
+          'status': 'completed',
+        }),
+        isEmpty,
+      );
+    });
+
+    test('a sub-agent\'s own shell command is reported on the same line and '
+        'is nobody\'s to wait for', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_agentCall('t-1')));
+      // No background list names it: it is a helper's foreground step.
+      _read(parser, _taskStarted('b1', 't-1'));
+
+      expect(_read(parser, _result('done')).last, isA<ClaudeTurnCompleted>());
     });
 
     test('lines that carry nothing to show are skipped, so a newer build can '

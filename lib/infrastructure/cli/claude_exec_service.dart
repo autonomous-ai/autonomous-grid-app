@@ -169,6 +169,11 @@ const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
 /// available, the nearest-to-hand answer is still the one that quietly does
 /// nothing. A repeat *inside a chat* is not lost with them — that is `/loop`,
 /// which the app owns and the agent paces with a `grid-loop` block.
+///
+/// **Taken away on the terminal lane only, since 2026-08-27** — the `-p` lane
+/// stopped passing them in `d6a185c5`. TODO(BE): nothing measured above has
+/// changed for that lane: a `-p` turn still exits with its answer, so a cron
+/// or wake-up booked there still dies with it, and the chat is told otherwise.
 const List<String> kClaudeSessionSchedulerTools = [
   'CronCreate',
   'CronDelete',
@@ -201,13 +206,15 @@ const List<String> kClaudeSessionSchedulerTools = [
 ///   default because it is only ever right for one lane: the flag costs context
 ///   on every turn that carries it, and a turn holding the relay's credentials
 ///   cannot use the extension at all (see [ClaudeBrowserLane]).
-/// - `--disallowedTools` takes away [kClaudeSessionSchedulerTools] on every
-///   turn, plus the web tools a grid model can't serve — see
-///   [withoutServerWebTools]. One flag, not two: it is **variadic**, so a
-///   second occurrence would be the CLI's to reconcile rather than ours.
-///   Being variadic it also swallows every following token until the next
-///   `--flag`, which is safe here because the prompt goes on stdin and this
-///   argv carries no positionals — and stays safe only as long as that holds.
+/// - `--disallowedTools` takes away the web tools a grid model can't serve —
+///   see [withoutServerWebTools] — and nothing else: the session-only
+///   schedulers ([kClaudeSessionSchedulerTools]) were let back in on this lane
+///   on 2026-08-27 (`d6a185c5`), and the flag goes with them when there is
+///   nothing to name, because a bare `--disallowedTools` is a list the CLI has
+///   to read as empty. It is **variadic**: it swallows every following token
+///   until the next `--flag`, which is safe here because the prompt goes on
+///   stdin and this argv carries no positionals — and stays safe only as long
+///   as that holds.
 List<String> claudeExecArgs({
   required String model,
   String? resumeSessionId,
@@ -229,9 +236,7 @@ List<String> claudeExecArgs({
   '--model',
   model,
   if (chrome) '--chrome',
-  '--disallowedTools',
-  // ...kClaudeSessionSchedulerTools,
-  if (withoutServerWebTools) ...kClaudeServerWebTools,
+  if (withoutServerWebTools) ...['--disallowedTools', ...kClaudeServerWebTools],
   if (mcpConfigPath != null) ...[
     '--mcp-config',
     mcpConfigPath,
@@ -261,7 +266,9 @@ Map<String, String> claudeExecEnvironment({
 /// How long a finished turn's process is given to exit on its own.
 ///
 /// A turn is a `claude -p` that should end with its answer, and the app closes
-/// stdin to let it. One that stays is holding something the app has already shut
+/// stdin to let it — once the answer really is the end: a `result` that leaves
+/// background work running ([ClaudeTurnWaiting]) closes nothing, because the
+/// CLI has a second turn to run when that work comes back. One that stays is holding something the app has already shut
 /// the door on — a `persistent` monitor is how this happens (see
 /// [claudeToolRefusal]) — and it stays for good: 2h02m and 684 MB of resident
 /// memory on 2026-08-20, waking to ask permissions on a pipe with nobody at the
@@ -550,6 +557,11 @@ class _ClaudeExecTurn {
       case ClaudeTurnCompleted():
         _completed = true;
         _endInput();
+      // The answer is in but the turn is not over: stdin stays open and the
+      // exit grace stays unarmed, or the background work the model just
+      // announced is killed five seconds later — see [ClaudeTurnWaiting].
+      case ClaudeTurnWaiting():
+        break;
       // A step, a plan, a file about to be written, the session id: work in
       // progress, not a word on how the turn ends.
       default:

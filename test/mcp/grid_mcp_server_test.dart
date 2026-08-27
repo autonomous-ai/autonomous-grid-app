@@ -2,71 +2,117 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/features/chat/logic/commands/chat_command.dart';
+import 'package:grid_app/infrastructure/api/relay_web_client.dart';
 import 'package:grid_app/infrastructure/mcp/grid_agent_scripts.dart';
 import 'package:grid_app/infrastructure/mcp/grid_mcp_server.dart';
 import 'package:grid_app/infrastructure/mcp/grid_mcp_tools.dart';
 
+/// The relay, scripted: every call is recorded, and the answer is whatever the
+/// test put in — a list of hits, a page, or a refusal to throw.
+class FakeRelayWebClient implements RelayWebClient {
+  final calls = <({String baseUrl, String apiKey, String what})>[];
+  List<WebSearchHit> hits = const [];
+  WebPage page = (title: '', text: '');
+  RelayWebRefused? refuse;
+  Object? crash;
+
+  @override
+  Future<List<WebSearchHit>> search({
+    required String baseUrl,
+    required String apiKey,
+    required String query,
+    required int maxResults,
+  }) async {
+    calls.add((baseUrl: baseUrl, apiKey: apiKey, what: '$query/$maxResults'));
+    if (crash case final error?) throw error;
+    if (refuse case final refused?) throw refused;
+    return hits;
+  }
+
+  @override
+  Future<WebPage> read({
+    required String baseUrl,
+    required String apiKey,
+    required String url,
+  }) async {
+    calls.add((baseUrl: baseUrl, apiKey: apiKey, what: url));
+    if (crash case final error?) throw error;
+    if (refuse case final refused?) throw refused;
+    return page;
+  }
+}
+
+const _grid = (baseUrl: 'https://relay.test/v1', token: 'tok');
+
 void main() {
-  group('readGridAsk', () {
-    test('reads the command line an agent asked for', () {
-      final outcome = readGridAsk({'run': '/loop 30m check the build'});
-
-      expect(outcome, isA<GridAskAccepted>());
-      final call = (outcome as GridAskAccepted).call;
-      expect(call.command, ChatCommand.loop);
-      expect(call.argument, '30m check the build');
+  group('the web tools\' arguments — read strictly, defaulted kindly', () {
+    test('a search needs a query and clamps how many hits it asks for, so a '
+        'model asking for 500 costs the grid ten', () {
+      expect(readWebSearchArgs({'query': ' 0x alpha ', 'max_results': 500}), (
+        query: '0x alpha',
+        maxResults: kWebSearchMaxResults,
+      ));
+      expect(
+        readWebSearchArgs({'query': 'x'})!.maxResults,
+        kWebSearchDefaultResults,
+      );
+      expect(
+        readWebSearchArgs({'query': 'x', 'max_results': 0})!.maxResults,
+        1,
+      );
+      expect(readWebSearchArgs({'query': '  '}), isNull);
+      expect(readWebSearchArgs(const {}), isNull);
+      expect(readWebSearchArgs('0x alpha'), isNull);
     });
 
-    test('refuses a command the user alone may type — an assistant that could '
-        'clear the transcript has a way out of every hard turn', () {
-      final outcome = readGridAsk({'run': '/clear'});
-
-      expect(outcome, isA<GridAskRefused>());
-      expect((outcome as GridAskRefused).message, contains('/loop'));
+    test('a fetch needs a URL and never returns less than a headline\'s worth '
+        'of page', () {
+      expect(readWebFetchArgs({'url': 'https://a.test', 'max_chars': 10}), (
+        url: 'https://a.test',
+        maxChars: kWebFetchMinChars,
+      ));
+      expect(
+        readWebFetchArgs({'url': 'https://a.test'})!.maxChars,
+        kWebFetchDefaultChars,
+      );
+      expect(readWebFetchArgs({'max_chars': 10}), isNull);
     });
 
-    test('refuses an empty or missing argument with what to send instead, '
-        'because the agent has to answer the user either way', () {
-      expect(readGridAsk(const {}), isA<GridAskRefused>());
-      expect(readGridAsk({'run': '   '}), isA<GridAskRefused>());
-      expect(readGridAsk('/loop 5m'), isA<GridAskRefused>());
+    test('hits read as title, URL, excerpt — one block each — and none reads '
+        'as the words "No results." rather than an empty string the model '
+        'might take for a broken tool', () {
+      expect(formatWebSearchHits(const []), 'No results.');
+      expect(
+        formatWebSearchHits(const [
+          (title: 'A', url: 'https://a', excerpt: 'aa'),
+          (title: 'B', url: 'https://b', excerpt: 'bb'),
+        ]),
+        'A\nhttps://a\naa\n\nB\nhttps://b\nbb',
+      );
     });
 
-    test('refuses something that is no command at all rather than guessing — '
-        'guessing at a sentence is what the fenced block did wrong', () {
-      final outcome = readGridAsk({'run': 'please keep checking'});
-
-      expect(outcome, isA<GridAskRefused>());
-    });
-  });
-
-  group('skillCardBody', () {
-    test('drops the front-matter, which is retrieval metadata for a folder of '
-        'files that no longer exists over MCP', () {
-      const card = '---\nname: x\ndescription: y\n---\n\n# Heading\n\nBody.\n';
-
-      expect(skillCardBody(card), '# Heading\n\nBody.');
-    });
-
-    test('a card with no front-matter is its own body', () {
-      expect(skillCardBody('# Heading\n'), '# Heading');
+    test('a page is cut at max_chars and says so, and a blank page says it is '
+        'blank rather than saying nothing', () {
+      expect(
+        formatWebPage((title: 'T', text: 'abcdef'), maxChars: 3),
+        'T\n\nabc\n…(truncated)',
+      );
+      expect(
+        formatWebPage((title: '', text: ''), maxChars: 3),
+        'No readable text found on the page.',
+      );
     });
   });
 
   group('GridMcpServer', () {
     late GridMcpServer server;
-    late List<(String, ChatCommandCall)> ran;
+    late FakeRelayWebClient web;
+    ({String baseUrl, String token})? grid;
 
     setUp(() async {
-      ran = [];
-      server = GridMcpServer(
-        onAsk: (chatId, call) async {
-          ran.add((chatId, call));
-          if (call.argument == 'throw') throw StateError('boom');
-          return 'Repeating every 30m.';
-        },
-      );
+      web = FakeRelayWebClient();
+      grid = _grid;
+      server = GridMcpServer(web: web, relay: () => grid);
       await server.start();
     });
     tearDown(() => server.stop());
@@ -112,25 +158,50 @@ void main() {
       final tools = ((reply['result']! as Map)['tools']! as List)
           .map((t) => (t as Map)['name'])
           .toList();
-      expect(tools, ['grid_ask', 'grid_guide']);
+      expect(tools, ['web_search', 'web_fetch']);
     });
 
-    test('a token speaks for one chat — a turn in one conversation can never '
-        'start a loop in another', () async {
+    test('a search goes to the grid the app is on, with its credential, and '
+        'comes back in the shape the scripts printed', () async {
       final token = server.mintTurnToken('chat-1');
+      web.hits = const [(title: 'A', url: 'https://a', excerpt: 'aa')];
 
-      await send(token, {
+      final reply = await send(token, {
         'jsonrpc': '2.0',
         'id': 2,
         'method': 'tools/call',
         'params': {
-          'name': 'grid_ask',
-          'arguments': {'run': '/loop 30m check the build'},
+          'name': 'web_search',
+          'arguments': {'query': '0x alpha', 'max_results': 3},
         },
       });
 
-      expect(ran.single.$1, 'chat-1');
-      expect(ran.single.$2.command, ChatCommand.loop);
+      expect(web.calls.single, (
+        baseUrl: _grid.baseUrl,
+        apiKey: _grid.token,
+        what: '0x alpha/3',
+      ));
+      final result = reply['result']! as Map<String, Object?>;
+      expect(result['isError'], isNull);
+      expect(_text(reply), 'A\nhttps://a\naa');
+    });
+
+    test('a fetch reads one page and cuts it where it was asked to', () async {
+      final token = server.mintTurnToken('chat-1');
+      web.page = (title: 'T', text: 'x' * 2000);
+
+      final reply = await send(token, {
+        'jsonrpc': '2.0',
+        'id': 3,
+        'method': 'tools/call',
+        'params': {
+          'name': 'web_fetch',
+          'arguments': {'url': 'https://a.test/p', 'max_chars': 600},
+        },
+      });
+
+      expect(web.calls.single.what, 'https://a.test/p');
+      expect(_text(reply), 'T\n\n${'x' * 600}\n…(truncated)');
     });
 
     test(
@@ -147,12 +218,12 @@ void main() {
 
         expect(reply['status'], HttpStatus.ok);
         expect((reply['error']! as Map)['code'], -32001);
-        expect(ran, isEmpty);
+        expect(web.calls, isEmpty);
       },
     );
 
     test('an unknown token is refused, so nothing else on this machine can '
-        'drive somebody\'s chat by guessing the port', () async {
+        'search on somebody\'s grid by guessing the port', () async {
       final reply = await send('not-a-token', {
         'jsonrpc': '2.0',
         'id': 4,
@@ -163,43 +234,68 @@ void main() {
       expect((reply['error']! as Map)['code'], -32001);
     });
 
-    test('a refused ask comes back as a result the agent must read, not as a '
-        'transport error it may never surface to the user', () async {
+    test(
+      'a refusal comes back as a result the agent must read, not as a '
+      'transport error it may never surface — and says whether to retry',
+      () async {
+        final token = server.mintTurnToken('chat-1');
+        web.refuse = const RelayWebRefused('spent', retryable: false);
+
+        final reply = await send(token, {
+          'jsonrpc': '2.0',
+          'id': 5,
+          'method': 'tools/call',
+          'params': {
+            'name': 'web_search',
+            'arguments': {'query': 'x'},
+          },
+        });
+
+        final result = reply['result']! as Map<String, Object?>;
+        expect(result['isError'], isTrue);
+        expect(reply['error'], isNull);
+        expect(_text(reply), 'spent Not worth retrying in this turn.');
+      },
+    );
+
+    test(
+      'a call with nothing to act on is refused without touching the grid',
+      () async {
+        final token = server.mintTurnToken('chat-1');
+
+        final reply = await send(token, {
+          'jsonrpc': '2.0',
+          'id': 6,
+          'method': 'tools/call',
+          'params': {
+            'name': 'web_fetch',
+            'arguments': {'max_chars': 5},
+          },
+        });
+
+        expect((reply['result']! as Map)['isError'], isTrue);
+        expect(web.calls, isEmpty);
+      },
+    );
+
+    test('on no grid the tools say so in the scripts\' own words, rather than '
+        'posting nowhere', () async {
       final token = server.mintTurnToken('chat-1');
+      grid = null;
 
       final reply = await send(token, {
         'jsonrpc': '2.0',
-        'id': 5,
+        'id': 7,
         'method': 'tools/call',
         'params': {
-          'name': 'grid_ask',
-          'arguments': {'run': '/compact'},
+          'name': 'web_search',
+          'arguments': {'query': 'x'},
         },
       });
 
-      final result = reply['result']! as Map<String, Object?>;
-      expect(result['isError'], isTrue);
-      expect(reply['error'], isNull);
-      expect(ran, isEmpty);
-    });
-
-    test('a guide comes back without its front-matter', () async {
-      final token = server.mintTurnToken('chat-1');
-
-      final reply = await send(token, {
-        'jsonrpc': '2.0',
-        'id': 6,
-        'method': 'tools/call',
-        'params': {
-          'name': 'grid_guide',
-          'arguments': {'topic': 'delegate'},
-        },
-      });
-
-      final content = (reply['result']! as Map)['content']! as List;
-      final text = (content.single as Map)['text']! as String;
-      expect(text, isNot(contains('name: grid-delegate')));
-      expect(text, contains('run_in_background'));
+      expect((reply['result']! as Map)['isError'], isTrue);
+      expect(_text(reply), kWebNeedsGrid);
+      expect(web.calls, isEmpty);
     });
 
     test('a notification is accepted and not answered — replying to one is a '
@@ -235,14 +331,15 @@ void main() {
     test('an internal failure is a JSON-RPC error over HTTP 200, so it cannot '
         'crash a long-running agent turn at the transport layer', () async {
       final token = server.mintTurnToken('chat-1');
+      web.crash = StateError('boom');
 
       final reply = await send(token, {
         'jsonrpc': '2.0',
         'id': 9,
         'method': 'tools/call',
         'params': {
-          'name': 'grid_ask',
-          'arguments': {'run': '/loop throw'},
+          'name': 'web_search',
+          'arguments': {'query': 'x'},
         },
       });
 
@@ -331,42 +428,6 @@ void main() {
       server.mintTurnToken('chat-2');
 
       expect(await works(session, 27), isTrue);
-      expect(ran, isEmpty);
-    });
-  });
-
-  group('the guides', () {
-    test('every topic the tool offers has a body, and every body is offered — '
-        'a schema and a map that disagree fail as a tool call the model was '
-        'told it could make', () {
-      final offered =
-          ((kGridGuideTool.schema['properties']! as Map)['topic']!
-                  as Map)['enum']!
-              as List;
-
-      expect(offered.toSet(), kGridGuides.keys.toSet());
-    });
-
-    test('the ones that name scripts point into Grid\'s own folder, never into '
-        'an agent\'s — the scripts moving is what let the cards leave', () {
-      for (final topic in ['web', 'research', 'serve']) {
-        final body = kGridGuides[topic]!;
-        expect(body, contains('/app/agent-scripts/'), reason: topic);
-        expect(body, isNot(contains('.codex/skills')), reason: topic);
-        expect(body, isNot(contains('.claude/skills')), reason: topic);
-      }
-    });
-
-    test('no guide still carries its front-matter, which named a file the '
-        'agent can no longer open', () {
-      for (final entry in kGridGuides.entries) {
-        expect(entry.value, isNot(startsWith('---')), reason: entry.key);
-        expect(
-          entry.value,
-          isNot(contains('\nname: grid-')),
-          reason: entry.key,
-        );
-      }
     });
   });
 
@@ -378,7 +439,7 @@ void main() {
     });
     tearDown(() => into.delete(recursive: true));
 
-    test('writes every script a guide names', () async {
+    test('writes every script the Hermes cards name', () async {
       await ensureGridAgentScripts(into: into);
 
       for (final name in gridAgentScripts().keys) {
@@ -413,4 +474,10 @@ void main() {
       expect(gridAgentScripts().keys, isNot(contains('browse.py')));
     });
   });
+}
+
+/// The one text block a tool result carries.
+String _text(Map<String, Object?> reply) {
+  final content = (reply['result']! as Map)['content']! as List;
+  return (content.single as Map)['text']! as String;
 }

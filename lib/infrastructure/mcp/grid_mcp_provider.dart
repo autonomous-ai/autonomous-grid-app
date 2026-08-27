@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../features/chat/logic/chat_sessions_controller.dart';
+import '../api/relay_web_client.dart';
+import '../cli/host_environment.dart';
 import 'grid_mcp_server.dart';
 
 /// The one MCP server the app runs, wired to the chat controller.
@@ -10,8 +11,11 @@ import 'grid_mcp_server.dart';
 /// pointing at a closed socket. Stopped with the container.
 final gridMcpServerProvider = Provider<GridMcpServer>((ref) {
   final server = GridMcpServer(
-    onAsk: (chatId, call) =>
-        ref.read(chatSessionsProvider.notifier).runAgentAsk(chatId, call),
+    web: const HttpRelayWebClient(),
+    // The grid the agents' scripts post to, from the same source — see
+    // [HostEnvironment.relay]. Read per call, never captured: the user can
+    // switch grids, or leave the last one, while a chat is open.
+    relay: () => HostEnvironment.relay,
   );
   ref.onDispose(server.stop);
   return server;

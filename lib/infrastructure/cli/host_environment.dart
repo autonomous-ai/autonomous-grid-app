@@ -146,6 +146,19 @@ class HostEnvironment {
     _relayToken = relayToken;
   }
 
+  /// The grid the app is on right now, for the app's own web tools — the
+  /// same pair the scripts read from [relayUrlVar] / [relayTokenVar], from the
+  /// same source, so a tool call and a script can never answer on two grids.
+  /// Null with no grid, by the same both-or-neither rule as above.
+  static ({String baseUrl, String token})? get relay {
+    final url = _relayBaseUrl;
+    final token = _relayToken;
+    if (url == null || url.isEmpty || token == null || token.isEmpty) {
+      return null;
+    }
+    return (baseUrl: url, token: token);
+  }
+
   /// The spawn environment for a Hermes process: [agentEnvironment], plus
   /// [hermesHome] and — on Windows — [gitBash]. Used by every service that
   /// launches `hermes`, so none can forget `HERMES_HOME` and read the wrong

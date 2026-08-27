@@ -177,6 +177,185 @@ void main() {
       );
     });
 
+    test('a helper agent\'s turn ending is not ours ending — its '
+        'turn/completed arrived 2s before the parent\'s answer and used to '
+        'kill the server mid-reply', () {
+      final messages = answer();
+      final helper = parseCodexAppServerEvent(
+        method: 'turn/completed',
+        params: const {
+          'threadId': 'helper-1',
+          'turn': {'status': 'completed'},
+        },
+        messages: messages,
+        thread: 'main',
+      );
+      final own = parseCodexAppServerEvent(
+        method: 'turn/completed',
+        params: const {
+          'threadId': 'main',
+          'turn': {'status': 'completed'},
+        },
+        messages: messages,
+        thread: 'main',
+      );
+      expect(helper, isNull);
+      expect(own, isA<CodexTurnCompleted>());
+    });
+
+    test('a helper\'s message is a note under the call that spawned it, never '
+        'part of the answer; its steps nest there too', () {
+      final messages = answer();
+      final agents = <String, String>{};
+      final spawn = parseCodexAppServerEvent(
+        method: 'item/completed',
+        params: const {
+          'threadId': 'main',
+          'item': {
+            'type': 'collabAgentToolCall',
+            'id': 'c1',
+            'tool': 'spawnAgent',
+            'status': 'completed',
+            'prompt': 'Reply with only the word ok',
+            'receiverThreadIds': ['helper-1'],
+            'agentsStates': {'helper-1': 'running'},
+          },
+        },
+        messages: messages,
+        thread: 'main',
+        agents: agents,
+      );
+      final row = (spawn! as CodexActivityEvent).activity;
+      expect(row.label, 'Started a helper agent');
+      expect(row.request, 'Reply with only the word ok');
+      expect(row.result, 'helper-1: running');
+      expect(agents, {'helper-1': 'c1'});
+
+      final said = parseCodexAppServerEvent(
+        method: 'item/completed',
+        params: const {
+          'threadId': 'helper-1',
+          'item': {'type': 'agentMessage', 'id': 'm-h', 'text': 'ok'},
+        },
+        messages: messages,
+        thread: 'main',
+        agents: agents,
+      );
+      final note = (said! as CodexActivityEvent).activity;
+      expect(note.kind, AgentActivityKind.thinking);
+      expect(note.label, 'ok');
+      expect(note.parent, 'c1');
+      expect(messages, isEmpty);
+
+      final ran = parseCodexAppServerEvent(
+        method: 'item/started',
+        params: const {
+          'threadId': 'helper-1',
+          'item': {
+            'type': 'commandExecution',
+            'id': 'x1',
+            'command': 'sleep 1',
+            'status': 'inProgress',
+          },
+        },
+        messages: messages,
+        thread: 'main',
+        agents: agents,
+      );
+      expect((ran! as CodexActivityEvent).activity.parent, 'c1');
+    });
+
+    test('with no thread known — an older build, or the tests above — every '
+        'notification is read as ours, exactly as before', () {
+      final event = parseCodexAppServerEvent(
+        method: 'item/completed',
+        params: const {
+          'threadId': 'whatever',
+          'item': {'type': 'agentMessage', 'id': 'm1', 'text': 'Hi'},
+        },
+        messages: answer(),
+      );
+      expect((event! as CodexMessageEvent).text, 'Hi');
+    });
+
+    test('reasoning is shown as a thought — the summary when the model sends '
+        'one, the content when a grid model streams it whole — and an empty '
+        'one is nothing', () {
+      final full = parseCodexAppServerEvent(
+        method: 'item/completed',
+        params: const {
+          'item': {
+            'type': 'reasoning',
+            'id': 'r1',
+            'summary': [],
+            'content': ['The user wants me to spawn a sub-agent.'],
+          },
+        },
+        messages: answer(),
+      );
+      final thought = (full! as CodexActivityEvent).activity;
+      expect(thought.kind, AgentActivityKind.thinking);
+      expect(thought.label, 'The user wants me to spawn a sub-agent.');
+      expect(
+        parseCodexAppServerEvent(
+          method: 'item/started',
+          params: const {
+            'item': {
+              'type': 'reasoning',
+              'id': 'r2',
+              'summary': [],
+              'content': [],
+            },
+          },
+          messages: answer(),
+        ),
+        isNull,
+      );
+    });
+
+    test('the items the CLI draws and the chat used to drop each get a row in '
+        'the user\'s words', () {
+      String label(Map<String, Object?> item) =>
+          (parseCodexAppServerEvent(
+                    method: 'item/completed',
+                    params: {'item': item},
+                    messages: answer(),
+                  )!
+                  as CodexActivityEvent)
+              .activity
+              .label;
+
+      expect(
+        label({'type': 'imageView', 'id': 'i', 'path': '/a.png'}),
+        'Looked at /a.png',
+      );
+      expect(
+        label({'type': 'sleep', 'id': 's', 'durationMs': 2500}),
+        'Waited 3s',
+      );
+      expect(
+        label({'type': 'contextCompaction', 'id': 'c'}),
+        'Made room in the conversation',
+      );
+      expect(
+        label({'type': 'enteredReviewMode', 'id': 'e', 'review': 'r'}),
+        'Started a review',
+      );
+      expect(
+        label({'type': 'plan', 'id': 'p', 'text': 'First, look.'}),
+        'First, look.',
+      );
+      expect(
+        label({
+          'type': 'collabAgentToolCall',
+          'id': 'w',
+          'tool': 'wait',
+          'status': 'inProgress',
+        }),
+        'Waited for helper agents',
+      );
+    });
+
     test('the prompt we just sent, the turn opening, and a notification from a '
         'later build all surface nothing', () {
       for (final method in ['turn/started', 'thread/tokenUsage/updated']) {

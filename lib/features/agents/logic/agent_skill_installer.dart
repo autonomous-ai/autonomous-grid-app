@@ -288,20 +288,20 @@ class AgentSkillInstaller {
     }
   }
 
-  /// The cards Claude Code and Codex now get as MCP tools instead, swept out of
-  /// the folders they used to be written to.
+  /// The cards Claude Code and Codex used to be given, swept out of the
+  /// folders they used to be written to.
   ///
   /// Those two read their cards from `~/.claude/skills` and `~/.codex/skills`,
-  /// which belong to the user and to every terminal session they open. The four
-  /// here are carried by `grid_ask` and `grid_guide` over Grid's own MCP server,
-  /// so nothing is lost by taking the files back — and a card left behind would
-  /// be read *beside* the tool, teaching a format the app no longer parses.
-  ///
-  /// The rest stay for now, and it is worth saying why rather than leaving the
-  /// gap to be discovered: `grid-web` and `grid-serve` ship scripts that other
-  /// things already call by path, `grid-host` names this machine's tools, and
-  /// `grid-schedule` drives `hermes cron` directly. Porting those is a rewrite,
-  /// not a relocation.
+  /// which belong to the user and to every terminal session they open. On
+  /// 2026-08-21 the cards became `grid_ask` / `grid_guide` over Grid's own MCP
+  /// server; on 2026-08-27 that server was cut down to `web_search` and
+  /// `web_fetch` (see `kGridMcpTools`), so for these two agents the cards are
+  /// carried nowhere now. **Deliberate, and not free:** a Claude Code or Codex
+  /// chat can no longer ask Grid for `/loop`, `/goal` or `/schedule`, nor read
+  /// the host/serve/delegate/chart guides — Hermes still gets the cards. The
+  /// files stay withdrawn all the same: a card left behind would be read beside
+  /// a tool list it no longer matches, teaching a format the app never parses
+  /// for these agents.
   Future<void> _removeMcpSupersededCards(String home) async {
     for (final folder in ['.claude/skills', '.codex/skills']) {
       for (final name in kMcpSupersededSkills) {

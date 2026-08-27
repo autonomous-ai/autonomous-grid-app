@@ -656,6 +656,17 @@ class ClaudeChatSender implements ChatSender {
             );
           case ClaudeTurnCompleted():
             endedCleanly = true;
+          // Not the end — the CLI runs a second turn when this comes back, and
+          // the bubble goes on from where it stopped. Logged, because a chat
+          // that sits "working" for half an hour otherwise reads as hung.
+          case ClaudeTurnWaiting(:final pending):
+            _ref
+                .read(appLogProvider)
+                .info(
+                  'agent',
+                  'claude answered; still waiting on background work: '
+                      '${pending.join('; ')}',
+                );
           // Kept per request, not per turn: an agentic turn calls the model
           // many times and the last call is where the session actually stands.
           case ClaudeContextUsed(:final tokens):

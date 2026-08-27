@@ -1,6 +1,9 @@
 import 'agent_event.dart';
-import 'model_control_tokens.dart';
 import 'codex_agent_service.dart';
+import 'codex_app_server_items.dart';
+import 'model_control_tokens.dart';
+
+export 'codex_app_server_items.dart';
 
 /// Turns the `codex app-server` protocol into the shapes the chat already
 /// renders — the same [CodexEvent]s the old `codex exec --json` transport
@@ -17,21 +20,43 @@ import 'codex_agent_service.dart';
 /// `item/agentMessage/delta`, `turn/completed` in that order, and a command that
 /// had to escalate produced `item/commandExecution/requestApproval`.
 ///
+/// **Every notification names its thread, and not all of them are ours.**
+/// Codex 0.144.6 ships `multi_agent` on, and a helper the model spawns runs as
+/// a thread of its own on the *same* stream (measured 2026-08-27): its
+/// `agentMessage` "ok" arrived 2s before the parent's answer and its
+/// `turn/completed` 2s before the parent's. Read without [thread], the first
+/// was folded into the reply and the second ended the turn — the server was
+/// killed while the parent was still typing. So [thread] is the conversation
+/// this turn belongs to, and anything from another thread is a helper's: its
+/// steps are shown under the call that started it ([agents]), its words are a
+/// note rather than the answer, and its turn ending is not ours ending.
+///
 /// [messages] accumulates the answer by item id, exactly as the old parser did:
 /// the text arrives twice over — as deltas while the model types, then whole
 /// when the item completes — and the whole one replaces the deltas rather than
 /// being appended to them.
+///
+/// [agents] maps a helper thread's id to the `collabAgentToolCall` item that
+/// spawned it; filled in here as spawns complete, so it is the caller's map to
+/// keep across notifications, like [messages].
 CodexEvent? parseCodexAppServerEvent({
   required String method,
   required Map<String, dynamic> params,
   required Map<String, String> messages,
+  String? thread,
+  Map<String, String> agents = const {},
 }) {
+  final owner = _threadOf(params);
+  final helper = thread != null && owner != null && owner != thread;
   switch (method) {
     case 'thread/started':
-      final thread = params['thread'];
-      final id = thread is Map ? thread['id'] : null;
+      final started = params['thread'];
+      final id = started is Map ? started['id'] : null;
       return id is String && id.isNotEmpty ? CodexThreadStarted(id) : null;
     case 'item/agentMessage/delta':
+      // A helper's typing is not the answer; its whole message is read as a
+      // note when the item completes.
+      if (helper) return null;
       final delta = params['delta'];
       if (delta is! String || delta.isEmpty) return null;
       final id = '${params['itemId'] ?? ''}';
@@ -40,13 +65,22 @@ CodexEvent? parseCodexAppServerEvent({
     case 'item/started':
     case 'item/completed':
       final item = params['item'];
-      return item is Map
-          ? parseCodexAppServerItem(item.cast<String, dynamic>(), messages)
-          : null;
+      if (item is! Map) return null;
+      return parseCodexAppServerItem(
+        item.cast<String, dynamic>(),
+        messages,
+        agents: agents,
+        parent: helper ? agents[owner] : null,
+        helper: helper,
+      );
     case 'turn/plan/updated':
+      if (helper) return null;
       final plan = _plan(params['plan']);
       return plan.isEmpty ? null : CodexPlanEvent(plan);
     case 'turn/completed':
+      // A helper finishing its turn is a step done, not this turn over: the
+      // parent is still working and has yet to answer.
+      if (helper) return null;
       final turn = params['turn'];
       final failure = turn is Map ? _turnFailure(turn) : null;
       return failure == null
@@ -66,111 +100,15 @@ CodexEvent? parseCodexAppServerEvent({
   }
 }
 
+String? _threadOf(Map<String, dynamic> params) {
+  final id = params['threadId'];
+  return id is String && id.isNotEmpty ? id : null;
+}
+
 /// The answer so far: every message item's text, in the order they arrived.
 String codexJoinedAnswer(Map<String, String> messages) => stripControlTokens(
   messages.values.where((m) => m.trim().isNotEmpty).join('\n\n'),
 );
-
-/// One `ThreadItem`, whatever stage of its life it is at.
-CodexEvent? parseCodexAppServerItem(
-  Map<String, dynamic> item,
-  Map<String, String> messages,
-) {
-  final id = '${item['id'] ?? ''}';
-  switch (item['type']) {
-    case 'agentMessage':
-      final text = '${item['text'] ?? ''}';
-      if (text.isEmpty) return null;
-      // The whole block, replacing whatever its deltas had built.
-      messages[id] = text;
-      return CodexMessageEvent(codexJoinedAnswer(messages));
-    case 'commandExecution':
-      return CodexActivityEvent(
-        AgentActivity(
-          id: id,
-          kind: AgentActivityKind.command,
-          label: '${item['command'] ?? 'command'}',
-          status: codexItemStatus(item['status']),
-          tool: 'Shell',
-          request: clipToolPayload('${item['command'] ?? ''}'),
-          result: clipToolPayload('${item['aggregatedOutput'] ?? ''}'),
-        ),
-      );
-    case 'webSearch':
-      return CodexActivityEvent(
-        AgentActivity(
-          id: id,
-          kind: AgentActivityKind.web,
-          label: '${item['query'] ?? 'Web search'}',
-          status: codexItemStatus(item['status']),
-          tool: 'Web search',
-          request: clipToolPayload('${item['query'] ?? ''}'),
-        ),
-      );
-    case 'mcpToolCall':
-      final tool = item['tool'] ?? item['server'] ?? 'tool';
-      return CodexActivityEvent(
-        AgentActivity(
-          id: id,
-          kind: AgentActivityKind.tool,
-          label: '$tool',
-          status: codexItemStatus(item['status']),
-          tool: '$tool',
-          request: clipToolPayload(codexPayloadText(item['arguments'])),
-          result: clipToolPayload(codexPayloadText(item['result'])),
-        ),
-      );
-    case 'fileChange':
-      return _fileChange(item);
-    // `reasoning` carries the model's own summary and arrived empty on every
-    // captured run (the grid's `auto` model emits none); `userMessage` is the
-    // prompt this app just sent. Neither is worth a row.
-    default:
-      return null;
-  }
-}
-
-/// A landed patch, as the chat's open/undo bar's raw material. Only once it has
-/// actually applied: an in-flight patch has written nothing to open, and a
-/// declined one wrote nothing at all.
-///
-/// TODO(BE): this transport carries a **unified `diff` per file**, which the old
-/// one dropped — so an *edited* file could now be shown with an honest
-/// before/after and undone, not just a freshly created one (see
-/// [codexAddedPaths]). The diff is read here and thrown away; wiring it through
-/// [CodexFileChange] is a change to the changes bar, kept out of the transport
-/// swap deliberately.
-CodexEvent? _fileChange(Map<String, dynamic> item) {
-  if (codexItemStatus(item['status']) != AgentActivityStatus.done) return null;
-  final raw = item['changes'];
-  if (raw is! List) return null;
-  final changes = <CodexFileChange>[];
-  for (final entry in raw) {
-    if (entry is! Map) continue;
-    final path = '${entry['path'] ?? ''}'.trim();
-    if (path.isEmpty) continue;
-    changes.add((path: path, kind: codexChangeKind(entry['kind'])));
-  }
-  return changes.isEmpty ? null : CodexFileChangeEvent(changes);
-}
-
-/// `add` / `update` / `delete`; anything else reads as an update — the
-/// conservative choice, since only an add is ever recorded for undo, so
-/// mislabelling one drops it rather than faking an undo.
-CodexFileChangeKind codexChangeKind(Object? raw) => switch (raw) {
-  'add' => CodexFileChangeKind.add,
-  'delete' => CodexFileChangeKind.delete,
-  _ => CodexFileChangeKind.update,
-};
-
-/// This protocol spells its lifecycle in camelCase (`inProgress`, `completed`,
-/// `failed`, `declined`) where the old one used snake_case — a rename that would
-/// otherwise show every finished command as still running.
-AgentActivityStatus codexItemStatus(Object? raw) => switch (raw) {
-  'completed' => AgentActivityStatus.done,
-  'failed' || 'declined' => AgentActivityStatus.failed,
-  _ => AgentActivityStatus.running,
-};
 
 List<AgentPlanEntry> _plan(Object? raw) {
   if (raw is! List) return const [];
@@ -206,11 +144,3 @@ String _errorMessage(Object? raw) {
   }
   return 'Codex ended the turn without saying why.';
 }
-
-/// A tool payload as text: a string as it stands, anything structured
-/// pretty-printed, null for absent.
-String? codexPayloadText(Object? raw) => switch (raw) {
-  null => null,
-  final String text => text,
-  _ => '$raw',
-};

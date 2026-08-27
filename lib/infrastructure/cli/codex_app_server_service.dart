@@ -172,6 +172,17 @@ class _CodexAppServerTurn {
   /// The answer so far, by the id of the message item carrying it.
   final _messages = <String, String>{};
 
+  /// Helper threads the model spawned this turn, by id, and the row that
+  /// spawned each — filled in by the parser, kept here because it has to
+  /// outlive one notification. See [parseCodexAppServerEvent].
+  ///
+  /// TODO(BE): a helper still running when the *parent's* turn completes dies
+  /// with the server this code stops below. The CLI leaves it running and the
+  /// next turn can `wait` for it; here the next turn is a new process, so
+  /// that helper's work is lost either way — the honest fix is a server that
+  /// outlives the turn, which is a transport change, not a parser one.
+  final _agents = <String, String>{};
+
   /// Items seen this turn, by id — read back when an approval request names one
   /// without describing it (a file change carries its patch here, not there).
   final _items = <String, Map<String, dynamic>>{};
@@ -361,6 +372,8 @@ class _CodexAppServerTurn {
       method: method,
       params: params,
       messages: _messages,
+      thread: _thread,
+      agents: _agents,
     );
     if (event == null) return;
     _note(event);

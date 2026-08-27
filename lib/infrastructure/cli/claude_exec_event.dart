@@ -175,6 +175,27 @@ class ClaudeTurnCompleted extends ClaudeExecEvent {
   const ClaudeTurnCompleted();
 }
 
+/// Claude has answered, but work this turn started is still running — and the
+/// turn is **not** over.
+///
+/// A `Workflow` or an `Agent` sent to the background returns at once, and
+/// Claude Code ends the model's turn with a `result` line while the task runs
+/// on. Measured on 2.1.247 (2026-08-27): the CLI then waits for the task,
+/// delivers its notification as a new user message, starts a **second** turn
+/// (a second `init` line, same session) and closes it with a second `result`.
+/// Treating the first `result` as the end — which the app did — closed stdin
+/// and killed the process five seconds into a workflow that had thirty minutes
+/// to go, and the chat read "running in the background" for ever.
+///
+/// [pending] names what is still running, for the log and the feed. The
+/// parser holds the answer given so far and appends what the second turn adds.
+class ClaudeTurnWaiting extends ClaudeExecEvent {
+  const ClaudeTurnWaiting(this.pending);
+
+  /// One line per task still running, as the CLI describes it.
+  final List<String> pending;
+}
+
 /// Claude Code has stopped, mid-turn, and won't go on until this is answered.
 ///
 /// The request reaches the chat as the same [AgentPermission] Hermes raises over

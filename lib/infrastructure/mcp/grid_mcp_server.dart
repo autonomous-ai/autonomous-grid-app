@@ -3,43 +3,38 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import '../../features/agents/logic/grid_chart_skill.dart';
-import '../../features/agents/logic/grid_delegate_skill.dart';
-import '../../features/agents/logic/grid_host_skill.dart';
-import '../../features/agents/logic/grid_loop_skill.dart';
-import '../../features/agents/logic/grid_research_skill.dart';
-import '../../features/agents/logic/grid_schedule_skill.dart';
-import '../../features/agents/logic/grid_serve_skill.dart';
-import '../../features/agents/logic/grid_web_skill.dart';
-import '../../features/chat/logic/commands/chat_command.dart';
-import '../../shared/skills/agent_skill_home.dart';
-import 'grid_agent_scripts.dart';
+import '../api/relay_web_client.dart';
 import 'grid_mcp_tools.dart';
 
 /// Grid's own MCP server, running inside the app on loopback.
 ///
 /// **In the app, not a child process**, and that is the point rather than a
-/// shortcut. `grid_ask` has to reach the running app — `/loop`, `/goal` and
-/// `/schedule` are the app's, and a stdio server spawned by the agent would only
-/// have to call back here anyway. It also removes the failure mode a separate
-/// binary brings: no process to fail to start, nothing to install, and on Hermes
-/// no dependency on a python package that reinstalls quietly wipe.
+/// shortcut: the grid's credential stays in the app, the agent is handed a
+/// token that speaks only for its chat, and there is no process to fail to
+/// start, nothing to install, and on Hermes no dependency on a python package
+/// that reinstalls quietly wipe.
+///
+/// **Two tools, both the web** — `web_search` and `web_fetch` — see
+/// [kGridMcpTools] for why the rest were switched off.
 ///
 /// **A token per run, not per app.** The agent is answering *some* chat, and the
 /// tool call arrives out of band with no way to say which. So each run is handed
-/// its own bearer token and the token is the chat: `grid_ask` from a run in chat
-/// A can only ever start a loop in chat A.
+/// its own bearer token and the token is the chat — which is what lets a token
+/// be retired with the turn that held it, rather than living as long as the app.
 ///
 /// A *run* is a turn ([mintTurnToken]) or a whole terminal session
 /// ([mintSessionToken]), and the two have to be told apart — a chat can have both
 /// at once, and the shorter one must not end the longer one.
 class GridMcpServer {
-  GridMcpServer({required this.onAsk, Random? random})
+  GridMcpServer({required this.web, required this.relay, Random? random})
     : _random = random ?? Random.secure();
 
-  /// Runs the command an agent asked for, in the chat its token was minted for.
-  /// Returns what to tell the agent — the same sentence the user would see.
-  final Future<String> Function(String chatId, ChatCommandCall call) onAsk;
+  /// The live web, through the grid.
+  final RelayWebClient web;
+
+  /// The grid to go through, read at call time — a chat can outlive the grid
+  /// it started on, and null is the honest answer when there is none.
+  final ({String baseUrl, String token})? Function() relay;
 
   final Random _random;
   final Map<String, _Grant> _chatByToken = {};
@@ -164,11 +159,7 @@ class GridMcpServer {
         response.statusCode = HttpStatus.accepted;
         return;
       }
-      final reply = await _dispatch(
-        chatId,
-        '${payload['method']}',
-        payload['params'],
-      );
+      final reply = await _dispatch('${payload['method']}', payload['params']);
       response.statusCode = HttpStatus.ok;
       response.headers.contentType = ContentType.json;
       response.write(jsonEncode({'jsonrpc': '2.0', 'id': id, ...reply}));
@@ -212,11 +203,7 @@ class GridMcpServer {
     return _chatByToken[header.substring(prefix.length)]?.chat;
   }
 
-  Future<Map<String, Object?>> _dispatch(
-    String chatId,
-    String method,
-    Object? params,
-  ) async {
+  Future<Map<String, Object?>> _dispatch(String method, Object? params) async {
     switch (method) {
       case 'initialize':
         return {
@@ -233,7 +220,7 @@ class GridMcpServer {
           },
         };
       case 'tools/call':
-        return {'result': await _call(chatId, params)};
+        return {'result': await _call(params)};
       default:
         return {
           'error': {'code': -32601, 'message': 'Unknown method: $method'},
@@ -241,42 +228,64 @@ class GridMcpServer {
     }
   }
 
-  Future<Map<String, Object?>> _call(String chatId, Object? params) async {
+  Future<Map<String, Object?>> _call(Object? params) async {
     final map = params is Map<String, Object?> ? params : const {};
     final name = '${map['name']}';
     final arguments = map['arguments'];
     return switch (name) {
-      'grid_ask' => await _ask(chatId, arguments),
-      'grid_guide' => _guide(arguments),
+      'web_search' => await _search(arguments),
+      'web_fetch' => await _fetch(arguments),
       _ => _text('No tool called "$name".', isError: true),
     };
   }
 
-  Future<Map<String, Object?>> _ask(String chatId, Object? arguments) async {
-    final outcome = readGridAsk(arguments);
-    return switch (outcome) {
-      // A refusal is a *result*, not a transport error: the agent has to read it
-      // and say something to the user, and an error object it may never surface
-      // would leave them told nothing at all.
-      GridAskRefused(:final message) => _text(message, isError: true),
-      GridAskAccepted(:final call) => _text(await onAsk(chatId, call)),
-    };
+  /// A refusal is a *result*, not a transport error: the agent has to read it
+  /// and say something to the user, and an error object it may never surface
+  /// would leave them told nothing at all.
+  Future<Map<String, Object?>> _search(Object? arguments) async {
+    final args = readWebSearchArgs(arguments);
+    if (args == null) {
+      return _text('Nothing to search for. Pass `query`.', isError: true);
+    }
+    final grid = relay();
+    if (grid == null) return _text(kWebNeedsGrid, isError: true);
+    try {
+      final hits = await web.search(
+        baseUrl: grid.baseUrl,
+        apiKey: grid.token,
+        query: args.query,
+        maxResults: args.maxResults,
+      );
+      return _text(formatWebSearchHits(hits));
+    } on RelayWebRefused catch (refused) {
+      return _text(_refusal(refused), isError: true);
+    }
   }
 
-  Map<String, Object?> _guide(Object? arguments) {
-    final topic = switch (arguments) {
-      final Map<String, Object?> map => '${map['topic']}',
-      _ => '',
-    };
-    final body = kGridGuides[topic];
-    if (body == null) {
-      return _text(
-        'No guide called "$topic". Try: ${kGridGuides.keys.join(', ')}.',
-        isError: true,
-      );
+  Future<Map<String, Object?>> _fetch(Object? arguments) async {
+    final args = readWebFetchArgs(arguments);
+    if (args == null) {
+      return _text('Nothing to read. Pass `url`.', isError: true);
     }
-    return _text(body);
+    final grid = relay();
+    if (grid == null) return _text(kWebNeedsGrid, isError: true);
+    try {
+      final page = await web.read(
+        baseUrl: grid.baseUrl,
+        apiKey: grid.token,
+        url: args.url,
+      );
+      return _text(formatWebPage(page, maxChars: args.maxChars));
+    } on RelayWebRefused catch (refused) {
+      return _text(_refusal(refused), isError: true);
+    }
   }
+
+  /// The sentence, plus the one thing the agent acts on without reading it:
+  /// whether the same call is worth trying again this turn.
+  String _refusal(RelayWebRefused refused) => refused.retryable
+      ? refused.message
+      : '${refused.message} Not worth retrying in this turn.';
 
   Map<String, Object?> _text(String text, {bool isError = false}) => {
     'content': [
@@ -291,55 +300,11 @@ class GridMcpServer {
 /// particular.
 const String kMcpProtocolVersion = '2025-06-18';
 
-/// What `grid_guide` can hand back, keyed by the topic in its schema.
-///
-/// The card bodies, reused verbatim rather than rewritten — they are the same
-/// words that were being installed into the user's home, and having them in one
-/// place is what stops the tool and the card from drifting while both exist.
-Map<String, String> get kGridGuides => {
-  'delegate': skillCardBody(kGridDelegateSkillMd),
-  'loop': skillCardBody(kGridLoopSkillMd),
-  'host': skillCardBody(gridHostSkillMd(uvPath: gridSkillUvPath())),
-  'chart': skillCardBody(kGridChartSkillMd),
-  'schedule': skillCardBody(kGridScheduleSkillMd),
-  // The three that name scripts. Same bodies the cards carried, built against
-  // Grid's own folder instead of a skill folder inside the agent's home — see
-  // [gridAgentScriptsDir]. A getter rather than a const because those paths are
-  // resolved from `~/.grid` at call time, and a test that moves GRID_HOME has to
-  // move these with it.
-  'web': skillCardBody(
-    gridWebSkillMd(
-      searchScriptPath: gridAgentScriptPath('search.py'),
-      readScriptPath: gridAgentScriptPath('read.py'),
-    ),
-  ),
-  'research': skillCardBody(
-    gridResearchSkillMd(
-      searchScriptPath: gridAgentScriptPath('search.py'),
-      readScriptPath: gridAgentScriptPath('read.py'),
-    ),
-  ),
-  'serve': skillCardBody(
-    gridServeSkillMd(
-      uvPath: gridSkillUvPath(),
-      serveScriptPath: gridAgentScriptPath('serve.py'),
-      stateDir: gridServeStateDir().path,
-    ),
-  ),
-};
-
-/// A skill card without its YAML front-matter.
-///
-/// The front-matter is retrieval metadata for a folder of cards; over MCP the
-/// tool's own description does that job, and sending the header too would tell
-/// the model to look for a file that is no longer there.
-String skillCardBody(String card) {
-  final text = card.trimLeft();
-  if (!text.startsWith('---')) return text.trim();
-  final end = text.indexOf('\n---', 3);
-  if (end < 0) return text.trim();
-  return text.substring(text.indexOf('\n', end + 1) + 1).trim();
-}
+/// What the web tools say when the app is on no grid: the same sentence the
+/// scripts print, so the user hears one story.
+const String kWebNeedsGrid =
+    'Web access needs a grid. Open Grid, pick or create a grid, then try '
+    'again.';
 
 /// What one bearer token is allowed to speak for: the chat, and whether it
 /// belongs to a whole agent **session** or to a single turn.

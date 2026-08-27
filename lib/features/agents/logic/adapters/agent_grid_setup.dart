@@ -49,9 +49,9 @@ typedef CodexGridSetup = ({
 ///
 /// [mcpExtra] is merged into the turn's MCP config, for the servers only the
 /// caller knows about (the browser). Grid's own tools are added here, on a token
-/// minted for [conversationId] — no chat, no tools, because `grid_ask` is
-/// answered *into* a conversation and a run belonging to none has nowhere to
-/// put an answer.
+/// minted for [conversationId] — no chat, no tools, because the token *is* the
+/// chat (see `GridMcpServer`): it is what lets a turn's grant be retired with
+/// the turn, and a run belonging to no chat has no turn to retire it with.
 Future<ClaudeGridSetup> claudeGridSetup(
   Ref ref, {
   required NetworkCredential network,
@@ -126,8 +126,8 @@ List<String> _gridModels(Ref ref, String model) {
 }
 
 /// The grant Grid's tools run under for one agent run, or null when this run has
-/// no chat to speak for — `grid_ask` is answered *into* a conversation, and a run
-/// belonging to none has nowhere to put an answer.
+/// no chat to speak for — the token is the chat, and a run belonging to none has
+/// no turn or session for its grant to live and die with.
 ///
 /// Null is the whole answer, and the caller must then **not register the server
 /// either**. Handing Codex `mcp_servers.grid` with no token behind it is what
