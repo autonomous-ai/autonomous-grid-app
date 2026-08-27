@@ -9,6 +9,7 @@ import 'package:xterm/xterm.dart';
 import '../../infrastructure/cli/host_environment.dart';
 import '../theme/app_theme.dart';
 import 'grid_terminal.dart';
+import 'terminal_ime.dart';
 import 'terminal_shell.dart';
 
 /// What the shell behind a terminal is doing.
@@ -247,8 +248,14 @@ class TerminalSession {
 
       unawaited(pty.exitCode.then((code) => _onExit(pty, code)));
 
-      terminal.onOutput = (data) =>
-          pty.write(const Utf8Encoder().convert(data));
+      terminal.onOutput = (data) {
+        // TEMPORARY — the one choke point every byte bound for the program goes
+        // through, whichever path put it there: xterm's own key handling, and
+        // the IME layer's rewrites. Tracing here is what tells a rub-out that
+        // was *computed* from one that was actually *sent*.
+        traceIme('pty<-', showBytes(data));
+        pty.write(const Utf8Encoder().convert(data));
+      };
       // xterm counts columns then rows; a pty is sized rows then columns.
       // Passing them straight through swaps the two on every resize.
       terminal.onResize = (w, h, pw, ph) => pty.resize(h, w);
