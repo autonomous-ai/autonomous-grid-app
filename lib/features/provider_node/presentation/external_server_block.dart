@@ -9,6 +9,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/widgets/advertise_as_field.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/context_window_field.dart';
+import '../../../shared/widgets/form_plate.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/node_name_field.dart';
 import '../../../core/context_length.dart';
@@ -368,30 +369,44 @@ class ServerForm extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ServerAddressField(
-          controller: endpoint,
-          checking: checking,
-          reach: reach,
-          onRetry: onRetry,
+        // Five fields in one column read as five steps. Ruled into three
+        // groups they read as what they are: where the engine is, what it is
+        // called, and how much it remembers.
+        FormPlate(
+          sections: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ServerAddressField(
+                  controller: endpoint,
+                  checking: checking,
+                  reach: reach,
+                  onRetry: onRetry,
+                ),
+                const SizedBox(height: 14),
+                ModelField(model: model, suggestedModels: suggestedModels),
+              ],
+            ),
+            FieldPair(
+              first: AdvertiseAsField(
+                controller: advertise,
+                hintText: 'qwen3-31b.gguf',
+                optional: true,
+              ),
+              second: NodeNameField(controller: nodeName),
+            ),
+            ContextWindowField(
+              max: contextMax,
+              value: contextValue,
+              note: contextNote,
+              // Already inside a plate that rules it off from the fields above,
+              // so the recessed tile would be a box inside a box.
+              inline: true,
+              onChanged: onContextChanged,
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        ModelField(model: model, suggestedModels: suggestedModels),
-        const SizedBox(height: 12),
-        ContextWindowField(
-          max: contextMax,
-          value: contextValue,
-          note: contextNote,
-          onChanged: onContextChanged,
-        ),
-        const SizedBox(height: 12),
-        AdvertiseAsField(
-          controller: advertise,
-          hintText: 'qwen3-31b.gguf',
-          optional: true,
-        ),
-        const SizedBox(height: 12),
-        NodeNameField(controller: nodeName),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         Align(
           alignment: Alignment.centerLeft,
           child: ListenableBuilder(

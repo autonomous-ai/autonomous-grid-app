@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/models/network_credential.dart';
+import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../models/logic/advertise_name.dart';
 import '../logic/backend_detector.dart';
@@ -60,15 +61,25 @@ class ExternalServers extends ConsumerWidget {
             ),
           const SizedBox(height: 16),
         ],
+        // A rule with its own words, because what follows is not another
+        // detected engine — it is the fallback for an engine Grid could not
+        // find. Without it the manual form reads as a fourth card in the list
+        // and the reader looks for their server in it.
+        if (detected.isNotEmpty) ...[
+          const _OrDivider(),
+          const SizedBox(height: 16),
+        ],
         ExternalServerBlock(
           key: const ValueKey('manual'),
           network: network,
-          collapsible: true,
+          // Open. It used to fold away, which was right while this sat three
+          // disclosures deep on a page of stacked rows; on a pane of its own
+          // it is the route's own form, and a route whose form is shut shows
+          // the reader nothing to do.
+          collapsible: false,
           icon: Icons.computer_outlined,
-          title: 'Connect something else',
-          subtitle:
-              'Point Grid at any OpenAI-compatible engine running on this '
-              'computer.',
+          title: 'Point at another endpoint',
+          subtitle: 'Any OpenAI-compatible engine running on this computer.',
         ),
       ],
     );
@@ -134,6 +145,35 @@ class _NotRunningBackendBlock extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The rule between what was found here and what has to be typed in.
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(child: Divider(height: 1, color: AppPalette.divider)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(
+            'OR POINT AT ANOTHER ENDPOINT',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontSize: 10.5,
+              fontWeight: AppFont.semibold,
+              letterSpacing: 1.05,
+              color: AppPalette.textSecondary,
+            ),
+          ),
+        ),
+        Expanded(child: Divider(height: 1, color: AppPalette.divider)),
+      ],
     );
   }
 }

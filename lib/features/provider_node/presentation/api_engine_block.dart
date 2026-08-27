@@ -8,6 +8,7 @@ import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
+import '../../../shared/widgets/form_plate.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../logic/api_engine_catalog.dart';
@@ -248,84 +249,109 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
         run is ProviderRunActive &&
         run.grid == widget.network.networkId &&
         run.starting;
+    final theme = Theme.of(context);
+    final quiet = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.engines.length > 1) ...[
-          _ProviderDropdown(
-            engines: widget.engines,
-            selectedKind: _kind,
-            onChanged: _onProviderChanged,
-          ),
-          const SizedBox(height: 12),
-        ],
-        if (engine.provider.isSeat) ...[
-          _SeatPanel(
-            provider: engine.provider,
-            found: engine.seatFound == true,
-            onOpenSetup: _openUrl,
-          ),
-          // Only under the Claude seat: a distributed task runs Claude Code,
-          // so this is the one join whose environment the task loop reads.
-          if (engine.provider.kind == kClaudeSeatKind) ...[
-            const SizedBox(height: 16),
-            const Divider(height: 1),
-            const SizedBox(height: 12),
-            const TaskServingPanel(),
+        // Two questions, ruled apart: whose account answers, and which of its
+        // models this grid is allowed to ask for. They used to run together
+        // down one column, where the second read as more of the first.
+        FormPlate(
+          sections: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.engines.length > 1) ...[
+                  _ProviderDropdown(
+                    engines: widget.engines,
+                    selectedKind: _kind,
+                    onChanged: _onProviderChanged,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (engine.provider.isSeat) ...[
+                  _SeatPanel(
+                    provider: engine.provider,
+                    found: engine.seatFound == true,
+                    onOpenSetup: _openUrl,
+                  ),
+                  // Only under the Claude seat: a distributed task runs Claude
+                  // Code, so this is the one join whose environment the task
+                  // loop reads.
+                  if (engine.provider.kind == kClaudeSeatKind) ...[
+                    const SizedBox(height: 16),
+                    const Divider(height: 1),
+                    const SizedBox(height: 12),
+                    const TaskServingPanel(),
+                  ],
+                ] else
+                  _KeyField(
+                    provider: engine.provider,
+                    controller: _key,
+                    obscure: _obscure,
+                    usingStoredKey: _usingStoredKey,
+                    onToggleObscure: () => setState(() => _obscure = !_obscure),
+                    onReplaceKey: () => setState(() => _replaceKey = true),
+                    onOpenHelp: _openUrl,
+                  ),
+                const SizedBox(height: 10),
+                Text(
+                  // The "Billed to your own account" chip above already says
+                  // who pays, so this keeps only what the chip doesn't carry:
+                  // for a seat, that the allowance being spent is the one on
+                  // this computer; for a key, where the key lives and where
+                  // prompts go. Under the field it belongs to now, rather than
+                  // at the foot of the form, where it answered a question the
+                  // reader had two controls ago.
+                  engine.provider.isSeat
+                      ? 'Requests run through ${engine.provider.label} here '
+                            'and spend its own allowance.'
+                      : 'Your key never leaves this computer. Questions go to '
+                            '${engine.provider.label} to be answered.',
+                  style: quiet,
+                ),
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!widget.compact || _showAdvanced)
+                  _ModelMultiSelect(
+                    models: engine.models,
+                    selected: _selected,
+                    alreadyShared: widget.alreadyShared,
+                    onToggle: _toggleModel,
+                  )
+                else
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => _showAdvanced = true),
+                      icon: const Icon(Icons.tune, size: 16),
+                      label: const Text('Choose which models to share'),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  'Only the ones you pick get offered to the grid.',
+                  style: quiet,
+                ),
+                if (!widget.compact && engine.lastVerified.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Model list updated ${_prettyDate(engine.lastVerified)}. '
+                    'Update Grid to refresh.',
+                    style: quiet,
+                  ),
+                ],
+              ],
+            ),
           ],
-        ] else
-          _KeyField(
-            provider: engine.provider,
-            controller: _key,
-            obscure: _obscure,
-            usingStoredKey: _usingStoredKey,
-            onToggleObscure: () => setState(() => _obscure = !_obscure),
-            onReplaceKey: () => setState(() => _replaceKey = true),
-            onOpenHelp: _openUrl,
-          ),
-        const SizedBox(height: 16),
-        if (!widget.compact || _showAdvanced)
-          _ModelMultiSelect(
-            models: engine.models,
-            selected: _selected,
-            alreadyShared: widget.alreadyShared,
-            onToggle: _toggleModel,
-          )
-        else
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => setState(() => _showAdvanced = true),
-              icon: const Icon(Icons.tune, size: 16),
-              label: const Text('Advanced: choose which models to share'),
-            ),
-          ),
-        if (!widget.compact && engine.lastVerified.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(
-            'Model list updated ${_prettyDate(engine.lastVerified)}. '
-            'Update Grid to refresh.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        Text(
-          // The "Billed to your own account" chip above already says who pays,
-          // so this keeps only what the chip doesn't carry: for a seat, that the
-          // allowance being spent is the one on this computer; for a key, where
-          // the key lives and where prompts go.
-          engine.provider.isSeat
-              ? 'Requests run through ${engine.provider.label} here and spend '
-                    'its own allowance.'
-              : 'Your key never leaves this computer. Questions go to '
-                    '${engine.provider.label} to be answered.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         Align(
           alignment: Alignment.centerLeft,
           child: starting
@@ -647,7 +673,7 @@ class _ModelField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const FieldLabel('Models available to the grid'),
+        const FieldLabel('Models you are willing to share'),
         InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),

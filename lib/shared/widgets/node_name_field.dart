@@ -25,7 +25,10 @@ class NodeNameField extends StatelessWidget {
       'How this computer appears on the grid, so you can tell your machines '
       'apart. It does not change which models you serve.';
 
-  static const _label = "This computer's name on the grid";
+  /// Paired with [AdvertiseAsField]'s, and trimmed for the same reason: the two
+  /// sit side by side, and "on the grid" is what the field above it already
+  /// establishes both names are for.
+  static const _label = "This computer's name";
 
   @override
   Widget build(BuildContext context) {

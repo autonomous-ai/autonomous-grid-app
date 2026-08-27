@@ -34,7 +34,12 @@ class AdvertiseAsField extends StatelessWidget {
       'requests to your machine.';
 
   /// The field label; the same concept whether or not the flag is optional.
-  static const _label = 'Model name shown to the grid';
+  ///
+  /// Short enough to sit beside [NodeNameField] in a two-column row without
+  /// either label wrapping. "Model name shown to the grid" said the same thing
+  /// in twice the width, and the word it spent that width on — "model" — is
+  /// already the label on the picker directly above it.
+  static const _label = 'Shown on the grid as';
 
   @override
   Widget build(BuildContext context) {
