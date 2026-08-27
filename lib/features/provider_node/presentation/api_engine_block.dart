@@ -5,9 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
-import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
+import '../../../shared/theme/share_page_theme.dart';
 import '../../../shared/widgets/form_plate.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/labeled_field.dart';
@@ -297,29 +297,30 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
                     onReplaceKey: () => setState(() => _replaceKey = true),
                     onOpenHelp: _openUrl,
                   ),
-                const SizedBox(height: 10),
-                Text(
-                  // The "Billed to your own account" chip above already says
-                  // who pays, so this keeps only what the chip doesn't carry:
-                  // for a seat, that the allowance being spent is the one on
-                  // this computer; for a key, where the key lives and where
-                  // prompts go. Under the field it belongs to now, rather than
-                  // at the foot of the form, where it answered a question the
-                  // reader had two controls ago.
-                  engine.provider.isSeat
-                      ? 'Requests run through ${engine.provider.label} here '
-                            'and spend its own allowance.'
-                      : 'Your key never leaves this computer. Questions go to '
-                            '${engine.provider.label} to be answered.',
-                  style: quiet,
-                ),
+                // A seat spends an allowance rather than a key, and has no
+                // field of its own to hang the note under — so it keeps it
+                // here. The key path carries its own, inside [_KeyField].
+                if (engine.provider.isSeat) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Requests run through ${engine.provider.label} here and '
+                    'spend its own allowance.',
+                    style: quiet,
+                  ),
+                ],
               ],
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                FieldLabel("Models you're willing to share"),
+                Text(
+                  'Only the ones you pick get offered to the grid.',
+                  style: quiet,
+                ),
+                const SizedBox(height: 10),
                 if (!widget.compact || _showAdvanced)
-                  _ModelMultiSelect(
+                  _ModelPills(
                     models: engine.models,
                     selected: _selected,
                     alreadyShared: widget.alreadyShared,
@@ -328,20 +329,17 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
                 else
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
+                    child: TextButton(
                       onPressed: () => setState(() => _showAdvanced = true),
-                      icon: const Icon(Icons.tune, size: 16),
-                      label: const Text('Choose which models to share'),
+                      child: const Text('Choose which models to share →'),
                     ),
                   ),
-                const SizedBox(height: 8),
-                Text(
-                  'Only the ones you pick get offered to the grid.',
-                  style: quiet,
-                ),
                 if (!widget.compact && engine.lastVerified.isNotEmpty) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 10),
                   Text(
+                    // Not in the design, and kept: a model list this app can
+                    // only refresh by shipping a new build is a fact the reader
+                    // needs when the model they are looking for is missing.
                     'Model list updated ${_prettyDate(engine.lastVerified)}. '
                     'Update Grid to refresh.',
                     style: quiet,
@@ -352,19 +350,35 @@ class _ApiEngineFormState extends ConsumerState<ApiEngineForm> {
           ],
         ),
         const SizedBox(height: 18),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: starting
-              ? const _StartingRow(label: 'Starting…')
-              : ListenableBuilder(
-                  listenable: _key,
-                  builder: (context, _) => EngineStartButton(
+        if (starting)
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: _StartingRow(label: 'Starting…'),
+          )
+        else
+          ListenableBuilder(
+            listenable: _key,
+            builder: (context, _) {
+              final blocked = _startBlockedReason();
+              return Wrap(
+                spacing: ShareMetrics.buttonGap,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  EngineStartButton(
                     label: _startLabel,
-                    blockedReason: _startBlockedReason(),
+                    blockedReason: blocked,
                     onPressed: _start,
                   ),
-                ),
-        ),
+                  // Beside the button rather than only inside its tooltip: a
+                  // disabled control that will not say why is the shape people
+                  // stare at.
+                  if (blocked != null)
+                    Text(blocked, style: ShareType.buttonHelper),
+                ],
+              );
+            },
+          ),
       ],
     );
   }
@@ -548,13 +562,22 @@ class _KeyField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const FieldLabel('Provider API key'),
+        // Named for the provider it belongs to, as the design has it: on a
+        // build that whitelists one provider, "Provider API key" makes the
+        // reader work out which provider from the dropdown that isn't there.
+        FieldLabel('${provider.label} API key'),
         TextField(
           controller: controller,
           obscureText: obscure,
           autocorrect: false,
           enableSuggestions: false,
-          style: kFieldTextStyle,
+          // Mono, as the design sets it: a key is a string you check character
+          // by character, and `l`/`1` and `O`/`0` are the two pairs a
+          // proportional face makes hardest to tell apart.
+          style: kFieldTextStyle.copyWith(
+            fontFamily: AppFont.monoDefault,
+            letterSpacing: 0.2,
+          ),
           decoration:
               labeledFieldDecoration(
                 provider.keyHint,
@@ -576,26 +599,47 @@ class _KeyField extends StatelessWidget {
                 ),
               ),
         ),
-        if (helpUrl != null)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => onOpenHelp(helpUrl),
-              icon: const Icon(Icons.open_in_new, size: 16),
-              label: const Text('Find your API key'),
+        const SizedBox(height: 4),
+        // The way to the key and the promise about it, on one line under the
+        // field they both belong to. The design puts "Read-only checks only.
+        // No billing changes." here, and this app cannot say it: the key is
+        // used to *answer questions*, which is exactly what bills the account.
+        // What it can say is where the key lives and where the questions go.
+        Wrap(
+          spacing: 14,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (helpUrl != null)
+              TextButton(
+                onPressed: () => onOpenHelp(helpUrl),
+                child: const Text('Where to find your key →'),
+              ),
+            Text(
+              'Your key never leaves this computer. Questions go to '
+              '${provider.label} to be answered.',
+              style: ShareType.note,
             ),
-          ),
+          ],
+        ),
       ],
     );
   }
 }
 
-/// A compact multi-select for the whitelisted models: a field showing a summary
-/// ("All available models (4)" / "2 of 4 models") that drops a checkbox menu.
-/// All are shared by default; the menu stays open while ticking so several can
-/// be picked in one go. Keeps the block short instead of a full checkbox list.
-class _ModelMultiSelect extends StatelessWidget {
-  const _ModelMultiSelect({
+/// The whitelisted models as pills you switch on and off.
+///
+/// The design's control, and the right one for this list: every model is a
+/// yes/no, they are short, and there are a handful. A dropdown summarising them
+/// as "All available models (4)" made the reader open a menu to find out what
+/// the four *were* — which is the same mistake the three stacked routes used to
+/// make, one control down.
+///
+/// A model this machine already serves is shown, spent, and untappable: sharing
+/// one twice would advertise the same name to the grid twice, and leaving it out
+/// would make it look as though the provider never offered it.
+class _ModelPills extends StatelessWidget {
+  const _ModelPills({
     required this.models,
     required this.selected,
     required this.alreadyShared,
@@ -604,223 +648,93 @@ class _ModelMultiSelect extends StatelessWidget {
 
   final List<ApiEngineModel> models;
   final Set<String> selected;
-
-  /// Models this machine already serves — shown, but not tickable: sharing one
-  /// twice would advertise the same name to the grid twice.
   final Set<String> alreadyShared;
   final void Function(String advertised, bool selected) onToggle;
 
   @override
-  Widget build(BuildContext context) {
-    // The menu opens full-width (not shrink-wrapped to the model names), so each
-    // row carries the field width via a SizedBox — MenuStyle.minimumSize doesn't
-    // widen the panel reliably. LayoutBuilder gives us that width.
-    return LayoutBuilder(
-      builder: (context, constraints) => MenuAnchor(
-        // Line the menu up under the field's left edge, just below it.
-        alignmentOffset: const Offset(0, 6),
-        // Without this the panel takes the themed fill, which is within 1.02:1
-        // of the block behind it (identical in light) — the menu had no edge.
-        style: appMenuStyle(),
-        builder: (context, controller, _) => _ModelField(
-          summary: _summary(),
-          onTap: controller.isOpen ? controller.close : controller.open,
+  Widget build(BuildContext context) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      for (final model in models)
+        _ModelPill(
+          // "openai:gpt-5.4" is the name the grid advertises, and every pill
+          // here carries the same prefix — a column of it says nothing the
+          // label above has not, and it is what pushed four short names onto
+          // two rows.
+          label: model.advertised.split(':').last,
+          state: alreadyShared.contains(model.advertised)
+              ? _PillState.shared
+              : selected.contains(model.advertised)
+              ? _PillState.on
+              : _PillState.off,
+          onToggle: () =>
+              onToggle(model.advertised, !selected.contains(model.advertised)),
         ),
-        menuChildren: [
-          for (final model in models)
-            _ModelMenuRow(
-              model: model,
-              width: constraints.maxWidth,
-              checked: selected.contains(model.advertised),
-              shared: alreadyShared.contains(model.advertised),
-              onToggle: () => onToggle(
-                model.advertised,
-                !selected.contains(model.advertised),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// What the field says when closed. Counts against what's actually on offer —
-  /// with some models already live, "all" means all the ones left to share, and
-  /// nothing to share at all says so rather than reading "No models selected".
-  String _summary() {
-    final offered = models.length - alreadyShared.length;
-    if (offered <= 0) return 'Already sharing every model';
-    if (selected.isEmpty) return 'No models selected';
-    if (selected.length == offered) {
-      return offered == models.length
-          ? 'All available models ($offered)'
-          : 'All $offered ${plural(offered, 'model')} left to share';
-    }
-    return '${selected.length} of $offered ${plural(offered, 'model')}';
-  }
+    ],
+  );
 }
 
-/// The tappable field that opens the model menu: a borderless capsule matching
-/// the app's other fields, showing the current [summary] with a dropdown
-/// affordance.
-class _ModelField extends StatelessWidget {
-  const _ModelField({required this.summary, required this.onTap});
+enum _PillState { on, off, shared }
 
-  final String summary;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const FieldLabel('Models you are willing to share'),
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: InputDecorator(
-            isEmpty: false,
-            decoration: labeledFieldDecoration(
-              '',
-              fill: AppCard.inset,
-              skin: FieldSkinScope.maybeOf(context),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    summary,
-                    overflow: TextOverflow.ellipsis,
-                    style: kFieldTextStyle,
-                  ),
-                ),
-                // Size 24 (a dropdown's default arrow) so the field matches the
-                // theme's field height instead of shrinking to the 18px icon
-                // theme.
-                const Icon(Icons.arrow_drop_down, size: 24),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// One checkbox row in the model menu — the model name over its context/notes,
-/// stretched to the field [width]. Toggling never closes the menu, so several
-/// can be picked in a pass.
-class _ModelMenuRow extends StatelessWidget {
-  const _ModelMenuRow({
-    required this.model,
-    required this.width,
-    required this.checked,
-    required this.shared,
+/// One model, and whether the grid may ask for it.
+class _ModelPill extends StatelessWidget {
+  const _ModelPill({
+    required this.label,
+    required this.state,
     required this.onToggle,
   });
 
-  final ApiEngineModel model;
-  final double width;
-  final bool checked;
-
-  /// Already live on the grid from this machine — the row shows it, greyed and
-  /// untickable, so the model is accounted for rather than silently missing.
-  final bool shared;
+  final String label;
+  final _PillState state;
   final VoidCallback onToggle;
+
+  String get _suffix => switch (state) {
+    _PillState.on => 'on',
+    _PillState.off => 'off',
+    _PillState.shared => 'sharing',
+  };
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final theme = Theme.of(context);
-    final radius = BorderRadius.circular(AppControl.radius);
-    // Same construction as AppSelectField's rows and the chat model picker's:
-    // MenuItemButton is unthemed here, so its M3 defaults (square corners, 14pt
-    // text, Material's grey hover, an ink ripple) would put this menu outside
-    // the design system. See _OptionRow in app_select_field.dart.
-    return SizedBox(
-      width: width,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: radius,
-          child: InkWell(
-            onTap: shared ? null : onToggle,
-            borderRadius: radius,
-            hoverColor: AppSurface.hoverFill,
-            splashFactory: NoSplash.splashFactory,
-            child: Ink(
-              decoration: BoxDecoration(
-                color: checked ? AppSurface.accentWash : Colors.transparent,
-                borderRadius: radius,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    shared
-                        ? Icons.check_circle_outline
-                        : (checked
-                              ? Icons.check_box
-                              : Icons.check_box_outline_blank),
-                    size: AppControl.iconSize,
-                    // onSurfaceVariant, not textFaint: on the lifted menu panel
-                    // the faint ink lands at 2.80:1, under the 3.0 WCAG 1.4.11
-                    // asks of a UI glyph.
-                    color: checked
-                        ? AppPalette.accentMuted
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Weight carries the selection as well as the tick, so
-                        // which rows are in play reads from the text alone.
-                        Text(
-                          model.vendorName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: AppControl.fontSize,
-                            height: 1.2,
-                            fontWeight: checked
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                            color: shared
-                                ? AppPalette.textSecondary
-                                : AppPalette.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          shared ? 'Already sharing' : _meta(model),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.28,
-                            color: AppPalette.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    final live = state != _PillState.off;
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: live
+            ? SharePalette.accent.withValues(alpha: 0.09)
+            : SharePalette.fieldFill,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: live
+              ? SharePalette.accent.withValues(alpha: 0.28)
+              : SharePalette.fieldRim,
+        ),
+      ),
+      child: Text(
+        '$label · $_suffix',
+        style: TextStyle(
+          fontSize: 12.5,
+          fontWeight: AppFont.medium,
+          color: live ? SharePalette.accentHover : SharePalette.body,
         ),
       ),
     );
-  }
-
-  static String _meta(ApiEngineModel model) {
-    final ctx = '${_ctxLabel(model.contextWindow)} context';
-    return model.notes.isEmpty ? ctx : '$ctx · ${model.notes}';
+    if (state == _PillState.shared) {
+      return Tooltip(
+        message: 'Already shared with the grid from this computer.',
+        child: Opacity(opacity: 0.7, child: pill),
+      );
+    }
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onToggle,
+        child: pill,
+      ),
+    );
   }
 }
 
@@ -848,17 +762,4 @@ String _prettyDate(String iso) {
   final day = int.tryParse(parts[2]);
   if (month == null || day == null || month < 1 || month > 12) return iso;
   return '$day ${_monthAbbr[month - 1]} ${parts[0]}';
-}
-
-/// A compact context-window label, e.g. `1.1M` / `400K` — a hint, not exact.
-String _ctxLabel(int tokens) {
-  if (tokens >= 1000000) {
-    final millions = tokens / 1000000;
-    final text = millions == millions.roundToDouble()
-        ? millions.toStringAsFixed(0)
-        : millions.toStringAsFixed(1);
-    return '${text}M';
-  }
-  if (tokens >= 1000) return '${(tokens / 1000).round()}K';
-  return '$tokens';
 }
