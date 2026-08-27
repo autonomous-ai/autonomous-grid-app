@@ -246,7 +246,10 @@ class ClaudeStreamParser {
   AgentActivity get _waitRow => AgentActivity(
     id: 'background-wait-$_waits',
     kind: AgentActivityKind.tool,
-    label: _wakeup != null
+    // A tick is a tick whether a wake-up or a session cron books it: the cron
+    // arm used to fall through to the count below and read "0 background
+    // tasks", which is a number nobody asked for about a thing nobody started.
+    label: _wakeup != null || _crons > 0
         ? 'Waiting for the next tick'
         : _background.length == 1
         ? 'Waiting for background work to finish'

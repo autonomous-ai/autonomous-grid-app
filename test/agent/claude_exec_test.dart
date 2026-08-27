@@ -617,6 +617,12 @@ void main() {
       _read(parser, _toolResult('c-1'));
       final open = _read(parser, _result('created'));
       expect((open.last as ClaudeTurnWaiting).pending, ['1 scheduled job']);
+      // The row says what it waits for. A cron is a tick like a wake-up is —
+      // it used to fall through to the task count and read "Waiting for 0
+      // background tasks to finish".
+      final wait = open.whereType<ClaudeActivityEvent>().single.activity;
+      expect(wait.label, 'Waiting for the next tick');
+      expect(wait.request, '1 scheduled job');
 
       _read(parser, {'type': 'system', 'subtype': 'init', 'session_id': 's'});
       _read(parser, _assistant(_schedulerCall('c-2', 'CronDelete')));
