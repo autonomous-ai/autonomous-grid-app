@@ -169,11 +169,18 @@ class _EnginesHalfState extends ConsumerState<_EnginesHalf> {
         // the label already reports the state, and a tooltip repeating it spent
         // the one line this control has on something the user could already see
         // — while the reason to press it went unsaid.
+        //
+        // The off state names the two ways in, because "Share Intelligence" is
+        // an umbrella and a reader who owns no GPU reads it as a demand for one.
+        // Both routes are real rows on the page behind it ("Run a model on this
+        // computer", "Use a key you already pay for"), and the one that costs
+        // nothing to try is the one people don't know is there.
         message: !widget.canHost
             ? 'See what’s answering on this grid'
             : serving
-            ? 'Change what this computer adds to the grid'
-            : 'Add this computer so the grid can run bigger models',
+            ? 'Change what you’re sharing with the grid'
+            : 'Contribute intelligence to the grid, from this computer '
+                  'or your API key',
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
@@ -303,8 +310,13 @@ class _InviteHalfState extends ConsumerState<_InviteHalf> {
         // The roster count moved to the label above, which a screen reader
         // reads and a pointer user does not need twice. This line is for the
         // reason to press it, in the same words the front door made its case
-        // with: more of them means bigger models.
-        message: 'More people means more machines and bigger models',
+        // with: more of them means more to answer with.
+        //
+        // "Intelligence", not "models", and the same word its neighbour uses:
+        // these two halves are one argument read left to right — bring
+        // intelligence, bring people who bring more — and two nouns for the
+        // one thing would break it in the six inches between them.
+        message: 'More people means more machines and more intelligence',
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           onEnter: (_) => setState(() => _hovered = true),
