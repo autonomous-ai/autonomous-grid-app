@@ -1,3 +1,4 @@
+import '../../../shared/copy/plural.dart';
 import 'code_task.dart';
 import 'wire.dart';
 
@@ -207,13 +208,21 @@ String? fleetNotice(ProjectStatus status) {
   }
   final paused = fleet.paused ?? 0;
   if (paused == 0) return null;
+  // Both figures read the same way past `isReadable`: null cannot reach here,
+  // and zero is the honest reading if it ever did.
+  final online = fleet.online ?? 0;
   final resumes = fleet.resumesAt;
   final when = resumes == null
       ? ''
       : ' The first starts again around '
             '${resumes.hour.toString().padLeft(2, '0')}:'
             '${resumes.minute.toString().padLeft(2, '0')}.';
-  return '$paused of ${fleet.online} computers have stepped back — their '
-      'Claude subscription is out of headroom, so they are not taking work.'
-      '$when';
+  // Three agreements ride on the paused count, not on the fleet size behind the
+  // "of": the verb, and the two pronouns after the dash. "1 of 1 computers have
+  // stepped back — their subscription…" got every one of them wrong at once.
+  final one = paused == 1;
+  return '$paused of $online ${plural(online, 'computer')} '
+      '${one ? 'has' : 'have'} stepped back — ${one ? 'its' : 'their'} Claude '
+      'subscription is out of headroom, so ${one ? 'it is' : 'they are'} not '
+      'taking work.$when';
 }

@@ -1,4 +1,5 @@
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../shared/copy/plural.dart';
 
 /// How one step in the activity feed reads at the chosen level of detail.
 ///
@@ -323,7 +324,7 @@ String describeStepRun(List<AgentActivity> steps) {
     return thoughts == 1 ? 'Thought about it' : 'Thought $thoughts times';
   }
   if (clauses.isEmpty) {
-    return '${steps.length} ${_plural(steps.length, 'step')}';
+    return '${steps.length} ${plural(steps.length, 'step')}';
   }
   // Stable by construction: `sort` is not guaranteed stable, so the fixed order
   // above is carried into the comparison rather than relied on to survive it.
@@ -342,9 +343,7 @@ String describeStepRun(List<AgentActivity> steps) {
 /// "read 6 files" · "read a file" — the digit only earns its place when there is
 /// something to compare it against.
 String _count(int count, String verb, String noun) =>
-    count == 1 ? '$verb a $noun' : '$verb $count ${_plural(count, noun)}';
+    count == 1 ? '$verb a $noun' : '$verb $count ${plural(count, noun)}';
 
 String _capitalized(String line) =>
     line.isEmpty ? line : line[0].toUpperCase() + line.substring(1);
-
-String _plural(int count, String word) => count == 1 ? word : '${word}s';

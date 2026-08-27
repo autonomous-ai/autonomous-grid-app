@@ -1,3 +1,5 @@
+import '../../../shared/copy/plural.dart';
+
 /// What a line in a proposed file change is: unchanged, going away, or new.
 enum DiffLineKind { context, removed, added }
 
@@ -65,7 +67,13 @@ List<DiffLine> buildEditDiff(
   if (lines.length <= maxLines) return lines;
   final shown = lines.take(maxLines).toList();
   final hidden = lines.length - maxLines;
-  return [...shown, DiffLine(DiffLineKind.context, '… and $hidden more lines')];
+  return [
+    ...shown,
+    DiffLine(
+      DiffLineKind.context,
+      '… and $hidden more ${plural(hidden, 'line')}',
+    ),
+  ];
 }
 
 /// Splits into lines without inventing a trailing empty one for the final

@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/code/code_highlight.dart';
+import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/code_text_scope.dart';
 import '../../../shared/widgets/pulse.dart';
@@ -314,7 +315,7 @@ class _RunSummary extends StatelessWidget {
             _Chevron(open: open, dim: true),
             const SizedBox(width: 6),
             Text(
-              '$total steps · showing the last $shown',
+              '$total ${plural(total, 'step')} · showing the last $shown',
               style: TextStyle(fontSize: 11.5, color: AppPalette.textFaint),
             ),
           ],

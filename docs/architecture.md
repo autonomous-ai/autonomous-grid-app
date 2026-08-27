@@ -1283,7 +1283,7 @@ a permission request, from whichever transport carries it (§4.3)
 
 | Skill | Script | Does what |
 |---|---|---|
-| `grid-web` | `search.py`, `read.py`, `browse.py` | Search & read the web via `uv run --with ddgs/trafilatura/playwright`. **Codex and Claude Code on a grid have no web search** — their tools come from the vendor API |
+| `grid-web` | `search.py`, `read.py` | Search & read the web **through the grid** — both scripts are standard-library only and post to the relay, which forwards to the control plane (the only thing holding the vendor key; public-repo ADR 0036). No package runner, and no browser download: `browse.py` was deleted with it. **Codex and Claude Code on a grid have no web search** — their tools come from the vendor API |
 | `grid-host` | — | "What's on this machine" — macOS has no `timeout`/`gh`/`rg`. Distilled from 83 recorded Codex turns |
 | `grid-serve` | `serve.py` (~540 lines) | Run a service that outlives a tool call: launchd → screen → tmux → detached |
 | `grid-research` | (uses `grid-web`'s scripts) | A research method: many queries, read real pages, a "Not verified" section |

@@ -20,8 +20,8 @@ class NodeSetupCard extends ConsumerWidget {
 
   /// Whether to draw its own card and title. False when it's embedded in
   /// something that already says what it is — the "Run on this computer" card
-  /// on Model Engines — where the frame would be a box inside a box and the
-  /// title would say the same thing twice.
+  /// on Share Intelligence — where the frame would be a box inside a box and
+  /// the title would say the same thing twice.
   final bool framed;
 
   @override

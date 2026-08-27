@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/copy/setup_hints.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_icon_button.dart';
 import '../../../shared/widgets/detail_widgets.dart';
@@ -41,9 +42,8 @@ class StoredModelRow extends ConsumerWidget {
 
   String? get _blockedReason {
     if (inUse) {
-      return 'This model is running right now. Stop it in Share '
-          'Intelligence to '
-          'delete it.';
+      return 'This model is running right now. Stop it from '
+          '$kSharePlace to delete it.';
     }
     if (item.isUnfinished && downloadRunning) {
       return 'A download is running. Wait for it to finish, or cancel it, '

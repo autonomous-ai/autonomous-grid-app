@@ -1,4 +1,5 @@
 import '../../../infrastructure/state/models/local_files.dart';
+import '../../../shared/copy/plural.dart';
 import 'model_group.dart';
 
 /// A size in the units a person reads. Decimal GB (10^9) to match the sizes the
@@ -183,8 +184,11 @@ String? _detailLine({
   required bool unfinished,
 }) {
   if (!unfinished) {
-    return expectedParts == null ? null : '$expectedParts parts';
+    return expectedParts == null
+        ? null
+        : '$expectedParts ${plural(expectedParts, 'part')}';
   }
   if (expectedParts == null) return 'Download stopped partway';
-  return 'Download stopped partway · $partsHere of $expectedParts parts here';
+  return 'Download stopped partway · $partsHere of $expectedParts '
+      '${plural(expectedParts, 'part')} here';
 }

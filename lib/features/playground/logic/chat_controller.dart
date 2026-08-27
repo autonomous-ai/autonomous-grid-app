@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../network/logic/grid_overview_provider.dart';
@@ -41,6 +43,12 @@ class ChatController extends Notifier<ChatState> {
   }) async {
     final text = message.trim();
     if (text.isEmpty || state.sending) return;
+
+    // Count the message the moment the user sends it, before the transport is
+    // even chosen — a smoke test against the local engine sets is_local.
+    ref
+        .read(analyticsProvider)
+        .chatMessageSent(model: model, isLocal: localBaseUrl != null);
 
     final userTurn = await buildUserTurn(
       text: text,

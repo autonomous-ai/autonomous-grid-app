@@ -1,3 +1,4 @@
+import '../../../../shared/copy/plural.dart';
 import '../../../agents/logic/agent_catalog.dart';
 import '../../../playground/logic/chat_message.dart';
 
@@ -584,9 +585,12 @@ String _tokens(ChatGoal goal) {
   final used = goal.tokensUsed!;
   final budget = goal.tokenBudget;
   // No budget means unbounded, not zero — say the spend and stop there.
+  // The noun agrees with the figure the reader is looking at: with a budget
+  // that is the budget, since "1/2000 tokens" counts toward the second number.
   return budget == null
-      ? '${_compactCount(used)} tokens'
-      : '${_compactCount(used)}/${_compactCount(budget)} tokens';
+      ? '${_compactCount(used)} ${plural(used, 'token')}'
+      : '${_compactCount(used)}/${_compactCount(budget)} '
+            '${plural(budget, 'token')}';
 }
 
 String _compactCount(int value) {

@@ -59,8 +59,8 @@ class ModelDownloadFailed extends ModelDownloadState {
 /// [NoModelYet]'s downloading state are all now reachable by old installs
 /// only. That is a deliberate hold, not an oversight: deleting the
 /// chain would take auto-share away from the users who *do* still reach it. New
-/// users set an engine up from **Model engines** instead, which is the door
-/// chat's empty state already sends them to. Decide it properly rather than
+/// users set an engine up from **Share Intelligence** instead, which is the
+/// door chat's empty state already sends them to. Decide it properly rather than
 /// letting it rot — either give this a new writer, or remove the chain and
 /// accept the loss for old installs.
 final localModelChosenProvider = Provider<bool>(

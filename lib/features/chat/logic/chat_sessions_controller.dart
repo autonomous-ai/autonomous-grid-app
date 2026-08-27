@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'turn_model_usage.dart';
 import '../../../core/app_environment.dart';
 import '../../../core/text_preview.dart';
+import '../../../infrastructure/analytics/analytics_events.dart';
+import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/api/chat_transport.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/api/relay_api_client.dart';
