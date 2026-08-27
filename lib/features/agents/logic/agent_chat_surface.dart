@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../infrastructure/cli/node_probe.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import 'active_chat_agent.dart';
@@ -24,9 +25,52 @@ import 'agent_catalog.dart';
 /// surface is one that started before the setting existed, and reading the live
 /// value there would take a running terminal chat's conversation off screen the
 /// moment someone changed their mind about the *next* chat.
-AgentChatSurface agentChatSurface(AgentTool tool, {AgentChatSurface? chosen}) {
-  if (!tool.hasInteractiveCli) return AgentChatSurface.list;
+/// [terminalAvailable] is the runtime half of the same question, and it is false
+/// only for an agent whose interactive CLI this computer cannot actually run.
+/// Hermes is the one that has such a condition: `hermes --tui` is a Node bundle
+/// (≥20) while the rest of Hermes is Python, so a machine can answer every ACP
+/// turn perfectly and still be unable to draw the TUI. Passed in rather than
+/// probed here so this stays pure — see [hermesTuiReadyProvider], which is where
+/// the probe lives.
+///
+/// Falling back to [AgentChatSurface.list] rather than refusing: an agent that
+/// cannot draw its own program can still hold a conversation, and the chat the
+/// user asked for is more important than the shape they asked for it in.
+AgentChatSurface agentChatSurface(
+  AgentTool tool, {
+  AgentChatSurface? chosen,
+  bool terminalAvailable = true,
+}) {
+  if (!tool.hasInteractiveCli || !terminalAvailable) {
+    return AgentChatSurface.list;
+  }
   return chosen ?? AgentChatSurface.terminal;
+}
+
+/// Whether this computer can run `hermes --tui` — a Node ≥20 the *app's own*
+/// spawns can reach.
+///
+/// Probed once and cached by Riverpod, because the answer changes only when the
+/// user installs Node, and a subprocess per rebuild would cost a chat screen a
+/// process on every keystroke. `AsyncValue` rather than a bool so the unresolved
+/// state is distinguishable from "no": treating "still probing" as a no would
+/// flip a Hermes chat to the message surface for the first frames and then flip
+/// it back, and a chat that changes shape underneath the user reads as a bug
+/// whichever way it settles.
+final hermesTuiReadyProvider = FutureProvider<bool>(
+  (ref) => probeHermesTuiReady(),
+);
+
+/// [hermesTuiReadyProvider] as the yes/no the surface rule needs.
+///
+/// **Unresolved counts as available.** The probe takes a few milliseconds and
+/// the alternative is the flicker described above; a Hermes chat that opens a
+/// terminal on a machine with no Node gets Hermes's own error on screen, which
+/// is a worse first frame than the truth but a better one than a pane that
+/// swapped itself out after the user had started reading it.
+bool _terminalAvailable(Ref ref, AgentTool tool) {
+  if (tool != AgentTool.hermes) return true;
+  return ref.watch(hermesTuiReadyProvider).asData?.value ?? true;
 }
 
 /// The surface a **new** chat with [tool] will start in — the user's setting for
@@ -38,7 +82,11 @@ final agentChatSurfaceProvider = Provider.family<AgentChatSurface, AgentTool>((
   final chosen = ref.watch(
     chatPrefsProvider.select((p) => p.agentSurface[tool.id]),
   );
-  return agentChatSurface(tool, chosen: chosen);
+  return agentChatSurface(
+    tool,
+    chosen: chosen,
+    terminalAvailable: _terminalAvailable(ref, tool),
+  );
 });
 
 /// The surface the chat **on screen** is drawn in.
@@ -57,7 +105,11 @@ final openChatSurfaceProvider = Provider<AgentChatSurface>((ref) {
   // Nothing open: what is in front of the user is a composer, and pressing Send
   // starts a chat the setting decides the shape of.
   if (!open.started) return ref.watch(agentChatSurfaceProvider(tool));
-  return agentChatSurface(tool, chosen: open.surface);
+  return agentChatSurface(
+    tool,
+    chosen: open.surface,
+    terminalAvailable: _terminalAvailable(ref, tool),
+  );
 });
 
 /// Whether the chat on screen is drawn as its agent's own terminal.

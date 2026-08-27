@@ -17,13 +17,32 @@ void main() {
     });
 
     test(
-      'Hermes has no program to open, so it stays a message list whatever is '
+      'Hermes draws its own program like the other two — `hermes --tui` exists '
+      'as of 0.20.5, so the capability is no longer what separates it',
+      () {
+        expect(agentChatSurface(AgentTool.hermes), AgentChatSurface.terminal);
+        expect(
+          agentChatSurface(AgentTool.hermes, chosen: AgentChatSurface.terminal),
+          AgentChatSurface.terminal,
+        );
+      },
+    );
+
+    test(
+      'a computer that cannot run the program stays a message list whatever is '
       'asked of it — offering a terminal it cannot draw would be a lie on '
       'screen',
       () {
-        expect(agentChatSurface(AgentTool.hermes), AgentChatSurface.list);
         expect(
-          agentChatSurface(AgentTool.hermes, chosen: AgentChatSurface.terminal),
+          agentChatSurface(AgentTool.hermes, terminalAvailable: false),
+          AgentChatSurface.list,
+        );
+        expect(
+          agentChatSurface(
+            AgentTool.hermes,
+            chosen: AgentChatSurface.terminal,
+            terminalAvailable: false,
+          ),
           AgentChatSurface.list,
         );
       },
