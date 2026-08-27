@@ -56,24 +56,6 @@ class ChatSendAgentSession extends ChatSendUpdate {
   final String sessionId;
 }
 
-/// A goal the **agent** is driving has been judged once more and is still not
-/// met — [reason] is its evaluator's latest word.
-///
-/// Only a delegated goal emits this ([GoalOwner]): where the app runs the loop
-/// itself it already has the verdict in hand. It arrives mid-turn, because a
-/// delegated goal runs many rounds inside one invocation, and the line under
-/// the composer is the only sign the user has that it is still moving.
-class ChatSendGoalProgress extends ChatSendUpdate {
-  const ChatSendGoalProgress({required this.condition, required this.reason});
-
-  /// What the agent restates the condition as. Compared with the goal the app
-  /// holds, so a round belonging to a goal the user has since replaced is
-  /// dropped rather than written over the new one.
-  final String condition;
-
-  final String reason;
-}
-
 /// The request finished; [reply] is the assistant turn to append (text for
 /// chat, media for a generation).
 class ChatSendSuccess extends ChatSendUpdate {
@@ -144,22 +126,6 @@ abstract interface class ChatSender {
     /// and ignored by the relay sender, which has no agent to instruct.
     String? instructions,
 
-    /// Send **exactly this** as the turn's prompt, instead of building one from
-    /// [history].
-    ///
-    /// For a slash command the agent runs itself — today only `/goal`, which
-    /// Claude Code answers over `-p` (its definition carries
-    /// `supportsNonInteractive`). Such a command has to arrive as the first
-    /// characters of the prompt: buried under a replayed transcript, the
-    /// project's standing rules or Plan mode's preamble, the CLI reads it as
-    /// ordinary words and the goal is silently never set.
-    ///
-    /// It is separate from the message the chat shows, and deliberately: the
-    /// transcript keeps the user's own words ("write me a game"), while the wire
-    /// carries `/goal write me a game`. A sender with no commands of its own
-    /// ignores this and answers [history] as usual.
-    String? agentCommand,
-
     /// Run this as Plan mode's planning turn: read-only, with a preamble asking
     /// the agent to lay out a plan and touch nothing. The agent sender honours
     /// it; the relay sender has no plan/act distinction and ignores it.
@@ -203,17 +169,12 @@ final chatSenderProvider = Provider<ChatSender>(
 /// attached them, and they stay beside the text rather than inside it so the
 /// bubble shows a chip where the model gets the document (see [messageForModel]).
 /// [contexts] — what was on screen as Send was pressed — ride the same way.
-///
-/// [origin] says who this turn came from. It is the user unless the app is
-/// carrying on an instruction of theirs — the goal's next step, a loop's beat —
-/// and it changes only how the turn is drawn (see [TurnOrigin]).
 Future<ChatMessage> buildUserTurn({
   required String text,
   required List<MediaAttachment> attachments,
   required Directory outputsDir,
   List<ChatFile> files = const [],
   List<ChatContext> contexts = const [],
-  TurnOrigin origin = TurnOrigin.user,
 }) async {
   if (attachments.isEmpty) {
     return ChatMessage(
@@ -222,7 +183,6 @@ Future<ChatMessage> buildUserTurn({
       files: files,
       contexts: contexts,
       sentAt: DateTime.now(),
-      sentBy: origin,
     );
   }
   final media = await saveMediaOutputs([
@@ -235,7 +195,6 @@ Future<ChatMessage> buildUserTurn({
     files: files,
     contexts: contexts,
     sentAt: DateTime.now(),
-    sentBy: origin,
   );
 }
 
@@ -262,7 +221,6 @@ class DefaultChatSender implements ChatSender {
     // The relay has no agent to instruct, so project rules are irrelevant here.
     String? instructions,
     // A relay call has no agent, so it has no commands to run either.
-    String? agentCommand,
     // No plan/act distinction on a relay call — a chat/completions request just
     // answers.
     bool planFirst = false,

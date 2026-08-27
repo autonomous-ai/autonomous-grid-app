@@ -303,7 +303,6 @@ class _HeldTurn implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
-    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     String? turnId,
@@ -1803,7 +1802,8 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      const hello = '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}';
+      const hello =
+          '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}';
       transport.deliver(hello);
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
@@ -1847,13 +1847,17 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}',
+      );
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       final beforeSwap = transport.replies.length;
 
       // Same cable, different board.
-      transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"BB"}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"BB"}',
+      );
       await pumpEventQueue();
 
       expect(
@@ -1870,7 +1874,9 @@ void main() {
       final transport = _FakeTransport();
       harness(transport);
 
-      transport.deliver('{"t":"hello","product":"grid","fw":"9.0.0","proto":99,"mac":""}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"9.0.0","proto":99,"mac":""}',
+      );
       await pumpEventQueue();
 
       await _until(
@@ -2431,7 +2437,9 @@ void main() {
         oneShot: model,
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}',
+      );
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2500,7 +2508,9 @@ void main() {
         models: const ['qwen'],
       );
       await container.read(chatSessionsProvider.notifier).restored;
-      transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}',
+      );
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
       await agent.answer('All 1599 passed.');
@@ -2620,7 +2630,9 @@ void main() {
         harness(transport);
 
         transport.deliver('{"t":"screen.brightness","level":40}');
-        transport.deliver('{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}');
+        transport.deliver(
+          '{"t":"hello","product":"grid","fw":"0.1.0","proto":5,"mac":"AA"}',
+        );
         await pumpEventQueue();
 
         await _until(
@@ -2967,7 +2979,9 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}',
+      );
       await pumpEventQueue();
 
       final offer = transport.replies.firstWhere((r) => r['t'] == 'fw.offer');
@@ -2987,7 +3001,9 @@ void main() {
           firmware: PanelFirmwareImage.read(espAppImage(version: 'v0.4.1'))!,
         );
 
-        transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.1","proto":5,"mac":"AA"}');
+        transport.deliver(
+          '{"t":"hello","product":"grid","fw":"v0.4.1","proto":5,"mac":"AA"}',
+        );
         await pumpEventQueue();
 
         await _until(
@@ -3013,7 +3029,9 @@ void main() {
       await container.read(chatSessionsProvider.notifier).restored;
       transport.deliver('{"t":"turn.send","chatId":"c-1","text":"run them"}');
       await pumpEventQueue();
-      transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}',
+      );
       await pumpEventQueue();
 
       expect(transport.replies.any((r) => r['t'] == 'fw.offer'), isFalse);
@@ -3031,7 +3049,9 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}',
+      );
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();
@@ -3060,7 +3080,9 @@ void main() {
       final transport = _FakeTransport();
       harness(transport, firmware: image);
 
-      transport.deliver('{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}');
+      transport.deliver(
+        '{"t":"hello","product":"grid","fw":"v0.4.0","proto":5,"mac":"AA"}',
+      );
       await pumpEventQueue();
       transport.deliver('{"t":"fw.accept"}');
       await pumpEventQueue();

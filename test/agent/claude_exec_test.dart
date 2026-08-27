@@ -158,8 +158,8 @@ void main() {
       });
 
       expect(refusal, kClaudePersistentMonitorRefusal);
-      expect(refusal, contains('hermes cron'));
-      expect(refusal, contains('/loop'));
+      // The way out it names has to be a place that exists (§5).
+      expect(refusal, contains('Scheduled'));
     });
 
     test('a monitor that finishes inside the turn is left alone — waiting for '

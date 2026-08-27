@@ -6,12 +6,9 @@ import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../core/agent_homes.dart';
 import '../../../shared/skills/agent_skill_home.dart';
 import 'agent_catalog.dart';
-import 'grid_ask_skill.dart';
 import 'grid_chart_skill.dart';
 import 'grid_host_skill.dart';
-import 'grid_loop_skill.dart';
 import 'grid_research_skill.dart';
-import 'grid_schedule_skill.dart';
 import 'grid_serve_skill.dart';
 import 'grid_web_skill.dart';
 import 'adapters/hermes_shared_skills.dart';
@@ -89,33 +86,6 @@ final List<BuiltinGridSkill> kBuiltinGridSkills = [
     agents: const {AgentTool.hermes},
     build: gridServeSkillFiles,
   ),
-  // A self-paced `/loop` asks the assistant that just ran the check when to run
-  // it again — and, for the first time, lets it say the job is finished. Same
-  // fenced-block trick as the chart, and the same reason for a card: nothing
-  // else tells an agent the block is read.
-  BuiltinGridSkill(
-    name: kGridLoopSkillName,
-    agents: const {AgentTool.hermes},
-    build: gridLoopSkillFiles,
-  ),
-  // The three jobs the app owns — repeat, goal, schedule — and how to ask for
-  // one. Its own card rather than a section of `grid-loop`: a skill is fetched
-  // on its name, and `grid-loop` stayed shut for a goal that read exactly like
-  // the loop beside it.
-  BuiltinGridSkill(
-    name: kGridAskSkillName,
-    agents: const {AgentTool.hermes},
-    build: gridAskSkillFiles,
-  ),
-  // Every agent reaches for its own timer when asked to repeat something, and
-  // every one of those dies with the turn that created it — a job reported as
-  // scheduled for a week that is gone in seconds. This is where the machine's
-  // real scheduler is, so the answer stops depending on which agent replied.
-  BuiltinGridSkill(
-    name: kGridScheduleSkillName,
-    agents: const {AgentTool.hermes},
-    build: gridScheduleSkillFiles,
-  ),
 ];
 
 /// Skills Grid used to install and has withdrawn — taken off every machine they
@@ -135,6 +105,13 @@ const List<String> kRetiredGridSkills = [
   // Image and video generation through the grid's media API, dropped 2026-08-03.
   'grid-image-gen',
   'grid-video-gen',
+  // The cards that taught an agent to ask the app for `/loop`, `/goal` and
+  // `/schedule`, or to pace a loop the app ran — dropped 2026-08-27 with the
+  // commands themselves: the app runs none of them now, so a card left behind
+  // would teach a block nothing reads.
+  'grid-ask',
+  'grid-loop',
+  'grid-schedule',
 ];
 
 /// Installs the Grid skills an agent uses in Agent mode: into the app's library
@@ -297,11 +274,9 @@ class AgentSkillInstaller {
   /// server; on 2026-08-27 that server was cut down to `web_search` and
   /// `web_fetch` (see `kGridMcpTools`), so for these two agents the cards are
   /// carried nowhere now. **Deliberate, and not free:** a Claude Code or Codex
-  /// chat can no longer ask Grid for `/loop`, `/goal` or `/schedule`, nor read
-  /// the host/serve/delegate/chart guides — Hermes still gets the cards. The
-  /// files stay withdrawn all the same: a card left behind would be read beside
-  /// a tool list it no longer matches, teaching a format the app never parses
-  /// for these agents.
+  /// chat cannot read the host/serve/delegate/chart guides — Hermes still gets
+  /// those. The files stay withdrawn all the same: a card left behind would be
+  /// read beside a tool list it no longer matches.
   Future<void> _removeMcpSupersededCards(String home) async {
     for (final folder in ['.claude/skills', '.codex/skills']) {
       for (final name in kMcpSupersededSkills) {
@@ -314,9 +289,10 @@ class AgentSkillInstaller {
 
 /// The cards that became MCP tools on 2026-08-21, by name.
 ///
-/// Kept beside [kRetiredGridSkills] rather than in it: these are not withdrawn,
-/// they still install for Hermes, whose folder is Grid's own profile. This list
-/// is only about the two homes the app must stop writing to.
+/// Kept beside [kRetiredGridSkills] rather than in it: most of these are not
+/// withdrawn, they still install for Hermes, whose folder is Grid's own
+/// profile. This list is only about the two homes the app must stop writing
+/// to — which is why the three retired on 2026-08-27 stay listed here too.
 const List<String> kMcpSupersededSkills = [
   'grid-ask',
   'grid-loop',

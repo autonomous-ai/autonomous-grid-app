@@ -4,8 +4,6 @@ import '../../../infrastructure/cli/model_control_tokens.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import 'commands/chat_compaction.dart';
-import 'commands/chat_goal.dart';
-import 'commands/chat_loop.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/message_media.dart';
 
@@ -29,8 +27,6 @@ class Conversation {
     this.archivedAt,
     this.approval,
     this.pinned = false,
-    this.goal,
-    this.loop,
     this.compaction,
     this.resume = const [],
     this.documentPath,
@@ -144,13 +140,6 @@ class Conversation {
   /// order without changing what the order means.
   final bool pinned;
 
-  /// What this chat is working toward on its own, or null for an ordinary
-  /// back-and-forth. See [ChatGoal].
-  final ChatGoal? goal;
-
-  /// The prompt this chat re-runs on a timer, or null. See [ChatLoop].
-  final ChatLoop? loop;
-
   /// Where this chat's context was summarized, or null while it carries its
   /// whole history. See [ChatCompaction].
   final ChatCompaction? compaction;
@@ -263,15 +252,6 @@ class Conversation {
     // mode in it is a real choice.
     AgentApprovalMode? approval,
     bool? pinned,
-    ChatGoal? goal,
-    // A goal is *removed*, not merely changed, when the user clears it — which
-    // the `?? this` idiom can't say.
-    bool clearGoal = false,
-    // Only ever *set*: a loop that has stopped stays on the conversation, the
-    // way a compaction does. That is what draws the line saying it stopped at
-    // the point in the transcript where it did (`endedAfter`) — removing it
-    // would take the news out of the history with it.
-    ChatLoop? loop,
     ChatCompaction? compaction,
     // Only ever *set*: a session that can be resumed goes on being resumable
     // until it is replaced by a newer one. It is dropped by the sender at the
@@ -307,8 +287,6 @@ class Conversation {
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
     approval: approval ?? this.approval,
     pinned: pinned ?? this.pinned,
-    goal: clearGoal ? null : (goal ?? this.goal),
-    loop: loop ?? this.loop,
     compaction: compaction ?? this.compaction,
     resume: clearResume ? const [] : (resume ?? this.resume),
     documentPath: documentPath ?? this.documentPath,
@@ -352,8 +330,6 @@ class Conversation {
     // Written only when set, like the two above, so an unpinned chat's file is
     // byte-identical to what every build before pinning existed wrote.
     if (pinned) 'pinned': true,
-    if (goal != null) 'goal': goal!.toJson(),
-    if (loop != null) 'loop': loop!.toJson(),
     if (compaction != null) 'compaction': compaction!.toJson(),
     // Same rule again: absent means "start a fresh session", which is what
     // every chat saved before this field existed did.
@@ -417,8 +393,6 @@ class Conversation {
       // Absent — every chat saved before this field existed — means unpinned,
       // which is what they all were.
       pinned: json['pinned'] == true,
-      goal: ChatGoal.fromJson(json['goal']),
-      loop: ChatLoop.fromJson(json['loop']),
       compaction: ChatCompaction.fromJson(json['compaction']),
       // A point that won't parse reads as none, which costs a replay — the same
       // thing that happens to every chat written before this existed.
@@ -543,11 +517,6 @@ Map<String, dynamic> _messageToJson(ChatMessage message) => {
     'first_token_ms': message.firstToken!.inMilliseconds,
   if (message.sentAt != null)
     'sent_at': message.sentAt!.toUtc().toIso8601String(),
-  // Written only for the turns the app sent, so an ordinary chat's file is
-  // byte-identical to what every build before this wrote — and so a transcript
-  // saved by an older one reads back as the user's own words, which is what it
-  // was (see [TurnOrigin]).
-  if (message.sentBy.isFromApp) 'sent_by': message.sentBy.name,
 };
 
 ChatMessage _messageFromJson(Map<String, dynamic> json) {
@@ -618,20 +587,7 @@ ChatMessage _messageFromJson(Map<String, dynamic> json) {
         ? Duration(milliseconds: (json['first_token_ms'] as num).toInt())
         : null,
     sentAt: _parseNullableDate(json['sent_at']),
-    sentBy: _parseOrigin(json['sent_by']),
   );
-}
-
-/// The origin [raw] names, defaulting to the person.
-///
-/// A key nobody wrote, and a key written by a build that knows an origin this
-/// one doesn't, both read as [TurnOrigin.user]: the turn is drawn as it always
-/// was rather than as a line the reader can't open.
-TurnOrigin _parseOrigin(Object? raw) {
-  for (final origin in TurnOrigin.values) {
-    if (origin.name == raw) return origin;
-  }
-  return TurnOrigin.user;
 }
 
 /// The surface a chat recorded, or null for one that recorded none.

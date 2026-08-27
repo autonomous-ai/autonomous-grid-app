@@ -102,8 +102,8 @@ enum AgentTool {
   /// the half that says the choice exists at all.
   ///
   /// It is *not* the whole story of how a chat reaches these two either. A turn
-  /// the app sends by itself — a goal's next step, a loop's beat, a scheduled
-  /// task — has no keyboard behind it and still goes out through the headless
+  /// the app sends by itself — a carry-on, a scheduled task — has no keyboard
+  /// behind it and still goes out through the headless
   /// lane (`claude -p` / `codex app-server` / ACP).
   ///
   /// **Nor is it the whole story for Hermes.** All three have an interactive CLI

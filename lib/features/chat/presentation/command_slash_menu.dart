@@ -6,9 +6,7 @@ import '../logic/commands/chat_command.dart';
 /// The `/` menu above the composer: the app's own commands, filtered by what
 /// has been typed after the slash.
 ///
-/// Picking one either runs it or drops it into the composer for the user to
-/// finish — [ChatCommand.takesArgument] decides which, because a command that
-/// needs words ("keep working until *what*") has nothing to do without them.
+/// Picking one runs it.
 ///
 /// Presentational: the match is [matchingChatCommands], tested on its own.
 class CommandSlashMenu extends StatelessWidget {
@@ -91,19 +89,6 @@ class _CommandRowState extends State<_CommandRow> {
                         fontWeight: AppFont.medium,
                       ),
                     ),
-                    // What it wants after the name, in the shape it will be
-                    // typed — so the row says "this one needs words from you"
-                    // before it is clicked, not after.
-                    if (command.argumentHint != null) ...[
-                      const SizedBox(width: 5),
-                      Text(
-                        '<${command.argumentHint}>',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: AppPalette.textFaint,
-                        ),
-                      ),
-                    ],
                     const SizedBox(width: 10),
                     Flexible(
                       child: Text(

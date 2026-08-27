@@ -138,7 +138,6 @@ class _OpenStreamSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
-    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     String? turnId,

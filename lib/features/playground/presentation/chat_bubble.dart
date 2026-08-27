@@ -11,7 +11,6 @@ import 'file_chip.dart';
 import 'message_content.dart';
 import 'message_plan.dart';
 import 'message_sources.dart';
-import '../../chat/logic/commands/loop_pace_block.dart';
 
 /// One transcript turn — the user's message (accent, right-aligned) or the
 /// assistant's reply (surface, left-aligned). Renders text and/or inline media
@@ -142,11 +141,8 @@ class ChatBubble extends StatelessWidget {
               ),
               const SizedBox(height: 8),
             ],
-            // Without the line the app appends to a loop beat: that line is
-            // addressed to the assistant, and drawing it here puts words in
-            // the user's mouth on every iteration of an overnight run.
             MessageContent(
-              text: withoutLoopBeatFooter(message.text),
+              text: message.text,
               media: message.media,
               color: AppPalette.textPrimary,
             ),

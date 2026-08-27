@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 /// A line across the transcript for something that happened *to* the
-/// conversation rather than something said in it — the context folded up, a
-/// goal met, a repeating prompt stopped.
+/// conversation rather than something said in it — the context folded up.
 ///
 /// It sits in the conversation because that is where the fact lives, at the
 /// point it happened: the messages around it are still there to read, and this
@@ -12,88 +11,6 @@ import '../theme/app_theme.dart';
 /// pinned over the composer until the user waved it away — told the news at the
 /// moment it happened and then went on telling it for the rest of the day,
 /// between the transcript and the box the user was typing in.
-/// A quiet aside beside a turn — not a rule across the whole transcript.
-///
-/// [TranscriptEventRow] draws a line through the conversation, which is right
-/// for something that changed it for good (the context folded up). A goal
-/// starting or finishing is smaller than that: it belongs to *one* turn, reads
-/// in a glance, and a full-width rule for it made every goal look like a chapter
-/// break. It is also what keeps the line short — the long form is what `/goal`
-/// prints when asked.
-class TranscriptSideNote extends StatelessWidget {
-  const TranscriptSideNote({
-    super.key,
-    required this.icon,
-    required this.label,
-    this.alignment = Alignment.centerLeft,
-    this.trailing,
-    this.onTap,
-  });
-
-  final IconData icon;
-
-  /// A few words. Anything that needs a sentence belongs in the answer above.
-  final String label;
-
-  /// Right for something the *user* did (it sits under their own message),
-  /// left for something the assistant or the app did.
-  final Alignment alignment;
-
-  /// One small mark after the label — a chevron on a note that opens. Null on a
-  /// plain note, which is most of them.
-  final Widget? trailing;
-
-  /// What tapping the note does, or null when it is only a note.
-  ///
-  /// The tap target is the note itself rather than the row it sits on: this
-  /// spans the whole transcript, and a full-width target here would swallow
-  /// clicks either side of a line a few words long.
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    AppTheme.watch(context);
-    final note = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 13, color: AppPalette.textFaint),
-        const SizedBox(width: 6),
-        // Bounded even though it is short: a narrow window is still a
-        // window, and this one sits inside a Row that would otherwise
-        // measure it against infinity.
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: AppPalette.textFaint),
-          ),
-        ),
-        if (trailing != null) ...[const SizedBox(width: 4), trailing!],
-      ],
-    );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-      child: Align(
-        alignment: alignment,
-        child: onTap == null
-            ? note
-            : InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 3,
-                  ),
-                  child: note,
-                ),
-              ),
-      ),
-    );
-  }
-}
-
 class TranscriptEventRow extends StatelessWidget {
   const TranscriptEventRow({
     super.key,

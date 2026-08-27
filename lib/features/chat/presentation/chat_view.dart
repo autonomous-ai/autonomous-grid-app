@@ -56,7 +56,6 @@ import '../../playground/presentation/no_model_yet.dart';
 import '../../playground/presentation/transcript_view.dart';
 import '../logic/commands/chat_command.dart';
 import 'command_slash_menu.dart';
-import 'composer_status.dart';
 import '../../skills/presentation/save_skill_bar.dart';
 import '../../terminal/logic/terminal_sessions_controller.dart';
 import '../logic/active_workdir.dart';
@@ -405,14 +404,12 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // sentence that opened the chat was answered by `claude -p` somewhere
     // off screen while the terminal sat empty.
     //
-    // **Slash and all, and that is the fix for the same bug wearing a slash.**
-    // The command branch used to come first, so `/goal the tests pass` was run
-    // app-side: it set the goal in a `claude -p` session of its own while the
+    // **Slash and all.** The command branch used to come first, so a command
+    // typed here was run app-side in a `claude -p` session of its own while the
     // terminal on screen started a *different*, empty one. The terminal takes
     // what the user typed, because in that chat the CLI is the only thing that
     // can act on it. See [ChatCommand.appRunsInTerminalChat] for the one
-    // command that stays with the app, and for what this costs `/loop` and
-    // `/schedule`.
+    // command that stays with the app.
     if (_startsTerminalChat(modality) &&
         !(command?.command.appRunsInTerminalChat ?? false)) {
       if (command != null) {
@@ -434,11 +431,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
       _runCommand(command);
       return;
     }
-    // Everything else goes to the assistant as the sentence it is, including
-    // "repeat every 30 minutes and check the deploy". Reading a command out of
-    // words was a phrase list that guessed both ways, and the assistant has to
-    // read the sentence anyway to answer it: what it was asking for comes back
-    // in a `grid-ask` block (see [parseAgentAsk]).
+    // Everything else goes to the assistant exactly as typed — a `/loop` or
+    // `/goal` meant for the CLI included. The app reads nothing out of the
+    // words, and nothing out of the reply.
     ref
         .read(chatSessionsProvider.notifier)
         .send(
@@ -899,35 +894,16 @@ class _ChatViewState extends ConsumerState<ChatView> {
     _message.selection = TextSelection.collapsed(offset: prompt.length);
   }
 
-  /// What picking [command] out of the `/` menu does: a command that needs
-  /// words is written into the composer for the user to finish, and one that
-  /// doesn't simply runs.
-  ///
-  /// Picking `/goal` used to run it bare, which is how you *ask for its
-  /// status* — so clicking "Keep working until something is true" answered
-  /// "No goal set." and did nothing else.
-  void _pickCommand(ChatCommand command) {
-    if (!command.takesArgument) {
+  /// What picking [command] out of the `/` menu does: it runs. Neither command
+  /// needs words — `/compact` takes a focus, but bare is the ordinary use.
+  void _pickCommand(ChatCommand command) =>
       unawaited(_runCommand((command: command, argument: '')));
-      return;
-    }
-    final line = '${command.slash} ';
-    _message.text = line;
-    _message.selection = TextSelection.collapsed(offset: line.length);
-    // Clicking the row took the focus out of the field, so half a line would
-    // be sitting there with the caret nowhere near it.
-    _composerFocus.requestFocus();
-  }
 
   /// Run [call] and empty the composer — the command *was* the message, its
   /// attachments included.
   ///
   /// Some commands take a moment (a summary is a model call), so what they have
   /// to say arrives as a toast rather than as a return value nobody sees.
-  ///
-  /// The picked model rides along: `/goal` and `/loop` typed into a blank
-  /// composer start the chat themselves, and it answers with what the picker is
-  /// showing — the same model an ordinary message would have gone out on.
   Future<void> _runCommand(ChatCommandCall call) async {
     _message.clear();
     // The attachments were part of that line too, and a command carries words
@@ -946,7 +922,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     }
     final outcome = await ref
         .read(chatSessionsProvider.notifier)
-        .runCommand(call, model: _model.text.trim());
+        .runCommand(call);
     if (outcome == null || !mounted) return;
     ToastScope.show(
       context,
@@ -1316,11 +1292,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // its model pill (the way out), but Send would have nowhere to go.
     final messages = active?.messages ?? const <ChatMessage>[];
     final compaction = active?.compaction;
-    // A goal or a loop that has finished is drawn where it finished, the same
-    // way a compaction is. While either is still running it says so on the
-    // status line above the composer instead ([ComposerStatus]).
-    final goal = active?.goal;
-    final loop = active?.loop;
     // *Whether* there is an in-flight bubble, not what it says: this answers
     // once when the turn starts and once when it ends, while the bubble's own
     // contents change with every token.
@@ -1450,26 +1421,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                 // content key — it never changes in place.
                                 scrollId: messages[i],
                                 cacheId: messages[i],
-                                // A turn the app sent to keep a goal or a loop
-                                // going is drawn as a line saying so, not as a
-                                // bubble in the user's voice — see
-                                // [AppSentTurnRow].
-                                builder: (_) => messages[i].sentBy.isFromApp
-                                    ? AppSentTurnRow(message: messages[i])
-                                    : ChatBubble(message: messages[i]),
+                                builder: (_) =>
+                                    ChatBubble(message: messages[i]),
                               ),
-                              // The turn that handed a goal over, marked once
-                              // under the user's own message.
-                              if (goal != null && goal.startedAfter == i + 1)
-                                TranscriptRow(
-                                  // Keyed on the turn, not on the goal: a goal
-                                  // object is replaced on every update, and an
-                                  // id that changed with it would move the
-                                  // scroll anchor under the reader each round.
-                                  scrollId: 'goal-sent-${messages[i]}',
-                                  cacheId: 'goal-sent-${messages[i]}',
-                                  builder: (_) => const GoalSentBadge(),
-                                ),
                               // Where the context was folded up. Drawn in the
                               // transcript rather than announced once and
                               // forgotten: the messages above it are still
@@ -1482,20 +1436,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                                   cacheId: compaction,
                                   builder: (_) =>
                                       CompactedRow(compaction: compaction),
-                                ),
-                              // How the goal ended, and how the repeating
-                              // prompt did — at the turn it happened on.
-                              if (goal != null && goal.endedAfter == i + 1)
-                                TranscriptRow(
-                                  scrollId: goal,
-                                  cacheId: goal,
-                                  builder: (_) => GoalEndedRow(goal: goal),
-                                ),
-                              if (loop != null && loop.endedAfter == i + 1)
-                                TranscriptRow(
-                                  scrollId: loop,
-                                  cacheId: loop,
-                                  builder: (_) => LoopEndedRow(loop: loop),
                                 ),
                             ],
                           ],
@@ -1622,14 +1562,6 @@ class _ChatViewState extends ConsumerState<ChatView> {
                               // line back.
                               const SaveSkillBar(),
                               const QueuedFollowUps(),
-                              // Above the composer, under everything that is
-                              // waiting on a decision: a goal is taking the
-                              // turns the user would otherwise be typing, so it
-                              // belongs in their line of sight rather than as a
-                              // footnote beneath the box. It stays one strip for
-                              // everything running, which is the part of the
-                              // under-the-composer version worth keeping.
-                              const ComposerStatus(),
                               if (slash != null)
                                 CommandSlashMenu(
                                   query: slash,

@@ -21,42 +21,32 @@ mixin _ChatSettle on _ChatSessions {
   @override
   void _finish(String id) {
     _subs.remove(id);
-    _turnActivityAt.remove(id);
     final done = _dones.remove(id);
     if (done != null && !done.isCompleted) done.complete();
     _releaseAgentSlot(id);
-    // Before the queue and the goal below: whatever runs next re-reads this
-    // chat, and the note belongs under the answer that made the claim rather
-    // than after whatever the app went on to do.
-    _settleLoopClaim(id);
-    // The user's own words first: a follow-up they typed outranks both the
-    // carry-on and the goal's next step, and those pick up again once the queue
-    // is empty.
-    final outcome = _lastTurn.remove(id);
+    // The user's own words first: a follow-up they typed outranks the
+    // carry-on, which picks up again once the queue is empty.
+    final landed = _landedTurns.remove(id);
     if (_drainQueue(id)) return;
-    if (_carriesOnAlone(id, outcome)) return;
-    unawaited(_judgeGoalTurn(id, outcome));
+    _carryOnAlone(id, landed: landed);
   }
 
   /// Send the assistant back in, unasked, when the last turn stopped for want of
-  /// room rather than because the work was done (issue #28). True when it did.
+  /// room rather than because the work was done (issue #28).
   ///
   /// A turn that hits its tool-call budget mid-plan has produced a summary, not
   /// an answer, and the only thing standing between it and the rest of the job
   /// was a click — which is no use at all to the person who set a long task
   /// going and left the room. This is that click, up to [kCarryOnTurns] times.
   ///
-  /// It stands down in three cases, each for its own reason:
+  /// It stands down in two cases, each for its own reason:
   ///
-  /// - **The user pressed Stop** ([outcome] is null). They have said what they
-  ///   want, and carrying on would be the app arguing with them.
-  /// - **A goal or a loop is running.** Those already own this chat's cadence;
-  ///   a second automatic sender would spend two turns for every one the user
-  ///   asked for, and the two would interleave.
+  /// - **The user pressed Stop** (the turn never [landed]). They have said what
+  ///   they want, and carrying on would be the app arguing with them.
   /// - **The budget is spent.** The bar comes back and says how many turns went
   ///   on it, because by then the app has spent three the user never saw.
-  bool _carriesOnAlone(String id, _TurnOutcome? outcome) {
-    if (outcome == null) return false;
+  void _carryOnAlone(String id, {required bool landed}) {
+    if (!landed) return;
     final spent = state.carriedOnFor(id);
     if (!willCarryOn(id)) {
       // Nothing to say unless this is the app giving up: a warning, not an info
@@ -71,7 +61,7 @@ mixin _ChatSettle on _ChatSessions {
                   'stopping and asking the user',
             );
       }
-      return false;
+      return;
     }
     ref
         .read(appLogProvider)
@@ -82,13 +72,12 @@ mixin _ChatSettle on _ChatSessions {
         );
     state = state.withCarriedOn(id, spent + 1);
     unawaited(continueChat(id));
-    return true;
   }
 
   /// Whether chat [id], as things stand, is one the app would carry on by
   /// itself.
   ///
-  /// Read twice: once by [_carriesOnAlone] to do it, and once by the turn that
+  /// Read twice: once by [_carryOnAlone] to do it, and once by the turn that
   /// just landed to decide whether it is worth telling the desktop about (see
   /// `_announceTurn`) — a task carried on three times must not send three
   /// notifications saying it stopped, to a user who is not there precisely
@@ -97,9 +86,7 @@ mixin _ChatSettle on _ChatSessions {
   bool willCarryOn(String id) {
     if (!state.outOfStepsFor(id)) return false;
     if (state.carriedOnFor(id) >= kCarryOnTurns) return false;
-    final chat = _find(id);
-    if (chat == null) return false;
-    return !(chat.goal?.isRunning ?? false) && !(chat.loop?.isRunning ?? false);
+    return _find(id) != null;
   }
 
   /// Cancel one conversation's in-flight reply (if any) and settle it. Also
@@ -119,7 +106,6 @@ mixin _ChatSettle on _ChatSessions {
       ref.read(turnModelUsageProvider.notifier).stop(id);
     }
     _retryableTurns.remove(id);
-    _turnActivityAt.remove(id);
     final sub = _subs.remove(id);
     sub?.cancel();
     // Not while the controller is being torn down: `_cancelAll` runs from

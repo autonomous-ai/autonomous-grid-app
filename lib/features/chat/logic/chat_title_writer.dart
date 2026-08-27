@@ -87,10 +87,6 @@ class ChatTitleWriter {
     for (final message in messages) {
       final text = message.text.trim();
       if (text.isEmpty) continue;
-      // Same reason as [deriveConversationTitle]: the opening exchange is what
-      // the *user* asked, and a turn the app sent on their behalf would have the
-      // model naming the chat after the app's own instruction.
-      if (message.sentBy.isFromApp) continue;
       final who = message.role == ChatRole.user ? 'User' : 'Assistant';
       turns.add('$who: ${_trim(text)}');
       if (turns.length == 2) break;

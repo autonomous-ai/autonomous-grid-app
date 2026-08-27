@@ -84,8 +84,8 @@ class GridMcpServer {
   ///
   /// **A turn token is the wrong lifetime for one**, and using one shipped this
   /// bug: `mintTurnToken` revoked every earlier token for the chat, so the next
-  /// turn the *app* sent into that chat — a goal's step, a loop's beat, a
-  /// scheduled task — pulled the rug from under the running CLI. Its next tool
+  /// turn the *app* sent into that chat — a carry-on, a scheduled task —
+  /// pulled the rug from under the running CLI. Its next tool
   /// call came back `HTTP 401`, the transport gave up with `worker quit with
   /// fatal: Transport channel closed`, and every Grid tool stayed dead for the
   /// rest of the session because nothing reconnects.

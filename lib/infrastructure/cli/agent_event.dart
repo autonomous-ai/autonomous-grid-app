@@ -470,7 +470,7 @@ enum AgentDetailMode {
 /// `AgentTool.hasInteractiveCli`.
 enum AgentChatSurface {
   /// The app's own transcript: one bubble per turn, the step feed, the
-  /// composer's model and access pickers, attachments, `/goal` and `/loop`.
+  /// composer's model and access pickers, attachments, the `/` menu.
   list,
 
   /// The agent's own program, live in a terminal. Its permission prompts are

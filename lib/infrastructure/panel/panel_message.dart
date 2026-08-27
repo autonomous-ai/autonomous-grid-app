@@ -317,13 +317,13 @@ class PanelAnswered extends PanelInbound {
 /// place this app has to put them: a turn is a message, and `/goal` is a
 /// message that begins with `/goal`.
 ///
-/// **TODO(BE): the grid CLI has no `/goal` or `/loop`.** Searched across `lib/`
-/// on 2026-08-16 and neither string appears anywhere. So a turn started from
-/// those two pills most likely reaches the agent with a literal `/goal ` in
-/// front of it and is read as words. The pills are drawn from the reference
-/// device's design and were kept deliberately; this is the note that says what
-/// pressing one currently does, so the next person does not have to find out by
-/// pressing it.
+/// **TODO(BE): the app does not read these.** Since 2026-08-27 the app owns no
+/// `/goal` or `/loop` of its own — it sends what was said, prefix and all, so
+/// the agent gets a literal `/goal ` in front of the sentence. Claude Code has
+/// a `/goal`; the others read it as words. The pills are drawn from the
+/// reference device's design and were kept deliberately; this is the note that
+/// says what pressing one currently does, so the next person does not have to
+/// find out by pressing it.
 enum PanelVoiceCommand {
   none(''),
   goal('/goal '),

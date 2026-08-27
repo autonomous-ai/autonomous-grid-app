@@ -99,9 +99,6 @@ class CodexChatSender implements ChatSender {
     String? conversationId,
     String? turnId,
     String? instructions,
-    // TODO(BE): Codex has thread goals over `thread/goal/set|get|clear`, not a
-    // slash command on the wire — see GoalOwner.codex. Not supported yet.
-    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     AgentResumePoint? resume,

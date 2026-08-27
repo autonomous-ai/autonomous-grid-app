@@ -165,10 +165,9 @@ const List<String> kClaudeServerWebTools = ['WebSearch', 'WebFetch'];
 /// a process that had exited by 09:22:57 and 09:29:43. Both turns ended by
 /// telling the user the loop was on.
 ///
-/// Removing the tools is what makes the `grid-schedule` card land: left
-/// available, the nearest-to-hand answer is still the one that quietly does
-/// nothing. A repeat *inside a chat* is not lost with them — that is `/loop`,
-/// which the app owns and the agent paces with a `grid-loop` block.
+/// Removing the tools was what stopped the answer depending on which agent
+/// replied: left available, the nearest-to-hand answer is the one that quietly
+/// does nothing.
 ///
 /// **Taken away on the terminal lane only, since 2026-08-27.** The `-p` lane
 /// stopped passing them in `d6a185c5`, and the trap above is closed there the

@@ -102,7 +102,7 @@ class ChatPrefs {
   /// **Ships as [AgentChatSurface.list].** The terminal is the agent's real
   /// interface and it stays one flip away, but it is the surface that gives up
   /// everything the app draws — the step feed, the plan, the Open button behind
-  /// a file change, `/goal` and `/loop`, and a transcript the sidebar can search
+  /// a file change, `/compact`, and a transcript the sidebar can search
   /// — so it is a choice to make rather than one to be handed. The default a
   /// non-technical user never touches (§0) should be the one that explains
   /// itself.

@@ -77,27 +77,6 @@ class ClaudeMediaUsed extends ClaudeExecEvent {
   final int tokens;
 }
 
-/// One round of a `/goal` the CLI is driving: its evaluator has read the
-/// conversation, decided the condition does **not** hold yet, and refused to let
-/// the turn stop.
-///
-/// This is the only progress a delegated goal reports on the wire. Measured on
-/// `claude` 2.1.233: the `goal_status` records live in the session's own
-/// transcript file, never on stdout, so the app learns where a goal has got to
-/// from these and from asking `/goal` (which costs no turn and no money) — see
-/// [claudeGoalFeedback].
-class ClaudeGoalNotMet extends ClaudeExecEvent {
-  const ClaudeGoalNotMet({required this.condition, required this.reason});
-
-  /// The condition as the CLI restates it, which is how the app tells this goal
-  /// from one the user replaced mid-run.
-  final String condition;
-
-  /// Why the evaluator says it is not met yet — the one thing the app cannot
-  /// work out for itself, and what the goal line shows.
-  final String reason;
-}
-
 /// The answer so far — the full assembled text, not a delta, so the sender
 /// replaces rather than appends.
 class ClaudeMessageEvent extends ClaudeExecEvent {

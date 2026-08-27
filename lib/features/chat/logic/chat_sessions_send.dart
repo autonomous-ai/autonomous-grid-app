@@ -80,8 +80,6 @@ mixin _ChatSend on _ChatSessions {
     bool? planFirst,
     String? into,
     bool continuing = false,
-    String? agentCommand,
-    TurnOrigin origin = TurnOrigin.user,
   }) async {
     final text = message.trim();
     if (text.isEmpty) return;
@@ -204,7 +202,6 @@ mixin _ChatSend on _ChatSessions {
       files: files,
       contexts: contexts,
       outputsDir: ref.read(mediaOutputsDirProvider),
-      origin: origin,
     );
     // The chat remembers the model the *user* chose, never the one Auto swapped
     // in: the composer is restored from it, so writing `auto` here would replace
@@ -224,40 +221,14 @@ mixin _ChatSend on _ChatSessions {
     // A chat is named once — from its first message, until the agent replaces
     // that with a name for what it's actually about. Re-deriving on every turn
     // would drag it back to the first line the user typed ("hi") and undo that.
-    final named = withUser.title == kNewConversationTitle
+    final conversation = withUser.title == kNewConversationTitle
         ? withUser.copyWith(title: deriveConversationTitle(withUser.messages))
         : withUser;
-    // A stalled goal goes back to work when the user says something.
-    //
-    // Nothing else ever wrote [GoalStatus.active] except `/goal` itself, so
-    // every way a goal stalled — a turn stopped, a failed turn, three idle
-    // turns, no model to judge with — was permanent in practice while the bar
-    // said "Goal paused", which is a promise that it can start again. This is
-    // where it starts again, on the same footing as an archived chat un-filing
-    // itself the moment it is talked in (see [_commit]).
-    //
-    // [continuing] excludes the turns the *app* sends on the user's behalf —
-    // a carry-on, a loop beat, the goal's own next step. Reviving a goal the
-    // loop gave up on because a timer fired would put it straight back into
-    // whatever stopped it, with nobody watching.
-    final stalled = named.goal;
-    final conversation =
-        !continuing && stalled != null && stalled.status == GoalStatus.stalled
-        ? named.copyWith(
-            goal: stalled.copyWith(
-              status: GoalStatus.active,
-              clearReason: true,
-            ),
-          )
-        : named;
     // TODO(BE): a turn the *app* sends into a chat that is shown as a CLI still
-    // takes this lane — a goal's next step, a loop's beat, a carry-on. It runs
-    // `claude -p` beside a terminal that never hears it and answers into a
-    // transcript nobody is looking at, which is the same thing that made a new
-    // chat's opening message vanish (fixed at the composer, in
-    // `_startsTerminalChat`). It is not the same one-line fix here: what reads
-    // the reply back — the goal judge — would get nothing, so the judging path
-    // has to learn to read the agent's session file first.
+    // takes this lane — a carry-on. It runs `claude -p` beside a terminal that
+    // never hears it and answers into a transcript nobody is looking at, which
+    // is the same thing that made a new chat's opening message vanish (fixed at
+    // the composer, in `_startsTerminalChat`).
 
     // The send owns the open slot: make it active and clear any prior error. A
     // queued follow-up doesn't — it goes out into a chat the user may have left,
@@ -276,7 +247,6 @@ mixin _ChatSend on _ChatSessions {
       autoChosen: autoChosen,
       continuedAgent: continuedAgent,
       question: text,
-      agentCommand: agentCommand,
     );
   }
 
@@ -355,7 +325,6 @@ mixin _ChatSend on _ChatSessions {
     required bool autoChosen,
     required AgentTool? continuedAgent,
     required String question,
-    String? agentCommand,
   }) async {
     final id = conversation.id;
     // One per-turn id per user input, so the relay can group every LLM call
@@ -401,24 +370,10 @@ mixin _ChatSend on _ChatSessions {
     // Only for a turn an agent will answer: a picture goes to the grid's chat
     // API whoever is picked, so routing it would spend a relay call and up to
     // the router's whole timeout on an answer thrown away.
-    //
-    // A goal outranks all of it. Its agent is fixed when it is set
-    // ([ChatGoal.agent]) and honoured here rather than enforced at the pickers,
-    // because the effective agent moves with nobody touching one: switching
-    // grid, installing or removing an agent, or an overview that hasn't landed
-    // yet each re-resolve it. A delegated goal cannot survive being handed on —
-    // it lives inside one agent's own session — and the app's own loop was
-    // already meant to keep one agent per objective (`_sendGoalTurn`).
-    final goal = conversation.goal;
-    final pinnedByGoal = goal != null && !goal.hasEnded ? goal.agent : null;
     AgentTool agent =
-        pinnedByGoal ??
         continuedAgent ??
         ref.read(resolvedChatAgentProvider(_agentChoiceFor(conversation)));
-    if (autoChosen &&
-        viaAgent &&
-        continuedAgent == null &&
-        pinnedByGoal == null) {
+    if (autoChosen && viaAgent && continuedAgent == null) {
       agent = await ref
           .read(autoAgentRouterProvider)
           .route(
@@ -434,7 +389,6 @@ mixin _ChatSend on _ChatSessions {
 
     void dispatch() => _dispatch(
       turnId: turnId,
-      agentCommand: agentCommand,
       conversation: conversation,
       network: network,
       model: effectiveModel,
@@ -488,7 +442,6 @@ mixin _ChatSend on _ChatSessions {
     required AgentApprovalMode approval,
     required bool viaAgent,
     required AgentTool agent,
-    required String? agentCommand,
     required Completer<void> done,
   }) {
     final id = conversation.id;
@@ -500,10 +453,6 @@ mixin _ChatSend on _ChatSessions {
     // Time the turn from here, not from `send`: a turn can wait behind a queued
     // one, and "Working now" would otherwise report the wait as work.
     state = state.withTurnStarted(id, DateTime.now());
-    // The loop's stall watchdog reads this to tell a working turn from a hung
-    // one — start the clock now, so a turn that hasn't emitted a thing yet still
-    // looks alive until its first stall window, not stale the moment it began.
-    _turnActivityAt[id] = DateTime.now();
     // Say this chat has an agent running, and which one — what the sidebar
     // marks, what "Working now" names, and what `stop` releases — and mark where
     // this turn's file changes begin, so "what did it just do?" answers for this
@@ -592,9 +541,6 @@ mixin _ChatSend on _ChatSessions {
       workdir: workdir,
       // The project's house rules, prepended to the agent's first turn.
       instructions: instructions,
-      // A slash command the agent runs itself, sent as the whole prompt in
-      // place of one built from history — see [ChatSender.send].
-      agentCommand: agentCommand,
       // Lets the agent sender keep one live session per conversation and send
       // only the new turn (the API sender ignores it).
       conversationId: id,
@@ -618,10 +564,6 @@ mixin _ChatSend on _ChatSessions {
       // Async because landing a turn (below) reads the grid's usage log
       // before committing — see [_attachOrchestrationUsage].
       (update) async {
-        // Any update is a sign of life — a streamed chunk, a status, a session
-        // id. The loop's stall watchdog reads this: a turn still emitting is
-        // working, however long it runs, and only silence is a hang.
-        _turnActivityAt[id] = DateTime.now();
         // The conversation may have been deleted mid-flight — drop the update
         // rather than resurrect it.
         final current = _find(id);
@@ -639,20 +581,6 @@ mixin _ChatSend on _ChatSessions {
             state = state.withPhase(id, SendStreaming(text));
           case ChatSendAgentSession(:final sessionId):
             agentSessionId = sessionId;
-          // A goal the agent is driving has been judged again and is still not
-          // met. Only the reason moves: the status is the agent's to change,
-          // and the condition is matched rather than written so a round
-          // belonging to a goal the user has since replaced is dropped instead
-          // of overwriting the new one's brief.
-          case ChatSendGoalProgress(:final condition, :final reason):
-            final goal = current.goal;
-            if (goal != null &&
-                !goal.hasEnded &&
-                goal.condition.trim() == condition.trim()) {
-              _saveAndReplace(
-                current.copyWith(goal: goal.copyWith(reason: reason)),
-              );
-            }
           case ChatSendSuccess(:final reply, :final outOfSteps):
             final landed = await _attachOrchestrationUsage(
               network,
@@ -726,13 +654,7 @@ mixin _ChatSend on _ChatSessions {
             if (!willCarryOn(id)) {
               _announceTurn(answered, body: firstLinePreview(reply.text));
             }
-            _lastTurn[id] = (
-              reply: reply.text,
-              failure: null,
-              // Did it *do* anything, or only talk? The stamped timeline is the
-              // record of the steps it ran.
-              ranSteps: messages.last.parts.isNotEmpty,
-            );
+            _landedTurns.add(id);
           case ChatSendFailure(:final error, :final partial):
             // A failed turn never reaches [_settleModelShares]'s stop, so its
             // /usage/turn poller would leak a 5s request every interval,
@@ -786,7 +708,7 @@ mixin _ChatSend on _ChatSessions {
               state = state.withError(id, error);
             }
             _announceTurn(current, body: "Couldn't finish: $error");
-            _lastTurn[id] = (reply: null, failure: error, ranSteps: false);
+            _landedTurns.add(id);
         }
       },
       onDone: () => _finish(id),
@@ -1038,18 +960,6 @@ mixin _ChatSend on _ChatSessions {
     if (!state.sendingFor(id)) return;
     final phase = state.phaseFor(id);
     _cancel(id);
-    // Settle the goal too. [_cancel] tears the turn down without going through
-    // [_finish], so the `outcome == null` arm of [_judgeGoalTurn] — the one that
-    // stalls a goal whose turn was stopped — had never once run: pressing Stop
-    // left the goal reading "Pursuing goal" with nothing pursuing it, for good.
-    //
-    // Only from here, not from [_cancel] itself: the other three callers are a
-    // deleted chat and a disposing controller, and neither has a goal left to
-    // settle. A goal the *agent* owns is deliberately untouched — it is still
-    // armed inside that agent's session, and `/goal clear` is what ends it
-    // (see `_settleDelegatedGoal`).
-    unawaited(_judgeGoalTurn(id, null));
-
     final partial = phase is SendStreaming ? phase.text.trim() : '';
     final current = _find(id);
     // Same rule as a failed turn: what the user said into this one is in the

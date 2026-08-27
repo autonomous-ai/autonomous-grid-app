@@ -256,6 +256,21 @@ class ClaudeStreamParser {
     request: _pending.join('\n'),
   );
 
+  /// Messages the CLI fed back to itself this turn, for one row id each.
+  var _feedbacks = 0;
+
+  /// The feed row for [text] the CLI handed back to the model on its own —
+  /// hook output, mostly. Done on arrival: it is a thing that was said, not a
+  /// thing that runs.
+  AgentActivity _feedbackRow(String text) => AgentActivity(
+    id: 'feedback-${++_feedbacks}',
+    kind: AgentActivityKind.tool,
+    label: 'Fed back to the agent',
+    status: AgentActivityStatus.done,
+    tool: 'Claude Code',
+    result: text,
+  );
+
   /// A vendor SSE event, forwarded verbatim by the CLI. Only the answer's text
   /// deltas are read: thinking deltas would flood the feed a character at a
   /// time, and the whole `thinking` block arrives as its own event anyway.
@@ -438,19 +453,16 @@ class ClaudeStreamParser {
     Map<String, dynamic> block,
     String? parent,
   ) {
-    // …with one exception: a goal the CLI is driving reports its rounds here,
-    // as plain text rather than a tool result. It is the agent talking to
-    // itself, so it stays out of the transcript — but the app needs it to know
-    // the goal is still going and what the evaluator is asking for next.
+    // …with one exception: the CLI feeds its own hooks' words back to the
+    // model here, as plain text rather than a tool result — a Stop hook's
+    // verdict on a `/goal` the CLI is driving, say. It is the agent talking to
+    // itself, so it is not part of the answer; it is a step, because the CLI
+    // showed it and the app shows what the CLI sent, nothing more and nothing
+    // less.
     if (block['type'] == 'text') {
-      final feedback = claudeGoalFeedback('${block['text'] ?? ''}');
-      if (feedback == null) return const [];
-      return [
-        ClaudeGoalNotMet(
-          condition: feedback.condition,
-          reason: feedback.reason,
-        ),
-      ];
+      final text = '${block['text'] ?? ''}'.trim();
+      if (text.isEmpty) return const [];
+      return [ClaudeActivityEvent(_feedbackRow(text))];
     }
     if (block['type'] != 'tool_result') return const [];
     final id = '${block['tool_use_id'] ?? ''}';
@@ -577,41 +589,6 @@ class ClaudeStreamParser {
   /// "y vài ph" below it.
   String _settled() =>
       stripControlTokens([..._sealed, ..._completed].join('\n\n'));
-}
-
-/// The condition and reason inside one `Stop hook feedback:` message, or null
-/// when [text] is not one.
-///
-/// The CLI drives a `/goal` by refusing to let the turn stop and feeding its
-/// evaluator's verdict back in as a user message shaped like:
-///
-/// ```
-/// Stop hook feedback:
-/// [<condition>]: <why it is not met yet>
-/// ```
-///
-/// Reading this is how the app follows a goal it delegated: `goal_status`
-/// records exist only in the session's transcript file, never on stdout
-/// (measured on `claude` 2.1.233).
-///
-/// **Null on anything that doesn't match, deliberately.** This is an internal
-/// shape of another program, so a build that words it differently must cost the
-/// reason line and nothing else — never a turn, and never a wrong verdict. The
-/// condition is read to the *first* `]: `, which is wrong only for a condition
-/// that contains that exact sequence; the reason is then whatever follows, so
-/// even that mis-split still shows the user something true.
-({String condition, String reason})? claudeGoalFeedback(String text) {
-  const header = 'Stop hook feedback:';
-  final trimmed = text.trimLeft();
-  if (!trimmed.startsWith(header)) return null;
-  final body = trimmed.substring(header.length).trim();
-  if (!body.startsWith('[')) return null;
-  final split = body.indexOf(']: ');
-  if (split < 1) return null;
-  final condition = body.substring(1, split).trim();
-  final reason = body.substring(split + 3).trim();
-  if (condition.isEmpty || reason.isEmpty) return null;
-  return (condition: condition, reason: reason);
 }
 
 /// How full the model's context was for one request, from that request's

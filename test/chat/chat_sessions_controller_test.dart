@@ -8,14 +8,11 @@ import 'package:grid_app/infrastructure/cli/agent_resume_point.dart';
 import 'package:grid_app/features/chat/logic/chat_approval.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_controller.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_command.dart';
-import 'package:grid_app/features/chat/logic/commands/chat_loop.dart';
 import 'package:grid_app/features/chat/logic/commands/chat_compaction.dart';
-import 'package:grid_app/features/chat/logic/commands/chat_goal.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/projects/logic/project_folder_status.dart';
 import 'package:grid_app/features/chat/logic/chat_title_writer.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
-import 'package:grid_app/features/chat/logic/interrupted_turn.dart';
 import 'package:grid_app/features/chat/logic/routing_group.dart';
 import 'package:grid_app/features/agents/logic/agent_session_title.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
@@ -90,7 +87,6 @@ class _FakeSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
-    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     String? turnId,
@@ -135,7 +131,6 @@ class _ScriptedSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
-    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     String? turnId,
@@ -172,7 +167,6 @@ class _OpenEndedSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
-    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     String? turnId,
@@ -204,7 +198,6 @@ class _PerChatSender implements ChatSender {
     String? workdir,
     String? conversationId,
     String? instructions,
-    String? agentCommand,
     bool planFirst = false,
     AgentApprovalMode? approval,
     String? turnId,
@@ -218,99 +211,11 @@ class _PerChatSender implements ChatSender {
   }
 }
 
-/// An agent whose first turn answers and every turn after it hangs — a stand-in
-/// for a `claude -p` that returns once and then sits forever (the log showed one
-/// at 286 minutes). [hungCancelled] records that the loop's ceiling really tore
-/// the stuck turn down rather than leaving it running behind a frozen loop.
-class _HangAfterFirstSender implements ChatSender {
-  int calls = 0;
-  bool hungCancelled = false;
-
-  @override
-  Stream<ChatSendUpdate> send({
-    required NetworkCredential network,
-    required String model,
-    required List<ChatMessage> history,
-    PlaygroundModality modality = PlaygroundModality.text,
-    List<MediaAttachment> attachments = const [],
-    String? localBaseUrl,
-    String? workdir,
-    String? conversationId,
-    String? instructions,
-    String? agentCommand,
-    bool planFirst = false,
-    AgentApprovalMode? approval,
-    String? turnId,
-    AgentResumePoint? resume,
-  }) {
-    calls++;
-    if (calls == 1) {
-      return Stream.fromIterable(const [
-        ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
-      ]);
-    }
-    // Never emits: send()'s future stays pending and, with no update ever, the
-    // stall window is the only thing that can end it.
-    return StreamController<ChatSendUpdate>(
-      onCancel: () => hungCancelled = true,
-    ).stream;
-  }
-}
-
-/// An agent whose first turn answers and whose second turn is a stream the test
-/// drives by hand — to prove a loop turn that keeps emitting is left running
-/// past the stall window. Whether it was cut off is read from the outcome: a
-/// turn stopped mid-stream never delivers its final reply.
-class _StreamingLoopSender implements ChatSender {
-  int calls = 0;
-  StreamController<ChatSendUpdate>? loopTurn;
-
-  @override
-  Stream<ChatSendUpdate> send({
-    required NetworkCredential network,
-    required String model,
-    required List<ChatMessage> history,
-    PlaygroundModality modality = PlaygroundModality.text,
-    List<MediaAttachment> attachments = const [],
-    String? localBaseUrl,
-    String? workdir,
-    String? conversationId,
-    String? instructions,
-    String? agentCommand,
-    bool planFirst = false,
-    AgentApprovalMode? approval,
-    String? turnId,
-    AgentResumePoint? resume,
-  }) {
-    calls++;
-    if (calls == 1) {
-      return Stream.fromIterable(const [
-        ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
-      ]);
-    }
-    return (loopTurn = StreamController<ChatSendUpdate>()).stream;
-  }
-}
-
 /// A fixed selected grid, so approving a plan (which reads the current grid to
 /// send the execute turn) never touches the real `~/.grid`.
 class _FixedNetwork extends SelectedNetwork {
   @override
   NetworkCredential? build() => _credential();
-}
-
-/// A grid that can be dropped mid-test — modelling a background sync emptying
-/// the session for a moment, the blip that used to kill a running loop for good.
-class _FlippableNetwork extends SelectedNetwork {
-  bool dropped = false;
-
-  @override
-  NetworkCredential? build() => dropped ? null : _credential();
-
-  void drop() {
-    dropped = true;
-    ref.invalidateSelf();
-  }
 }
 
 /// Stands in for the relay's `/usage/turn/{turnId}` endpoint, so a turn
@@ -451,9 +356,6 @@ _harness(
   ChatSender? answering,
   GridOverview? overview,
   ChatTransport? grid,
-  Duration? loopTurnStall,
-  Duration? loopContinuousGap,
-  Duration? loopResumeSettle,
   SelectedNetwork Function()? selectedNetwork,
   _FakeUsageRelay? relay,
 }) {
@@ -477,17 +379,6 @@ _harness(
       // [_attachOrchestrationUsage]) — keep it off the real network like
       // everything else here, unless a test hands in its own.
       relayApiClientProvider.overrideWithValue(usageRelay),
-      // Shorten the stall window so a test can prove a hung loop turn is stopped
-      // — and a working one is left alone — without waiting the full hour.
-      if (loopTurnStall != null)
-        loopTurnStallProvider.overrideWithValue(loopTurnStall),
-      // Shrink the continuous gap so a test can drive back-to-back turns.
-      if (loopContinuousGap != null)
-        loopContinuousGapProvider.overrideWithValue(loopContinuousGap),
-      // Shrink the settle a resumed loop waits, so a test can watch the overdue
-      // beat go out without holding the clock for fifteen seconds.
-      if (loopResumeSettle != null)
-        loopResumeSettleProvider.overrideWithValue(loopResumeSettle),
       // [answering] stands in for whoever replies, for a test that cares about
       // the reply arriving over time rather than about who sent it.
       chatSenderProvider.overrideWithValue(answering ?? sender),
@@ -807,7 +698,7 @@ void main() {
     );
   });
 
-group('turn settle reads the grid\'s usage log', () {
+  group('turn settle reads the grid\'s usage log', () {
     // Every test below routes its chat first, because only a routed chat reads
     // the log at all: the breakdown has one reader (the orchestration strip),
     // which draws nothing without a group, so an unrouted turn must never pay
@@ -819,48 +710,49 @@ group('turn settle reads the grid\'s usage log', () {
     );
     const routedModel = 'auto/brute_force';
 
-    test('a landed routed turn reads which models actually served it and '
-        'stamps them onto its message, persisted not merely held in memory',
-        () async {
-      final relay = _FakeUsageRelay(
-        response: const [ModelShare(model: 'qwen', requests: 2)],
-      );
-      final h = _harness(
-        tmp,
-        relay: relay,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'hi back'),
-          ),
-        ],
-      );
-      final chat = h.container.read(chatSessionsProvider.notifier)
-        ..setRoutingGroup(routed);
+    test(
+      'a landed routed turn reads which models actually served it and '
+      'stamps them onto its message, persisted not merely held in memory',
+      () async {
+        final relay = _FakeUsageRelay(
+          response: const [ModelShare(model: 'qwen', requests: 2)],
+        );
+        final h = _harness(
+          tmp,
+          relay: relay,
+          updates: [
+            const ChatSendSuccess(
+              ChatMessage(role: ChatRole.assistant, text: 'hi back'),
+            ),
+          ],
+        );
+        final chat = h.container.read(chatSessionsProvider.notifier)
+          ..setRoutingGroup(routed);
 
-      await chat.send(
-        network: _credential(),
-        model: routedModel,
-        message: 'hi',
-      );
+        await chat.send(
+          network: _credential(),
+          model: routedModel,
+          message: 'hi',
+        );
 
-      final conv = h.container.read(chatSessionsProvider).conversations.single;
-      // The attach read's answer is on the landed message (the background
-      // poll feeds a different field via turnModelUsageProvider).
-      expect(conv.messages.last.orchestrationModels, [
-        const ModelShare(model: 'qwen', requests: 2),
-      ]);
-      expect(
-        relay.calls,
-        isNotEmpty,
-        reason: 'a routed turn reads usage',
-      );
+        final conv = h.container
+            .read(chatSessionsProvider)
+            .conversations
+            .single;
+        // The attach read's answer is on the landed message (the background
+        // poll feeds a different field via turnModelUsageProvider).
+        expect(conv.messages.last.orchestrationModels, [
+          const ModelShare(model: 'qwen', requests: 2),
+        ]);
+        expect(relay.calls, isNotEmpty, reason: 'a routed turn reads usage');
 
-      // Persisted, not only held in memory.
-      final reloaded = await ChatStore(directory: tmp).loadAll();
-      expect(reloaded.single.messages.last.orchestrationModels, [
-        const ModelShare(model: 'qwen', requests: 2),
-      ]);
-    });
+        // Persisted, not only held in memory.
+        final reloaded = await ChatStore(directory: tmp).loadAll();
+        expect(reloaded.single.messages.last.orchestrationModels, [
+          const ModelShare(model: 'qwen', requests: 2),
+        ]);
+      },
+    );
 
     test('a turn genuinely waits for its usage read to finish before landing — '
         'not merely correct on an instant fake, which an unpaused version '
@@ -3240,860 +3132,6 @@ group('turn settle reads the grid\'s usage log', () {
     });
   });
 
-  group('/goal', () {
-    /// Let the loop's queued continuations land — each turn hands the next off
-    /// with `unawaited`, so one await would only see the first.
-    Future<void> settle() async {
-      for (var i = 0; i < 60; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
-    }
-
-    test('setting a goal sends the condition straight out — a goal that waits '
-        'for you to type something is a note to yourself', () async {
-      final grid = _FakeClassifier('MET\nAll green.');
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        grid: grid,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'done'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-
-      await chats.runCommand((
-        command: ChatCommand.goal,
-        argument: 'the tests pass',
-      ));
-      await settle();
-
-      final id = h.container.read(chatSessionsProvider).conversations.single.id;
-      expect(_userTurns(h.container, id), contains('the tests pass'));
-    });
-
-    test(
-      '/goal typed into a blank composer starts the chat rather than '
-      'refusing — as far as anything on screen says the user is in one '
-      'already, and a chat is only saved once something is said in it',
-      () async {
-        final grid = _FakeClassifier('MET\nAll green.');
-        final h = _harness(
-          tmp,
-          agentInstalled: true,
-          grid: grid,
-          updates: [
-            const ChatSendSuccess(
-              ChatMessage(role: ChatRole.assistant, text: 'done'),
-            ),
-          ],
-        );
-        final chats = h.container.read(chatSessionsProvider.notifier);
-
-        final outcome = await chats.runCommand((
-          command: ChatCommand.goal,
-          argument: 'the tests pass',
-        ), model: 'qwen');
-        await settle();
-
-        expect(outcome, isNull);
-        final session = h.container.read(chatSessionsProvider);
-        final chat = session.conversations.single;
-        // Started, left open in front of the user, on the model the picker was
-        // showing — and already working on the condition.
-        expect(session.activeId, chat.id);
-        expect(chat.model, 'qwen');
-        expect(chat.goal?.condition, 'the tests pass');
-        expect(_userTurns(h.container, chat.id), contains('the tests pass'));
-      },
-    );
-
-    test('a goal that is refused starts nothing, so a mistyped condition '
-        'leaves no empty chat behind in the sidebar', () async {
-      final h = _harness(tmp, updates: const []);
-      final chats = h.container.read(chatSessionsProvider.notifier);
-
-      final outcome = await chats.runCommand((
-        command: ChatCommand.goal,
-        argument: 'x' * (kMaxGoalCondition + 1),
-      ), model: 'qwen');
-
-      expect(outcome?.failed, isTrue);
-      expect(h.container.read(chatSessionsProvider).conversations, isEmpty);
-    });
-
-    test(
-      'a MET verdict ends it, and the bar says met rather than stopped',
-      () async {
-        final grid = _FakeClassifier('MET\nAll six tests pass.');
-        final h = _harness(
-          tmp,
-          agentInstalled: true,
-          grid: grid,
-          updates: [
-            const ChatSendSuccess(
-              ChatMessage(role: ChatRole.assistant, text: 'done'),
-            ),
-          ],
-        );
-        final chats = h.container.read(chatSessionsProvider.notifier);
-        await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-        await chats.runCommand((
-          command: ChatCommand.goal,
-          argument: 'the tests pass',
-        ));
-        await settle();
-
-        final goal = h.container
-            .read(chatSessionsProvider)
-            .conversations
-            .single
-            .goal;
-        expect(goal?.status, GoalStatus.met);
-        expect(goal?.reason, 'All six tests pass.');
-        expect(goal?.turnsEvaluated, 1);
-        // And where it ended, so "Goal met" is drawn in the transcript at the
-        // turn it was met on rather than pinned over the composer until
-        // somebody closes it.
-        expect(
-          goal?.endedAfter,
-          h.container
-              .read(chatSessionsProvider)
-              .conversations
-              .single
-              .messages
-              .length,
-        );
-      },
-    );
-
-    test('/goal clear stops it and names the condition back, so "cleared" is '
-        'never confused with "nothing was set"', () async {
-      final grid = _FakeClassifier('NOT_YET\nTwo still fail.');
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        grid: grid,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'working'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await chats.runCommand((
-        command: ChatCommand.goal,
-        argument: 'the tests pass',
-      ));
-      await settle();
-
-      final outcome = await chats.runCommand((
-        command: ChatCommand.goal,
-        argument: 'clear',
-      ));
-
-      expect(outcome?.message, contains('the tests pass'));
-      expect(outcome?.failed, isFalse);
-      expect(
-        h.container.read(chatSessionsProvider).conversations.single.goal,
-        isNull,
-      );
-    });
-
-    test('/clear ends the goal on the chat being left, so it cannot go on '
-        'firing turns into a conversation the user walked away from', () async {
-      final grid = _FakeClassifier('NOT_YET\nStill going.');
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        grid: grid,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'working'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await chats.runCommand((
-        command: ChatCommand.goal,
-        argument: 'the tests pass',
-      ));
-      await settle();
-
-      await chats.runCommand((command: ChatCommand.clear, argument: ''));
-      await settle();
-
-      final left = h.container.read(chatSessionsProvider).conversations.single;
-      expect(left.goal, isNull);
-    });
-  });
-
-  group('/loop', () {
-    Future<void> settle() async {
-      for (var i = 0; i < 60; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
-    }
-
-    test('/loop typed into a blank composer starts the chat too, and its '
-        'first run goes out in it', () async {
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'still building'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: '5m check the deploy',
-      ), model: 'qwen');
-      await settle();
-
-      final session = h.container.read(chatSessionsProvider);
-      final chat = session.conversations.single;
-      expect(session.activeId, chat.id);
-      expect(chat.model, 'qwen');
-      expect(chat.loop?.prompt, 'check the deploy');
-      expect(_userTurns(h.container, chat.id), contains('check the deploy'));
-      // Leave no timer running behind the test.
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test('an iteration that says the job is done ends the loop, which is the '
-        'only way a finished job ever stopped itself', () async {
-      final grid = _FakeClassifier('30\nNothing is pending.');
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        grid: grid,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(
-              role: ChatRole.assistant,
-              text:
-                  'The deploy finished and the smoke tests passed.\n\n'
-                  '```grid-loop\n'
-                  '{"stop": true, "why": "the deploy finished"}\n'
-                  '```',
-            ),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: 'check the deploy',
-      ), model: 'qwen');
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(chat.loop?.status, LoopStatus.finished);
-      expect(chat.loop?.pacing, 'the deploy finished');
-      expect(chat.loop?.iterations, 1);
-      // Ended, not paused by the user: the two read differently on the bar.
-      expect(loopBarLabel(chat.loop!, DateTime.now()), startsWith('Finished:'));
-    });
-
-    test('the gap the iteration named is the one waited, and the second model '
-        'is never asked — the one that did the work sets the pace', () async {
-      final grid = _FakeClassifier('30\nNothing is pending.');
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        grid: grid,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(
-              role: ChatRole.assistant,
-              text:
-                  'Still building.\n\n'
-                  '```grid-loop\n'
-                  '{"next": "45m", "why": "the build has 40 minutes left"}\n'
-                  '```',
-            ),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: 'check the deploy',
-      ), model: 'qwen');
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(chat.loop?.pacing, 'the build has 40 minutes left');
-      expect(
-        chat.loop!.nextAt.difference(DateTime.now()).inMinutes,
-        greaterThan(40),
-      );
-      expect(
-        grid.calls,
-        0,
-        reason: 'the pacer is the fallback now, not the path',
-      );
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test('a quiet iteration is counted rather than repeated, so a night of '
-        '"nothing yet" reads as a number and not forty answers', () async {
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(
-              role: ChatRole.assistant,
-              text:
-                  'Nothing has moved.\n\n'
-                  '```grid-loop\n{"quiet": true, "next": "1h"}\n```',
-            ),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: 'check the deploy',
-      ), model: 'qwen');
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(chat.loop?.quietStreak, 1);
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test("the app's own instruction and the block it asked for are both taken "
-        'back out of the transcript — the user reads the answer, and the next '
-        'beat carries the question once, not twice', () async {
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(
-              role: ChatRole.assistant,
-              text:
-                  'Still building.\n\n'
-                  '```grid-loop\n{"next": "45m"}\n```',
-            ),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: 'check the deploy',
-      ), model: 'qwen');
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(_userTurns(h.container, chat.id), ['check the deploy']);
-      expect(chat.messages.last.text, 'Still building.');
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test('a loop that stops records where in the transcript it stopped, so '
-        'the line saying so lands on that turn and not at the bottom of '
-        'whatever is said next', () async {
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'still building'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: '5m check the deploy',
-      ));
-      await settle();
-      final before = h.container
-          .read(chatSessionsProvider)
-          .conversations
-          .single
-          .messages
-          .length;
-
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(chat.loop?.endedAfter, before);
-      // Said again later does not move it: it stopped where it stopped.
-      await chats.send(network: _credential(), model: 'qwen', message: 'more');
-      await settle();
-      expect(
-        h.container
-            .read(chatSessionsProvider)
-            .conversations
-            .single
-            .loop
-            ?.endedAfter,
-        before,
-      );
-    });
-
-    test('the first run goes out at once — a loop that sits silent for five '
-        'minutes after you set it reads as broken', () async {
-      final grid = _FakeClassifier('30\nNothing is pending.');
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        grid: grid,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'still building'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: '5m check the deploy',
-      ));
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(_userTurns(h.container, chat.id), contains('check the deploy'));
-      expect(chat.loop?.interval, const Duration(minutes: 5));
-      expect(chat.loop?.iterations, 1);
-      expect(chat.loop?.isRunning, isTrue);
-
-      // Leave nothing armed behind the test.
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    /// A chat left on disk exactly as an app that was closed mid-loop leaves
-    /// one: a running loop, its next beat [dueIn] from now (negative = overdue),
-    /// and a transcript ending in the prompt whose answer never arrived.
-    void writeInterruptedLoop({
-      required Duration dueIn,
-      Duration ranFor = const Duration(hours: 1),
-    }) {
-      final now = DateTime.now();
-      String at(Duration ago) => now.subtract(ago).toUtc().toIso8601String();
-      File('${tmp.path}/1787020138395674.json').writeAsStringSync('''
-{"id":"1787020138395674","title":"Building","model":"qwen",
- "createdAt":"${at(ranFor)}","updatedAt":"${at(const Duration(minutes: 30))}",
- "messages":[{"role":"user","text":"keep building"}],
- "loop":{"prompt":"keep building","intervalSeconds":300,
-  "startedAt":"${at(ranFor)}",
-  "nextAt":"${now.add(dueIn).toUtc().toIso8601String()}",
-  "status":"running","iterations":1}}
-''');
-    }
-
-    test('a loop still running when the app closed picks itself back up and '
-        'carries on counting — a restart used to end it, and setting it up '
-        'again was a new loop that re-did the work from zero', () async {
-      // 2026-08-18 in the log: the app was rebuilt mid-turn, the loop died with
-      // it, and `/loop` typed again sent the same prompt over the top of what
-      // the killed turn had already half done.
-      writeInterruptedLoop(dueIn: const Duration(minutes: -3));
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        loopResumeSettle: const Duration(milliseconds: 10),
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'carried on'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.restored;
-      // Poll real time: the settle has to actually elapse before the overdue
-      // beat goes out.
-      for (var i = 0; i < 100 && h.agent.history == null; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(
-        _userTurns(h.container, chat.id).where((t) => t == 'keep building'),
-        hasLength(2),
-        reason: 'the resumed beat asks again, which is what a loop is',
-      );
-      expect(
-        chat.loop?.iterations,
-        2,
-        reason: 'it counts on from where it was rather than starting over',
-      );
-      // And the turn the restart killed is closed off, so what the agent reads
-      // is "that one was interrupted" rather than a prompt nobody answered.
-      expect(
-        h.agent.history?.map((m) => m.text),
-        contains(kInterruptedTurnNote),
-      );
-
-      // Leave nothing armed behind the test.
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test('a loop whose seven days ran out while the app was closed comes back '
-        'expired instead of getting one more free turn', () async {
-      writeInterruptedLoop(
-        dueIn: const Duration(minutes: -3),
-        ranFor: const Duration(days: 8),
-      );
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        loopResumeSettle: const Duration(milliseconds: 10),
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'carried on'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.restored;
-      await Future<void>.delayed(const Duration(milliseconds: 60));
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(chat.loop?.status, LoopStatus.expired);
-      expect(h.agent.history, isNull, reason: 'no turn went out');
-    });
-
-    test(
-      'a self-paced loop asks how long to wait and shows the reason',
-      () async {
-        final grid = _FakeClassifier('25\nThe PR has gone quiet.');
-        final h = _harness(
-          tmp,
-          agentInstalled: true,
-          grid: grid,
-          updates: [
-            const ChatSendSuccess(
-              ChatMessage(role: ChatRole.assistant, text: 'no new comments'),
-            ),
-          ],
-        );
-        final chats = h.container.read(chatSessionsProvider.notifier);
-        await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-
-        await chats.runCommand((
-          command: ChatCommand.loop,
-          argument: 'watch the PR',
-        ));
-        await settle();
-
-        final loop = h.container
-            .read(chatSessionsProvider)
-            .conversations
-            .single
-            .loop;
-        expect(loop?.isSelfPaced, isTrue);
-        expect(loop?.pacing, 'The PR has gone quiet.');
-
-        await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-      },
-    );
-
-    test(
-      'a turn that goes silent is treated as hung and stopped, so the loop '
-      'keeps its cadence instead of freezing overnight on one stuck turn',
-      () async {
-        // The bug: an agent turn hung for 4h46m and, because the next beat is only
-        // armed once the current turn returns, the whole loop sat frozen — "run
-        // all night" stopped dead after one iteration, with no log to say why.
-        final sender = _HangAfterFirstSender();
-        final h = _harness(
-          tmp,
-          agentInstalled: true,
-          answering: sender,
-          loopTurnStall: const Duration(milliseconds: 100),
-          updates: const [],
-        );
-        final chats = h.container.read(chatSessionsProvider.notifier);
-        // Turn one answers and creates the chat.
-        await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-        await settle();
-
-        // The loop's first iteration goes out to a turn that emits nothing, ever.
-        await chats.runCommand((
-          command: ChatCommand.loop,
-          argument: '5m check the deploy',
-        ));
-
-        // Poll real time: the 100ms stall window has to actually elapse.
-        for (var i = 0; i < 50 && !sender.hungCancelled; i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-        }
-        await settle();
-
-        final chat = h.container
-            .read(chatSessionsProvider)
-            .conversations
-            .single;
-        expect(
-          sender.calls,
-          2,
-          reason: 'the setup turn, then the loop iteration',
-        );
-        expect(
-          sender.hungCancelled,
-          isTrue,
-          reason: 'the hung turn was stopped',
-        );
-        expect(
-          h.container.read(chatSessionsProvider).sendingFor(chat.id),
-          isFalse,
-          reason: 'the chat is idle again, not stuck answering forever',
-        );
-        expect(chat.loop?.iterations, 1, reason: 'the next beat was scheduled');
-        expect(chat.loop?.isRunning, isTrue);
-
-        await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-      },
-    );
-
-    test('closing the app on a running beat leaves the loop running, so the '
-        'next launch picks it up instead of ending an overnight job', () async {
-      final sender = _StreamingLoopSender();
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        answering: sender,
-        updates: const [],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await settle();
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: '5m check the deploy',
-      ));
-      await settle();
-      final id = h.container.read(chatSessionsProvider).conversations.single.id;
-      sender.loopTurn!.add(const ChatSendStreaming('half an answer'));
-      await settle();
-
-      // What quitting does to a beat in flight: the window's teardown stops
-      // every chat that is answering. On 2026-08-19 the loop was `stopped` on
-      // disk the same second a beat was torn down this way and never resumed
-      // again — while the launches that killed the app outright, leaving the
-      // file saying `running`, all came back.
-      chats.stopChat(id);
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      expect(
-        chat.loop?.isRunning,
-        isTrue,
-        reason: 'a torn-down beat is not the user ending the loop',
-      );
-      expect(
-        (await h.store.loadAll()).single.loop?.isRunning,
-        isTrue,
-        reason: 'and the file is what the next launch resumes from',
-      );
-
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test('a turn that keeps streaming is left alone past the stall window — a '
-        'long turn that is working is not a hang', () async {
-      final sender = _StreamingLoopSender();
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        answering: sender,
-        loopTurnStall: const Duration(milliseconds: 300),
-        updates: const [],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await settle();
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: '5m check the deploy',
-      ));
-
-      // Keep the turn visibly alive: a chunk every 100ms — under the 300ms
-      // window, so it never looks silent — for ~700ms, well past the window,
-      // before it finishes cleanly.
-      final deadline = DateTime.now().add(const Duration(milliseconds: 700));
-      while (DateTime.now().isBefore(deadline)) {
-        final turn = sender.loopTurn;
-        if (turn != null && !turn.isClosed) {
-          turn.add(const ChatSendStreaming('working…'));
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      sender.loopTurn!.add(
-        const ChatSendSuccess(
-          ChatMessage(role: ChatRole.assistant, text: 'done'),
-        ),
-      );
-      await sender.loopTurn!.close();
-      await settle();
-
-      final chat = h.container.read(chatSessionsProvider).conversations.single;
-      // Its final reply landed: the turn ran ~700ms, well past the 300ms window,
-      // and was never cut off — a turn stopped mid-stream never delivers 'done'.
-      expect(
-        _assistantTurns(h.container, chat.id),
-        contains('done'),
-        reason: 'a streaming turn is left to finish, not treated as hung',
-      );
-      expect(chat.loop?.iterations, 1, reason: 'the next beat was scheduled');
-      expect(chat.loop?.isRunning, isTrue);
-
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test('a continuous loop runs turns back-to-back — the "keep building this '
-        'project, never stop" a full-day run needs', () async {
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        loopContinuousGap: const Duration(milliseconds: 20),
-        updates: const [
-          ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'did a bit'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await settle();
-
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: 'continuous keep improving the project',
-      ));
-
-      // Let several back-to-back iterations run (a 20ms settle between each).
-      ChatLoop? loop;
-      for (var i = 0; i < 60; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        loop = h.container.read(chatSessionsProvider).conversations.single.loop;
-        if ((loop?.iterations ?? 0) >= 3) break;
-      }
-
-      expect(loop?.isContinuous, isTrue);
-      expect(
-        loop?.iterations,
-        greaterThanOrEqualTo(3),
-        reason: 'turns fire back-to-back, not on a clock',
-      );
-      expect(loop?.isRunning, isTrue, reason: 'it never stops on its own');
-
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test('a grid that blinks out mid-loop does not kill it — a momentary null '
-        'grid retries instead of stopping for good', () async {
-      final net = _FlippableNetwork();
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        loopContinuousGap: const Duration(milliseconds: 20),
-        selectedNetwork: () => net,
-        updates: const [
-          ChatSendSuccess(ChatMessage(role: ChatRole.assistant, text: 'ok')),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await settle();
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: 'continuous keep improving',
-      ));
-
-      // Let it run, then drop the grid the way a background sync would.
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      net.drop();
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-
-      final loop = h.container
-          .read(chatSessionsProvider)
-          .conversations
-          .single
-          .loop;
-      expect(
-        loop?.isRunning,
-        isTrue,
-        reason: 'a momentary null grid retries; it does not stop the loop',
-      );
-
-      await chats.runCommand((command: ChatCommand.loop, argument: 'stop'));
-    });
-
-    test('/loop with nothing to run says what to type instead of starting a '
-        'loop about nothing', () async {
-      final h = _harness(tmp, agentInstalled: true, updates: const []);
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-
-      final outcome = await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: '5m',
-      ));
-
-      expect(outcome?.failed, isTrue);
-      expect(outcome?.message, contains('/loop 5m'));
-      expect(
-        h.container.read(chatSessionsProvider).conversations.single.loop,
-        isNull,
-      );
-    });
-
-    test('/clear stops the loop on the chat being left, so nothing goes on '
-        'repeating into a conversation nobody is reading', () async {
-      final grid = _FakeClassifier('30\nQuiet.');
-      final h = _harness(
-        tmp,
-        agentInstalled: true,
-        grid: grid,
-        updates: [
-          const ChatSendSuccess(
-            ChatMessage(role: ChatRole.assistant, text: 'ok'),
-          ),
-        ],
-      );
-      final chats = h.container.read(chatSessionsProvider.notifier);
-      await chats.send(network: _credential(), model: 'qwen', message: 'hi');
-      await chats.runCommand((
-        command: ChatCommand.loop,
-        argument: '5m check the deploy',
-      ));
-      await settle();
-
-      await chats.runCommand((command: ChatCommand.clear, argument: ''));
-      await settle();
-
-      final left = h.container.read(chatSessionsProvider).conversations.single;
-      expect(left.loop?.isRunning, isFalse);
-    });
-  });
-
   group('/compact', () {
     test('after compacting, the turn carries the summary in place of what it '
         'covers — and the chat itself still holds every message', () async {
@@ -4602,14 +3640,4 @@ List<String> _userTurns(ProviderContainer container, String id) => [
           .firstWhere((c) => c.id == id)
           .messages)
     if (m.role == ChatRole.user) m.text,
-];
-
-List<String> _assistantTurns(ProviderContainer container, String id) => [
-  for (final m
-      in container
-          .read(chatSessionsProvider)
-          .conversations
-          .firstWhere((c) => c.id == id)
-          .messages)
-    if (m.role == ChatRole.assistant) m.text,
 ];

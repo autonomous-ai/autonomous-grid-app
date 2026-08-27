@@ -67,8 +67,8 @@ class ComposerSection extends StatelessWidget {
   final List<MediaAttachment> attachments;
 
   /// The app command the line will run on Send, badged at the top of the card so
-  /// a goal being set can't be mistaken for a message being sent. Null for an
-  /// ordinary message. See [activeComposerCommand].
+  /// a summary being asked for can't be mistaken for a message being sent. Null
+  /// for an ordinary message. See [activeComposerCommand].
   final ChatCommand? activeCommand;
 
   /// The documents on this message — a report, a spreadsheet — shown as chips

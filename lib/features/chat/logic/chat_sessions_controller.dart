@@ -28,7 +28,6 @@ import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_chat_surface.dart';
 import '../../agents/logic/agent_status.dart';
-import '../../agents/logic/adapters/claude_chat_sender.dart';
 import '../../agents/logic/agent_steering.dart';
 import '../../agents/logic/auto_agent.dart';
 import '../../agents/logic/auto_agent_router.dart';
@@ -46,21 +45,12 @@ import '../../projects/logic/project_folder_status.dart';
 import 'grid_model_catalog.dart';
 import 'chat_title.dart';
 import 'chat_title_writer.dart';
-import 'commands/agent_ask_block.dart';
 import 'commands/chat_command.dart';
 import 'commands/chat_compaction.dart';
-import 'commands/chat_goal.dart';
-import 'commands/chat_loop.dart';
-import 'commands/loop_pace_block.dart';
-import 'commands/schedule_argument.dart';
-import '../../scheduled/logic/scheduled_jobs_controller.dart';
-import '../../scheduled/logic/task_destination.dart';
-import '../../scheduled/logic/task_runner.dart';
 import 'chat_sessions_state.dart';
 import 'chat_store.dart';
 import 'conversation.dart';
 import 'interrupted_turn.dart';
-import 'loop_claim.dart';
 import 'routing_group.dart';
 
 /// Re-exported so every file that already imports the controller keeps seeing
@@ -68,8 +58,6 @@ import 'routing_group.dart';
 /// hear about.
 export 'chat_sessions_state.dart';
 
-part 'chat_sessions_goals.dart';
-part 'chat_sessions_loops.dart';
 part 'chat_sessions_queue.dart';
 part 'chat_sessions_send.dart';
 part 'chat_sessions_settle.dart';
@@ -86,22 +74,6 @@ final chatSessionsProvider =
     NotifierProvider<ChatSessionsController, ChatSessionsState>(
       ChatSessionsController.new,
     );
-
-/// How long a loop iteration may go with no progress before it is treated as
-/// hung. A seam over [kLoopTurnStall] so a test can shorten the wait instead of
-/// holding a stalled turn for the full hour.
-final loopTurnStallProvider = Provider<Duration>((ref) => kLoopTurnStall);
-
-/// How long a resumed loop waits before an overdue turn goes out. A seam over
-/// [kLoopResumeSettle] so a test doesn't hold the clock for the settle.
-final loopResumeSettleProvider = Provider<Duration>((ref) => kLoopResumeSettle);
-
-/// The gap a continuous loop leaves between turns. A seam over
-/// [kContinuousLoopGap] so a test can drive back-to-back turns without the
-/// three-second settle in between.
-final loopContinuousGapProvider = Provider<Duration>(
-  (ref) => kContinuousLoopGap,
-);
 
 /// Everything needed to repeat a failed turn without asking the user to rebuild
 /// its text, pictures, documents, or captured context in the composer.
@@ -122,19 +94,11 @@ class _RetryableTurn {
   final AgentTool? continuedAgent;
 }
 
-/// How a turn ended, for the goal loop to judge: what the assistant said, why
-/// it failed if it did, and whether it actually did any work.
-///
-/// [ranSteps] is the stall guard's evidence — a turn that only produced prose
-/// moved nothing, and three of those in a row is a loop, not thinking.
-typedef _TurnOutcome = ({String? reply, String? failure, bool ranSteps});
-
-/// The plumbing the Chat tab's five jobs share — running a turn, settling it,
-/// holding what the user typed behind it, driving a goal, and repeating a
-/// prompt on a timer.
+/// The plumbing the Chat tab's three jobs share — running a turn, settling
+/// it, and holding what the user typed behind it.
 ///
 /// They live in files of their own (§4) and reach the same state through this
-/// spine. What is left `abstract` below is exactly the set of calls those five
+/// spine. What is left `abstract` below is exactly the set of calls those three
 /// make into each other: naming them in one place is what keeps the seams
 /// visible instead of hiding a cycle inside one 1,400-line class.
 abstract class _ChatSessions extends Notifier<ChatSessionsState> {
@@ -151,26 +115,11 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// seconds later), so it has to know when there's no longer a state to write.
   bool _disposed = false;
 
-  /// How the last turn of each chat ended, so the goal loop can judge it
-  /// without the update stream having to carry it there. Written as the turn
-  /// lands, read and dropped as it settles; absent means the turn was stopped
-  /// rather than finished.
-  final Map<String, _TurnOutcome> _lastTurn = {};
-
-  /// Consecutive judged turns that did no work, per chat — the stall guard's
-  /// counter. In memory only: a goal that survives a restart comes back
-  /// stalled anyway.
-  final Map<String, int> _idleGoalTurns = {};
-
-  /// The pending wake-up of each repeating prompt. In memory by nature, and
-  /// cancelled on disposal — a timer that outlives its controller fires into a
-  /// state that is no longer there.
-  final Map<String, Timer> _loopTimers = {};
-
-  /// When each in-flight turn last showed progress — a streamed chunk or a
-  /// status change. The loop reads it to tell a turn that is working from one
-  /// that has hung (see [kLoopTurnStall]); in memory, like the turn itself.
-  final Map<String, DateTime> _turnActivityAt = {};
+  /// The chats whose last turn landed — answered or failed — rather than being
+  /// stopped. Written as the turn lands, read and dropped as it settles, so the
+  /// carry-on can tell the two apart: after Stop the user has said what they
+  /// want, and carrying on would be the app arguing with them.
+  final Set<String> _landedTurns = {};
 
   /// The chats with a naming attempt in flight. Naming is retried on every turn
   /// until it lands, and an attempt can take longer than a short turn does — so
@@ -242,15 +191,13 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
       conversation.agent ??
       ref.read(chatAgentChoiceProvider(conversation.projectId));
 
-  /// The chat `/goal` and `/loop` act on: the one that is open, or the compose
-  /// the user is standing in, started here and now.
+  /// The chat the user is in: the one that is open, or the compose they are
+  /// standing in, started here and now.
   ///
-  /// A chat is not saved until its first message, so either command typed into
-  /// a fresh composer used to be answered with "Open a chat first" — a refusal
-  /// to do something there was no reason not to do. As far as anything on
-  /// screen says the user *is* in a chat, and Claude Code takes both from the
-  /// first line of a session. The turn the command fires next is what fills the
-  /// chat in and names it.
+  /// A chat is not saved until its first message, but as far as anything on
+  /// screen says the user *is* in one — so a terminal opened from a blank
+  /// composer gets a chat to belong to rather than "Open a chat first", a
+  /// refusal to do something there was no reason not to do.
   Conversation _startedChat(String model) {
     final open = state.active;
     if (open != null) return open;
@@ -381,16 +328,6 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
     bool? planFirst,
     String? into,
     bool continuing,
-
-    /// A slash command the agent runs itself, sent as the whole prompt in place
-    /// of one built from the transcript — see [ChatSender.send]. Separate from
-    /// [message], which is what the chat shows.
-    String? agentCommand,
-
-    /// Who this turn is from — the person, or the app carrying on an
-    /// instruction of theirs. Decides how the transcript draws it, and nothing
-    /// else (see [TurnOrigin]).
-    TurnOrigin origin,
   });
 
   /// Hold a turn typed while the chat was busy — [_ChatQueue].
@@ -402,9 +339,6 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Send the next held turn, if any — [_ChatQueue].
   bool _drainQueue(String id);
 
-  /// Judge a finished turn against the chat's goal — [_ChatGoals].
-  Future<void> _judgeGoalTurn(String id, _TurnOutcome? outcome);
-
   /// Send the agent back into chat [id] where it ran out of room —
   /// [ChatSessionsController]. Called by the user's "Carry on" and by the
   /// automatic one in [_ChatSettle].
@@ -412,15 +346,6 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
 
   /// Settle a finished send — [_ChatSettle].
   void _finish(String id);
-
-  /// Act on a reply that talked about a repeat nothing is running, or relayed
-  /// an ask the app's own reading missed — [_ChatLoops].
-  void _settleLoopClaim(String id);
-
-  /// Run one of the app's own commands — implemented below, declared here so a
-  /// mixin can reach it: an ask relayed by a reply runs through exactly the
-  /// path the composer uses, rather than a second one that could drift from it.
-  Future<CommandOutcome?> runCommand(ChatCommandCall call, {String model = ''});
 
   /// Whether chat [id] is one the app would carry on by itself as things stand
   /// — [_ChatSettle]. Read by the send that just landed, to keep an
@@ -433,17 +358,14 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Stop one chat's in-flight reply, keeping any partial and settling it back
   /// to idle — [_ChatSend].
   ///
-  /// Two callers, and each is why it is shaped this way. The loop calls it to
-  /// abandon a turn that has hung past [kLoopTurnCeiling], so the next iteration
-  /// is not blocked behind it. And it is public and **per conversation** because
-  /// the Grid Panel interrupts a *project*, which is very often not the chat the
-  /// desktop has open — on a desk with a panel on it, nobody is looking at the
-  /// window.
+  /// Public and **per conversation** because the Grid Panel interrupts a
+  /// *project*, which is very often not the chat the desktop has open — on a
+  /// desk with a panel on it, nobody is looking at the window.
   void stopChat(String id);
 }
 
 class ChatSessionsController extends _ChatSessions
-    with _ChatSend, _ChatSettle, _ChatQueue, _ChatGoals, _ChatLoops {
+    with _ChatSend, _ChatSettle, _ChatQueue {
   /// Whether the user has already chosen what to look at — opened a chat, or
   /// started a new one — before the saved history landed. Once they have,
   /// restoring must not move them somewhere else.
@@ -474,11 +396,6 @@ class ChatSessionsController extends _ChatSessions
     ref.onDispose(() {
       _disposed = true;
       _cancelAll();
-      // A pending loop wake-up would fire into a controller that is gone.
-      for (final timer in _loopTimers.values) {
-        timer.cancel();
-      }
-      _loopTimers.clear();
     });
     // Read off the first frame: the whole history is on disk, and decoding it
     // here is the frame's budget spent before anything is drawn (see
@@ -557,16 +474,6 @@ class ChatSessionsController extends _ChatSessions
         break; // merged is sorted newest-first
       }
     }
-    // Last, and only here: the history has to be in state before a loop can be
-    // found in it, and this is the one path that reads *this* computer's own
-    // chat folder (see [_stopForeignLoop] for the other one).
-    _resumeLoops();
-    // A loop resumes across a restart; a goal does not. The difference is who
-    // the next turn belongs to: a loop sends its own prompt, so nothing of the
-    // user's is captured, while a goal takes over whatever they type next — and
-    // after a restart that is a sentence they wrote without knowing a goal was
-    // still armed (see [GoalStatus.dormant]).
-    _standDownGoals();
   }
 
   /// Close off any turn that the app going away cut short.
@@ -617,7 +524,7 @@ class ChatSessionsController extends _ChatSessions
     final byId = {for (final c in state.conversations) c.id: c};
     for (final c in saved) {
       if (state.sendingFor(c.id)) continue;
-      byId[c.id] = _stopForeignLoop(c);
+      byId[c.id] = c;
     }
     state = state.copyWith(
       loading: false,
@@ -644,127 +551,24 @@ class ChatSessionsController extends _ChatSessions
 
   /// Run a slash command the app owns (see [ChatCommand]).
   ///
-  /// Kept on the controller rather than in the view: every one of these acts on
-  /// chat state, and a view that reached in and did it itself would be the
-  /// second place that knows how.
+  /// Kept on the controller rather than in the view: both act on chat state,
+  /// and a view that reached in and did it itself would be the second place
+  /// that knows how.
   ///
   /// Returns the one line to tell the user, or null when the result is its own
   /// confirmation — a new chat opening says "new chat" better than a toast.
-  ///
-  /// [model] is what the composer is showing: what a chat that `/goal` or
-  /// `/loop` has to *start* will answer with. It defaults to none because the
-  /// callers with no composer to read — the status line's Stop buttons — only
-  /// ever run commands that act on a chat already open.
-  /// Runs a command an agent asked for over MCP, in the chat its turn belongs
-  /// to, and returns the sentence to hand back as the tool's result.
-  ///
-  /// **Refuses rather than acting on the wrong conversation.** Every command
-  /// here works on the chat that is open ([_startedChat]); a turn answering a
-  /// background chat that asked for a loop would otherwise start one wherever
-  /// the user happens to be standing, in a conversation nobody connected to the
-  /// request. The refusal is written for the agent to repeat, so the user is
-  /// told what to type instead of being told nothing.
-  Future<String> runAgentAsk(String chatId, ChatCommandCall call) async {
-    final chat = _find(chatId);
-    if (chat == null) {
-      return 'That conversation is no longer here, so nothing was started.';
-    }
-    if (state.activeId != chatId) {
-      return 'Grid runs this in the conversation on screen, and this turn is '
-          'answering a different one. Tell the user to type '
-          '"/${call.command.name} ${call.argument}" in this chat.';
-    }
-    final outcome = await runCommand(call, model: chat.model);
-    return outcome?.message ?? 'Grid is running /${call.command.name}.';
-  }
-
-  @override
-  Future<CommandOutcome?> runCommand(
-    ChatCommandCall call, {
-    String model = '',
-  }) async {
+  Future<CommandOutcome?> runCommand(ChatCommandCall call) async {
     switch (call.command) {
       // Issue #13: a new chat *where the user is standing*. The project comes
       // from the open chat, or from the compose they are already in — dropping
       // it would move them out of the folder they were working in, which is the
       // one thing "start a new chat here" promises not to do.
       case ChatCommand.clear:
-        // A goal left running in the chat being left would go on sending turns
-        // into a conversation the user has walked away from. Claude Code's
-        // `/clear` ends the goal for the same reason.
-        final leaving = state.active;
-        if (leaving != null) _endLoop(leaving.id);
-        if (leaving?.goal != null) {
-          _saveAndReplace(_find(leaving!.id)!.copyWith(clearGoal: true));
-        }
-        newChat(projectId: leaving?.projectId ?? state.draftProjectId);
+        newChat(projectId: state.active?.projectId ?? state.draftProjectId);
         return null;
-      case ChatCommand.goal:
-        final argument = call.argument;
-        if (argument.isEmpty) {
-          return (
-            message: goalStatusLine(state.active?.goal, DateTime.now()),
-            failed: false,
-          );
-        }
-        if (kGoalClearWords.contains(argument.toLowerCase())) {
-          return _clearGoal();
-        }
-        return _setGoal(argument, model);
-      case ChatCommand.loop:
-        final argument = call.argument;
-        if (kGoalClearWords.contains(argument.toLowerCase())) {
-          return _stopLoop();
-        }
-        return _startLoop(argument, model);
-      case ChatCommand.schedule:
-        return _scheduleTask(call.argument, model);
       case ChatCommand.compact:
         return _compact(call.argument);
     }
-  }
-
-  /// Save what [argument] describes as a task on the machine's own scheduler,
-  /// answering back into this chat.
-  ///
-  /// Delivery is not a question worth asking: the user set it up *here*, in a
-  /// sentence, so here is where they will look for the answer — and the runner
-  /// is the assistant they were talking to when they asked, for the same
-  /// reason. The Scheduled screen is where either can be changed afterwards.
-  Future<CommandOutcome?> _scheduleTask(String argument, String model) async {
-    // What it says has to be readable *before* a chat is started for it, or a
-    // typo leaves an empty conversation in the sidebar — the same order `/loop`
-    // checks in, and for the same reason.
-    final request = parseScheduleArgument(argument);
-    if (request == null) {
-      return (message: kScheduleUsage, failed: true);
-    }
-    // On a blank composer this starts the chat it will answer into, rather than
-    // refusing: "/schedule" on launch is an ordinary thing to do, and the chat
-    // is the destination, not a precondition.
-    final chat = _startedChat(model);
-    final runner = taskRunnerFor(
-      ref.read(resolvedChatAgentProvider(_agentChoiceFor(chat))),
-    );
-    final result = await ref
-        .read(scheduledJobsProvider.notifier)
-        .create(
-          name: clipChatTitle(request.prompt),
-          prompt: request.prompt,
-          schedule: request.schedule,
-          model: model.isEmpty ? chat.model : model,
-          runner: runner,
-          destination: TaskChatDestination(chat.id),
-          workdir: ref.read(projectByIdProvider(chat.projectId))?.path,
-          projectId: chat.projectId,
-        );
-    if (result.error != null) return (message: result.error!, failed: true);
-    return (
-      message:
-          '${request.schedule.describe()}: ${request.prompt}. '
-          'Answers here, and keeps running with Grid closed.',
-      failed: false,
-    );
   }
 
   /// How long the summarizer gets. Long, because it is reading a whole
@@ -923,13 +727,13 @@ class ChatSessionsController extends _ChatSessions
   /// where it was. Storing a point per agent is a change to the saved shape, so
   /// it is written down here rather than guessed at.
   ///
-  /// **TODO(BE): the one-shot lane reads this same field.** A goal step, a loop
-  /// beat or a scheduled task would pass `--resume <id>` to `claude -p` for an
-  /// id a terminal is holding open, and two processes writing one session is not
-  /// a thing either CLI promises to survive. It cannot happen today — a terminal
-  /// chat has no composer, so nothing in it can start a goal or a loop, and a
-  /// scheduled task makes its own chat — but the field is shared and the guard
-  /// is circumstance, not design.
+  /// **TODO(BE): the one-shot lane reads this same field.** A turn sent from
+  /// outside the terminal — a scheduled task, say — would pass `--resume <id>`
+  /// to `claude -p` for an id a terminal is holding open, and two processes
+  /// writing one session is not a thing either CLI promises to survive. It
+  /// cannot happen today — a terminal chat has no composer, and a scheduled
+  /// task makes its own chat — but the field is shared and the guard is
+  /// circumstance, not design.
   void rememberAgentSession({
     required String chatId,
     required AgentTool agent,
@@ -979,7 +783,7 @@ class ChatSessionsController extends _ChatSessions
   /// whether that pick is held or re-made every turn (see [RoutingGroup]).
   ///
   /// Starts the chat when the user is standing on a blank composer, the way
-  /// `/goal` does: the setup dialog this lands from spends a real request
+  /// a terminal does: the setup dialog this lands from spends a real request
   /// asking the grid which models to use, and there would be nothing to keep
   /// the answer on otherwise. The fresh chat is seeded with the mode's own
   /// model id ([routingModelId]) — the row the picker has just moved to.
@@ -1072,8 +876,6 @@ class ChatSessionsController extends _ChatSessions
   /// streaming into it is cancelled first, so nothing writes back afterwards.
   void deleteConversation(String id) {
     _cancel(id);
-    // Nothing may go on repeating into a chat that no longer exists.
-    _cancelLoopTimer(id);
     _store.delete(id);
     _deletedWhileLoading?.add(id);
     // The chat that held this undo is gone, so nothing can reach it any more —

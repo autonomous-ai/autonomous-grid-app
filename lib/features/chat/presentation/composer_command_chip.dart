@@ -5,11 +5,11 @@ import '../logic/commands/chat_command.dart';
 
 /// The badge inside the composer naming the command the line will run.
 ///
-/// Once a space follows `/goal` the `/` menu closes and the line reads as an
-/// ordinary message (see [activeComposerCommand]) — a user setting a goal could
-/// not tell it from a prompt they were sending. This says which, in the composer
-/// itself and for as long as the argument is being written: press Send and
-/// *this* runs, not a message. Tinted with the accent so it reads as a mode the
+/// Once a space follows `/compact` the `/` menu closes and the line reads as
+/// an ordinary message (see [activeComposerCommand]) — a user writing the
+/// summary's focus could not tell it from a prompt they were sending. This says
+/// which, in the composer itself and for as long as the argument is being
+/// written: press Send and *this* runs, not a message. Tinted with the accent so it reads as a mode the
 /// line is in rather than text in it.
 class ComposerCommandChip extends StatelessWidget {
   const ComposerCommandChip({super.key, required this.command});
@@ -67,12 +67,8 @@ class ComposerCommandChip extends StatelessWidget {
   }
 }
 
-/// The glyph for each command, matched to where it already appears — a goal's
-/// target ([ComposerStatus]), a loop's repeat arrow.
+/// The glyph for each command.
 IconData _commandIcon(ChatCommand command) => switch (command) {
   ChatCommand.clear => Icons.add_comment_outlined,
-  ChatCommand.goal => Icons.ads_click,
-  ChatCommand.loop => Icons.repeat_rounded,
-  ChatCommand.schedule => Icons.schedule_rounded,
   ChatCommand.compact => Icons.compress_rounded,
 };

@@ -101,11 +101,9 @@ const String kClaudePersistentMonitorRefusal =
     'A persistent monitor cannot work here. This turn is a process Grid closes '
     'when the answer lands, so the monitor dies with it and any tool it reaches '
     'for afterwards gets "Stream closed" — the user is told a watch is running '
-    'while nothing is watching. For work that must outlive this chat use '
-    '`hermes cron` (see the grid-schedule skill). For a repeat inside the chat, '
-    'tell the user to type /loop — the app owns that one and you pace it with a '
-    'grid-loop block. A monitor without `persistent` is fine: it just has to '
-    'finish inside this turn.';
+    'while nothing is watching. For work that must outlive this chat, tell the '
+    'user to set it up under Scheduled in Grid. A monitor without `persistent` '
+    'is fine: it just has to finish inside this turn.';
 
 /// Why this tool call cannot work in Grid, or null when it can.
 ///

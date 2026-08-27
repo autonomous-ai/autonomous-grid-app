@@ -12,20 +12,14 @@ import 'import/parsed_session.dart';
 /// [messages] as plain text, for the clipboard — one labelled block per turn, in
 /// the order they were said.
 ///
-/// Three labels, not two: a goal's next step and a loop's beat go out under the
-/// user's role but nobody typed them, and a copied transcript that puts "You:"
-/// in front of one is the same lie the bubble used to tell (see [TurnOrigin]).
-///
 /// Takes the turns rather than the chat, because for a chat shown as a terminal
 /// they are not on the chat at all — see [ChatTranscript].
 String transcriptText(List<ChatMessage> messages) => [
   for (final m in messages) '${_transcriptSpeaker(m)}: ${m.text}',
 ].join('\n\n');
 
-String _transcriptSpeaker(ChatMessage message) {
-  if (message.role == ChatRole.assistant) return 'Assistant';
-  return message.sentBy.isFromApp ? 'Grid' : 'You';
-}
+String _transcriptSpeaker(ChatMessage message) =>
+    message.role == ChatRole.assistant ? 'Assistant' : 'You';
 
 /// Reads a chat out to plain text, from wherever its conversation actually
 /// lives.

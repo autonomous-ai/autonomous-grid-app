@@ -30,10 +30,6 @@ const int _minAfterOpener = 12;
 String deriveConversationTitle(List<ChatMessage> messages) {
   for (final message in messages) {
     if (message.role != ChatRole.user) continue;
-    // "the first thing the user asked", literally: a goal's next step and a
-    // loop's beat are the app repeating itself, and naming a chat after one
-    // gives the sidebar a row reading "Keep working toward this goal:…".
-    if (message.sentBy.isFromApp) continue;
     final title = chatTitleFromLine(firstLinePreview(message.text));
     if (title.isEmpty) continue;
     return title;

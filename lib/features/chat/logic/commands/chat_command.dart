@@ -2,12 +2,16 @@
 ///
 /// Grid drives three different agents over three different transports, and each
 /// agent's own `/commands` live inside the piece of it Grid doesn't talk to —
-/// Codex's are in its TUI crate, for instance (see `docs/agent-commands.md`). So a command that has to work "for every agent"
-/// can only be one the app itself performs, on the state the app itself owns:
-/// the transcript, the open chat, the turn loop.
+/// Codex's are in its TUI crate, for instance. So a command that has to work
+/// "for every agent" can only be one the app itself performs, on the state the
+/// app itself owns: the transcript and the open chat.
 ///
-/// That is also why the list is short and will stay short. A command earns its
-/// place by doing something no message could ask an agent to do.
+/// That is also why the list is two long and stays two long. Everything else
+/// typed with a slash goes to the agent **exactly as typed** — the app used to
+/// own `/goal`, `/loop` and `/schedule` as well, and read the agent's replies
+/// for blocks asking for them; all of that went on 2026-08-27, by decision:
+/// the app sends what the user wrote and shows what the agent sent back,
+/// nothing in between.
 enum ChatCommand {
   /// Start a fresh chat where the user is standing — issue #33's sibling,
   /// issue #13: typing `/clear` used to be sent to the assistant as text, which
@@ -16,42 +20,6 @@ enum ChatCommand {
     name: 'clear',
     summary: 'Start a new chat here',
     detail: 'Keeps you where you are — in this project, or in the chat list.',
-  ),
-
-  /// Work toward a condition across turns until a second model says it holds.
-  /// The argument is the condition, or one of [kGoalClearWords], or nothing at
-  /// all (which asks for the status).
-  goal(
-    name: 'goal',
-    argumentHint: 'what has to be true',
-    summary: 'Keep working until something is true',
-    detail:
-        'Write the finished state — "the tests in test/auth pass". It keeps '
-        'going by itself until a check says so, or says it never will.',
-  ),
-
-  /// Re-run a prompt on a timer. The argument is an optional interval followed
-  /// by the prompt, or one of [kGoalClearWords] to stop it.
-  loop(
-    name: 'loop',
-    argumentHint: 'how often, and what to do',
-    summary: 'Repeat something every so often',
-    detail:
-        'Say the gap and what to do — "/loop 5m check the deploy". Leave the '
-        'gap out and it picks its own. Stops after 7 days.',
-  ),
-
-  /// Save a task that runs later, on a clock, answering back into this chat.
-  ///
-  /// The argument is when and what, in the words people use ("every morning at
-  /// 8, summarise the inbox") — read by `parseScheduleArgument`, not by cron.
-  schedule(
-    name: 'schedule',
-    argumentHint: 'when, and what to do',
-    summary: 'Run something later, on a clock',
-    detail:
-        'Say when and what — "/schedule every morning at 8 summarise the '
-        'inbox". It keeps running with Grid closed, and answers in this chat.',
   ),
 
   /// Summarize the conversation so the next turn carries the summary instead of
@@ -68,25 +36,10 @@ enum ChatCommand {
     required this.name,
     required this.summary,
     required this.detail,
-    this.argumentHint,
   });
 
   /// What the user types after the slash.
   final String name;
-
-  /// What the words after the name are for, or null when the command needs
-  /// none.
-  ///
-  /// It decides what *picking the command from the menu* does, which is the
-  /// whole point of it: a command that needs words is dropped into the composer
-  /// for the user to finish, and one that doesn't just runs. Picking `/goal`
-  /// used to run it bare — which is how you ask for its status, so clicking
-  /// "Keep working until something is true" answered "No goal set."
-  final String? argumentHint;
-
-  /// Whether picking this from the menu should hand the user a half-typed line
-  /// rather than doing something.
-  bool get takesArgument => argumentHint != null;
 
   /// The one line the menu shows beside the name.
   final String summary;
@@ -100,9 +53,8 @@ enum ChatCommand {
   /// Why the pictures, files and quoted selections sitting on the composer
   /// don't go with this command, or null when they stay put.
   ///
-  /// A command is not a message: `/loop` sends its prompt as words, so a
-  /// picture attached beside it carries nowhere — and left on the composer it
-  /// rides into whatever the user types next, which is how one sat there after
+  /// `/clear` leaves the composer behind, so an attachment left on it would
+  /// ride into whatever the user types next — which is how one sat there after
   /// a send looking like part of the message that had just gone.
   ///
   /// `/compact` is the exception, because it sends nothing at all: the user is
@@ -110,9 +62,6 @@ enum ChatCommand {
   /// room mid-draft must not cost them the picture they just attached.
   String? get draftDropReason => switch (this) {
     ChatCommand.clear => 'a new chat starts empty',
-    ChatCommand.goal ||
-    ChatCommand.loop ||
-    ChatCommand.schedule => '$slash carries words only',
     ChatCommand.compact => null,
   };
 
@@ -122,19 +71,9 @@ enum ChatCommand {
   /// In a terminal chat the CLI owns the conversation: the app commits nothing
   /// to the transcript, and a command routed through the app's own turn lane
   /// runs in a `claude -p` nobody can see, in a *different session* from the one
-  /// on screen. That is what `/goal` did — the goal landed in a session the
-  /// terminal never resumes, while the terminal opened with an empty prompt.
-  ///
-  /// So only `/clear` stays: it starts a new chat where the user is standing,
-  /// which is the app's own state and needs no turn at all. Every other command
-  /// goes to the CLI as the opening prompt.
-  ///
-  /// **`/loop` and `/schedule` go too, and neither CLI has them** (`/goal` and
-  /// `/compact` do). They arrive as prose, which the agent will answer as words
-  /// rather than act on — the failure mode `GoalOwner.app` warns about. That is
-  /// the product call of 2026-08-26, made with the cost stated: one rule the
-  /// user can hold ("in a terminal, the terminal takes what you type") beats
-  /// four commands behaving four ways.
+  /// on screen. So only `/clear` stays: it starts a new chat where the user is
+  /// standing, which is the app's own state and needs no turn at all. `/compact`
+  /// goes to the CLI, which has its own.
   bool get appRunsInTerminalChat => this == ChatCommand.clear;
 }
 
@@ -146,8 +85,7 @@ typedef ChatCommandCall = ({ChatCommand command, String argument});
 /// What running a command wants said afterwards.
 ///
 /// [failed] is not decoration: "couldn't reach a model" and "done" must never
-/// look alike, which is the whole lesson of the goal bar that said one word for
-/// four different endings (§5).
+/// look alike (§5).
 typedef CommandOutcome = ({String message, bool failed});
 
 /// What to tell the user when [command] took [names] off the composer.
@@ -170,9 +108,10 @@ String? droppedDraftMessage(ChatCommand command, List<String> names) {
 /// The command [text] invokes, or null when it invokes none.
 ///
 /// Only a leading `/name` counts, and only when `name` is one of ours — so
-/// "/usr/local/bin is on PATH" and an agent's own `/review` are still ordinary
-/// messages, sent as typed. Everything after the first space is the argument,
-/// trimmed but otherwise untouched: it is the user's words.
+/// "/usr/local/bin is on PATH", an agent's own `/review` and a `/loop` meant
+/// for the CLI are all ordinary messages, sent as typed. Everything after the
+/// first space is the argument, trimmed but otherwise untouched: it is the
+/// user's words.
 ChatCommandCall? parseChatCommand(String text) {
   final trimmed = text.trim();
   if (!trimmed.startsWith('/')) return null;
@@ -203,8 +142,8 @@ String? slashQuery(String text) {
 ///
 /// The `/` menu ([slashQuery]) covers *choosing* a command — a lone `/name` with
 /// no space yet. This covers the blind spot right after it: the moment a space
-/// is typed the menu closes, and `/goal the tests pass` reads as an ordinary
-/// prompt with nothing saying it will be set as a goal rather than sent — which
+/// is typed the menu closes, and `/compact only the API decisions` reads as an
+/// ordinary prompt with nothing saying it will be run rather than sent — which
 /// is exactly the thing a user could not tell. The two hand off cleanly (menu
 /// while the name is picked, badge once the argument is written) so they never
 /// show at once.

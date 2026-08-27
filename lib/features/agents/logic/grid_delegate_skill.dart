@@ -114,7 +114,6 @@ the terms above and no others.
 There is no later. Whatever the user is told will be true of a chat where
 nothing is running, and the next thing they do is ask why it went quiet.
 
-If a job really is too big for one turn, say so and hand it to Grid instead —
-`/loop` or `/goal` re-run *whole turns*, which is the only thing here that does
-survive one. The `grid-ask` card is how to ask for that.
+If a job really is too big for one turn, say so, and say what the next turn
+should pick up — the user decides whether to send it.
 ''';

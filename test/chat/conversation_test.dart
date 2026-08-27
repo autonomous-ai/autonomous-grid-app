@@ -292,59 +292,6 @@ void main() {
       },
     );
 
-    test('remembers that the app sent a turn, so a reopened chat still draws '
-        'it as a line rather than as words the user never typed', () {
-      final json = _conversation(
-        messages: [
-          const ChatMessage(
-            role: ChatRole.user,
-            text: 'Keep working toward this goal…',
-            sentBy: TurnOrigin.goal,
-          ),
-          const ChatMessage(
-            role: ChatRole.user,
-            text: 'run the bench',
-            sentBy: TurnOrigin.loop,
-          ),
-        ],
-      ).toJson();
-
-      final restored = Conversation.fromJson(json);
-
-      expect(restored.messages.map((m) => m.sentBy), [
-        TurnOrigin.goal,
-        TurnOrigin.loop,
-      ]);
-    });
-
-    test('a turn the user typed writes no origin at all, so a chat saved '
-        'before this existed reads back as their own words', () {
-      final json = _conversation(
-        messages: [const ChatMessage(role: ChatRole.user, text: 'hello')],
-      ).toJson();
-      final stored = (json['messages'] as List).single as Map<String, dynamic>;
-
-      expect(stored.containsKey('sent_by'), isFalse);
-      expect(
-        Conversation.fromJson(json).messages.single.sentBy,
-        TurnOrigin.user,
-      );
-    });
-
-    test('an origin written by a newer build reads as the user, so an unknown '
-        'turn is drawn as a message instead of a line nothing can open', () {
-      final json = _conversation(
-        messages: [const ChatMessage(role: ChatRole.user, text: 'hello')],
-      ).toJson();
-      final stored = (json['messages'] as List).single as Map<String, dynamic>;
-      stored['sent_by'] = 'daydream';
-
-      expect(
-        Conversation.fromJson(json).messages.single.sentBy,
-        TurnOrigin.user,
-      );
-    });
-
     test('throws when the id is missing so the store can skip the file', () {
       expect(
         () => Conversation.fromJson(const {'title': 'x'}),
@@ -401,20 +348,6 @@ void main() {
 
     test('falls back to the placeholder with no user text', () {
       expect(deriveConversationTitle(const []), kNewConversationTitle);
-    });
-
-    test('names the chat after what the user asked, not after the goal step '
-        'the app sent — the sidebar read "Keep working toward this goal…"', () {
-      final title = deriveConversationTitle([
-        const ChatMessage(
-          role: ChatRole.user,
-          text: 'Keep working toward this goal: make the tests pass',
-          sentBy: TurnOrigin.goal,
-        ),
-        const ChatMessage(role: ChatRole.user, text: 'speed up the reader'),
-      ]);
-
-      expect(title, 'Speed up the reader');
     });
 
     // The rows from issue #37: every one of them opened with the same
