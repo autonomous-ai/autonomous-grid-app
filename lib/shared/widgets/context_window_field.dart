@@ -208,24 +208,28 @@ class _SliderAndValue extends StatelessWidget {
             min: minContextTokens.toDouble(),
             max: max.toDouble(),
             label: formatContextLength(value),
+            // Edge to edge, as the design draws it. Material insets a slider by
+            // the width of its own thumb so the handle never overhangs its box;
+            // here that left the track short of both margins and the end marks
+            // pointing at nothing. The thumb's 8px does overhang now, and the
+            // section's 20px padding is what absorbs it.
+            padding: EdgeInsets.zero,
             onChanged: (v) => onChanged(v.round()),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              Text(
-                '${formatContextLength(minContextTokens)} · lightest',
-                style: ShareType.note,
-              ),
-              const Spacer(),
-              Text(
-                '${formatContextLength(max)} · heaviest',
-                style: ShareType.note,
-              ),
-            ],
-          ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Text(
+              '${formatContextLength(minContextTokens)} · lightest',
+              style: ShareType.note,
+            ),
+            const Spacer(),
+            Text(
+              '${formatContextLength(max)} · heaviest',
+              style: ShareType.note,
+            ),
+          ],
         ),
       ],
     );
