@@ -464,6 +464,164 @@ void main() {
       expect(events.last, isA<ClaudeTurnCompleted>());
     });
 
+    test('a task that finishes before the answer does still keeps the turn '
+        'open — the CLI queues its notification and starts a turn to report '
+        'it, and killing the process five seconds after the result cut that '
+        'report off mid-sentence ("pong" never arrived)', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_agentCall('t-1')));
+      _read(parser, _backgroundTasks([('w1', 'Reply pong')]));
+      _read(parser, _taskStarted('w1', 't-1'));
+      _read(parser, _toolResult('t-1'));
+      // The sub-agent is done before the model has finished saying "launched".
+      _read(parser, _backgroundTasks(const []));
+      _read(parser, {
+        'type': 'system',
+        'subtype': 'task_notification',
+        'task_id': 'w1',
+        'tool_use_id': 't-1',
+        'status': 'completed',
+        'summary': 'pong',
+      });
+
+      final events = _read(parser, _result('launched'));
+      final wait = (events[1] as ClaudeActivityEvent).activity;
+      expect(wait.label, 'Waiting for the report on background work');
+      final waiting = events.last as ClaudeTurnWaiting;
+      expect(waiting.pending, ['1 finished task to report']);
+      expect(waiting.reportsOnly, isTrue);
+
+      // The reporting turn starts, reads the queue, and its result is the end.
+      final started = _read(parser, {
+        'type': 'system',
+        'subtype': 'init',
+        'session_id': 's',
+      });
+      expect(
+        started.whereType<ClaudeActivityEvent>().single.activity.status,
+        AgentActivityStatus.done,
+      );
+      expect(
+        _read(parser, _result('It said pong.')).last,
+        isA<ClaudeTurnCompleted>(),
+      );
+    });
+
+    test('a notification the model read inside the turn — it went on talking '
+        'after it — is owed nothing, so the result is the end: measured, the '
+        'CLI folds it into that call and never answers it separately', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_agentCall('t-1')));
+      _read(parser, _backgroundTasks([('w1', 'Reply pong')]));
+      _read(parser, _taskStarted('w1', 't-1'));
+      _read(parser, _backgroundTasks(const []));
+      _read(parser, {
+        'type': 'system',
+        'subtype': 'task_notification',
+        'task_id': 'w1',
+        'status': 'completed',
+        'summary': 'pong',
+      });
+      _read(parser, _assistant({'type': 'text', 'text': 'It said pong.'}));
+
+      expect(
+        _read(parser, _result('It said pong.')).last,
+        isA<ClaudeTurnCompleted>(),
+      );
+    });
+
+    test('giving up a wait settles its row and ends the turn — and is a no-op '
+        'on a turn that is not waiting', () {
+      final parser = ClaudeStreamParser();
+      expect(parser.giveUpWaiting(), isEmpty);
+      _read(parser, _backgroundTasks([('w1', 'probe')]));
+      _read(parser, _backgroundTasks(const []));
+      _read(parser, {
+        'type': 'system',
+        'subtype': 'task_notification',
+        'task_id': 'w1',
+        'status': 'completed',
+      });
+      _read(parser, _result('launched'));
+
+      final events = parser.giveUpWaiting();
+
+      expect(
+        (events.first as ClaudeActivityEvent).activity.status,
+        AgentActivityStatus.done,
+      );
+      expect(events.last, isA<ClaudeTurnCompleted>());
+      expect(parser.giveUpWaiting(), isEmpty);
+    });
+
+    test("a workflow's progress lands on the call that started it, in the "
+        'TUI\'s own count — its agents never report on stdout themselves', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _assistant(_agentCall('t-1')));
+      _read(parser, _backgroundTasks([('w1', 'three numbers')]));
+      _read(parser, _taskStarted('w1', 't-1'));
+
+      final events = _read(parser, {
+        'type': 'system',
+        'subtype': 'task_progress',
+        'task_id': 'w1',
+        'tool_use_id': 't-1',
+        'usage': {'total_tokens': 16167, 'tool_uses': 0, 'duration_ms': 3297},
+        'workflow_progress': [
+          {'type': 'workflow_phase', 'index': 1, 'title': 'Run'},
+          {
+            'type': 'workflow_agent',
+            'label': 'one',
+            'phaseTitle': 'Run',
+            'state': 'done',
+          },
+          {
+            'type': 'workflow_agent',
+            'label': 'two',
+            'phaseTitle': 'Run',
+            'state': 'start',
+          },
+          {
+            'type': 'workflow_agent',
+            'label': 'three',
+            'phaseTitle': 'Run',
+            'state': 'start',
+          },
+        ],
+      });
+
+      final row = (events.single as ClaudeActivityEvent).activity;
+      expect(row.id, 't-1');
+      expect(row.status, AgentActivityStatus.running);
+      expect(row.result, '1/3 agents done · Run: three');
+      // Progress for a task nobody waited on shows nothing.
+      expect(
+        _read(parser, {
+          'type': 'system',
+          'subtype': 'task_progress',
+          'task_id': 'unknown',
+        }),
+        isEmpty,
+      );
+    });
+
+    test('a plain background task reports its last tool, its calls and its '
+        'time — and nothing when the event carries none of them', () {
+      expect(
+        claudeTaskProgress({
+          'last_tool_name': 'Grep',
+          'usage': {'tool_uses': 2, 'duration_ms': 3297},
+        }),
+        'Grep · 2 tool calls · 3s',
+      );
+      expect(
+        claudeTaskProgress({
+          'usage': {'duration_ms': 20},
+        }),
+        isNull,
+      );
+    });
+
     test('the background list emptying settles the waiting row, and the '
         'task\'s notification settles the call that started it with the real '
         'outcome — not the "launched in background" placeholder', () {

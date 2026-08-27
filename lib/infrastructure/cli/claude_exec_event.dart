@@ -176,11 +176,24 @@ class ClaudeTurnCompleted extends ClaudeExecEvent {
 /// The parser holds the answer given so far and appends what each later turn
 /// adds.
 class ClaudeTurnWaiting extends ClaudeExecEvent {
-  const ClaudeTurnWaiting(this.pending);
+  const ClaudeTurnWaiting(this.pending, {required this.reportsOnly});
 
   /// One line per task still running or tick still booked, as the CLI
   /// describes it.
   final List<String> pending;
+
+  /// Nothing is running or booked: the only thing pending is the CLI's own
+  /// turn on a task notification that landed after the model's last word.
+  ///
+  /// That turn is expected, not certain. Measured 2026-08-27 on 2.1.247: a
+  /// notification the model went on working after is folded into that call
+  /// and never answered separately, while one that arrived as the turn ended
+  /// is queued and answered in a turn of its own (`init`, `result`). The
+  /// parser tells the two apart by whether the model spoke again — and where
+  /// it has read that wrong, the service gives the CLI [kClaudeReportGrace]
+  /// to open the turn before it ends the wait itself, rather than holding a
+  /// chat open for ever on a report that is not coming.
+  final bool reportsOnly;
 }
 
 /// Claude Code has stopped, mid-turn, and won't go on until this is answered.

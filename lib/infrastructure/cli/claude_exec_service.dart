@@ -312,6 +312,15 @@ Map<String, String> claudeExecEnvironment({
 /// Five seconds is room to flush and exit, and not room to stay the night.
 const Duration kClaudeExitGrace = Duration(seconds: 5);
 
+/// How long a turn waiting on nothing but a task report is given for the CLI
+/// to open the turn that carries it (`init`) before the wait is ended anyway.
+///
+/// See [ClaudeTurnWaiting.reportsOnly]: the CLI starts that turn at once when
+/// it starts it at all, so twenty seconds is not a deadline it can miss for
+/// being slow — it is the width of the parser's mistake, when the model had in
+/// fact already read the notification and there is no turn coming.
+const Duration kClaudeReportGrace = Duration(seconds: 20);
+
 /// Real implementation: spawns `claude -p`, feeds the prompt on stdin, and turns
 /// its JSONL into [ClaudeExecEvent]s.
 class ClaudeExecServiceImpl implements ClaudeExecService {
@@ -381,6 +390,10 @@ class _ClaudeExecTurn {
   /// Counts down [kClaudeExitGrace] once the turn has ended, and stops a
   /// process that has not gone by itself.
   Timer? _exitGrace;
+
+  /// Counts down [kClaudeReportGrace] while the turn waits on a task report
+  /// alone, and ends the wait if no turn opens to carry it.
+  Timer? _reportGrace;
 
   /// The tool input of every permission request still waiting on an answer, by
   /// the id it arrived with. Kept because a yes has to echo the input back, and
@@ -567,6 +580,17 @@ class _ClaudeExecTurn {
     _exitGrace = Timer(kClaudeExitGrace, _stopIfStillRunning);
   }
 
+  /// No turn came to carry the report the wait was for: the model had read it
+  /// inside the turn that ended. End the wait as the parser would have, so the
+  /// chat gets its completed turn and the process its exit.
+  void _giveUpWaiting() {
+    if (_done.isCompleted || _events.isClosed) return;
+    for (final event in _parser.giveUpWaiting()) {
+      _note(event);
+      _events.add(event);
+    }
+  }
+
   /// Stop a process that outlived the turn it was started for.
   ///
   /// Nothing is reported: the turn has already ended and said how, and a second
@@ -595,8 +619,14 @@ class _ClaudeExecTurn {
       // The answer is in but the turn is not over: stdin stays open and the
       // exit grace stays unarmed, or the background work the model just
       // announced is killed five seconds later — see [ClaudeTurnWaiting].
-      case ClaudeTurnWaiting():
-        break;
+      case ClaudeTurnWaiting(:final reportsOnly):
+        _reportGrace?.cancel();
+        if (reportsOnly) {
+          _reportGrace = Timer(kClaudeReportGrace, _giveUpWaiting);
+        }
+      // The next turn opening — the one a report or a tick was waited on for.
+      case ClaudeSessionStarted():
+        _reportGrace?.cancel();
       // A step, a plan, a file about to be written, the session id: work in
       // progress, not a word on how the turn ends.
       default:
@@ -633,6 +663,7 @@ class _ClaudeExecTurn {
 
   void _finish() {
     _exitGrace?.cancel();
+    _reportGrace?.cancel();
     _pending.clear();
     if (_done.isCompleted) return;
     _done.complete();

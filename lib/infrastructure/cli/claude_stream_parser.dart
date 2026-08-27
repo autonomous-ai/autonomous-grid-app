@@ -109,6 +109,19 @@ class ClaudeStreamParser {
   /// wake-up they fire only while the process lives.
   var _crons = 0;
 
+  /// Finished background tasks the CLI has told the model about and not yet
+  /// answered for — a `task_notification` is a message queued for the model,
+  /// and the CLI starts a turn to read it (`init`, then `result`).
+  ///
+  /// Counted because the notification can land **before** the turn's own
+  /// `result`: a sub-agent that only says "pong" is done in twenty seconds,
+  /// while a slow model takes forty to write "launched". Measured 2026-08-27 on
+  /// 2.1.247 — the app read the emptied task list, saw nothing pending at the
+  /// `result`, closed stdin and killed the process five seconds later, in the
+  /// middle of the turn that was about to report "pong". The TUI, alive for as
+  /// long as it is open, reported it.
+  var _owed = 0;
+
   /// How many times this turn has been left waiting, so each wait is its own
   /// row in the timeline rather than one row moved about.
   var _waits = 0;
@@ -145,6 +158,7 @@ class ClaudeStreamParser {
         'background_tasks_changed' => _readBackgroundTasks(event['tasks']),
         'task_started' => _readTaskStarted(event),
         'task_notification' => _readTaskNotification(event),
+        'task_progress' => _readTaskProgress(event),
         _ => const [],
       };
 
@@ -165,10 +179,31 @@ class ClaudeStreamParser {
     ];
   }
 
+  /// The turn that reads queued notifications has started: they are no longer
+  /// owed. Every one of them, since one turn reads the whole queue.
+  void _startTurn() => _owed = 0;
+
+  /// Whether the only pending thing is the CLI's turn on a notification —
+  /// see [ClaudeTurnWaiting.reportsOnly].
+  bool get _reportsOnly =>
+      _background.isEmpty && _wakeup == null && _crons == 0;
+
+  /// End a wait the CLI never came back from: the notification it owed a turn
+  /// for was, after all, read inside the turn that just ended. The service
+  /// calls this once [kClaudeReportGrace] has passed with no `init`.
+  List<ClaudeExecEvent> giveUpWaiting() {
+    if (!_waiting) return const [];
+    _owed = 0;
+    return [..._endWait(fired: false), const ClaudeTurnCompleted()];
+  }
+
   /// Settle the open waiting row, if there is one. [fired] says a booked
   /// wake-up went off, so it is no longer pending.
   List<ClaudeExecEvent> _endWait({required bool fired}) {
-    if (fired) _wakeup = null;
+    if (fired) {
+      _wakeup = null;
+      _startTurn();
+    }
     if (!_waiting) return const [];
     _waiting = false;
     return [
@@ -196,7 +231,7 @@ class ClaudeStreamParser {
 
   /// Whether the turn has work the CLI will still act on after a `result`.
   bool get _hasPendingWork =>
-      _background.isNotEmpty || _wakeup != null || _crons > 0;
+      _background.isNotEmpty || _owed > 0 || _wakeup != null || _crons > 0;
 
   /// What is still pending, one line each — the log's and the feed's account.
   List<String> get _pending => [
@@ -205,6 +240,7 @@ class ClaudeStreamParser {
       'next tick in ${wakeup.delaySeconds}s'
           '${wakeup.reason.isEmpty ? '' : ' — ${wakeup.reason}'}',
     if (_crons > 0) '$_crons scheduled job${_crons == 1 ? '' : 's'}',
+    if (_owed > 0) '$_owed finished task${_owed == 1 ? '' : 's'} to report',
   ];
 
   List<ClaudeExecEvent> _readTaskStarted(Map<String, dynamic> event) {
@@ -219,9 +255,34 @@ class ClaudeStreamParser {
     return const [];
   }
 
+  /// A running background task's account of itself — for a workflow, which of
+  /// its agents are done. The row of the call that started it carries the line
+  /// while it runs; the notification replaces it with the outcome.
+  ///
+  /// This is all the stream carries of a workflow's inside. A sub-agent the
+  /// `Agent` tool starts reports every step on stdout under its parent, but a
+  /// workflow's agents never do — measured 2026-08-27 on 2.1.247: not one line
+  /// of a whole workflow tagged `parent_tool_use_id`. The TUI's "0/3 agents
+  /// done" is this same event, drawn; without it the chat showed a workflow as
+  /// one row that said "launched" until it said "completed".
+  List<ClaudeExecEvent> _readTaskProgress(Map<String, dynamic> event) {
+    final call = _backgroundCalls['${event['task_id'] ?? ''}'];
+    if (call == null) return const [];
+    final line = claudeTaskProgress(event);
+    if (line == null) return const [];
+    return [
+      ClaudeActivityEvent(
+        call.settled(status: AgentActivityStatus.running, result: line),
+      ),
+    ];
+  }
+
   /// A background task finished: the row of the call that started it gets the
   /// outcome, replacing the "launched in background" its own result carried.
   List<ClaudeExecEvent> _readTaskNotification(Map<String, dynamic> event) {
+    // Owed whether or not the call that started it is known: the CLI queues
+    // the notification for the model either way, and will start a turn on it.
+    _owed++;
     final call = _backgroundCalls.remove('${event['task_id'] ?? ''}');
     if (call == null) return const [];
     final failed = event['status'] != 'completed';
@@ -251,6 +312,9 @@ class ClaudeStreamParser {
     // tasks", which is a number nobody asked for about a thing nobody started.
     label: _wakeup != null || _crons > 0
         ? 'Waiting for the next tick'
+        // Nothing still running, only news the model has yet to read.
+        : _background.isEmpty
+        ? 'Waiting for the report on background work'
         : _background.length == 1
         ? 'Waiting for background work to finish'
         : 'Waiting for ${_background.length} background tasks to finish',
@@ -326,6 +390,10 @@ class ClaudeStreamParser {
     Map<String, dynamic> block,
     String? parent,
   ) {
+    // The model spoke again: the call that produced this block read every
+    // notification queued before it, so none of them is owed a turn any more.
+    // A sub-agent's block says nothing about what the agent itself has read.
+    if (parent == null) _owed = 0;
     switch (block['type']) {
       case 'text':
         // A sub-agent's prose is not the answer. It is written *to* the agent
@@ -563,7 +631,7 @@ class ClaudeStreamParser {
     return [
       ClaudeMessageEvent(_answer(), settled: _settled()),
       ClaudeActivityEvent(_waitRow),
-      ClaudeTurnWaiting(List.unmodifiable(_pending)),
+      ClaudeTurnWaiting(List.unmodifiable(_pending), reportsOnly: _reportsOnly),
     ];
   }
 
@@ -861,4 +929,43 @@ String _fileName(Object? path) {
   if (text.isEmpty) return '';
   final cut = text.lastIndexOf('/');
   return cut == -1 ? text : text.substring(cut + 1);
+}
+
+/// One line saying where a background task has got to, from a
+/// `task_progress` event — or null when the event says nothing readable.
+///
+/// A workflow is counted by its agents, in the TUI's own words ("1/3 agents
+/// done"), followed by the phase and the agent last heard from. Anything else
+/// falls back to the task's last tool, its tool-call count and how long it has
+/// run.
+String? claudeTaskProgress(Map<String, dynamic> event) {
+  final progress = event['workflow_progress'];
+  if (progress is List) {
+    final agents = [
+      for (final step in progress)
+        if (step is Map && step['type'] == 'workflow_agent') step,
+    ];
+    if (agents.isNotEmpty) {
+      final done = agents.where((a) => a['state'] == 'done').length;
+      final current = agents.lastWhere(
+        (a) => a['state'] != 'done',
+        orElse: () => agents.last,
+      );
+      final phase = '${current['phaseTitle'] ?? ''}'.trim();
+      final label = '${current['label'] ?? ''}'.trim();
+      return '$done/${agents.length} agents done'
+          '${phase.isEmpty ? '' : ' · $phase'}'
+          '${label.isEmpty ? '' : ': $label'}';
+    }
+  }
+  final usage = event['usage'];
+  final last = '${event['last_tool_name'] ?? ''}'.trim();
+  final uses = usage is Map ? usage['tool_uses'] : null;
+  final ms = usage is Map ? usage['duration_ms'] : null;
+  final parts = [
+    if (last.isNotEmpty) last,
+    if (uses is int) '$uses tool call${uses == 1 ? '' : 's'}',
+    if (ms is int && ms >= 1000) '${(ms / 1000).round()}s',
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
 }
