@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/labeled_field.dart';
 
@@ -14,7 +15,7 @@ import '../../../shared/widgets/labeled_field.dart';
 /// `confirmDeleteChat`) — lifted surface, 20px corners, the destructive choice in
 /// the danger fill rather than the accent.
 Future<bool> confirmDiscardChanges(BuildContext context, String name) async {
-  final ok = await showDialog<bool>(
+  final ok = await showAppDialog<bool>(
     context: context,
     builder: (context) {
       AppTheme.watch(context);

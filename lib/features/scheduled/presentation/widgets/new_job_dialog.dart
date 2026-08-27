@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../infrastructure/cli/hermes_task_policy.dart';
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -43,7 +44,7 @@ Future<void> showNewJobDialog(
   BuildContext context, {
   JobSuggestion? from,
   Project? project,
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   barrierColor: const Color(0x66000000),
   builder: (_) => _NewJobDialog(suggestion: from, project: project),
@@ -53,7 +54,7 @@ Future<void> showNewJobDialog(
 /// the time or say more about the job without deleting it and losing every
 /// result it has produced.
 Future<void> showEditJobDialog(BuildContext context, ScheduledJob job) =>
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       barrierColor: const Color(0x66000000),
       builder: (_) => _NewJobDialog(job: job),

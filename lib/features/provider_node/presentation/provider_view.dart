@@ -14,6 +14,7 @@ import '../../network/presentation/sharing_locked_view.dart';
 import '../../node_setup/presentation/node_setup_card.dart';
 import '../logic/engine_slots.dart';
 import '../logic/provider_run_controller.dart';
+import '../../../shared/widgets/selectable_body.dart';
 import '../logic/serving_engines_provider.dart';
 import 'add_engine_options.dart';
 import 'engine_block.dart';
@@ -115,7 +116,16 @@ class _ServeSectionState extends ConsumerState<_ServeSection> {
     if (network == null) {
       return const _NoGridYet();
     }
-    return ListView(children: _children(context, network));
+    return ListView(
+      children: [
+        SelectableBody(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: _children(context, network),
+          ),
+        ),
+      ],
+    );
   }
 
   List<Widget> _children(BuildContext context, NetworkCredential network) {

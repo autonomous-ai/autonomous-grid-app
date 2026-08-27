@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import 'code_dialog.dart';
 import 'members_card.dart';
 
@@ -12,7 +13,7 @@ Future<void> showMembersDialog(
   BuildContext context, {
   required String projectId,
   required bool canInvite,
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (context) => CodeDialog(
     title: 'Who is in it',

@@ -8,6 +8,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/git_missing_notice.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../../shared/widgets/selectable_body.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/git_install_controller.dart';
@@ -41,7 +42,14 @@ class GitView extends ConsumerWidget {
           // far apart to read in one glance.
           constraints: const BoxConstraints(maxWidth: 940),
           child: ListView(
-            children: const [_GitCard(), SizedBox(height: 10), _WhatItIsFor()],
+            children: const [
+              SelectableBody(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [_GitCard(), SizedBox(height: 10), _WhatItIsFor()],
+                ),
+              ),
+            ],
           ),
         ),
       ),

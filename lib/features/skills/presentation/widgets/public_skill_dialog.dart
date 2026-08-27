@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
@@ -25,7 +26,7 @@ import 'skill_target_picker.dart';
 /// are different ones — what is this, who wrote it, have I got it already — and
 /// then a reading view, because "install this and find out" is a bad deal when
 /// the thing being installed runs scripts.
-Future<void> showPublicSkillDialog(BuildContext context) => showDialog<void>(
+Future<void> showPublicSkillDialog(BuildContext context) => showAppDialog<void>(
   context: context,
   builder: (_) => const _PublicSkillDialog(),
 );

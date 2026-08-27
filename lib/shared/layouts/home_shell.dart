@@ -272,17 +272,39 @@ class _MainShellBody extends StatelessWidget {
     // under the sidebar as well as the pane, so the window's bottom edge is one
     // unbroken line. Nested the other way the rail would start at x=284 and put
     // a step in that edge.
+    // Selection belongs to what the app is *showing*, not to what it is steered
+    // by. The rail, the top bar and the status strip are navigation: their words
+    // are labels on things you press, and a drag across the page should pass
+    // over them the way it passes over a toolbar in any other app.
+    //
+    // Drawn here rather than inside each control, because "is this a button?"
+    // has one answer per *region* and a dozen per widget — the nav rows, the
+    // fold toggle, the grid pill and both top-bar calls to action would each
+    // have needed the same wrapper, and the next one added would have been
+    // forgotten. What the shell frames ([_SectionView], and the banner, which
+    // carries a message worth keeping) stays selectable.
+    //
+    // The cost is a sidebar chat title, which is a real string somebody might
+    // want and is now behind a row that refuses. The chat's own header repeats
+    // it inside the pane, where it can still be taken.
+    //
+    // **[AppStatusRail] is deliberately left out**, though it is chrome by every
+    // other measure. Its figures open [GridStatPanel] through an `OverlayPortal`,
+    // and an overlay child of one of those still inherits from where it sits in
+    // the *widget* tree — so disabling the rail would reach into the members
+    // panel and take the email addresses with it. Those are the most copyable
+    // strings the app has.
     return const Column(
       children: [
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SidebarFold(),
+              SelectionContainer.disabled(child: SidebarFold()),
               Expanded(
                 child: Column(
                   children: [
-                    AppTopBar(),
+                    SelectionContainer.disabled(child: AppTopBar()),
                     SessionExpiredBanner(),
                     Expanded(child: _SectionView()),
                   ],

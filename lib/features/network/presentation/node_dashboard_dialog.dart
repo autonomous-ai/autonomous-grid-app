@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
@@ -24,7 +25,7 @@ import 'share_grid_dialog.dart';
 /// grid pill in the header, which is reachable from every screen, and a
 /// destination would have meant leaving whatever the person was doing to look at
 /// a gauge.
-Future<void> showNodeDashboard(BuildContext context) => showDialog<void>(
+Future<void> showNodeDashboard(BuildContext context) => showAppDialog<void>(
   context: context,
   // The same scrim the app's other full dialogs dim behind, rather than
   // Material's heavier default.

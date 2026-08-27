@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_segmented.dart';
 import '../../../shared/widgets/app_select_field.dart';
@@ -19,7 +20,7 @@ Future<RoutingGroup?> showRoutingSetupDialog(
   BuildContext context, {
   required RoutingMode mode,
   RoutingGroup? initial,
-}) => showDialog<RoutingGroup>(
+}) => showAppDialog<RoutingGroup>(
   context: context,
   builder: (_) => RoutingSetupDialog(mode: mode, initial: initial),
 );

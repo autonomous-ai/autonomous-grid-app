@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/empty_state.dart';
@@ -1109,7 +1110,7 @@ const double _confirmWidth = 420;
 /// the difference is stated — so it has to carry it plainly. Here, that there is
 /// no account involved at all.
 Future<bool?> _confirmRemove(BuildContext context, String name) {
-  return showDialog<bool>(
+  return showAppDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Remove $name?'),
@@ -1148,7 +1149,7 @@ Future<bool?> _confirmRemove(BuildContext context, String name) {
 /// user pressed is the word they're asked to confirm. The account is what makes
 /// this different from that one, and the paragraph says so.
 Future<bool?> _confirmDisconnect(BuildContext context, String name) {
-  return showDialog<bool>(
+  return showAppDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Remove $name?'),

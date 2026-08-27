@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../widgets/app_dialog.dart';
 import '../../../features/app_update/logic/app_updater_service.dart';
 import '../../../features/auth/logic/auth_controller.dart';
 import '../../../features/auth/logic/session_controller.dart';
@@ -246,7 +247,7 @@ class _SidebarAccountState extends ConsumerState<SidebarAccount> {
     BuildContext context, {
     required bool engineRunning,
   }) async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Sign out?'),

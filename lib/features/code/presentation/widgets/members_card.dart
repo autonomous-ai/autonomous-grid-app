@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/detail_widgets.dart';
 import '../../../../shared/widgets/labeled_field.dart';
@@ -55,7 +56,7 @@ class MembersCard extends ConsumerWidget {
   }
 
   Future<void> _invite(BuildContext context, WidgetRef ref) async {
-    final email = await showDialog<String>(
+    final email = await showAppDialog<String>(
       context: context,
       builder: (_) => const _InviteDialog(),
     );

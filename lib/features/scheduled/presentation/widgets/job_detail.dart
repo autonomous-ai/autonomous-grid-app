@@ -6,6 +6,7 @@ import '../../../../shared/layouts/shell_state.dart';
 import '../../../../shared/theme/app_theme.dart';
 // Imported here for the part files below (job_detail_actions/_results), which
 // share this library's imports.
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_spinner.dart';
 import '../../../../shared/widgets/error_box.dart';
 import '../../../../shared/widgets/toast.dart';

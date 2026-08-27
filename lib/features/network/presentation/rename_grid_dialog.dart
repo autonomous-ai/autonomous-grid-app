@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_spinner.dart';
@@ -31,7 +32,7 @@ class RenameGridDialog extends ConsumerStatefulWidget {
     NetworkCredential network,
   ) {
     ref.read(renameNetworkControllerProvider.notifier).reset();
-    return showDialog<void>(
+    return showAppDialog<void>(
       context: context,
       builder: (_) => RenameGridDialog(network: network),
     );

@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/theme/app_theme.dart';
 import 'model_manager_split.dart';
 
 /// "Manage models" — the model hub that used to be its own tab: download a GGUF
 /// and see every model already under `~/.grid/models`. Opened from the local
 /// engine block. (Node setup / installing llama.cpp lives in the Engines tab.)
-Future<void> showModelManager(BuildContext context) => showDialog<void>(
+Future<void> showModelManager(BuildContext context) => showAppDialog<void>(
   context: context,
   // A download can be running in the background — an accidental tap outside
   // shouldn't dismiss the dialog. Only the Close/X button closes it.

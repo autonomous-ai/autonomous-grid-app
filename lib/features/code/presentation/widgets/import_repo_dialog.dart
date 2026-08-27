@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/error_box.dart';
 import '../../../../shared/widgets/labeled_field.dart';
@@ -22,7 +23,7 @@ import 'repo_folder_field.dart';
 Future<void> showImportRepoDialog(
   BuildContext context, {
   required String projectId,
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (_) => _ImportRepoDialog(projectId: projectId),
 );

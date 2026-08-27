@@ -84,65 +84,75 @@ class ChoiceRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        InkWell(
-          onTap: busy ? null : onPressed,
-          // No ripple: a macOS row answers a click with an instant state
-          // change, so the hover tint carries the whole affordance (as in the
-          // chat composer's buttons).
-          splashFactory: NoSplash.splashFactory,
-          hoverColor: AppSurface.hoverFill,
-          highlightColor: Colors.transparent,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(15, 11, 13, 11),
-            child: Row(
-              children: [
-                // The slot dresses the glyph, so a caller passes a bare `Icon`
-                // and gets the row's own size and tone. A vendor's mark brings
-                // its own colours and simply ignores this.
-                SizedBox(
-                  width: 20,
-                  child: Center(
-                    child: IconTheme.merge(
-                      data: IconThemeData(
-                        size: 20,
-                        color: theme.colorScheme.onSurfaceVariant,
+        // The row is the press target, so it is a button and its words are a
+        // label — see [unselectableLabel], which says the same for every
+        // Material button in the app. This one has to say it by hand: it is
+        // built from an `InkWell`, so no `ButtonStyle` reaches it.
+        //
+        // [child] stays outside, deliberately. What a row *opens* is ordinary
+        // content and is often the very thing worth copying — a model filename,
+        // an address, the text of an error.
+        SelectionContainer.disabled(
+          child: InkWell(
+            onTap: busy ? null : onPressed,
+            // No ripple: a macOS row answers a click with an instant state
+            // change, so the hover tint carries the whole affordance (as in the
+            // chat composer's buttons).
+            splashFactory: NoSplash.splashFactory,
+            hoverColor: AppSurface.hoverFill,
+            highlightColor: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(15, 11, 13, 11),
+              child: Row(
+                children: [
+                  // The slot dresses the glyph, so a caller passes a bare `Icon`
+                  // and gets the row's own size and tone. A vendor's mark brings
+                  // its own colours and simply ignores this.
+                  SizedBox(
+                    width: 20,
+                    child: Center(
+                      child: IconTheme.merge(
+                        data: IconThemeData(
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        child: icon,
                       ),
-                      child: icon,
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title, style: theme.textTheme.titleSmall),
-                      if (line case final line?) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          line,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: theme.textTheme.titleSmall),
+                        if (line case final line?) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            line,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                if (badge != null) ...[
+                  if (badge != null) ...[
+                    const SizedBox(width: 10),
+                    MetaLabel(badge!),
+                  ],
                   const SizedBox(width: 10),
-                  MetaLabel(badge!),
+                  if (busy)
+                    const SizedBox(
+                      width: 19,
+                      height: 19,
+                      child: Center(child: AppSpinner(size: SpinnerSize.small)),
+                    )
+                  else
+                    _Marker(action: action, expanded: expanded),
                 ],
-                const SizedBox(width: 10),
-                if (busy)
-                  const SizedBox(
-                    width: 19,
-                    height: 19,
-                    child: Center(child: AppSpinner(size: SpinnerSize.small)),
-                  )
-                else
-                  _Marker(action: action, expanded: expanded),
-              ],
+              ),
             ),
           ),
         ),

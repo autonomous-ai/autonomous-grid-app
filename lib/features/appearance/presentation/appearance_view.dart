@@ -5,6 +5,7 @@ import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/theme/theme_mode_labels.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/section_scaffold.dart';
+import '../../../shared/widgets/selectable_body.dart';
 import '../../network/presentation/grid_overview_widgets.dart';
 import 'chat_surface_section.dart';
 import 'detail_mode_section.dart';
@@ -43,51 +44,54 @@ class AppearanceView extends ConsumerWidget {
       // ways a widget gets stranded on the old palette (the other being a
       // `const` boundary). Everything here is built eagerly and rebuilt whole.
       child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Both headings on this screen are SectionHeading, and they have to
-            // be: "Theme" and "Typography" are peers, so setting one at 13pt
-            // and the other at 19 would rank them.
-            //
-            // No subtitle here, unlike Typography's. Three labelled pictures of
-            // the app wearing each theme explain themselves, and the page's own
-            // subtitle already says System follows macOS — a third sentence
-            // saying "the palette the app wears" costs a line at the very top
-            // of a page that has to scroll, and buys nothing.
-            const SectionHeading(title: 'Theme', subtitle: ''),
-            const SizedBox(height: 12),
-            // Wrap, not Row: the tiles are a fixed size, so a narrow settings
-            // pane (or the compact nav rail) reflows them instead of
-            // overflowing.
-            Wrap(
-              spacing: 18,
-              runSpacing: 18,
-              children: [
-                for (final mode in ThemeMode.values)
-                  ThemePreviewTile(
-                    mode: mode,
-                    label: themeModeLabel(mode),
-                    selected: mode == current,
-                    onTap: () =>
-                        ref.read(chatPrefsProvider.notifier).setThemeMode(mode),
-                  ),
-              ],
-            ),
-            // Space, not a rule: rule 1 of the design system is that depth and
-            // separation come from fill and shadow, and the typography block
-            // below is already a stack of raised rows. A divider between two
-            // sections that are each visibly grouped just adds a line.
-            const SizedBox(height: 26),
-            const TypographySection(),
-            const SizedBox(height: 26),
-            // Shape before detail: which surface a chat is drawn in comes
-            // first, and the working-out setting below only has anything to
-            // show on the message list.
-            const ChatSurfaceSection(),
-            const SizedBox(height: 26),
-            const DetailModeSection(),
-          ],
+        child: SelectableBody(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Both headings on this screen are SectionHeading, and they have to
+              // be: "Theme" and "Typography" are peers, so setting one at 13pt
+              // and the other at 19 would rank them.
+              //
+              // No subtitle here, unlike Typography's. Three labelled pictures of
+              // the app wearing each theme explain themselves, and the page's own
+              // subtitle already says System follows macOS — a third sentence
+              // saying "the palette the app wears" costs a line at the very top
+              // of a page that has to scroll, and buys nothing.
+              const SectionHeading(title: 'Theme', subtitle: ''),
+              const SizedBox(height: 12),
+              // Wrap, not Row: the tiles are a fixed size, so a narrow settings
+              // pane (or the compact nav rail) reflows them instead of
+              // overflowing.
+              Wrap(
+                spacing: 18,
+                runSpacing: 18,
+                children: [
+                  for (final mode in ThemeMode.values)
+                    ThemePreviewTile(
+                      mode: mode,
+                      label: themeModeLabel(mode),
+                      selected: mode == current,
+                      onTap: () => ref
+                          .read(chatPrefsProvider.notifier)
+                          .setThemeMode(mode),
+                    ),
+                ],
+              ),
+              // Space, not a rule: rule 1 of the design system is that depth and
+              // separation come from fill and shadow, and the typography block
+              // below is already a stack of raised rows. A divider between two
+              // sections that are each visibly grouped just adds a line.
+              const SizedBox(height: 26),
+              const TypographySection(),
+              const SizedBox(height: 26),
+              // Shape before detail: which surface a chat is drawn in comes
+              // first, and the working-out setting below only has anything to
+              // show on the message list.
+              const ChatSurfaceSection(),
+              const SizedBox(height: 26),
+              const DetailModeSection(),
+            ],
+          ),
         ),
       ),
     );

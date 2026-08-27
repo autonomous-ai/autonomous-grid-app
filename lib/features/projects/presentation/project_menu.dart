@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../infrastructure/cli/host_shell_service.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
@@ -406,7 +407,7 @@ Future<void> showRenameProjectDialog(
   WidgetRef ref,
   Project project,
 ) async {
-  final name = await showDialog<String>(
+  final name = await showAppDialog<String>(
     context: context,
     builder: (_) => _RenameProjectDialog(project: project),
   );
@@ -559,7 +560,7 @@ class _RenameProjectDialogState extends State<_RenameProjectDialog> {
 /// Confirms taking [project] off the list. Returns true only when the user says
 /// so — the folder and its files stay exactly where they are either way.
 Future<bool> confirmRemoveProject(BuildContext context, Project project) async {
-  final ok = await showDialog<bool>(
+  final ok = await showAppDialog<bool>(
     context: context,
     builder: (context) {
       // Reads AppPalette tokens — follow theme flips.

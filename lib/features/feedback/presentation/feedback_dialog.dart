@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../core/grid_paths.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_segmented.dart';
@@ -19,7 +20,7 @@ import '../logic/log_bundle.dart';
 /// A dialog rather than a screen: feedback is something you have *while doing
 /// something else*, and a screen would make the user leave whatever prompted it
 /// — which is usually the thing they were about to describe.
-Future<void> showFeedbackDialog(BuildContext context) => showDialog<void>(
+Future<void> showFeedbackDialog(BuildContext context) => showAppDialog<void>(
   context: context,
   // A half-written message is easy to lose to a stray click outside; the two
   // explicit ways out are Cancel and Escape.

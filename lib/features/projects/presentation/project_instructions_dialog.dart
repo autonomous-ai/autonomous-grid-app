@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../logic/project.dart';
@@ -10,7 +11,7 @@ import '../logic/project.dart';
 Future<void> showProjectInstructionsDialog(
   BuildContext context,
   Project project,
-) => showDialog<void>(
+) => showAppDialog<void>(
   context: context,
   builder: (_) => _ProjectInstructionsDialog(project: project),
 );

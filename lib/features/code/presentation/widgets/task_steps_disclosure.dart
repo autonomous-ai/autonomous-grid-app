@@ -87,9 +87,16 @@ class _Toggle extends StatelessWidget {
               color: AppPalette.textFaint,
             ),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(fontSize: 12.5, color: AppPalette.textSecondary),
+            // A disclosure's caption is what pressing it does, not transcript
+            // text — see `unselectableLabel`.
+            SelectionContainer.disabled(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppPalette.textSecondary,
+                ),
+              ),
             ),
           ],
         ),

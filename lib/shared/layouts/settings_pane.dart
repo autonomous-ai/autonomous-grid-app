@@ -36,11 +36,16 @@ class SettingsPane extends ConsumerWidget {
       builder: (context, constraints) => Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _SettingsNav(
-            section: section,
-            compact: constraints.maxWidth < _compactBelow,
-            onSelect: (target) =>
-                ref.read(shellSectionProvider.notifier).select(target),
+          // Settings has its own rail, and it is a rail like the shell's: what
+          // is written on it names a screen to go to. Same rule as
+          // `home_shell.dart` and [unselectableLabel].
+          SelectionContainer.disabled(
+            child: _SettingsNav(
+              section: section,
+              compact: constraints.maxWidth < _compactBelow,
+              onSelect: (target) =>
+                  ref.read(shellSectionProvider.notifier).select(target),
+            ),
           ),
           const VerticalDivider(width: 1),
           Expanded(

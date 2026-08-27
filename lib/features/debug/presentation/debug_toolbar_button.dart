@@ -60,12 +60,15 @@ class _DebugToolbarButtonState extends State<DebugToolbarButton> {
             children: [
               Icon(widget.icon, size: 16, color: fg),
               const SizedBox(width: 8),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+              // A button's label — see `unselectableLabel`.
+              SelectionContainer.disabled(
+                child: Text(
+                  widget.label,
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
