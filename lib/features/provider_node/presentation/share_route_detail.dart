@@ -111,26 +111,22 @@ class ShareRouteDetail extends ConsumerWidget {
   }
 }
 
-/// A pane's content, held to the design's reading width and pinned left.
+/// A pane's content, filling the half of the page it was given.
 ///
-/// Without the cap, a paragraph on a wide display runs the full width of the
-/// window and every form field stretches with it — the two things a measure
-/// exists to stop.
+/// The design holds it to a 720px measure, which is the right call on its own
+/// canvas — that mock has no app sidebar, so 720 *is* most of the pane. Here
+/// the sidebar takes 280 of the window before this page starts, and the same
+/// cap left a plate floating in a field of empty ground on any window wider
+/// than about 1200. The pane's own padding is the measure now.
 class _PaneColumn extends StatelessWidget {
   const _PaneColumn({required this.children});
 
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.topLeft,
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: ShareMetrics.paneMaxWidth),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
-      ),
-    ),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: children,
   );
 }
 

@@ -170,6 +170,7 @@ class _SliderAndValue extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Memory for context', style: ShareType.fieldLabel),
+                  const SizedBox(height: 3),
                   Text(
                     'How much of a conversation the model can hold in mind. '
                     'More context, more RAM.',
@@ -186,6 +187,11 @@ class _SliderAndValue extends StatelessWidget {
             _ValuePill(tokens: value),
           ],
         ),
+        // The three parts of this setting had been stacked flush: name,
+        // sentence, track, marks, with nothing between them. It read as one
+        // dense block rather than as a control with a label — the field rows
+        // above it each get a gap this size between label and box.
+        const SizedBox(height: 14),
         SliderTheme(
           // The design's slider: a 5px track, and a white thumb ringed in
           // accent rather than filled with it. Material's default is a fatter

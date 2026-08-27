@@ -220,10 +220,6 @@ abstract final class ShareMetrics {
   static const EdgeInsets railPadding = EdgeInsets.fromLTRB(28, 34, 28, 28);
   static const EdgeInsets panePadding = EdgeInsets.fromLTRB(40, 34, 40, 40);
 
-  /// The design holds a pane's prose and forms to this, so a wide window gives
-  /// the reader a column rather than a stretched line.
-  static const double paneMaxWidth = 720;
-
   /// Between the rail's blocks, and between a pane's.
   static const double railGap = 26;
   static const double paneGap = 24;
