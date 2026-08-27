@@ -54,7 +54,7 @@ List<ShareRouteOffer> buildShareRouteOffers({
     if (canRunLocal)
       ShareRouteOffer(
         route: ShareRoute.local,
-        title: 'Run a model here',
+        title: 'Run a local model',
         line: needsSetup
             ? 'Sets up the built-in engine first, then runs a model here.'
             : 'Your own hardware does the work. Weights and prompts never '
@@ -63,27 +63,41 @@ List<ShareRouteOffer> buildShareRouteOffers({
     if (keyProviders.isNotEmpty)
       ShareRouteOffer(
         route: ShareRoute.key,
-        title: 'Use a key you pay for',
-        // Named from what the installed CLI whitelists, never a hopeful list:
-        // "your OpenAI key" on a build that serves someone else's is a
-        // sentence pointing at a provider this machine cannot reach.
-        line: 'Nothing to download. ${apiKeyCardLine(apiEngines)}.',
+        // "Frontier" is a word §5 would normally send back — and the line
+        // under it explains the term by example, which is what that rule
+        // actually asks for: a reader who does not know it meets "OpenAI" one
+        // line down and does.
+        title: 'Share frontier models via your API key',
+        // The provider is named from what the installed CLI whitelists, never
+        // a hopeful list: "your OpenAI key" on a build that serves someone
+        // else's points at a provider this machine cannot reach. The cost sits
+        // here rather than in the title, because what it costs is a
+        // consequence of the route rather than the name of it — and a reader
+        // choosing between three cards should meet it before pressing, not in
+        // the pane afterwards.
+        line:
+            'Nothing to download. ${apiKeyCardLine(apiEngines)}, and pay for '
+            'what the grid uses.',
       ),
     ShareRouteOffer(
       route: ShareRoute.server,
-      title: 'Share a server you run',
+      // The verb is about the route, not about the moment: on the common
+      // machine the engine is installed and stopped, which is exactly what
+      // this starts. The line under it carries the state, so a server already
+      // running is never told to start again.
+      title: 'Start an engine you already have',
       detected: external.length,
       line: switch ((running.firstOrNull, external.firstOrNull)) {
         // Running and merely installed are a press apart, and saying the wrong
         // one sends the reader looking for a Start button that is already a
         // Share button, or the reverse.
         (final live?, _) =>
-          '${live.label} is already running here. Share it '
+          '${live.label} is running here. Point Grid at it and share it '
               'exactly as it is.',
         (_, final found?) =>
           '${found.label} is installed here. Start it and '
               'share it as it is.',
-        _ => 'Point Grid at an engine already running on this computer.',
+        _ => 'Point Grid at any OpenAI-compatible engine on this computer.',
       },
     ),
   ];
