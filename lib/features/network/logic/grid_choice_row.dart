@@ -35,30 +35,42 @@ class GridReached extends GridLiveness {
     required this.models,
   });
 
-  /// Whether the grid reports itself as answering — the same field the Grids
-  /// list colours its bolt from, so the two can never disagree.
+  /// Whether the grid itself reports as up — the same field the Grids list
+  /// colours its bolt from.
   final bool running;
 
   final int nodes;
   final int models;
 }
 
+/// Whether anything is actually answering on this grid.
+///
+/// The count, not the state. A grid can report `running` with nothing on it —
+/// two on this account do — and reading the state alone put a green dot beside
+/// a grid that could not answer a single question. The dot and the sentence
+/// below it both come through here now, so they cannot say different things
+/// about the same grid.
+bool gridIsAnswering(GridLiveness liveness) => switch (liveness) {
+  GridReached(:final running, :final nodes) => running && nodes > 0,
+  _ => false,
+};
+
 /// The sentence under a grid's name.
 ///
 /// Pure, because this is the line that goes stale silently: it is assembled
 /// from three numbers and a state, and every one of them has a "we don't know
 /// yet" that reads as a fact if it is allowed to fall through to zero.
-String gridRowMeta(GridLiveness liveness) => switch (liveness) {
-  GridChecking() => 'Checking…',
-  GridUnreachable() => "Can't reach this grid right now",
-  GridReached(running: false) => 'Nobody answering right now',
-  GridReached(:final nodes) when nodes == 0 => 'Answering now',
-  GridReached(:final nodes, :final models) when models == 0 =>
-    '$nodes ${plural(nodes, 'computer')} answering',
-  GridReached(:final nodes, :final models) =>
-    '$nodes ${plural(nodes, 'computer')} answering · '
-        '$models ${plural(models, 'model')}',
-};
+String gridRowMeta(GridLiveness liveness) {
+  if (liveness is GridChecking) return 'Checking…';
+  if (liveness is GridUnreachable) return "Can't reach this grid right now";
+  if (!gridIsAnswering(liveness)) return 'No computers answering';
+  final reached = liveness as GridReached;
+  final computers =
+      '${reached.nodes} ${plural(reached.nodes, 'computer')} answering';
+  if (reached.models == 0) return computers;
+  return '$computers · ${reached.models} '
+      '${plural(reached.models, 'model')}';
+}
 
 /// The grids on this account, in the order and groups the list draws them.
 ///

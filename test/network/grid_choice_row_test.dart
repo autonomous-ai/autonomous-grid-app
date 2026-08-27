@@ -35,9 +35,9 @@ void main() {
       expect(gridRowMeta(const GridChecking()), 'Checking…');
       expect(
         gridRowMeta(const GridChecking()),
-        isNot(contains('Nobody')),
+        isNot(contains('No computers')),
         reason:
-            'every grid is unprobed for the first second, and "nobody '
+            'every grid is unprobed for the first second, and "no computers '
             'answering" there would send a reader past a working grid',
       );
     });
@@ -46,12 +46,47 @@ void main() {
       expect(
         gridRowMeta(const GridUnreachable()),
         "Can't reach this grid right now",
+        reason: 'a control plane that is down is not a grid with nobody on it',
       );
       expect(
         gridRowMeta(const GridReached(running: false, nodes: 0, models: 0)),
-        'Nobody answering right now',
-        reason: 'a control plane that is down is not a grid with nobody on it',
+        'No computers answering',
       );
+    });
+
+    test('a grid reporting itself up with nothing on it is not answering', () {
+      const empty = GridReached(running: true, nodes: 0, models: 0);
+      expect(
+        gridRowMeta(empty),
+        'No computers answering',
+        reason:
+            'two grids on a real account report running with no nodes, and '
+            'this row is what a person picks a grid on',
+      );
+      expect(gridIsAnswering(empty), isFalse);
+    });
+
+    test('the dot and the sentence never disagree', () {
+      const cases = [
+        GridChecking(),
+        GridUnreachable(),
+        GridReached(running: false, nodes: 3, models: 1),
+        GridReached(running: true, nodes: 0, models: 0),
+        GridReached(running: true, nodes: 2, models: 5),
+      ];
+      for (final liveness in cases) {
+        final idle =
+            !gridIsAnswering(liveness) &&
+            liveness is! GridChecking &&
+            liveness is! GridUnreachable;
+        expect(
+          gridRowMeta(liveness).contains('No computers answering'),
+          idle,
+          reason:
+              'the green dot and the line under it are one claim about one '
+              'grid, so they read the same predicate',
+        );
+      }
     });
 
     test('counts what is answering, and what it can answer with', () {

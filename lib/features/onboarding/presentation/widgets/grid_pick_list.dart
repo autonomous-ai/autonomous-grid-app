@@ -152,7 +152,10 @@ class _GridRowState extends ConsumerState<_GridRow> {
       AsyncError() => const GridUnreachable(),
       _ => const GridChecking(),
     };
-    final live = liveness is GridReached && liveness.running;
+    // The same predicate the sentence under the name uses. It read `running`
+    // on its own before, which put a green dot beside a grid reporting itself
+    // up with nothing on it — the one row a reader would have picked first.
+    final live = gridIsAnswering(liveness);
     final selected = widget.selected;
 
     return MouseRegion(
