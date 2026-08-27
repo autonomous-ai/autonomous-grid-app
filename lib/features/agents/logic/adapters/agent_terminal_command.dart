@@ -1,6 +1,6 @@
 import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../../infrastructure/cli/claude_exec_service.dart'
-    show kClaudeSessionSchedulerTools;
+    show kClaudeServerWebTools;
 import '../../../../infrastructure/cli/codex_app_server_service.dart'
     show codexApprovalPolicy;
 import '../../../../shared/terminal/terminal_shell.dart';
@@ -38,6 +38,10 @@ import '../agent_catalog.dart';
 /// [config] is Codex's `-c` overrides (the grid, the model, the provider), the
 /// same list the one-shot lane builds. Claude Code takes its grid in the
 /// environment instead, so it ignores this.
+///
+/// [withoutServerWebTools] takes Claude Code's vendor-served web tools away
+/// for a session on a model the relay can't serve them for — the same rule,
+/// and the same flag, as the one-shot lane's `claudeExecArgs`.
 /// The conversation an interactive CLI should be holding: its id, and whether
 /// that id already names one.
 ///
@@ -60,6 +64,7 @@ ShellCommand agentTerminalCommand({
   List<String> config = const [],
   AgentSession? session,
   String? prompt,
+  bool withoutServerWebTools = false,
 }) => (
   executable: executable,
   arguments: switch (tool) {
@@ -69,6 +74,7 @@ ShellCommand agentTerminalCommand({
       mcpConfigPath: mcpConfigPath,
       session: session,
       prompt: prompt,
+      withoutServerWebTools: withoutServerWebTools,
     ),
     AgentTool.codex => _codexTerminalArgs(
       model: model,
@@ -114,14 +120,19 @@ List<String> claudePermissionArgs(AgentApprovalMode mode) => switch (mode) {
 /// first" is right here rather than merely safe: the default gate *is* the
 /// asking one. Plan and full access still name their mode.
 ///
-/// The schedulers go on every session for the same reason they went on every
-/// one-shot turn: they report success into a process that ends with the chat.
+/// **Nothing is taken away but the web tools a grid model can't serve**, the
+/// same as the one-shot lane. The session-only schedulers used to go here too,
+/// on the reasoning that they die with the process — but this process is the
+/// real REPL, which is exactly where `/loop` and a wake-up are meant to live,
+/// and on 2026-08-27 the one-shot lane learned to keep its process alive for
+/// them as well. Two lanes, one tool list.
 List<String> _claudeTerminalArgs({
   required String model,
   required AgentApprovalMode approval,
   required String? mcpConfigPath,
   required AgentSession? session,
   required String? prompt,
+  required bool withoutServerWebTools,
 }) => [
   if (session != null)
     ...(session.resume
@@ -130,8 +141,7 @@ List<String> _claudeTerminalArgs({
   '--model',
   model,
   ...claudePermissionArgs(approval),
-  '--disallowedTools',
-  ...kClaudeSessionSchedulerTools,
+  if (withoutServerWebTools) ...['--disallowedTools', ...kClaudeServerWebTools],
   if (mcpConfigPath != null) ...[
     '--mcp-config',
     mcpConfigPath,

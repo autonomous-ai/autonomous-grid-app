@@ -61,6 +61,7 @@ void main() {
       String? mcpConfigPath,
       AgentSession? session,
       String? prompt,
+      bool withoutServerWebTools = false,
     }) => agentTerminalCommand(
       tool: AgentTool.claude,
       executable: '/bin/claude',
@@ -70,6 +71,7 @@ void main() {
       mcpConfigPath: mcpConfigPath,
       session: session,
       prompt: prompt,
+      withoutServerWebTools: withoutServerWebTools,
     );
 
     ShellCommand codex({
@@ -167,13 +169,27 @@ void main() {
       expect(claude().arguments, isNot(contains('--permission-mode')));
     });
 
-    test('takes the session schedulers away here too — they die with the '
-        'process whichever way it was started', () {
-      expect(claude().arguments, contains('--disallowedTools'));
+    test('takes nothing away by default — the REPL is where /loop and a '
+        'wake-up live, and a bare --disallowedTools is an empty list', () {
+      expect(claude().arguments, isNot(contains('--disallowedTools')));
       for (final tool in kClaudeSessionSchedulerTools) {
-        expect(claude().arguments, contains(tool));
+        expect(claude().arguments, isNot(contains(tool)));
       }
     });
+
+    test(
+      'on a grid model the vendor web tools go, on one flag, as they do '
+      'for a one-shot turn — the relay refuses the whole request otherwise',
+      () {
+        final args = claude(withoutServerWebTools: true).arguments;
+        expect(args.where((a) => a == '--disallowedTools'), hasLength(1));
+        final flag = args.indexOf('--disallowedTools');
+        expect(
+          args.sublist(flag + 1, flag + 1 + kClaudeServerWebTools.length),
+          kClaudeServerWebTools,
+        );
+      },
+    );
 
     test('a missing MCP config drops both flags, as it does for a one-shot '
         'turn: a path that is not there aborts the session outright', () {

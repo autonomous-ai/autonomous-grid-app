@@ -237,6 +237,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         mcpConfigPath: setup.mcpConfig,
         config: setup.config,
         session: handle,
+        // The relay refuses the vendor's web tools on a grid model with a 400
+        // that fails the whole step — the same rule the one-shot lane applies.
+        withoutServerWebTools:
+            tool == AgentTool.claude && !isClaudeSeatModel(model),
         // Hermes has no argv slot to put this in — its only positional is a
         // subcommand — so its opening message is held back here and pasted once
         // the TUI has taken the keyboard, exactly as a handover is. Kept in the
