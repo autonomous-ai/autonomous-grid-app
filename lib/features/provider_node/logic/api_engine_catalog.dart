@@ -167,8 +167,16 @@ const String kClaudeSeatKind = 'claude';
 ///
 /// The CLI ships `openai` (a pasted API key, ADR 0012) and two **CLI seats** —
 /// `claude` and `codex-cli` — which serve a coding CLI already installed here.
-/// OpenRouter, Anthropic, Gemini, … are a one-line addition each when their kind
-/// is whitelisted.
+/// Anthropic, Gemini, … are a one-line addition each when their kind is
+/// whitelisted.
+///
+/// **`openrouter` is not one of them, and must not be added.** Nobody joins with
+/// that kind: the grid stands it up for a member on a credential the member
+/// never holds, so an entry here would offer a provider they cannot sign in to
+/// and name the supplier their grid buys from. The CLI now refuses `grid catalog
+/// --api openrouter` outright, so an entry added anyway would be dropped by the
+/// `result.ok` check below rather than shown — but it would still put the word
+/// in this file, and this comment is the reason it isn't here.
 ///
 /// The `codex` kind (a ChatGPT subscription signed in over OAuth, ADR 0015) is
 /// deliberately **not** here. It answers on `responses` only, so everything the
