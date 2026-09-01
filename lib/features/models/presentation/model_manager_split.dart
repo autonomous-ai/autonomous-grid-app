@@ -7,9 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../infrastructure/api/models/model_catalog.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/labeled_field.dart' show appMenuStyle;
+import '../logic/catalog_fallback.dart';
+import '../logic/catalog_list.dart';
 import '../logic/model_manager_filter.dart';
 import '../logic/models_providers.dart';
 import '../logic/suggested_catalog.dart';
+import 'catalog_offline_notice.dart';
 import 'model_detail_panel.dart';
 import 'model_storage_footer.dart';
 import 'model_storage_panel.dart';
@@ -274,6 +277,10 @@ class _Sidebar extends ConsumerWidget {
     _ => false,
   };
 
+  /// What the list call is asking for right now — one record, so the request
+  /// and the retry that re-issues it can never drift apart.
+  CatalogListArgs get _listArgs => (sort: sort.apiValue, query: query.trim());
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
@@ -284,8 +291,12 @@ class _Sidebar extends ConsumerWidget {
     final wantsList =
         needle.isNotEmpty || sort.apiValue.isNotEmpty || _suggestionFellThrough;
     final listAsync = wantsList
-        ? ref.watch(catalogListProvider((sort: sort.apiValue, query: needle)))
-        : const AsyncValue<List<CatalogListEntry>?>.data(null);
+        ? ref.watch(catalogListProvider(_listArgs))
+        : const AsyncValue<CatalogOutcome<List<CatalogListEntry>>>.data((
+            data: null,
+            error: null,
+            savedAt: null,
+          ));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -350,12 +361,14 @@ class _Sidebar extends ConsumerWidget {
 
   Widget _suggestionBody(
     WidgetRef ref,
-    AsyncValue<List<CatalogListEntry>?> listAsync,
+    AsyncValue<CatalogOutcome<List<CatalogListEntry>>> listAsync,
   ) {
     return switch (suggestion) {
       AsyncData(:final value) => switch (value) {
-        SuggestReady(:final ranked) => _rankedListOrEmpty(
-          _keepPicks(ranked, ref),
+        SuggestReady(:final ranked, :final savedAt) => _withNotice(
+          savedAt: savedAt,
+          onRetry: () => ref.invalidate(suggestedCatalogProvider),
+          list: _rankedListOrEmpty(_keepPicks(ranked, ref)),
         ),
         SuggestNoMatch() || SuggestUnavailable() => _listBody(ref, listAsync),
         SuggestSignInRequired() => const _SidebarMessage(
@@ -370,11 +383,16 @@ class _Sidebar extends ConsumerWidget {
 
   Widget _listBody(
     WidgetRef ref,
-    AsyncValue<List<CatalogListEntry>?> listAsync,
+    AsyncValue<CatalogOutcome<List<CatalogListEntry>>> listAsync,
   ) {
     return switch (listAsync) {
-      AsyncData(:final value) when value != null && value.isNotEmpty =>
-        _entryListOrEmpty(_keepEntries(value, ref)),
+      AsyncData(value: (data: final entries?, :final savedAt, error: _))
+          when entries.isNotEmpty =>
+        _withNotice(
+          savedAt: savedAt,
+          onRetry: () => ref.invalidate(catalogListProvider(_listArgs)),
+          list: _entryListOrEmpty(_keepEntries(entries, ref)),
+        ),
       AsyncData() => const _SidebarMessage(
         icon: Icons.search_off_outlined,
         text: 'No models found.',
@@ -385,6 +403,26 @@ class _Sidebar extends ConsumerWidget {
       ),
       _ => const Center(child: CircularProgressIndicator()),
     };
+  }
+
+  /// [list], with the offline strip above it when what it draws came off disk
+  /// rather than off the wire. [savedAt] null is the live case — nothing to say.
+  Widget _withNotice({
+    required DateTime? savedAt,
+    required VoidCallback onRetry,
+    required Widget list,
+  }) {
+    if (savedAt == null) return list;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: CatalogOfflineNotice(savedAt: savedAt, onRetry: onRetry),
+        ),
+        Expanded(child: list),
+      ],
+    );
   }
 
   Widget _entryListOrEmpty(List<CatalogListEntry> entries) => entries.isEmpty

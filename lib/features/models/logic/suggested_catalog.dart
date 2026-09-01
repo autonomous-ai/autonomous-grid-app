@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/api/model_catalog_client.dart';
 import '../../../infrastructure/api/models/model_catalog.dart';
+import '../../../infrastructure/logging/app_log.dart';
 import '../../../infrastructure/providers.dart';
+import '../../../infrastructure/state/catalog_cache_store.dart';
 import '../../auth/logic/session_controller.dart';
+import 'catalog_fallback.dart';
 
 /// This machine's hardware profile from `grid device-info --json`, forwarded
 /// verbatim to the catalog API (the doc: the app doesn't interpret the fields,
@@ -32,9 +35,14 @@ sealed class SuggestOutcome {
 }
 
 /// The catalog ranked models for this device, best-first. Empty when nothing fits.
+///
+/// [savedAt] is set only when the catalog couldn't be reached and these are the
+/// picks saved from an earlier run — the section says so rather than passing an
+/// old ranking off as today's.
 class SuggestReady extends SuggestOutcome {
-  const SuggestReady({required this.ranked});
+  const SuggestReady({required this.ranked, this.savedAt});
   final List<CatalogModelPick> ranked;
+  final DateTime? savedAt;
 }
 
 /// No stored session token — the catalog needs the user signed in.
@@ -47,8 +55,9 @@ class SuggestNoMatch extends SuggestOutcome {
   const SuggestNoMatch();
 }
 
-/// The catalog couldn't be reached or read ([reason] is the friendly line) —
-/// the section falls back to the offline `grid catalog` list.
+/// The catalog couldn't be reached or read ([reason] is the friendly line) and
+/// nothing was saved to fall back on — the section drops to the offline
+/// `grid catalog` list.
 class SuggestUnavailable extends SuggestOutcome {
   const SuggestUnavailable(this.reason);
   final String reason;
@@ -57,7 +66,7 @@ class SuggestUnavailable extends SuggestOutcome {
 /// The suggest call, injectable so the provider is unit-testable without the
 /// network (tests override it with a fake; production calls the real client).
 typedef CatalogSuggestFn =
-    Future<(CatalogSuggestion?, ModelCatalogError?)> Function({
+    Future<CatalogRead<CatalogSuggestion>> Function({
       required String apiUrl,
       required String sessionToken,
       required Map<String, dynamic> device,
@@ -67,41 +76,13 @@ final catalogSuggestFnProvider = Provider<CatalogSuggestFn>(
   (ref) => ModelCatalogClient.suggest,
 );
 
-/// What the sidebar is asking the catalog for: a search term, a ranking, or
-/// both. A record so the family keys by value — `(sort: '', query: 'qwen')` and
-/// `(sort: 'likes', query: 'qwen')` are two different requests, each cached.
-///
-/// [sort] empty means "don't pin a ranking": the sidebar sends no `sort` at all
-/// while the user is typing, and only attaches one once they pick from the sort
-/// menu.
-typedef CatalogListArgs = ({String sort, String query});
-
-/// `POST /v1/grid/catalog` in list mode — the catalog's models filtered by
-/// [CatalogListArgs.query] and ranked by [CatalogListArgs.sort]. Used by the
-/// Models sidebar's search box and its Trending / Most liked / Newest modes
-/// (the CLI `grid catalog` fallback has no such fields). Returns null when the
-/// user isn't signed in or the call fails.
-final catalogListProvider =
-    FutureProvider.family<List<CatalogListEntry>?, CatalogListArgs>((
-      ref,
-      args,
-    ) async {
-      final token = ref.watch(sessionProvider).sessionToken;
-      if (token == null || token.isEmpty) return null;
-      final apiUrl = ref.watch(gridApiUrlProvider);
-      final (entries, _) = await ModelCatalogClient.list(
-        apiUrl: apiUrl,
-        sessionToken: token,
-        sort: args.sort.isEmpty ? null : args.sort,
-        query: args.query.isEmpty ? null : args.query,
-      );
-      return entries;
-    });
-
 /// Device-aware model suggestions for the model manager: read the session token,
 /// probe the hardware, and ask `POST /v1/grid/catalog` for the ranked picks.
 /// Every failure maps to a [SuggestOutcome] the UI can act on rather than an
 /// exception — signed-out, no-match, and unreachable are all normal states here.
+///
+/// A reachable catalog is also saved, so an unreachable one falls back to those
+/// picks instead of an empty section (see [readCatalog]).
 final suggestedCatalogProvider = FutureProvider<SuggestOutcome>((ref) async {
   final token = ref.watch(sessionProvider).sessionToken;
   if (token == null || token.isEmpty) {
@@ -113,18 +94,26 @@ final suggestedCatalogProvider = FutureProvider<SuggestOutcome>((ref) async {
     return const SuggestUnavailable("Couldn't read this computer's details.");
   }
 
-  final (suggestion, error) = await ref.watch(catalogSuggestFnProvider)(
-    apiUrl: ref.watch(gridApiUrlProvider),
-    sessionToken: token,
-    device: device,
+  final apiUrl = ref.watch(gridApiUrlProvider);
+  final suggest = ref.watch(catalogSuggestFnProvider);
+  final outcome = await readCatalog<CatalogSuggestion>(
+    cache: ref.watch(catalogCacheStoreProvider),
+    log: ref.read(appLogProvider),
+    key: catalogSuggestKey(apiUrl),
+    fetch: () => suggest(apiUrl: apiUrl, sessionToken: token, device: device),
+    parse: parseSuggestResponse,
   );
-  if (error != null) {
-    return error.sessionExpired
-        ? const SuggestSignInRequired()
-        : SuggestUnavailable(error.message);
+
+  final suggestion = outcome.data;
+  if (suggestion == null) {
+    return switch (outcome.error) {
+      ModelCatalogError(sessionExpired: true) => const SuggestSignInRequired(),
+      ModelCatalogError(:final message) => SuggestUnavailable(message),
+      _ => const SuggestNoMatch(),
+    };
   }
 
-  final ranked = suggestion!.models.where((m) => m.hasModel).toList();
+  final ranked = suggestion.models.where((m) => m.hasModel).toList();
   if (ranked.isEmpty) return const SuggestNoMatch();
-  return SuggestReady(ranked: ranked);
+  return SuggestReady(ranked: ranked, savedAt: outcome.savedAt);
 });

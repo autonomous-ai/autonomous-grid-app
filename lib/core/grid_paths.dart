@@ -141,6 +141,17 @@ class GridPaths {
   static File get modelContextFile =>
       File('${home.path}/app/model_context.json');
 
+  /// The last good answer from each catalog request, kept verbatim
+  /// (`~/.grid/app/catalog_cache.json`).
+  ///
+  /// The model manager is otherwise an empty window the moment the catalog is
+  /// unreachable — no list, no versions, no way to start a download that the
+  /// `grid pull` behind it would have handled fine. This is what it draws
+  /// instead, labelled as the saved copy it is. App-owned; the CLI never touches
+  /// it, and deleting it only costs the fallback.
+  static File get catalogCacheFile =>
+      File('${home.path}/app/catalog_cache.json');
+
   /// What each project's last few turns came to — the headlines the Grid Panel
   /// draws, kept so the voice router can read what a project is *working on*
   /// rather than only what it is called.

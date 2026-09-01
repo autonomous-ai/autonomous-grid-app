@@ -4,10 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/widgets/app_dialog.dart';
-import '../../../infrastructure/api/model_catalog_client.dart';
 import '../../../infrastructure/api/models/model_detail.dart';
 import '../../../infrastructure/api/models/model_icon_service.dart';
-import '../../../infrastructure/providers.dart';
 import '../../../shared/copy/setup_hints.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
@@ -15,19 +13,21 @@ import '../../../shared/widgets/error_box.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../provider_node/logic/provider_run_controller.dart';
 import '../logic/model_delete_controller.dart';
+import '../logic/model_detail_provider.dart';
 import '../logic/model_group.dart';
 import '../logic/model_pull_controller.dart';
 import '../logic/model_storage.dart';
 import '../logic/models_providers.dart';
 import '../logic/pull_spec.dart';
-import '../logic/suggested_catalog.dart';
 import 'cancel_download_button.dart';
+import 'catalog_offline_notice.dart';
 import 'model_delete_confirm.dart';
 import 'model_detail_badges.dart';
 
 /// The right pane of the model manager dialog: one model's full version list
 /// with a runnability verdict per row. Reads `GET /v1/grid/catalog/{repo_id}`
-/// with the user's device so each version gets a green/gray/red badge.
+/// with the user's device so each version gets a green/gray/red badge — or the
+/// copy saved from the last time that call worked, labelled as such.
 class ModelDetailPanel extends ConsumerWidget {
   const ModelDetailPanel({super.key, required this.repoId});
 
@@ -37,8 +37,6 @@ class ModelDetailPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     final token = ref.watch(sessionProvider).sessionToken;
-    final deviceAsync = ref.watch(deviceInfoProvider);
-
     if (token == null || token.isEmpty) {
       return const _DetailMessage(
         icon: Icons.lock_outline,
@@ -46,70 +44,43 @@ class ModelDetailPanel extends ConsumerWidget {
       );
     }
 
-    final apiUrl = ref.watch(gridApiUrlProvider);
-    final client = ref.watch(modelDetailClientProvider);
-
-    return FutureBuilder<(ModelDetail?, ModelCatalogError?)>(
-      future: deviceAsync.when(
-        data: (device) => client.detail(
-          apiUrl: apiUrl,
-          sessionToken: token,
-          repoId: repoId,
-          device: device,
+    return switch (ref.watch(modelDetailProvider(repoId))) {
+      AsyncData(value: (data: final detail?, :final savedAt, error: _))
+          when detail.versions.isNotEmpty =>
+        _VersionPicker(
+          detail: detail,
+          savedAt: savedAt,
+          onRetry: () => ref.invalidate(modelDetailProvider(repoId)),
         ),
-        loading: () async => (
-          null,
-          const ModelCatalogError('Reading this computer\'s details…'),
-        ),
-        error: (e, _) async => (
-          null,
-          ModelCatalogError('Couldn\'t read this computer\'s details: $e'),
-        ),
+      AsyncData(value: (data: _, error: final error?, savedAt: _)) =>
+        _DetailMessage(icon: Icons.error_outline, text: error.message),
+      AsyncData() => const _DetailMessage(
+        icon: Icons.inbox_outlined,
+        text: 'No versions found for this model.',
       ),
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final (detail, error) = snap.data ?? (null, null);
-        if (error != null) {
-          return _DetailMessage(icon: Icons.error_outline, text: error.message);
-        }
-        if (detail == null || detail.versions.isEmpty) {
-          return const _DetailMessage(
-            icon: Icons.inbox_outlined,
-            text: 'No versions found for this model.',
-          );
-        }
-        return _VersionPicker(detail: detail);
-      },
-    );
+      AsyncError(:final error) => _DetailMessage(
+        icon: Icons.error_outline,
+        text: "Couldn't load model details: $error",
+      ),
+      _ => const Center(child: CircularProgressIndicator()),
+    };
   }
 }
 
-final modelDetailClientProvider = Provider<ModelDetailClient>(
-  (ref) => const ModelDetailClient._(),
-);
-
-class ModelDetailClient {
-  const ModelDetailClient._();
-
-  Future<(ModelDetail?, ModelCatalogError?)> detail({
-    required String apiUrl,
-    required String sessionToken,
-    required String repoId,
-    Map<String, dynamic>? device,
-  }) => ModelCatalogClient.detail(
-    apiUrl: apiUrl,
-    sessionToken: sessionToken,
-    repoId: repoId,
-    device: device,
-  );
-}
-
 class _VersionPicker extends ConsumerStatefulWidget {
-  const _VersionPicker({required this.detail});
+  const _VersionPicker({
+    required this.detail,
+    required this.savedAt,
+    required this.onRetry,
+  });
 
   final ModelDetail detail;
+
+  /// When these versions were saved, or null when they just came off the wire.
+  final DateTime? savedAt;
+
+  /// Ask the catalog again — the way out of the saved copy.
+  final VoidCallback onRetry;
 
   @override
   ConsumerState<_VersionPicker> createState() => _VersionPickerState();
@@ -387,6 +358,10 @@ class _VersionPickerState extends ConsumerState<_VersionPicker> {
         ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           children: [
+            if (widget.savedAt case final savedAt?) ...[
+              CatalogOfflineNotice(savedAt: savedAt, onRetry: widget.onRetry),
+              const SizedBox(height: 12),
+            ],
             // Header row: icon + name + format badge
             Row(
               children: [
