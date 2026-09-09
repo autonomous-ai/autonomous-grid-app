@@ -38,6 +38,17 @@ are **deliberate** — don't "fix" them back.
 - **No side effects in `build()`** or in notifier updaters (they run twice under
   StrictMode) — mutate outside, e.g. `addPostFrameCallback` (see `ProviderView`).
 - Release processes/controllers in `ref.onDispose` / `dispose()`.
+- **A value class held as provider state carries `operator ==`/`hashCode`.** Riverpod
+  decides whether to notify by comparing the old state with the new, so a state rebuilt
+  from disk or the wire — a parse, a poll, a re-read — notifies on *identity* without
+  one, and an unchanged file reads as a change. That is not a small waste: it is what a
+  watcher does next. `NetworkCredential`/`CredentialsFile` had none, and every
+  `sessionProvider` invalidation therefore re-fetched the grid's models, its member
+  usage and `GET /grid/overview`, and made `servingEnginesProvider` re-list
+  `~/.grid/run/engines` and spawn a `kill -0` per record on the UI isolate — for a grid
+  that had not moved (measured: 6 downstream builds where 1 was owed;
+  `test/network/credential_identity_test.dart`). `GridOverview` carries its own for the
+  same reason. Services and controllers are the exception — identity is what they *are*.
 
 ## 3. Dart style
 
@@ -157,22 +168,25 @@ are **deliberate** — don't "fix" them back.
 ## 9. Definition of done
 
 - `flutter analyze lib test` → **0 issues**; relevant `flutter test test/<area>` green.
-  Re-measured on a clean `main` on **2026-08-18**: **2228 tests across 190 files**, and a
+  Re-measured on `staging` on **2026-09-09**: **2952 tests across 236 files**, and a
   test failure you see is *yours* — there is no standing "known failure" list to hide
   behind. (There was one, twice over: it named
   `provider_run_controller_test` and `sidebar_item_test`, then 9 analyzer issues in
   `features/models/` and 3 overflow failures in `connectors_view_layout_test`. Every one
   of them outlived the problem it described. If you add a note like this, date it and
   re-measure before trusting it.)
-  ⚠️ **`analyze` did not clear its bar on 2026-08-18: 3 issues.** Two
-  `unawaited_return_in_try_block` warnings (`connectors/logic/connector_link_controller.dart`,
-  `skills/logic/skills_controller.dart`) and one `prefer_final_fields` info on
-  `feedback_dialog.dart`'s `_attachLogs`. **Measured on Flutter 3.47.0 while CI pins
-  3.44.4** (§10) — which is why `docs/architecture.md` counts **1** on the same tree the
-  same day: the two `unawaited_return_in_try_block` warnings come from the newer
-  analyzer. Two people can both be right here and the pair only ever agrees if the
-  version is stated with the count, so **state it**. **The bar is still 0**: this is debt
-  to clear, not an allowance to spend.
+  ✅ **`analyze` clears its bar as of 2026-09-09: 0 issues, on Flutter 3.47.2.** It had
+  carried 3 since 2026-08-18 — two `unawaited_return_in_try_block` warnings and a
+  `prefer_final_fields` info — and the note here said they were debt to clear rather than
+  an allowance to spend. They are cleared. The two warnings were never only a lint: in
+  both, the `finally` closed a callback socket / deleted a staging folder while the future
+  the `try` had just returned was still running against it, so `return await` fixed a race
+  and satisfied the analyzer as a side effect.
+  **State the Flutter version with the count, always.** Those two warnings existed only on
+  the newer analyzer, which is why `docs/architecture.md` counted **1** on the same tree
+  the same day that this counted 3. CI still pins 3.44.4 (§10), so a count taken there and
+  a count taken locally can disagree while both are right — the version is what makes the
+  pair agree.
   ⚠️ **Two tests are flaky under a loaded machine**, both the same shape and both new
   with the off-isolate chat write: `chat/chat_store_scale_test.dart` and
   `chat/chat_sessions_controller_test.dart` fail their **tearDown** with
@@ -185,9 +199,9 @@ are **deliberate** — don't "fix" them back.
   ("a goal that had already ended…" twice, "the headers are dropped once…" once), and
   passed alone every time. A file whose failure moves is a file racing something, not a
   broken assertion, so don't go reading the test it named.
-- **Run the whole suite as `flutter test --concurrency=12`** — 2228 tests in 190 files on
-  a 10-core Mac took **26s idle and 61s while another agent was working the same
-  machine** (both 2026-08-18); it was 20s for 1599 tests in 156 files on 08-11. Wall time
+- **Run the whole suite as `flutter test --concurrency=12`** — 2952 tests in 236 files on
+  a 10-core Mac took **35–46s** (2026-09-09); it was 26s idle and 61s under load for 2228
+  tests in 190 files on 08-18, and 20s for 1599 in 156 files on 08-11. Wall time
   here says as much about what else is running as about the suite. Most of it is still
   *starting one suite per file*, not running tests: a file
   costs ~110ms to open and most of them finish their own tests in under 100ms. So if the
