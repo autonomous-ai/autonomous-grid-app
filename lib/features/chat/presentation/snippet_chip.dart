@@ -60,15 +60,11 @@ class SnippetChip extends StatelessWidget {
                 color: AppPalette.textSecondary,
               ),
               const SizedBox(width: 8),
-              // A chip's caption counts what it holds; it is a control, not the
-              // snippet itself — see `unselectableLabel`.
-              SelectionContainer.disabled(
-                child: Text(
-                  count == 1 ? '1 selection' : '$count selections',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: AppFont.medium,
-                  ),
+              Text(
+                count == 1 ? '1 selection' : '$count selections',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: AppFont.medium,
                 ),
               ),
               _RemoveButton(onTap: onRemove, count: count),

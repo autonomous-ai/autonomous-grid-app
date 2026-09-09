@@ -70,19 +70,15 @@ class _AppMenuRowState extends State<AppMenuRow> {
                   ),
                   const SizedBox(width: 9),
                   Expanded(
-                    // A menu row is a button; its label is not page text. See
-                    // `unselectableLabel`.
-                    child: SelectionContainer.disabled(
-                      child: Text(
-                        widget.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppPalette.textPrimary,
-                          fontSize: 13,
-                          height: 1.2,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppPalette.textPrimary,
+                        fontSize: 13,
+                        height: 1.2,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),

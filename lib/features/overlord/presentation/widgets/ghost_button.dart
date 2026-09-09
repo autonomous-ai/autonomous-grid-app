@@ -39,16 +39,13 @@ class GhostButton extends StatelessWidget {
                 Icon(icon, size: 13, color: AppPalette.textSecondary),
                 const SizedBox(width: 6),
               ],
-              // A button's label — see `unselectableLabel`.
-              SelectionContainer.disabled(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: OverlordTokens.mono,
-                    fontFamilyFallback: OverlordTokens.monoFallback,
-                    fontSize: 12,
-                    color: AppPalette.textSecondary,
-                  ),
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: OverlordTokens.mono,
+                  fontFamilyFallback: OverlordTokens.monoFallback,
+                  fontSize: 12,
+                  color: AppPalette.textSecondary,
                 ),
               ),
             ],

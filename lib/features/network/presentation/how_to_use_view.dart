@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/widgets/section_scaffold.dart';
-import '../../../shared/widgets/selectable_body.dart';
 import '../../auth/logic/session_controller.dart';
 import 'app_guide_content.dart';
 
@@ -31,12 +30,10 @@ class HowToUseView extends ConsumerWidget {
         // Fill the section width (SectionScaffold already pads the frame).
         // Re-key per grid so switching grids resets the guide (app choice and
         // any "Applied" result) instead of showing the previous grid's state.
-        child: SelectableBody(
-          child: AppGuideContent(
-            key: ValueKey(network.networkId),
-            baseUrl: network.relayBaseUrl,
-            apiKey: network.relayApiKey,
-          ),
+        child: AppGuideContent(
+          key: ValueKey(network.networkId),
+          baseUrl: network.relayBaseUrl,
+          apiKey: network.relayApiKey,
         ),
       ),
     );

@@ -316,11 +316,11 @@ class _MainShellBody extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SelectionContainer.disabled(child: SidebarFold()),
+              SidebarFold(),
               Expanded(
                 child: Column(
                   children: [
-                    SelectionContainer.disabled(child: AppTopBar()),
+                    AppTopBar(),
                     SessionExpiredBanner(),
                     Expanded(child: _SectionView()),
                   ],

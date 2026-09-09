@@ -156,17 +156,12 @@ class _SoftActionButtonState extends State<SoftActionButton> {
                       ),
                       SizedBox(width: widget.compact ? 9 : 12),
                     ],
-                    // A label, not the page's text — see `unselectableLabel`,
-                    // which says the same for every Material button. This one
-                    // is hand-built, so no `ButtonStyle` reaches it.
-                    SelectionContainer.disabled(
-                      child: Text(
-                        widget.label,
-                        style: TextStyle(
-                          fontSize: widget.compact ? 14 : 15,
-                          fontWeight: FontWeight.w600,
-                          color: textColor,
-                        ),
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        fontSize: widget.compact ? 14 : 15,
+                        fontWeight: FontWeight.w600,
+                        color: textColor,
                       ),
                     ),
                   ],

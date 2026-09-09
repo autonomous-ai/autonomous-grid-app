@@ -54,19 +54,14 @@ class NetworkDetail extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           header,
-          // Tabs are navigation, so their words are not the page's text. A
-          // `TabBarTheme` carries no hook for this the way `ButtonStyle` does
-          // (see `unselectableLabel`), so it is said here.
-          const SelectionContainer.disabled(
-            child: TabBar(
-              isScrollable: true,
-              tabAlignment: TabAlignment.start,
-              dividerColor: Colors.transparent,
-              tabs: [
-                Tab(text: 'Overview'),
-                Tab(text: 'Members'),
-              ],
-            ),
+          const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            dividerColor: Colors.transparent,
+            tabs: [
+              Tab(text: 'Overview'),
+              Tab(text: 'Members'),
+            ],
           ),
           Expanded(
             child: TabBarView(

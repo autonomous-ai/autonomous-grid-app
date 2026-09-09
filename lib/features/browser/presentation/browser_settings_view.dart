@@ -9,7 +9,6 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/section_scaffold.dart';
-import '../../../shared/widgets/selectable_body.dart';
 import '../../network/presentation/grid_overview_widgets.dart';
 import '../logic/browser_url.dart';
 
@@ -40,29 +39,27 @@ class BrowserSettingsView extends ConsumerWidget {
           'behaves. The tab opens beside a conversation from the panel, or '
           'with ⌘⇧B.',
       child: SingleChildScrollView(
-        child: SelectableBody(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const _AssistantBrowserSection(),
-              // The rest of the screen is about a tab this computer may not be
-              // able to draw. Left out rather than greyed out: a Linux user
-              // cannot act on any of it, and three dead controls under a live
-              // one reads as the screen being broken.
-              if (availablePanelFeatures.contains(
-                PanelFeature.browser,
-              )) ...const [
-                SizedBox(height: 26),
-                Divider(height: 1),
-                SizedBox(height: 26),
-                _HomePageSection(),
-                SizedBox(height: 26),
-                _SearchEngineSection(),
-                SizedBox(height: 26),
-                _LinkRoutingSection(),
-              ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _AssistantBrowserSection(),
+            // The rest of the screen is about a tab this computer may not be
+            // able to draw. Left out rather than greyed out: a Linux user
+            // cannot act on any of it, and three dead controls under a live
+            // one reads as the screen being broken.
+            if (availablePanelFeatures.contains(
+              PanelFeature.browser,
+            )) ...const [
+              SizedBox(height: 26),
+              Divider(height: 1),
+              SizedBox(height: 26),
+              _HomePageSection(),
+              SizedBox(height: 26),
+              _SearchEngineSection(),
+              SizedBox(height: 26),
+              _LinkRoutingSection(),
             ],
-          ),
+          ],
         ),
       ),
     );

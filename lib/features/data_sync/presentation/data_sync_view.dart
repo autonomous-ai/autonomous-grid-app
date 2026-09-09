@@ -8,7 +8,6 @@ import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_box.dart';
 import '../../../shared/widgets/labeled_field.dart';
 import '../../../shared/widgets/section_scaffold.dart';
-import '../../../shared/widgets/selectable_body.dart';
 import '../logic/sync_client.dart';
 import '../logic/sync_controller.dart';
 import '../logic/sync_state.dart';
@@ -56,60 +55,58 @@ class _SyncBody extends ConsumerWidget {
     final run = ref.watch(syncControllerProvider);
     final versions = ref.watch(syncVersionsProvider);
     return SingleChildScrollView(
-      child: SelectableBody(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _RunBanner(run: run),
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: run is SyncBusy ? null : () => _upload(context, ref),
-                icon: const Icon(LucideIcons.cloudUpload, size: 18),
-                label: const Text('Back up to cloud'),
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _RunBanner(run: run),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: run is SyncBusy ? null : () => _upload(context, ref),
+              icon: const Icon(LucideIcons.cloudUpload, size: 18),
+              label: const Text('Back up to cloud'),
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Your backups',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Your backups',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          switch (versions) {
+            AsyncData(:final value) when value.isEmpty => const EmptyState(
+              icon: LucideIcons.cloud,
+              title: 'No backups yet',
+              message:
+                  'Back up this computer, then sign in on another one and '
+                  'restore it there.',
+              compact: true,
             ),
-            const SizedBox(height: 10),
-            switch (versions) {
-              AsyncData(:final value) when value.isEmpty => const EmptyState(
-                icon: LucideIcons.cloud,
-                title: 'No backups yet',
-                message:
-                    'Back up this computer, then sign in on another one and '
-                    'restore it there.',
-                compact: true,
-              ),
-              AsyncData(:final value) => Column(
-                children: [
-                  for (final version in value)
-                    SyncBackupTile(
-                      version: version,
-                      busy: run is SyncBusy,
-                      onRestore: () => _restore(context, ref, version),
-                      onDelete: () => _delete(context, ref, version),
-                    ),
-                ],
-              ),
-              AsyncError(:final error) => ErrorBox(
-                message: error is SyncApiError
-                    ? error.message
-                    : "Couldn't load your backups.",
-              ),
-              _ => const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            },
-          ],
-        ),
+            AsyncData(:final value) => Column(
+              children: [
+                for (final version in value)
+                  SyncBackupTile(
+                    version: version,
+                    busy: run is SyncBusy,
+                    onRestore: () => _restore(context, ref, version),
+                    onDelete: () => _delete(context, ref, version),
+                  ),
+              ],
+            ),
+            AsyncError(:final error) => ErrorBox(
+              message: error is SyncApiError
+                  ? error.message
+                  : "Couldn't load your backups.",
+            ),
+            _ => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          },
+        ],
       ),
     );
   }

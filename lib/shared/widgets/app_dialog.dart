@@ -34,5 +34,5 @@ Future<T?> showAppDialog<T>({
   barrierColor: barrierColor,
   useRootNavigator: useRootNavigator,
   routeSettings: routeSettings,
-  builder: (context) => SelectionArea(child: builder(context)),
+  builder: builder,
 );
