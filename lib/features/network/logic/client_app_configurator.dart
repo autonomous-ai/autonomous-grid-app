@@ -8,6 +8,7 @@ import 'package:yaml_edit/yaml_edit.dart';
 
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/cli/env_file.dart';
+import '../../../infrastructure/state/agent_browser_choice.dart';
 import '../../../infrastructure/cli/hermes_auth_store.dart';
 import '../../../infrastructure/cli/hermes_config_file.dart';
 import '../../../core/relay_identity.dart';
@@ -63,6 +64,7 @@ class ClientAppConfigurator {
     String key,
     List<String> models, {
     bool gridsOwnHermes = false,
+    AgentBrowserChoice? gridBrowserChoice,
   }) {
     // Never write a pair that can't work. A key minted for one grid and the URL
     // of another is accepted by every config file involved and only refused at
@@ -86,7 +88,13 @@ class ClientAppConfigurator {
         return _applyOpenClaw(base, key, ids);
       case ClientApp.hermes:
         // Hermes carries one default and discovers the rest from the endpoint.
-        return _applyHermes(base, key, ids.first, gridsOwnHermes);
+        return _applyHermes(
+          base,
+          key,
+          ids.first,
+          gridsOwnHermes,
+          gridBrowserChoice,
+        );
       case ClientApp.codex:
         // Codex names a single model in its config; the key goes to its dotenv.
         return _applyCodex(base, key, ids.first);
@@ -201,12 +209,13 @@ class ClientAppConfigurator {
     String key,
     String model,
     bool gridsOwnHermes,
+    AgentBrowserChoice? gridBrowserChoice,
   ) {
     final hermesHome = gridsOwnHermes
         ? AgentHomes.hermesProfile(_home)
         : AgentHomes.hermesRoot(_home);
     final queued = _hermesWrites.then(
-      (_) => _writeHermes(base, key, model, hermesHome),
+      (_) => _writeHermes(base, key, model, hermesHome, gridBrowserChoice),
     );
     // The queue must survive a failed write, or one error deadlocks every later
     // point-at-a-grid; the result still reaches the caller through `queued`.
@@ -219,6 +228,10 @@ class ClientAppConfigurator {
     String key,
     String model,
     String hermesHome,
+    // Null for the user's own `~/.hermes`, which keeps every toolset: Grid's
+    // setting governs the assistant in this app, not the `hermes` they run
+    // themselves.
+    AgentBrowserChoice? gridBrowserChoice,
   ) async {
     final config = File('$hermesHome/config.yaml');
     final env = File('$hermesHome/.env');
@@ -262,7 +275,12 @@ class ClientAppConfigurator {
           responses: responses,
         );
       }
-      ensureAgentToolsets(editor);
+      ensureAgentToolsets(
+        editor,
+        browser:
+            gridBrowserChoice == null ||
+            hermesUsesOwnBrowser(gridBrowserChoice),
+      );
       // The app's chat is the one gate over what the agent runs — so Hermes must
       // not auto-approve dangerous commands behind it (see [ensureManualApprovals]).
       ensureManualApprovals(editor);
@@ -568,27 +586,72 @@ const List<String> kHermesToolsets = [
   'browser',
 ];
 
-/// Ensure Hermes's `toolsets:` enables everything in [kHermesToolsets] — the
-/// file and terminal groups the agent works with, plus `browser`, which drives a
-/// real headless Chromium (`browser_navigate`); without it the agent has only
-/// HTTP fetch, which sites like VNExpress block outright (406, bot detection).
+/// The toolsets Grid's own Hermes gets, with the browser following the user's
+/// answer in Settings ▸ Browser.
+List<String> hermesToolsets({required bool browser}) => [
+  for (final toolset in kHermesToolsets)
+    if (toolset != 'browser' || browser) toolset,
+];
+
+/// Whether Grid's own Hermes keeps its native browser toolset.
+///
+/// That toolset is a **third browser** — a headless Chromium of Hermes's own —
+/// and [AgentBrowserChoice] never mentioned it, which made the setting a
+/// promise the app did not keep: "Off" left Hermes browsing exactly as before.
+///
+/// Its kind is [AgentBrowserChoice.cleanWindow]: a browser of the app's own,
+/// signed in to nothing. So that is the one answer it runs under.
+///
+/// Not under [AgentBrowserChoice.gridTab], and that is the second thing this
+/// fixes: Hermes's own tools are called `browser_navigate` too, so a Hermes
+/// holding both would be offered two tools of one name driving two different
+/// browsers. Under `gridTab` the Grid tab is the browser, full stop.
+///
+/// Not under [AgentBrowserChoice.yourBrowser] either: Hermes cannot drive the
+/// Chrome the user already has, and handing it a different browser instead
+/// would be answering a question they did not ask.
+bool hermesUsesOwnBrowser(AgentBrowserChoice choice) =>
+    choice == AgentBrowserChoice.cleanWindow;
+
+/// Ensure Hermes's `toolsets:` enables the groups the agent works with — files,
+/// the terminal, the web — plus `browser`, which drives a real headless
+/// Chromium (`browser_navigate`); without it the agent has only HTTP fetch,
+/// which sites like VNExpress block outright (406, bot detection).
 ///
 /// Applied on every Hermes config write so a non-technical user never has to
 /// enable one by hand — and so a config an older build narrowed to three
 /// toolsets repairs itself on the next write instead of staying crippled.
-/// Idempotent and non-destructive: it appends what's missing and leaves any
-/// other toolset the user added alone.
-void ensureAgentToolsets(YamlEditor editor) {
+/// Idempotent, and it leaves any other toolset the user added alone.
+///
+/// [browser] is the one entry that can be taken **away**, which is the only
+/// destructive thing here and is deliberate: see [hermesUsesOwnBrowser]. It is
+/// false only for the Hermes *Grid* runs — the user's own `~/.hermes` keeps
+/// every toolset, because Grid's setting is about the assistant in this app,
+/// not about the `hermes` they type themselves.
+void ensureAgentToolsets(YamlEditor editor, {bool browser = true}) {
+  final wanted = hermesToolsets(browser: browser);
   final toolsets = editor.parseAt([
     'toolsets',
   ], orElse: () => wrapAsYamlNode(null)).value;
   if (toolsets is! List) {
-    editor.update(['toolsets'], kHermesToolsets);
+    editor.update(['toolsets'], wanted);
     return;
   }
-  for (final toolset in kHermesToolsets) {
+  for (final toolset in wanted) {
     if (!toolsets.contains(toolset)) editor.appendToList(['toolsets'], toolset);
   }
+  if (browser) return;
+  // Re-read: the appends above went through the editor, so the list parsed
+  // before them is stale — filtering *that* and writing it back drops every
+  // toolset this call had just put in.
+  final current = editor.parseAt(['toolsets']).value as List;
+  // Written back whole rather than removed in place: `yaml_edit` has no
+  // remove-by-value, and the list is four short strings the app owns.
+  final kept = [
+    for (final toolset in current)
+      if (toolset != 'browser') toolset,
+  ];
+  if (kept.length != current.length) editor.update(['toolsets'], kept);
 }
 
 /// Hermes's own approval mode, forced to `manual` so this app's chat is the one

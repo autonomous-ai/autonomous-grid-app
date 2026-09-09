@@ -133,16 +133,22 @@ class HermesGridLink {
     }
     final key = pointingKey(network, model);
     if (_ref.read(hermesConfiguredProvider) == key) return null;
-    final result = await _ref.read(clientAppConfiguratorProvider).apply(
-      ClientApp.hermes,
-      network.relayBaseUrl,
-      network.relayApiKey,
-      [model],
-      // The Hermes *Grid* runs, so this lands in Grid's profile. Without it the
-      // app would repin the model and toolsets of the user's own `hermes` every
-      // time a chat turn or a scheduled task went out.
-      gridsOwnHermes: true,
-    );
+    final result = await _ref
+        .read(clientAppConfiguratorProvider)
+        .apply(
+          ClientApp.hermes,
+          network.relayBaseUrl,
+          network.relayApiKey,
+          [model],
+          // The Hermes *Grid* runs, so this lands in Grid's profile. Without it the
+          // app would repin the model and toolsets of the user's own `hermes` every
+          // time a chat turn or a scheduled task went out.
+          gridsOwnHermes: true,
+          // Which browser this Hermes gets, from the one place that answers it.
+          // Read per write, never captured: the user can change their mind between
+          // turns and the config has to follow.
+          gridBrowserChoice: _ref.read(chatPrefsProvider).agentBrowser,
+        );
     if (result is ApplyError) {
       return "Couldn't point Hermes at this grid: ${result.message}";
     }

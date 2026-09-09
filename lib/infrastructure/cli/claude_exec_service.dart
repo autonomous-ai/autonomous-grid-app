@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../mcp/grid_browser_tool_permission.dart';
 import 'claude_exec_event.dart';
 import 'claude_permission.dart';
 import 'claude_stream_parser.dart';
@@ -509,7 +510,22 @@ class _ClaudeExecTurn {
     // Answered here rather than put to the user: a yes would not make it work,
     // so the card would be theatre and the no is the honest answer — with the
     // reason, so the model can take the route that does work.
-    final refusal = claudeToolRefusal(claudePermissionTool(decoded), input);
+    final tool = claudePermissionTool(decoded);
+    // Looking at the page is free, the way reading a file is. Asked about, a
+    // search — navigate, snapshot, type, snapshot, read — would put five cards
+    // in front of the user for one instruction, and three of them about a tool
+    // that changes nothing. See [gridBrowserToolReadsOnly].
+    if (gridBrowserToolReadsOnly(tool)) {
+      _send(
+        claudePermissionResponse(
+          requestId: '${request.id}',
+          optionId: kAllowOnceOption,
+          input: input,
+        ),
+      );
+      return true;
+    }
+    final refusal = claudeToolRefusal(tool, input);
     if (refusal != null) {
       _send(
         claudePermissionResponse(

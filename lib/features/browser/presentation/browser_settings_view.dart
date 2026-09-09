@@ -317,22 +317,23 @@ List<AgentBrowserChoice> get agentBrowserChoices => [
 ///
 /// Each says **who the browser is signed in as**, because that is the whole
 /// difference between them and the only part with a consequence the user
-/// cannot undo. The two Chrome lanes also say they are Claude Code's alone —
-/// they run through that CLI's own browser support, and a user on Hermes or
-/// Codex who picked one would otherwise wait for a browser that never comes.
+/// cannot undo. Each also names which assistants honour it: these lanes run
+/// through each CLI's own browser support, and a user on Codex who picked one
+/// would otherwise wait for a browser that never comes.
 String agentBrowserChoiceDetail(AgentBrowserChoice choice) => switch (choice) {
   AgentBrowserChoice.none =>
-    'The assistant opens no browser. It can still search the web and read '
-        'pages through your grid.',
+    'No assistant opens a browser — including Hermes, which has one of its '
+        'own. It can still search the web and read pages through your grid.',
   AgentBrowserChoice.gridTab =>
     'The assistant works in the Browser tab beside the conversation, and you '
         'watch it happen. It is signed in as you in that tab. The only one '
         'every assistant can use.',
   AgentBrowserChoice.cleanWindow =>
-    'Grid opens a Chrome of its own, signed in to nothing — so anything behind '
-        'a login stays out of reach. Claude Code only.',
+    'A browser of its own, signed in to nothing — so anything behind a login '
+        'stays out of reach. Claude Code opens a Chrome window; Hermes uses '
+        'its own. Codex has neither.',
   AgentBrowserChoice.yourBrowser =>
     'The assistant drives the Chrome you already have open, so it can act in '
         'every account you are signed in to. Needs the Claude in Chrome '
-        'extension, and Claude Code only.',
+        'extension, and Claude Code only — the others get no browser.',
 };

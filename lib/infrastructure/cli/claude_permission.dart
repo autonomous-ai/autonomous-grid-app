@@ -1,3 +1,4 @@
+import '../mcp/grid_browser_tool_permission.dart';
 import 'agent_event.dart';
 import 'claude_stream_parser.dart';
 
@@ -160,6 +161,20 @@ AgentPermission? parseClaudePermission(
 
   final raw = request['input'];
   final input = raw is Map ? raw : const {};
+  // Grid's own browser tools before the generic path: they are `other` in
+  // shape, but "mcp__grid__browser_type" over a raw ref is not a question
+  // anybody can answer.
+  final browser = gridBrowserToolCard(tool, input);
+  if (browser != null) {
+    return AgentPermission(
+      id: id,
+      kind: AgentPermissionKind.other,
+      summary: browser.summary,
+      command: browser.detail,
+      options: claudePermissionOptions(AgentPermissionKind.other),
+    );
+  }
+
   final kind = claudeToolPermissionKind(tool);
   return switch (kind) {
     AgentPermissionKind.command => _command(id, tool, input),

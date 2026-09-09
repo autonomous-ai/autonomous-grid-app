@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/infrastructure/state/agent_browser_choice.dart';
 import 'package:grid_app/features/network/logic/app_guide_snippets.dart';
 import 'package:grid_app/features/network/logic/client_app_configurator.dart';
 import 'package:grid_app/features/network/logic/client_app_detector.dart';
@@ -668,6 +669,41 @@ void main() {
       final editor = YamlEditor(yaml);
       ensureAgentToolsets(editor);
       expect(editor.parseAt(['toolsets']).value, kHermesToolsets);
+    });
+
+    test('takes the browser away when the user turned it off, so "Off" is the '
+        'answer for Hermes too — its own headless Chromium ignored the setting '
+        'entirely before this', () {
+      final editor = YamlEditor(
+        'toolsets:\n  - hermes-cli\n  - browser\n  - mcp-mine\n',
+      );
+
+      ensureAgentToolsets(editor, browser: false);
+
+      final result = editor.parseAt(['toolsets']).value as List;
+      expect(result, isNot(contains('browser')));
+      // Only the browser is Grid's to take: a toolset the user added stays.
+      expect(result, contains('mcp-mine'));
+      expect(result, containsAll(['file', 'terminal', 'web']));
+    });
+
+    test('seeds a browserless list when there is no toolsets key yet and the '
+        'user said no — a missing key means Hermes enables everything, so the '
+        'seed is the only chance to leave the browser out', () {
+      final editor = YamlEditor('model:\n  provider: custom\n');
+
+      ensureAgentToolsets(editor, browser: false);
+
+      expect(editor.parseAt(['toolsets']).value, isNot(contains('browser')));
+    });
+
+    test('only the clean window lets Grid’s Hermes keep a browser of its own: '
+        'the Grid tab would give it two tools called browser_navigate, and the '
+        'user’s own Chrome is not something Hermes can drive', () {
+      expect(hermesUsesOwnBrowser(AgentBrowserChoice.cleanWindow), isTrue);
+      expect(hermesUsesOwnBrowser(AgentBrowserChoice.none), isFalse);
+      expect(hermesUsesOwnBrowser(AgentBrowserChoice.gridTab), isFalse);
+      expect(hermesUsesOwnBrowser(AgentBrowserChoice.yourBrowser), isFalse);
     });
 
     test('seeds the full list when there is no toolsets key yet', () {
