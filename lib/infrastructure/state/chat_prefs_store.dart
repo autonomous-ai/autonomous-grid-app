@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/grid_paths.dart';
 import '../cli/agent_event.dart';
+import 'agent_browser_choice.dart';
 
 /// The chat's remembered selections — the grid and the model the user last used,
 /// how much they let the agent do, which theme they chose, and how they want the
@@ -21,7 +22,7 @@ class ChatPrefs {
     this.themeMode = ThemeMode.light,
     this.chatAgent = defaultChatAgent,
     this.chatSurface = AgentChatSurface.list,
-    this.agentBrowser = false,
+    this.agentBrowser = AgentBrowserChoice.none,
     this.browserHomePage = '',
     this.browserSearchEngine = defaultSearchEngine,
     this.browserOpensLinks = false,
@@ -122,18 +123,16 @@ class ChatPrefs {
   /// terminals, and reading this default there would empty them. See its doc.
   final AgentChatSurface chatSurface;
 
-  /// Whether an agent may drive a browser this app opens for it.
+  /// Which browser an agent may reach for, if any.
   ///
-  /// **Off by default, and it has to be.** Saying yes means a Chrome window
-  /// starts on this computer — a separate profile with none of the user's tabs
-  /// or logins — and it stays up until the app closes. A person typing a
-  /// question into a chat box has not asked for that, and an app that opens a
-  /// browser unbidden reads as one that has been taken over.
+  /// **[AgentBrowserChoice.none] by default, and it has to be.** Every other
+  /// answer means something starts moving on this computer while the user is
+  /// typing a question — a window opening, or a page they are signed into being
+  /// clicked. A person asking a question has not asked for that.
   ///
-  /// It does not gate the extension lane: that one drives a Chrome the user
-  /// installed an extension into and started themselves, which is a yes they
-  /// have already given.
-  final bool agentBrowser;
+  /// It replaced a bool that gated only one of the lanes; see
+  /// [AgentBrowserChoice.fromLegacySwitch] for what an existing answer becomes.
+  final AgentBrowserChoice agentBrowser;
 
   /// The address a new Browser tab opens on, or empty for a blank tab.
   ///
@@ -184,7 +183,7 @@ class ChatPrefs {
     ThemeMode? themeMode,
     String? chatAgent,
     AgentChatSurface? chatSurface,
-    bool? agentBrowser,
+    AgentBrowserChoice? agentBrowser,
     String? browserHomePage,
     String? browserSearchEngine,
     bool? browserOpensLinks,
@@ -233,9 +232,13 @@ class ChatPrefs {
     themeMode: _themeModeFrom(json['themeMode']),
     chatAgent: json['chatAgent'] as String? ?? defaultChatAgent,
     chatSurface: _surfaceFrom(json['chatSurface']),
-    // Anything but a stored `true` reads as off: a corrupt or hand-edited file
-    // must never be what turns a browser on.
-    agentBrowser: json['agentBrowser'] == true,
+    // The new key wins; a file written before it existed is read through the
+    // old switch so nobody's answer is thrown away. Anything unrecognised reads
+    // as off — a corrupt or hand-edited file must never be what turns a browser
+    // on.
+    agentBrowser: json['agentBrowserChoice'] is String
+        ? AgentBrowserChoice.byId(json['agentBrowserChoice'] as String)
+        : AgentBrowserChoice.fromLegacySwitch(json['agentBrowser'] == true),
     browserHomePage: (json['browserHomePage'] as String? ?? '').trim(),
     browserSearchEngine:
         json['browserSearchEngine'] as String? ?? defaultSearchEngine,
@@ -266,7 +269,7 @@ class ChatPrefs {
     'themeMode': themeMode.name,
     'chatAgent': chatAgent,
     'chatSurface': chatSurface.name,
-    'agentBrowser': agentBrowser,
+    'agentBrowserChoice': agentBrowser.id,
     'browserHomePage': browserHomePage,
     'browserSearchEngine': browserSearchEngine,
     'browserOpensLinks': browserOpensLinks,
@@ -489,8 +492,8 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
   void setChatSurface(AgentChatSurface surface) =>
       _update(state.copyWith(chatSurface: surface));
 
-  void setAgentBrowser(bool allowed) =>
-      _update(state.copyWith(agentBrowser: allowed));
+  void setAgentBrowser(AgentBrowserChoice choice) =>
+      _update(state.copyWith(agentBrowser: choice));
 
   /// The address a new Browser tab opens on. Blank means a blank tab.
   void setBrowserHomePage(String url) =>

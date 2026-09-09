@@ -13,6 +13,7 @@ import '../../../../infrastructure/cli/chrome_bridge_service.dart';
 import '../../../../infrastructure/cli/chrome_extension_probe.dart';
 import '../../../../infrastructure/cli/command_log.dart';
 import '../../../../infrastructure/logging/app_log.dart';
+import '../../../../infrastructure/state/agent_browser_choice.dart';
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../infrastructure/state/model_context_store.dart';
 import '../../../../infrastructure/state/models/network_credential.dart';
@@ -419,7 +420,15 @@ class ClaudeChatSender implements ChatSender {
       extensionState: _ref.read(chromeExtensionProbeProvider).detect(),
       cliSupportsChrome: await _ref.read(claudeSupportsChromeProvider.future),
       cdpReady: _ref.read(chromeBridgeAvailableProvider),
-      cdpAllowed: _ref.read(chatPrefsProvider).agentBrowser,
+      // Read at turn time, never captured: the user can change their mind
+      // between turns, and the lane a turn takes has to be the answer that
+      // stands now.
+      cdpAllowed:
+          _ref.read(chatPrefsProvider).agentBrowser ==
+          AgentBrowserChoice.cleanWindow,
+      extensionAllowed:
+          _ref.read(chatPrefsProvider).agentBrowser ==
+          AgentBrowserChoice.yourBrowser,
     );
     if (plan.lane != ClaudeBrowserLane.cdp) {
       log.info('agent', 'Browser lane ${plan.lane.name}: ${plan.reason}');

@@ -129,4 +129,11 @@ class _EnginePage implements BrowserPageHandle {
 
   @override
   Future<void> forward() => page.goForward();
+
+  @override
+  Future<Object?> evaluate(String source) =>
+      page.evaluateJavascript(source: source);
+
+  @override
+  Future<Uint8List?> screenshot() => page.takeScreenshot();
 }

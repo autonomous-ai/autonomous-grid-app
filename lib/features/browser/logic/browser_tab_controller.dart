@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/state/chat_prefs_store.dart';
@@ -16,6 +18,17 @@ abstract interface class BrowserPageHandle {
   Future<void> stop();
   Future<void> back();
   Future<void> forward();
+
+  /// Run [source] in the page and hand back whatever it evaluated to.
+  ///
+  /// How the agent reads the page and acts on it — see
+  /// `agent/browser_snapshot_script.dart`. Every script the app injects
+  /// returns a JSON string, because what an engine marshals back differs by
+  /// platform and a string is the one shape both return unchanged.
+  Future<Object?> evaluate(String source);
+
+  /// The visible page as PNG bytes, or null when the engine could not draw one.
+  Future<Uint8List?> screenshot();
 }
 
 /// One browser tab: what it is showing, and the verbs that move it.
@@ -37,6 +50,15 @@ class BrowserTab extends Notifier<BrowserPageState> {
   /// The live page, once it exists. Not part of [state]: it is a handle onto
   /// something drawn by the platform, and state is a value.
   BrowserPageHandle? _page;
+
+  /// The page, for the agent bridge — null before the engine has come up.
+  ///
+  /// The one reader outside this class, and it is deliberately a getter rather
+  /// than a set of forwarding methods: the automation needs verbs this
+  /// controller has no opinion about ([BrowserPageHandle.evaluate]), and
+  /// growing a passthrough here for each of them would put the agent's whole
+  /// vocabulary in the middle of the tab's own state.
+  BrowserPageHandle? get page => _page;
 
   /// An address asked for before the page could take it — the user typing into
   /// a tab whose engine is still starting.

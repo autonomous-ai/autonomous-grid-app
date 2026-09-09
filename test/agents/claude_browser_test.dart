@@ -9,12 +9,14 @@ ClaudeBrowserPlan planWith({
   bool cliSupportsChrome = true,
   bool cdpReady = true,
   bool cdpAllowed = true,
+  bool extensionAllowed = true,
 }) => planClaudeBrowser(
   model: model,
   extensionState: extensionState,
   cliSupportsChrome: cliSupportsChrome,
   cdpReady: cdpReady,
   cdpAllowed: cdpAllowed,
+  extensionAllowed: extensionAllowed,
 );
 
 void main() {
@@ -60,14 +62,19 @@ void main() {
         'message', () {
       final plan = planWith(model: 'qwen3-coder-30b', cdpAllowed: false);
       expect(plan.lane, ClaudeBrowserLane.none);
-      // The reason has to name the switch, or the log says "no browser" and
-      // leaves the user hunting for a setting they were never told about.
-      expect(plan.reason, contains('Agents'));
+      // The reason has to name the screen that can change it, or the log says
+      // "no browser" and leaves the user hunting for a setting they were never
+      // told about. It moved from the agent's card to Settings ▸ Browser when
+      // the one switch became a choice of three.
+      expect(plan.reason, contains('Settings ▸ Browser'));
     });
 
-    test('the switch does not shut the extension lane: that browser is one the '
-        'user opened themselves', () {
-      expect(planWith(cdpAllowed: false).lane, ClaudeBrowserLane.extension);
+    test('turning down the clean window does not shut the user’s own browser: '
+        'the two lanes are separate answers to one question', () {
+      expect(
+        planWith(cdpAllowed: false, extensionAllowed: true).lane,
+        ClaudeBrowserLane.extension,
+      );
     });
 
     test('a multi-model selection with one foreign model stays off the '
@@ -123,5 +130,26 @@ void main() {
         expect(entry['args'], contains('http://127.0.0.1:9222'));
       },
     );
+  });
+
+  group('a lane the user did not pick', () {
+    test('the extension is not taken just because it is connected — driving '
+        'the browser someone is signed into is a yes they have to give', () {
+      final plan = planWith(extensionAllowed: false);
+      expect(plan.lane, isNot(ClaudeBrowserLane.extension));
+    });
+
+    test('with neither lane picked there is no browser, and the reason names '
+        'the one screen that can change it', () {
+      final plan = planWith(extensionAllowed: false, cdpAllowed: false);
+      expect(plan.lane, ClaudeBrowserLane.none);
+      expect(plan.reason, contains('Settings ▸ Browser'));
+    });
+
+    test('picking the clean window still gets one while the extension sits '
+        'connected and unused', () {
+      final plan = planWith(extensionAllowed: false, cdpAllowed: true);
+      expect(plan.lane, ClaudeBrowserLane.cdp);
+    });
   });
 }

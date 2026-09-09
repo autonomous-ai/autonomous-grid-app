@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/relay_web_client.dart';
 import '../cli/host_environment.dart';
+import 'grid_browser_automation.dart';
 import 'grid_mcp_server.dart';
 
 /// The one MCP server the app runs, wired to the chat controller.
@@ -16,6 +17,10 @@ final gridMcpServerProvider = Provider<GridMcpServer>((ref) {
     // [HostEnvironment.relay]. Read per call, never captured: the user can
     // switch grids, or leave the last one, while a chat is open.
     relay: () => HostEnvironment.relay,
+    // Null unless the user picked Grid's Browser tab as the assistant's
+    // browser. Read per call, never captured: they can change their mind
+    // between turns, and the answer that stands is the one that counts.
+    browser: () => ref.read(gridBrowserAutomationProvider),
   );
   ref.onDispose(server.stop);
   return server;

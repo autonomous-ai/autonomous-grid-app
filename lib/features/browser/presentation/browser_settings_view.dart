@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../infrastructure/state/agent_browser_choice.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
+import '../../../shared/panels/panel_tabs.dart';
+import '../../agents/logic/agent_browser_controller.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/app_select_field.dart';
 import '../../../shared/widgets/labeled_field.dart';
@@ -10,14 +13,20 @@ import '../../../shared/widgets/selectable_body.dart';
 import '../../network/presentation/grid_overview_widgets.dart';
 import '../logic/browser_url.dart';
 
-/// The Browser settings screen: where a new tab starts, where the address bar
-/// searches, and where a link you click goes.
+/// The Browser settings screen: which browser the *assistant* may use, and —
+/// where this computer can draw a page of its own — how the Browser tab
+/// behaves.
 ///
-/// Three settings, and every one of them changes something. The screen this is
-/// modelled on carries ten — remote rendering, SSH egress, cookie profiles,
-/// per-worktree localhost labels — and none of those have anything behind them
-/// here. A settings screen padded out with controls that do nothing is worse
-/// than a short one: the user has no way to tell which half is which.
+/// The assistant's browser leads because it is the consequential one: it is the
+/// only setting here that lets something act on the user's behalf. It was two
+/// controls in two places before, and one of the three lanes had no control at
+/// all — see [AgentBrowserChoice].
+///
+/// Every setting on this screen changes something. The screen this is modelled
+/// on carries ten — remote rendering, SSH egress, cookie profiles, per-worktree
+/// localhost labels — and none of those have anything behind them here. A
+/// settings screen padded out with controls that do nothing is worse than a
+/// short one: the user has no way to tell which half is which.
 class BrowserSettingsView extends ConsumerWidget {
   const BrowserSettingsView({super.key});
 
@@ -27,19 +36,31 @@ class BrowserSettingsView extends ConsumerWidget {
     return SectionScaffold(
       title: 'Browser',
       subtitle:
-          'Grid can open a web page beside a conversation — the Browser tab in '
-          'the panel, or ⌘⇧B. These settings are about that tab, not about the '
-          'browser you already use.',
+          'Which browser the assistant may use, and how Grid’s own Browser tab '
+          'behaves. The tab opens beside a conversation from the panel, or '
+          'with ⌘⇧B.',
       child: SingleChildScrollView(
         child: SelectableBody(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              _HomePageSection(),
-              SizedBox(height: 26),
-              _SearchEngineSection(),
-              SizedBox(height: 26),
-              _LinkRoutingSection(),
+            children: [
+              const _AssistantBrowserSection(),
+              // The rest of the screen is about a tab this computer may not be
+              // able to draw. Left out rather than greyed out: a Linux user
+              // cannot act on any of it, and three dead controls under a live
+              // one reads as the screen being broken.
+              if (availablePanelFeatures.contains(
+                PanelFeature.browser,
+              )) ...const [
+                SizedBox(height: 26),
+                Divider(height: 1),
+                SizedBox(height: 26),
+                _HomePageSection(),
+                SizedBox(height: 26),
+                _SearchEngineSection(),
+                SizedBox(height: 26),
+                _LinkRoutingSection(),
+              ],
             ],
           ),
         ),
@@ -198,9 +219,9 @@ class _LinkRoutingSection extends ConsumerWidget {
                   // this says, because that is where the account already is.
                   Text(
                     inside
-                        ? 'On — a link in a message or a Markdown file opens in '
-                              'a Browser tab beside it. Signing in to something '
-                              'still opens your own browser.'
+                        ? 'On — a link in a message or a Markdown file opens '
+                              'in a Browser tab beside it. Signing in to '
+                              'something still opens your own browser.'
                         : 'Off — links open in the browser you already use, '
                               'with your logins and extensions.',
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -223,3 +244,95 @@ class _LinkRoutingSection extends ConsumerWidget {
     );
   }
 }
+
+/// Which browser the assistant may use, if any.
+///
+/// The one place this is answered. It reaches three different things — Grid's
+/// own tab through the MCP server, a Chrome the app starts, and the Chrome the
+/// user already has open — and the copy's whole job is to make the difference
+/// between them plain *before* the pick, because the difference is who the
+/// browser is signed in as.
+class _AssistantBrowserSection extends ConsumerWidget {
+  const _AssistantBrowserSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    final theme = Theme.of(context);
+    final current = ref.watch(agentBrowserChoiceProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeading(
+          title: 'The assistant’s browser',
+          subtitle:
+              'Off to start with, on purpose: every other answer lets the '
+              'assistant move around a browser while you are typing. It takes '
+              'effect on the next turn.',
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: 360,
+          child: AppSelectField<AgentBrowserChoice>(
+            label: 'Use',
+            value: current,
+            // The closed field is only as wide as the control, so a sentence
+            // arrives clipped — the menu is where it is read, while choosing.
+            showDetailInField: false,
+            options: [
+              for (final choice in agentBrowserChoices)
+                AppSelectOption(
+                  value: choice,
+                  label: choice.label,
+                  detail: agentBrowserChoiceDetail(choice),
+                ),
+            ],
+            onChanged: ref.read(agentBrowserProvider).choose,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          agentBrowserChoiceDetail(current),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: AppPalette.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The choices this computer can actually offer.
+///
+/// [AgentBrowserChoice.gridTab] needs an engine to draw a page with, which
+/// Linux has none of — see [availablePanelFeatures].
+List<AgentBrowserChoice> get agentBrowserChoices => [
+  for (final choice in AgentBrowserChoice.values)
+    if (choice != AgentBrowserChoice.gridTab ||
+        availablePanelFeatures.contains(PanelFeature.browser))
+      choice,
+];
+
+/// What picking one actually means, in one line under the control.
+///
+/// Each says **who the browser is signed in as**, because that is the whole
+/// difference between them and the only part with a consequence the user
+/// cannot undo. The two Chrome lanes also say they are Claude Code's alone —
+/// they run through that CLI's own browser support, and a user on Hermes or
+/// Codex who picked one would otherwise wait for a browser that never comes.
+String agentBrowserChoiceDetail(AgentBrowserChoice choice) => switch (choice) {
+  AgentBrowserChoice.none =>
+    'The assistant opens no browser. It can still search the web and read '
+        'pages through your grid.',
+  AgentBrowserChoice.gridTab =>
+    'The assistant works in the Browser tab beside the conversation, and you '
+        'watch it happen. It is signed in as you in that tab. The only one '
+        'every assistant can use.',
+  AgentBrowserChoice.cleanWindow =>
+    'Grid opens a Chrome of its own, signed in to nothing — so anything behind '
+        'a login stays out of reach. Claude Code only.',
+  AgentBrowserChoice.yourBrowser =>
+    'The assistant drives the Chrome you already have open, so it can act in '
+        'every account you are signed in to. Needs the Claude in Chrome '
+        'extension, and Claude Code only.',
+};

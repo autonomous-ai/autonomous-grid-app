@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/theme/app_theme.dart';
+import '../../../shared/layouts/shell_state.dart';
 import '../logic/agent_browser_controller.dart';
 import 'agent_browser_access_block.dart';
 
@@ -22,25 +23,29 @@ class AgentBrowserRow extends StatelessWidget {
   Widget build(BuildContext context) => const Padding(
     padding: EdgeInsets.only(top: 12),
     child: Column(
-      children: [BrowserAccessBlock(), SizedBox(height: 10), _AllowSwitch()],
+      children: [BrowserAccessBlock(), SizedBox(height: 10), _WhereToChoose()],
     ),
   );
 }
 
-/// The switch that decides whether the assistant may open a browser of its own.
+/// Where the choice actually lives, now that there are three of them.
 ///
-/// The copy says what will happen before it happens: a separate window, none of
-/// your tabs, none of your logins. A switch whose consequence is only discovered
-/// after flipping it is not a choice.
-class _AllowSwitch extends ConsumerWidget {
-  const _AllowSwitch();
+/// A line rather than a control: the question is "which browser", and it has
+/// one home (Settings ▸ Browser — verified against `shell_state.dart`, group
+/// Personal). A copy of it here would be the second place to answer it, and two
+/// screens asking one question is how they drift apart.
+///
+/// The block above still belongs on this card: it reports what *this chat's
+/// next turn* would actually get, which is a fact about the agent on screen
+/// rather than a setting.
+class _WhereToChoose extends ConsumerWidget {
+  const _WhereToChoose();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     final theme = Theme.of(context);
-    final allowed = ref.watch(agentBrowserAllowedProvider);
-
+    final choice = ref.watch(agentBrowserChoiceProvider);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -49,18 +54,15 @@ class _AllowSwitch extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Let it open a browser of its own',
+                'Browser: ${choice.label}',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: AppPalette.textPrimary,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
-                allowed
-                    ? 'On — Grid opens its own Chrome window when the assistant '
-                          'needs one. Your tabs and logins stay out of it.'
-                    : 'Off — nothing on this computer opens a browser while you '
-                          'chat.',
+                'Which browser every assistant may use is chosen in '
+                'Settings ▸ Browser.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: AppPalette.textSecondary,
                 ),
@@ -69,7 +71,12 @@ class _AllowSwitch extends ConsumerWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Switch(value: allowed, onChanged: ref.read(agentBrowserProvider).allow),
+        TextButton(
+          onPressed: () => ref
+              .read(shellSectionProvider.notifier)
+              .select(ShellSection.browser),
+          child: const Text('Change'),
+        ),
       ],
     );
   }

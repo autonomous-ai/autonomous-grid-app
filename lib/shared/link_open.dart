@@ -15,9 +15,9 @@ import 'panels/panel_tabs.dart';
 /// and a tab opened onto that is a tab waiting behind a screen the user cannot
 /// see it from.
 ///
-/// Naming a feature's provider from `shared/` is the exemption `panel_tabs.dart`
-/// and the panel mapping tables already take: a table that maps panels onto the
-/// screens holding them has to name both sides.
+/// Naming a feature's provider from `shared/` is the exemption that
+/// `panel_tabs.dart` and the panel mapping tables already take: a table that
+/// maps panels onto the screens holding them has to name both sides.
 PanelHost? conversationPanelHost(WidgetRef ref) {
   if (ref.read(shellModeProvider) != ShellMode.code) return PanelHost.preview;
   return ref.read(codeProjectIsOpenProvider) ? PanelHost.code : null;
