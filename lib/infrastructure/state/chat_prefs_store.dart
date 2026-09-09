@@ -22,6 +22,9 @@ class ChatPrefs {
     this.chatAgent = defaultChatAgent,
     this.chatSurface = AgentChatSurface.list,
     this.agentBrowser = false,
+    this.browserHomePage = '',
+    this.browserSearchEngine = defaultSearchEngine,
+    this.browserOpensLinks = false,
     this.uiFontFamily,
     this.codeFontFamily,
     this.uiFontSize = defaultUiFontSize,
@@ -58,6 +61,13 @@ class ChatPrefs {
   /// because this layer can't reach the `AgentTool` enum (infrastructure never
   /// depends on a feature); the agents feature maps the id back to the tool.
   static const defaultChatAgent = 'hermes';
+
+  /// Where the Browser tab searches from when what was typed isn't an address.
+  ///
+  /// A bare id for the same reason [defaultChatAgent] is one: this layer can't
+  /// reach the browser feature's own enum, and infrastructure never depends on
+  /// a feature. The feature maps the id back.
+  static const defaultSearchEngine = 'google';
 
   /// No remembered selection yet — the state before the first launch that saves.
   static const empty = ChatPrefs();
@@ -125,6 +135,27 @@ class ChatPrefs {
   /// have already given.
   final bool agentBrowser;
 
+  /// The address a new Browser tab opens on, or empty for a blank tab.
+  ///
+  /// Empty is the default and a real answer, not a missing one: a panel that
+  /// went somewhere the moment it opened would spend the user's connection —
+  /// and their attention — on a page they didn't ask for.
+  final String browserHomePage;
+
+  /// Which search engine the Browser tab's address bar falls back to, as a bare
+  /// id — see [defaultSearchEngine].
+  final String browserSearchEngine;
+
+  /// Whether a link clicked in the app's own content opens in a Browser tab
+  /// rather than in the browser the user already has.
+  ///
+  /// Off by default: the system browser is where their logins, extensions and
+  /// history are, and taking those away from a click is not something to do
+  /// without being asked. It applies only to links in what the app *shows* you
+  /// — never to the app's own errands, which are sign-ins the built-in tab has
+  /// no way to finish.
+  final bool browserOpensLinks;
+
   /// The family the UI is set in, or null for the system font.
   ///
   /// Null is a real value here, not a missing one: it means "whatever this Mac's
@@ -154,6 +185,9 @@ class ChatPrefs {
     String? chatAgent,
     AgentChatSurface? chatSurface,
     bool? agentBrowser,
+    String? browserHomePage,
+    String? browserSearchEngine,
+    bool? browserOpensLinks,
     String? uiFontFamily,
     String? codeFontFamily,
     double? uiFontSize,
@@ -174,6 +208,9 @@ class ChatPrefs {
     chatAgent: chatAgent ?? this.chatAgent,
     chatSurface: chatSurface ?? this.chatSurface,
     agentBrowser: agentBrowser ?? this.agentBrowser,
+    browserHomePage: browserHomePage ?? this.browserHomePage,
+    browserSearchEngine: browserSearchEngine ?? this.browserSearchEngine,
+    browserOpensLinks: browserOpensLinks ?? this.browserOpensLinks,
     // The `?? this.x` idiom can't express "back to the system font" — passing
     // null reads as "leave it alone" — so going back to the default needs a flag
     // of its own. Same shape as `clearArchivedAt` on Conversation, and for the
@@ -199,6 +236,12 @@ class ChatPrefs {
     // Anything but a stored `true` reads as off: a corrupt or hand-edited file
     // must never be what turns a browser on.
     agentBrowser: json['agentBrowser'] == true,
+    browserHomePage: (json['browserHomePage'] as String? ?? '').trim(),
+    browserSearchEngine:
+        json['browserSearchEngine'] as String? ?? defaultSearchEngine,
+    // Same rule as [agentBrowser]: anything but a stored `true` reads as off,
+    // so a corrupt file can't be what redirects the user's links.
+    browserOpensLinks: json['browserOpensLinks'] == true,
     uiFontFamily: _familyFrom(json['uiFontFamily']),
     codeFontFamily: _familyFrom(json['codeFontFamily']),
     uiFontSize: _sizeFrom(
@@ -224,6 +267,9 @@ class ChatPrefs {
     'chatAgent': chatAgent,
     'chatSurface': chatSurface.name,
     'agentBrowser': agentBrowser,
+    'browserHomePage': browserHomePage,
+    'browserSearchEngine': browserSearchEngine,
+    'browserOpensLinks': browserOpensLinks,
     'uiFontFamily': uiFontFamily,
     'codeFontFamily': codeFontFamily,
     'uiFontSize': uiFontSize,
@@ -306,6 +352,9 @@ class ChatPrefs {
       other.chatAgent == chatAgent &&
       other.chatSurface == chatSurface &&
       other.agentBrowser == agentBrowser &&
+      other.browserHomePage == browserHomePage &&
+      other.browserSearchEngine == browserSearchEngine &&
+      other.browserOpensLinks == browserOpensLinks &&
       other.uiFontFamily == uiFontFamily &&
       other.codeFontFamily == codeFontFamily &&
       other.uiFontSize == uiFontSize &&
@@ -321,6 +370,9 @@ class ChatPrefs {
     chatAgent,
     chatSurface,
     agentBrowser,
+    browserHomePage,
+    browserSearchEngine,
+    browserOpensLinks,
     uiFontFamily,
     codeFontFamily,
     uiFontSize,
@@ -439,6 +491,17 @@ class ChatPrefsController extends Notifier<ChatPrefs> {
 
   void setAgentBrowser(bool allowed) =>
       _update(state.copyWith(agentBrowser: allowed));
+
+  /// The address a new Browser tab opens on. Blank means a blank tab.
+  void setBrowserHomePage(String url) =>
+      _update(state.copyWith(browserHomePage: url.trim()));
+
+  /// Which search engine the address bar falls back to, as a bare id.
+  void setBrowserSearchEngine(String id) =>
+      _update(state.copyWith(browserSearchEngine: id));
+
+  void setBrowserOpensLinks(bool inside) =>
+      _update(state.copyWith(browserOpensLinks: inside));
 
   void setThemeMode(ThemeMode mode) => _update(state.copyWith(themeMode: mode));
 

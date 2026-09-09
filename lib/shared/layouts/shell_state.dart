@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../core/app_environment.dart';
+import '../../core/host_arch.dart';
 import '../../infrastructure/analytics/analytics_events.dart';
 import '../../infrastructure/analytics/analytics_providers.dart';
 
@@ -195,6 +196,15 @@ enum ShellSection {
   // agree. (A half-filled circle is the usual "theme" mark, but Lucide's reads
   // as a contrast/accessibility toggle at nav size.)
   appearance(LucideIcons.sun, 'Appearance', thinIcon: LucideIcons.sun300),
+  // Settings for the Browser tab the panels open — where a new one starts,
+  // where the address bar searches, and where a link you click goes. Hidden
+  // where there is no such tab; see [needsEmbeddedWeb].
+  browser(
+    LucideIcons.globe,
+    'Browser',
+    thinIcon: LucideIcons.globe300,
+    needsEmbeddedWeb: true,
+  ),
   dataSync(LucideIcons.cloud, 'Sync & Backup', thinIcon: LucideIcons.cloud300),
   // The arrow-into-a-tray, not a cloud: nothing is downloaded here. The chats
   // are already on this computer, in another tool's folder.
@@ -228,6 +238,7 @@ enum ShellSection {
     this.label, {
     required this.thinIcon,
     this.devOnly = false,
+    this.needsEmbeddedWeb = false,
   });
 
   final IconData icon;
@@ -246,14 +257,24 @@ enum ShellSection {
   /// the question unanswerable in a shipped build.
   final bool devOnly;
 
+  /// Set on a screen that is only worth showing where the app can draw a web
+  /// page of its own — see [embeddedWebSupported]. Linux has no engine for one,
+  /// so a screen about the Browser tab there would configure something that
+  /// cannot be opened.
+  final bool needsEmbeddedWeb;
+
   /// True for the screens Settings owns — they're drawn full-screen with the
   /// settings nav beside them, not inside the app shell.
   bool get isSettings => kSettingsSections.contains(this);
 
-  /// Whether this section is offered in the current build: always in a developer
-  /// build, and only when it isn't [devOnly] in a shipped release. Both the
-  /// settings nav and the command palette gate on this.
-  bool get isVisibleForBuild => !devOnly || AppEnvironment.isDeveloperMode;
+  /// Whether this section is offered here: always in a developer build, only
+  /// when it isn't [devOnly] in a shipped release, and never when it
+  /// [needsEmbeddedWeb] on a computer that has none. The settings nav, the
+  /// sidebar's Office group and the command palette all gate on this, so a
+  /// screen that fails it is unreachable rather than merely unlisted.
+  bool get isVisibleForBuild =>
+      (!devOnly || AppEnvironment.isDeveloperMode) &&
+      (!needsEmbeddedWeb || embeddedWebSupported);
 }
 
 /// What the sidebar's nav lists, in order.
@@ -340,6 +361,10 @@ const kSettingsGroups = [
   // the chat behind it.
   SettingsGroup('Personal', [
     ShellSection.appearance,
+    // Under Appearance because it is the same kind of thing — how the app
+    // behaves for the person at the keyboard — and above Sync, which is about
+    // their data rather than their habits.
+    ShellSection.browser,
     // Between Appearance and the guide: it is about this user's own data on
     // this computer, which is what the rest of this group is about. It is not
     // a Grid you talk to (Developer) nor something that shapes an answer

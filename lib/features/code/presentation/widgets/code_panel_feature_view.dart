@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/panels/panel_tabs.dart';
 import '../../../../shared/widgets/panel_visibility.dart';
+import '../../../browser/presentation/browser_panel_view.dart';
 import '../../../files/logic/files_browser.dart';
 import '../../../files/presentation/files_panel_view.dart';
 import '../../../projects/logic/project.dart';
@@ -53,6 +54,13 @@ Widget codePanelFeatureView(
     tabId: tab.id,
     projectName: projectName,
     clonePath: clonePath,
+  ),
+  // The one tab that is rooted at nothing on this computer, so it is the same
+  // widget the chat's panel mounts rather than a project-flavoured copy.
+  PanelFeature.browser => BrowserPanelView(
+    key: ValueKey(tab.id),
+    host: PanelHost.code,
+    tabId: tab.id,
   ),
 };
 

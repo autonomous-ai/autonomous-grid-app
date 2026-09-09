@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/panels/panel_tabs.dart';
 import '../../../shared/widgets/panel_visibility.dart';
 import '../../agents/logic/agent_changes.dart';
+import '../../browser/presentation/browser_panel_view.dart';
 import '../../files/logic/files_browser.dart';
 import '../../files/presentation/files_panel_view.dart';
 import '../../projects/logic/project.dart';
@@ -43,6 +44,14 @@ Widget panelFeatureView(
     host: host,
   ),
   PanelFeature.files => _FilesTab(tabId: tab.id, host: host),
+  // Keyed by tab for the same reason a Terminal is: two Browser tabs are two
+  // live pages with their own history, and without a key the second tab's id
+  // lands on the first one's element.
+  PanelFeature.browser => BrowserPanelView(
+    key: ValueKey(tab.id),
+    host: host,
+    tabId: tab.id,
+  ),
 };
 
 /// A shell, in the folder the conversation is about.

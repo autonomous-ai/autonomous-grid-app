@@ -28,6 +28,7 @@ dependencies:
   file_selector: ^1.0.3
   flutter:
     sdk: flutter
+  flutter_inappwebview: ^6.1.5
   flutter_local_notifications: ^22.2.0
   flutter_markdown_plus: ^1.0.12
   flutter_pty: ^0.4.2

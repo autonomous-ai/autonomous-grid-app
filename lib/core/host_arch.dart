@@ -35,3 +35,25 @@ String? agentPlatformTarget(Abi abi, {required bool linuxMusl}) {
     _ => null,
   };
 }
+
+/// True when [abi] identifies a Windows machine.
+bool isWindowsAbi(Abi abi) =>
+    abi == Abi.windowsArm64 || abi == Abi.windowsX64 || abi == Abi.windowsIA32;
+
+/// Whether the app can draw a web page inside one of its own panels.
+///
+/// The engine is the platform's: WKWebView on macOS, WebView2 on Windows.
+/// Linux has neither, and the plugin that reaches them ships no Linux
+/// implementation — so a Linux build compiles and runs with the Browser tab
+/// simply not offered, rather than with a tab that opens onto an error.
+///
+/// Pure and Abi-injected for the same reason as [isMacAbi]: the policy is
+/// readable — and checkable — without depending on the machine reading it.
+bool supportsEmbeddedWeb(Abi abi) => isMacAbi(abi) || isWindowsAbi(abi);
+
+/// This computer's answer to [supportsEmbeddedWeb], worked out once.
+///
+/// The single source both the panel's feature list and Settings' Browser row
+/// read, so the tab and the screen that configures it can never disagree about
+/// whether they exist.
+final bool embeddedWebSupported = supportsEmbeddedWeb(Abi.current());

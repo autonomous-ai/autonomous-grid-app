@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../core/host_arch.dart';
+import '../../features/browser/logic/browser_tab_controller.dart';
 import '../../features/chat/logic/composer_context.dart';
 import '../../features/files/logic/files_browser.dart';
 import '../../features/terminal/logic/terminal_sessions_controller.dart';
@@ -33,14 +35,16 @@ enum PanelHost {
 /// A surface a panel can open, and everything the app needs to name it: the
 /// launcher row, the tab, and the tooltip all read from here.
 ///
-/// Only what is built. A browser and a side chat were listed here while they
-/// were still `TODO — <name>`: a menu that opens onto an empty screen is a
-/// worse answer than a shorter menu, and it costs the user the click to find
+/// Only what is built, and only what *this computer* can draw — see
+/// [availablePanelFeatures]. A browser and a side chat were listed here while
+/// they were still `TODO — <name>`: a menu that opens onto an empty screen is
+/// a worse answer than a shorter menu, and it costs the user the click to find
 /// that out.
 enum PanelFeature {
   review(LucideIcons.fileCheck, 'Review', shortcut: '⌃⇧G'),
   terminal(LucideIcons.squareTerminal, 'Terminal', shortcut: '⌃`'),
-  files(LucideIcons.folder, 'Files', shortcut: '⌘P');
+  files(LucideIcons.folder, 'Files', shortcut: '⌘P'),
+  browser(LucideIcons.globe, 'Browser', shortcut: '⌘⇧B');
 
   const PanelFeature(this.icon, this.label, {this.shortcut});
 
@@ -48,6 +52,20 @@ enum PanelFeature {
   final String label;
   final String? shortcut;
 }
+
+/// The features this computer can actually open, in menu order.
+///
+/// [PanelFeature.browser] draws a real web page, and the app only has an engine
+/// for one on macOS and Windows (see [supportsEmbeddedWeb]). On Linux the row
+/// is left out rather than opening onto an apology — which is the same call the
+/// enum above records for the features that weren't built yet.
+///
+/// A top-level `final` so the list is built once, on first read, rather than on
+/// every rebuild of a menu that is on screen.
+final List<PanelFeature> availablePanelFeatures = List.unmodifiable([
+  for (final feature in PanelFeature.values)
+    if (feature != PanelFeature.browser || embeddedWebSupported) feature,
+]);
 
 /// One open tab.
 ///
@@ -171,6 +189,11 @@ class PanelTabs extends Notifier<PanelTabsState> {
   /// Review, not stack three Reviews. The launcher and the "+" menu still use
   /// [open], because there the user picked a row meaning "another one".
   void reveal(PanelFeature feature) {
+    // A keyboard shortcut can name a feature this computer can't draw — the
+    // bindings are registered for every platform, the engines are not. Doing
+    // nothing is the honest answer: the menu and the launcher don't offer the
+    // row either, so there is nothing on screen the key is failing to match.
+    if (!availablePanelFeatures.contains(feature)) return;
     for (final tab in state.tabs) {
       if (tab.feature != feature) continue;
       select(tab.id);
@@ -182,6 +205,28 @@ class PanelTabs extends Notifier<PanelTabsState> {
 
   void select(String id) =>
       state = PanelTabsState(tabs: state.tabs, activeId: id);
+
+  /// Put [title] on the tab, replacing the name it was opened under.
+  ///
+  /// For the one surface whose contents have a name of their own: a Browser tab
+  /// showing a page is that page, and a strip of tabs all reading "Browser" is
+  /// the one thing you cannot pick from. Review, Terminal and Files keep the
+  /// name they were opened with — a shell has no title, and a folder's is the
+  /// breadcrumb already on screen under it.
+  ///
+  /// Silent when nothing changes, so a page that reports its title on every
+  /// frame of a load doesn't rebuild the strip on every one of them.
+  void rename(String id, String title) {
+    final index = state.tabs.indexWhere((tab) => tab.id == id);
+    if (index < 0 || state.tabs[index].title == title) return;
+    final renamed = [...state.tabs];
+    renamed[index] = PanelTab(
+      id: id,
+      feature: renamed[index].feature,
+      title: title,
+    );
+    state = PanelTabsState(tabs: renamed, activeId: state.activeId);
+  }
 
   /// Closes one tab, and the whole panel with it if it was the last.
   ///
@@ -201,12 +246,16 @@ class PanelTabs extends Notifier<PanelTabsState> {
     // by this id and nothing else will ever ask for it again, so left alone it
     // is a set of open folder paths per Files tab the session ever had.
     //
-    // Naming three features from `shared/` is the exemption `panel_feature_view`
+    // Naming four features from `shared/` is the exemption `panel_feature_view`
     // and `shared/layouts/widgets/section_view.dart` already take: a table that
     // maps panels onto features has to name both sides. Keeping it to this one
     // method is what stops it spreading.
     ref.read(terminalSessionsProvider.notifier).endSession(id);
     ref.invalidate(filesBrowserProvider(id));
+    // The page's engine is torn down by the widget going away; this drops the
+    // controller that was holding a handle onto it, plus the history and the
+    // address that belonged to a tab nobody can reach any more.
+    ref.invalidate(browserTabProvider(id));
     // A terminal put on the message being typed, whose tab is now gone. The chip
     // would still be there promising a screen that no longer exists, and Send
     // would quietly carry nothing.

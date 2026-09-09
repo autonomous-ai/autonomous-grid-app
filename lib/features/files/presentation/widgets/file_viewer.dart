@@ -9,7 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../../../shared/code/code_highlight.dart';
-import '../../../../shared/external_launch.dart';
+import '../../../../shared/link_open.dart';
 import '../../../../shared/markdown/markdown_code_block.dart';
 import '../../../../shared/markdown/markdown_style.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -329,7 +329,7 @@ String _fileSize(int bytes) =>
 /// [buildMarkdownStyleSheet]. What is set here is only what a *file* needs and a
 /// chat turn doesn't: where its images live, and a page inset, since a document
 /// starting hard against the panel's edge reads as clipped.
-class _Rendered extends StatelessWidget {
+class _Rendered extends ConsumerWidget {
   const _Rendered({
     required this.text,
     required this.folder,
@@ -343,7 +343,7 @@ class _Rendered extends StatelessWidget {
   final ValueChanged<String>? onAddSelection;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -376,7 +376,7 @@ class _Rendered extends StatelessWidget {
               // yet.
               onTapLink: (_, href, _) {
                 if (href != null && Uri.tryParse(href)?.hasScheme == true) {
-                  openExternalUrl(href);
+                  openContentLink(ref, href);
                 }
               },
               builders: {'pre': MarkdownCodeBlockBuilder()},

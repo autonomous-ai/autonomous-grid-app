@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 
@@ -10,7 +11,7 @@ import 'media/inline_audio.dart';
 import 'media/inline_image.dart';
 import 'media/inline_video.dart';
 import 'media/local_media_view.dart';
-import '../../../shared/external_launch.dart';
+import '../../../shared/link_open.dart';
 
 /// How wide running text is allowed to get inside the transcript column.
 ///
@@ -130,11 +131,11 @@ class MessageContent extends StatelessWidget {
         children: [
           for (final run in _splitByTable(text))
             if (run.isTable)
-              _markdown(context, run.text)
+              _MarkdownRun(text: run.text, color: color)
             else
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: proseWidth),
-                child: _markdown(context, run.text),
+                child: _MarkdownRun(text: run.text, color: color),
               ),
         ],
       ),
@@ -152,30 +153,46 @@ class MessageContent extends StatelessWidget {
       MediaSegment(:final url, kind: MediaKind.audio) => InlineAudio(url: url),
     };
   }
+}
 
-  Widget _markdown(BuildContext context, String text) {
-    return MarkdownBody(
-      data: text,
-      // GitHub Flavored Markdown is what models actually write: tables,
-      // strikethrough, task lists, and — the reason a pile of hand-rolled
-      // link code could be deleted — autolinks. It handles the cases that
-      // used to need patching here: a bare URL becomes a link, while one
-      // inside a fence or a `code span` is left exactly as written.
-      extensionSet: md.ExtensionSet.gitHubFlavored,
-      // CommonMark folds a single newline into a space. Models don't write
-      // that way — they use one newline as a line break, and without this a
-      // verse or an address collapses into a paragraph.
-      softLineBreak: true,
-      // Plain paragraphs — the enclosing SelectionArea is what makes them
-      // selectable. See the note in [build] for what `selectable: true` costs.
-      selectable: false,
-      styleSheet: buildMarkdownStyleSheet(context, textColor: color),
-      onTapLink: (_, href, _) {
-        if (href != null) openExternalUrl(href);
-      },
-      // The default `pre` is Material chrome with no copy action; see
-      // `markdown_builders.dart`.
-      builders: {'pre': CodeBlockBuilder(openFence: markdownFenceIsOpen(text))},
-    );
-  }
+/// One run of Markdown out of a message.
+///
+/// A widget rather than a method returning one — the design system's rule, and
+/// here it also buys the `ref` the link handler needs: where a clicked link
+/// opens is a setting, and reading a setting needs somewhere to read it from.
+class _MarkdownRun extends ConsumerWidget {
+  const _MarkdownRun({required this.text, required this.color});
+
+  final String text;
+
+  /// The message's ink, so a run inside a user's bubble is drawn in it.
+  final Color color;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => MarkdownBody(
+    data: text,
+    // GitHub Flavored Markdown is what models actually write: tables,
+    // strikethrough, task lists, and — the reason a pile of hand-rolled
+    // link code could be deleted — autolinks. It handles the cases that
+    // used to need patching here: a bare URL becomes a link, while one
+    // inside a fence or a `code span` is left exactly as written.
+    extensionSet: md.ExtensionSet.gitHubFlavored,
+    // CommonMark folds a single newline into a space. Models don't write
+    // that way — they use one newline as a line break, and without this a
+    // verse or an address collapses into a paragraph.
+    softLineBreak: true,
+    // Plain paragraphs — the enclosing SelectionArea is what makes them
+    // selectable. See the note in [MessageContent.build] for what
+    // `selectable: true` costs.
+    selectable: false,
+    styleSheet: buildMarkdownStyleSheet(context, textColor: color),
+    // Where a link opens is the user's choice — their own browser, or a
+    // Browser tab beside the conversation. See [openContentLink].
+    onTapLink: (_, href, _) {
+      if (href != null) openContentLink(ref, href);
+    },
+    // The default `pre` is Material chrome with no copy action; see
+    // `markdown_builders.dart`.
+    builders: {'pre': CodeBlockBuilder(openFence: markdownFenceIsOpen(text))},
+  );
 }

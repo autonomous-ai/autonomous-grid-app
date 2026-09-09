@@ -6,6 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   auto_updater_windows
   desktop_drop
   file_selector_windows
+  flutter_inappwebview_windows
   media_kit_libs_windows_video
   media_kit_video
   pasteboard
