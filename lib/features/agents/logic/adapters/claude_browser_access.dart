@@ -46,6 +46,7 @@ BrowserAccess describeBrowserAccess({
   required bool hasChrome,
   required bool hasNodeRunner,
   required bool cdpAllowed,
+  required bool extensionAllowed,
 }) {
   final plan = planClaudeBrowser(
     model: model,
@@ -53,8 +54,10 @@ BrowserAccess describeBrowserAccess({
     cliSupportsChrome: cliSupportsChrome,
     cdpReady: hasChrome && hasNodeRunner,
     cdpAllowed: cdpAllowed,
+    extensionAllowed: extensionAllowed,
   );
   final blocked = _yourChromeBlocked(
+    chosen: extensionAllowed,
     seat: isClaudeSeatModel(model),
     cliSupportsChrome: cliSupportsChrome,
     extensionState: extensionState,
@@ -92,10 +95,15 @@ BrowserAccess describeBrowserAccess({
 /// Why the assistant is not in the user's own Chrome, and the step that would
 /// put it there. Null once nothing is in the way.
 ({String why, BrowserSetupStep? step})? _yourChromeBlocked({
+  required bool chosen,
   required bool seat,
   required bool cliSupportsChrome,
   required ChromeExtensionState extensionState,
 }) {
+  // Nothing is *blocking* a browser the user didn't ask for. Telling someone
+  // who picked the clean window to go and install a Chrome extension is a
+  // setup step for a lane they turned down.
+  if (!chosen) return null;
   if (!seat) {
     return (
       why:

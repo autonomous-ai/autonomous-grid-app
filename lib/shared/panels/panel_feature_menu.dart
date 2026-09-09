@@ -21,12 +21,14 @@ const _rowGap = 1.0;
 /// What the menu will measure, summed rather than estimated so
 /// [anchoredMenuPosition] lands it *on* the button instead of near it.
 ///
-/// One row per [PanelFeature], no dividers. Counting off `values` rather than a
-/// literal is what stops this drifting the day a sixth feature is added — the
-/// header menu's own constant is currently three rows short of what it draws.
+/// One row per feature this computer can open, no dividers. Counted off
+/// [availablePanelFeatures] rather than a literal — and off the same list the
+/// rows below are drawn from, since a Linux build draws one fewer — which is
+/// what stops this drifting the day a sixth feature is added; the header menu's
+/// own constant is currently three rows short of what it draws.
 final _menuSize = Size(
   _menuWidth,
-  _menuPadding * 2 + (_rowHeight + _rowGap * 2) * PanelFeature.values.length,
+  _menuPadding * 2 + (_rowHeight + _rowGap * 2) * availablePanelFeatures.length,
 );
 
 /// The "+" on the tab strip, and the menu of things it can open.
@@ -90,7 +92,7 @@ class _PanelFeatureMenuState extends State<PanelFeatureMenu> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final feature in PanelFeature.values)
+              for (final feature in availablePanelFeatures)
                 _FeatureMenuItem(
                   feature: feature,
                   onPressed: () => _pick(feature),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../features/agents/presentation/agents_view.dart';
 import '../../../features/appearance/presentation/appearance_view.dart';
+import '../../../features/browser/presentation/browser_settings_view.dart';
 import '../../../features/chat/presentation/archived_chats_view.dart';
 import '../../../features/chat/presentation/chat_pane.dart';
 import '../../../features/chat/presentation/import_sessions_view.dart';
@@ -52,6 +53,7 @@ class SectionView extends StatelessWidget {
       ShellSection.engines => const ProviderView(),
       ShellSection.guide => const HowToUseView(),
       ShellSection.appearance => const AppearanceView(),
+      ShellSection.browser => const BrowserSettingsView(),
       ShellSection.dataSync => const DataSyncView(),
       ShellSection.importChats => const ImportSessionsView(),
       ShellSection.archived => const ArchivedChatsView(),

@@ -10,8 +10,10 @@ import 'app/notification_scope.dart';
 import 'app/panel_scope.dart';
 import 'app/single_instance.dart';
 import 'core/agent_homes.dart';
+import 'infrastructure/mcp/grid_browser_automation.dart';
 import 'infrastructure/mcp/grid_agent_scripts.dart';
 import 'core/grid_paths.dart';
+import 'features/browser/logic/agent/browser_automation.dart';
 import 'features/app_update/logic/app_updater_service.dart';
 import 'features/agents/presentation/chrome_connect_scope.dart';
 import 'features/agents/presentation/hermes_grid_scope.dart';
@@ -130,6 +132,13 @@ Future<void> main() async {
         // Unconditional: whether this machine allows notifications is the
         // notifier's own business now, and `show` is a no-op until it knows.
         desktopNotifierProvider.overrideWithValue(notifier),
+        // The Browser tab an agent may drive. Wired here rather than in
+        // `infrastructure/`, which must not reach into a feature — the same
+        // shape as `appLogProvider` above. The feature's own provider decides
+        // whether the answer is null; this only joins the two halves.
+        gridBrowserAutomationProvider.overrideWith(
+          (ref) => ref.watch(panelBrowserAutomationProvider),
+        ),
       ],
       // Wraps the app rather than sitting inside it: connector tokens are
       // refreshed for the agent's sake, and the agent answers chats whether or

@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/app_update/logic/app_updater_service.dart';
 import '../../features/app_update/logic/update_watcher.dart';
 import '../../features/chat/logic/chat_sessions_controller.dart';
-import '../../features/code/logic/code_projects_controller.dart';
 import '../../features/code/presentation/code_pane.dart';
 import '../../features/command_palette/presentation/command_palette.dart';
 import '../../features/git/logic/background_git_installer.dart';
@@ -18,6 +17,7 @@ import '../../features/scheduled/logic/task_delivery.dart';
 import '../../features/scheduled/logic/task_conversation_id.dart';
 import '../../features/scheduled/logic/task_unread_store.dart';
 import '../../infrastructure/platform/desktop_notifier.dart';
+import '../link_open.dart';
 import '../panels/panel_tabs.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
@@ -169,6 +169,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         const SingleActivator(LogicalKeyboardKey.keyP, meta: true): _openFiles,
         const SingleActivator(LogicalKeyboardKey.keyP, control: true):
             _openFiles,
+        // ⌘⇧B opens a web page beside the chat — the key Orca's own "New
+        // Browser Tab" uses, so the muscle memory carries over. Both modifiers,
+        // like ⌘P above. The binding is registered even where the feature isn't
+        // offered — [PanelTabs.reveal] refuses a feature this computer has no
+        // engine for, so on Linux the key is inert rather than wrong.
+        const SingleActivator(LogicalKeyboardKey.keyB, meta: true, shift: true):
+            _openBrowser,
+        const SingleActivator(
+          LogicalKeyboardKey.keyB,
+          control: true,
+          shift: true,
+        ): _openBrowser,
         // ⌃` opens a terminal under the chat — the key every editor on all three
         // platforms uses for the panel below, so it needs no second binding for
         // Windows and Linux the way the ⌘ ones do.
@@ -213,6 +225,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// Browse the folder the conversation works in, beside it.
   void _openFiles() => _revealBeside(PanelFeature.files);
 
+  /// A web page beside the conversation, for the half of a task that isn't in
+  /// the repository — the docs, the dashboard, the ticket.
+  void _openBrowser() => _revealBeside(PanelFeature.browser);
+
   /// A shell in the folder the conversation is about.
   ///
   /// In Home that is the panel *below*, where the other two open beside — which
@@ -236,17 +252,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// the user out of the project they were reading to show a diff of something
   /// else.
   void _revealBeside(PanelFeature feature) {
-    if (ref.read(shellModeProvider) == ShellMode.code) {
-      // Nothing to open it beside: Code with no project open is a list, and a
-      // panel opened onto that is a tab waiting behind a screen the user cannot
-      // see it from.
-      if (ref.read(codeProjectIsOpenProvider)) _reveal(PanelHost.code, feature);
-      return;
-    }
+    // Null means there is nothing to open it beside: Code with no project open
+    // is a list, and a panel opened onto that is a tab waiting behind a screen
+    // the user cannot see it from.
+    final host = conversationPanelHost(ref);
+    if (host == null) return;
     // Back to Chat first: the panel lives there, so firing this from Settings
     // would open something the user can't see.
-    ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
-    _reveal(PanelHost.preview, feature);
+    if (host == PanelHost.preview) {
+      ref.read(shellSectionProvider.notifier).select(ShellSection.chat);
+    }
+    _reveal(host, feature);
   }
 
   /// Reveal, not open: pressing the shortcut again should bring the tab already

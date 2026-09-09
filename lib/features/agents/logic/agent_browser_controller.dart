@@ -2,15 +2,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../infrastructure/cli/chrome_bridge_service.dart';
 import '../../../infrastructure/cli/chrome_extension_probe.dart';
+import '../../../infrastructure/state/agent_browser_choice.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../chat/logic/chat_scope.dart';
 import 'adapters/claude_browser_access.dart';
 import 'adapters/claude_tool.dart';
 
-/// Whether the assistant may open a browser on this computer — the value the
-/// switch shows, read on its own so the row doesn't rebuild on every model or
-/// font change.
-final agentBrowserAllowedProvider = Provider<bool>(
+/// Which browser the assistant may reach for — the value the control in
+/// Settings ▸ Browser shows, read on its own so nothing rebuilds on every model
+/// or font change.
+final agentBrowserChoiceProvider = Provider<AgentBrowserChoice>(
   (ref) => ref.watch(chatPrefsProvider.select((prefs) => prefs.agentBrowser)),
 );
 
@@ -40,16 +41,20 @@ final browserAccessProvider = Provider<BrowserAccess>(
     cliSupportsChrome: ref.watch(claudeSupportsChromeProvider).value ?? false,
     hasChrome: ref.watch(chromeBinaryProvider) != null,
     hasNodeRunner: ref.watch(npxPathProvider) != null,
-    cdpAllowed: ref.watch(agentBrowserAllowedProvider),
+    // The one choice, read as the two lanes it can name. Neither runs unasked.
+    cdpAllowed:
+        ref.watch(agentBrowserChoiceProvider) == AgentBrowserChoice.cleanWindow,
+    extensionAllowed:
+        ref.watch(agentBrowserChoiceProvider) == AgentBrowserChoice.yourBrowser,
   ),
 );
 
-/// The switch behind "let the assistant open a browser".
+/// The control behind "which browser the assistant uses".
 ///
-/// A controller rather than a bare setter because turning it **off** has to do
-/// something in the world: the app holds the browser it started for the life of
-/// the app, so a plain preference write would leave a Chrome window standing
-/// there after the user just said no to it. Off closes it.
+/// A controller rather than a bare setter because moving *off* the clean window
+/// has to do something in the world: the app holds the browser it started for
+/// the life of the app, so a plain preference write would leave a Chrome window
+/// standing there after the user just picked something else.
 final agentBrowserProvider = Provider<AgentBrowserController>(
   AgentBrowserController.new,
 );
@@ -61,12 +66,15 @@ class AgentBrowserController {
 
   /// Remember the choice, and make it true right now.
   ///
-  /// Only the closing half happens here. Turning it *on* opens nothing: the
-  /// browser starts when a turn actually takes that lane, so saying yes doesn't
-  /// put a window on screen before there is anything for it to do.
-  void allow(bool allowed) {
-    _ref.read(chatPrefsProvider.notifier).setAgentBrowser(allowed);
-    if (allowed) return;
+  /// Only the closing half happens here. Picking a browser opens nothing: it
+  /// starts when a turn actually takes that lane, so an answer doesn't put a
+  /// window on screen before there is anything for it to do.
+  void choose(AgentBrowserChoice choice) {
+    _ref.read(chatPrefsProvider.notifier).setAgentBrowser(choice);
+    // Anything but the clean window means the Chrome the app started is no
+    // longer the answer to anything — including [AgentBrowserChoice.none],
+    // which is the user saying so outright.
+    if (choice == AgentBrowserChoice.cleanWindow) return;
     _ref.read(chromeBridgeProvider).dispose();
   }
 

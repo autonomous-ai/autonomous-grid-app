@@ -1,5 +1,6 @@
 import '../../../../infrastructure/cli/chrome_bridge_service.dart';
 import '../../../../infrastructure/cli/chrome_extension_probe.dart';
+import '../../../../infrastructure/state/agent_browser_choice.dart';
 import '../../../network/logic/app_guide_snippets.dart';
 import '../agent_model_support.dart';
 import '../mcp_server.dart';
@@ -42,24 +43,28 @@ typedef ClaudeBrowserPlan = ({ClaudeBrowserLane lane, String reason});
 /// wrong lane fails silently — a turn that quietly has no browser tools reads
 /// exactly like a model that decided not to browse.
 ///
-/// The extension is preferred wherever it is open, because it is the browser the
-/// user actually meant: their tabs, their sessions, their logins.
+/// The extension is preferred over a clean window wherever both are on offer,
+/// because it is the browser the user actually meant: their tabs, their
+/// sessions, their logins.
 ///
-/// [cdpAllowed] is the user's own switch. Off — the default — the fallback lane
-/// is not taken even on a machine that could run it: that lane *starts a browser
-/// window*, and doing that because somebody typed a message is the behaviour
-/// this switch exists to stop. The extension lane is not gated by it (see
-/// `ChatPrefs.agentBrowser`).
+/// **Both lanes are the user's own choice**, and neither runs unasked. That is
+/// the change [AgentBrowserChoice] made: [cdpAllowed] was always a switch,
+/// because that lane *starts a browser window* and doing that because somebody
+/// typed a message is the behaviour it exists to stop — but [extensionAllowed]
+/// used to be no switch at all, on the reasoning that installing the extension
+/// was consent enough. It is the stronger of the two: it acts as the user in
+/// every account they are signed in to.
 ClaudeBrowserPlan planClaudeBrowser({
   required String model,
   required ChromeExtensionState extensionState,
   required bool cliSupportsChrome,
   required bool cdpReady,
   required bool cdpAllowed,
+  required bool extensionAllowed,
 }) {
   final seat = isClaudeSeatModel(model);
   final connected = extensionState == ChromeExtensionState.ready;
-  if (seat && cliSupportsChrome && connected) {
+  if (extensionAllowed && seat && cliSupportsChrome && connected) {
     return (
       lane: ClaudeBrowserLane.extension,
       reason: 'Claude seat model and the Chrome extension is connected',
@@ -69,8 +74,8 @@ ClaudeBrowserPlan planClaudeBrowser({
     return (
       lane: ClaudeBrowserLane.none,
       reason:
-          'the assistant is not allowed to open a browser (Agents ▸ Claude '
-          'Code ▸ Let it open a browser)',
+          'the assistant is not allowed to open a browser '
+          '(Settings ▸ Browser)',
     );
   }
   if (cdpReady) {

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import '../api/relay_web_client.dart';
+import 'grid_browser_automation.dart';
 import 'grid_mcp_tools.dart';
 
 /// Grid's own MCP server, running inside the app on loopback.
@@ -14,8 +15,9 @@ import 'grid_mcp_tools.dart';
 /// start, nothing to install, and on Hermes no dependency on a python package
 /// that reinstalls quietly wipe.
 ///
-/// **Two tools, both the web** — `web_search` and `web_fetch` — see
-/// [kGridMcpTools] for why the rest were switched off.
+/// **The web, always** — `web_search` and `web_fetch`. **The Browser tab, only
+/// when the user picked it** — see [kGridBrowserTools]. `grid_ask` and
+/// `grid_guide` stay switched off; see [kGridWebTools] for why.
 ///
 /// **A token per run, not per app.** The agent is answering *some* chat, and the
 /// tool call arrives out of band with no way to say which. So each run is handed
@@ -26,8 +28,12 @@ import 'grid_mcp_tools.dart';
 /// ([mintSessionToken]), and the two have to be told apart — a chat can have both
 /// at once, and the shorter one must not end the longer one.
 class GridMcpServer {
-  GridMcpServer({required this.web, required this.relay, Random? random})
-    : _random = random ?? Random.secure();
+  GridMcpServer({
+    required this.web,
+    required this.relay,
+    required this.browser,
+    Random? random,
+  }) : _random = random ?? Random.secure();
 
   /// The live web, through the grid.
   final RelayWebClient web;
@@ -35,6 +41,12 @@ class GridMcpServer {
   /// The grid to go through, read at call time — a chat can outlive the grid
   /// it started on, and null is the honest answer when there is none.
   final ({String baseUrl, String token})? Function() relay;
+
+  /// The user's Browser tab, or null when they have not picked it as the
+  /// assistant's browser. Read per call for the same reason [relay] is: the
+  /// answer can change between one turn and the next, and the tools have to
+  /// follow the answer that stands now.
+  final GridBrowserAutomation? Function() browser;
 
   final Random _random;
   final Map<String, _Grant> _chatByToken = {};
@@ -216,7 +228,14 @@ class GridMcpServer {
       case 'tools/list':
         return {
           'result': {
-            'tools': [for (final tool in kGridMcpTools) tool.toJson()],
+            'tools': [
+              for (final tool in kGridWebTools) tool.toJson(),
+              // Left out entirely rather than listed and refused: a model told
+              // about a tool it cannot use spends the turn trying, and the
+              // user reads that as the assistant being broken.
+              if (browser() != null)
+                for (final tool in kGridBrowserTools) tool.toJson(),
+            ],
           },
         };
       case 'tools/call':
@@ -232,11 +251,88 @@ class GridMcpServer {
     final map = params is Map<String, Object?> ? params : const {};
     final name = '${map['name']}';
     final arguments = map['arguments'];
+    if (name.startsWith('browser_')) return _browser(name, arguments);
     return switch (name) {
       'web_search' => await _search(arguments),
       'web_fetch' => await _fetch(arguments),
       _ => _text('No tool called "$name".', isError: true),
     };
+  }
+
+  /// One call against the user's Browser tab.
+  ///
+  /// Checked again here even though [_dispatch] never listed these when the
+  /// answer is null: an agent can carry a tool list from an earlier session, or
+  /// simply guess a name, and "the user has not allowed this" is not something
+  /// to leave to the honesty of the caller.
+  Future<Map<String, Object?>> _browser(String name, Object? arguments) async {
+    final browser = this.browser();
+    if (browser == null) {
+      return _text(
+        'The assistant is not allowed to use the browser. The user can turn it '
+        'on in Settings ▸ Browser.',
+        isError: true,
+      );
+    }
+    final answer = switch (name) {
+      'browser_snapshot' => await browser.snapshot(),
+      'browser_read' => await browser.read(
+        maxChars: readBrowserReadChars(arguments),
+      ),
+      'browser_navigate' => await _navigate(browser, arguments),
+      'browser_click' => await _click(browser, arguments),
+      'browser_type' => await _type(browser, arguments),
+      'browser_back' => await browser.back(),
+      'browser_screenshot' => await browser.screenshot(),
+      _ => GridBrowserAnswer.failed('No tool called "$name".'),
+    };
+    final png = answer.png;
+    if (png == null) return _text(answer.text, isError: answer.failed);
+    // A picture and the sentence that introduces it: a bare image block leaves
+    // the model to work out what it is looking at.
+    return {
+      'content': [
+        {'type': 'text', 'text': answer.text},
+        {'type': 'image', 'data': base64Encode(png), 'mimeType': 'image/png'},
+      ],
+    };
+  }
+
+  Future<GridBrowserAnswer> _navigate(
+    GridBrowserAutomation browser,
+    Object? arguments,
+  ) async {
+    final url = readBrowserUrl(arguments);
+    if (url == null) {
+      return GridBrowserAnswer.failed('Nowhere to go. Pass `url`.');
+    }
+    return browser.navigate(url);
+  }
+
+  Future<GridBrowserAnswer> _click(
+    GridBrowserAutomation browser,
+    Object? arguments,
+  ) async {
+    final ref = readBrowserRef(arguments);
+    if (ref == null) {
+      return GridBrowserAnswer.failed(
+        'Nothing to click. Pass `ref` from a browser_snapshot.',
+      );
+    }
+    return browser.click(ref);
+  }
+
+  Future<GridBrowserAnswer> _type(
+    GridBrowserAutomation browser,
+    Object? arguments,
+  ) async {
+    final args = readBrowserTypeArgs(arguments);
+    if (args == null) {
+      return GridBrowserAnswer.failed(
+        'Nothing to type. Pass `ref` from a browser_snapshot and `text`.',
+      );
+    }
+    return browser.type(ref: args.ref, text: args.text, submit: args.submit);
   }
 
   /// A refusal is a *result*, not a transport error: the agent has to read it

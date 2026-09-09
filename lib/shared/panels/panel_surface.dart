@@ -196,12 +196,12 @@ class _Launcher extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (var i = 0; i < PanelFeature.values.length; i++) ...[
+                    for (var i = 0; i < availablePanelFeatures.length; i++) ...[
                       if (i > 0) const SizedBox(height: 8),
                       _LauncherRow(
-                        feature: PanelFeature.values[i],
+                        feature: availablePanelFeatures[i],
                         onRaisedSurface: onRaisedSurface,
-                        onTap: () => open(PanelFeature.values[i]),
+                        onTap: () => open(availablePanelFeatures[i]),
                       ),
                     ],
                   ],

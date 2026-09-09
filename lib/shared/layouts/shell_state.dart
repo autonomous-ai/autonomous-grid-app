@@ -195,6 +195,14 @@ enum ShellSection {
   // agree. (A half-filled circle is the usual "theme" mark, but Lucide's reads
   // as a contrast/accessibility toggle at nav size.)
   appearance(LucideIcons.sun, 'Appearance', thinIcon: LucideIcons.sun300),
+  // Which browser the assistant may use, and — where this computer can draw a
+  // page of its own — the settings for the Browser tab the panels open.
+  //
+  // Not gated on [embeddedWebSupported], though half of what it holds is: the
+  // assistant's browser is a choice on every platform, and hiding the screen
+  // on Linux would take the only place to make it. The screen drops the tab's
+  // own rows there instead.
+  browser(LucideIcons.globe, 'Browser', thinIcon: LucideIcons.globe300),
   dataSync(LucideIcons.cloud, 'Sync & Backup', thinIcon: LucideIcons.cloud300),
   // The arrow-into-a-tray, not a cloud: nothing is downloaded here. The chats
   // are already on this computer, in another tool's folder.
@@ -340,6 +348,10 @@ const kSettingsGroups = [
   // the chat behind it.
   SettingsGroup('Personal', [
     ShellSection.appearance,
+    // Under Appearance because it is the same kind of thing — how the app
+    // behaves for the person at the keyboard — and above Sync, which is about
+    // their data rather than their habits.
+    ShellSection.browser,
     // Between Appearance and the guide: it is about this user's own data on
     // this computer, which is what the rest of this group is about. It is not
     // a Grid you talk to (Developer) nor something that shapes an answer

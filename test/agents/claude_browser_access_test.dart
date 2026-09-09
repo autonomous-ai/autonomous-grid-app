@@ -10,6 +10,7 @@ BrowserAccess accessWith({
   bool hasChrome = true,
   bool hasNodeRunner = true,
   bool cdpAllowed = true,
+  bool extensionAllowed = true,
 }) => describeBrowserAccess(
   model: model,
   extensionState: extensionState,
@@ -17,6 +18,7 @@ BrowserAccess accessWith({
   hasChrome: hasChrome,
   hasNodeRunner: hasNodeRunner,
   cdpAllowed: cdpAllowed,
+  extensionAllowed: extensionAllowed,
 );
 
 void main() {
@@ -109,6 +111,7 @@ void main() {
               cdpAllowed: allowed,
             );
             final plan = planClaudeBrowser(
+              extensionAllowed: true,
               model: 'claude:opus',
               extensionState: state,
               cliSupportsChrome: true,

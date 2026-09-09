@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/infrastructure/api/relay_web_client.dart';
 import 'package:grid_app/infrastructure/mcp/grid_agent_scripts.dart';
+import 'package:grid_app/infrastructure/mcp/grid_browser_automation.dart';
 import 'package:grid_app/infrastructure/mcp/grid_mcp_server.dart';
 import 'package:grid_app/infrastructure/mcp/grid_mcp_tools.dart';
 
@@ -108,11 +110,19 @@ void main() {
     late GridMcpServer server;
     late FakeRelayWebClient web;
     ({String baseUrl, String token})? grid;
+    // Null is the user not having picked Grid's Browser tab, which is the
+    // default — the browser tests below hand one over deliberately.
+    GridBrowserAutomation? browser;
 
     setUp(() async {
       web = FakeRelayWebClient();
       grid = _grid;
-      server = GridMcpServer(web: web, relay: () => grid);
+      browser = null;
+      server = GridMcpServer(
+        web: web,
+        relay: () => grid,
+        browser: () => browser,
+      );
       await server.start();
     });
     tearDown(() => server.stop());
@@ -159,6 +169,107 @@ void main() {
           .map((t) => (t as Map)['name'])
           .toList();
       expect(tools, ['web_search', 'web_fetch']);
+    });
+
+    test('the browser tools are not advertised while the user has not picked '
+        'that browser — a tool the agent will be refused at costs it the turn '
+        'to find out', () async {
+      final token = server.mintTurnToken('chat-1');
+
+      final reply = await send(token, {
+        'jsonrpc': '2.0',
+        'id': 10,
+        'method': 'tools/list',
+      });
+
+      final tools = ((reply['result']! as Map)['tools']! as List)
+          .map((t) => (t as Map)['name'])
+          .toList();
+      expect(tools.where((n) => '$n'.startsWith('browser_')), isEmpty);
+    });
+
+    test(
+      'once the user picks the Browser tab, its tools join the list',
+      () async {
+        browser = _FakeBrowser();
+        final token = server.mintTurnToken('chat-1');
+
+        final reply = await send(token, {
+          'jsonrpc': '2.0',
+          'id': 11,
+          'method': 'tools/list',
+        });
+
+        final tools = ((reply['result']! as Map)['tools']! as List)
+            .map((t) => (t as Map)['name'])
+            .toList();
+        expect(tools, contains('browser_snapshot'));
+        expect(tools, contains('browser_click'));
+      },
+    );
+
+    test('a browser call with the tab turned off is refused as a result the '
+        'agent reads, and names the screen that turns it on — an agent can '
+        'carry a tool list from an earlier session, or simply guess', () async {
+      final token = server.mintTurnToken('chat-1');
+
+      final reply = await send(token, {
+        'jsonrpc': '2.0',
+        'id': 12,
+        'method': 'tools/call',
+        'params': {
+          'name': 'browser_snapshot',
+          'arguments': <String, Object?>{},
+        },
+      });
+
+      final result = reply['result']! as Map;
+      expect(result['isError'], isTrue);
+      expect(
+        ((result['content']! as List).first as Map)['text'],
+        contains('Settings ▸ Browser'),
+      );
+    });
+
+    test('a click with no ref is refused before it reaches the page, saying '
+        'which snapshot to take it from', () async {
+      browser = _FakeBrowser();
+      final token = server.mintTurnToken('chat-1');
+
+      final reply = await send(token, {
+        'jsonrpc': '2.0',
+        'id': 13,
+        'method': 'tools/call',
+        'params': {'name': 'browser_click', 'arguments': <String, Object?>{}},
+      });
+
+      final result = reply['result']! as Map;
+      expect(result['isError'], isTrue);
+      expect(
+        ((result['content']! as List).first as Map)['text'],
+        contains('browser_snapshot'),
+      );
+    });
+
+    test('a screenshot comes back as a picture with a sentence in front of it, '
+        'so the model knows what it is looking at', () async {
+      browser = _FakeBrowser();
+      final token = server.mintTurnToken('chat-1');
+
+      final reply = await send(token, {
+        'jsonrpc': '2.0',
+        'id': 14,
+        'method': 'tools/call',
+        'params': {
+          'name': 'browser_screenshot',
+          'arguments': <String, Object?>{},
+        },
+      });
+
+      final content = (reply['result']! as Map)['content']! as List;
+      expect((content.first as Map)['type'], 'text');
+      expect((content.last as Map)['type'], 'image');
+      expect((content.last as Map)['mimeType'], 'image/png');
     });
 
     test('a search goes to the grid the app is on, with its credential, and '
@@ -480,4 +591,40 @@ void main() {
 String _text(Map<String, Object?> reply) {
   final content = (reply['result']! as Map)['content']! as List;
   return (content.single as Map)['text']! as String;
+}
+
+/// A Browser tab that answers every verb, so the server's own routing and
+/// refusals can be checked without an engine to draw a page with.
+class _FakeBrowser implements GridBrowserAutomation {
+  @override
+  Future<GridBrowserAnswer> snapshot() async =>
+      const GridBrowserAnswer('- button "Save" [ref=e1]');
+
+  @override
+  Future<GridBrowserAnswer> read({required int maxChars}) async =>
+      const GridBrowserAnswer('the page');
+
+  @override
+  Future<GridBrowserAnswer> navigate(String url) async =>
+      GridBrowserAnswer('Opened $url.');
+
+  @override
+  Future<GridBrowserAnswer> click(String ref) async =>
+      GridBrowserAnswer('Clicked $ref.');
+
+  @override
+  Future<GridBrowserAnswer> type({
+    required String ref,
+    required String text,
+    required bool submit,
+  }) async => const GridBrowserAnswer('Typed.');
+
+  @override
+  Future<GridBrowserAnswer> back() async => const GridBrowserAnswer('Back.');
+
+  @override
+  Future<GridBrowserAnswer> screenshot() async => GridBrowserAnswer(
+    'A picture of the page.',
+    png: Uint8List.fromList(const [1, 2, 3]),
+  );
 }
