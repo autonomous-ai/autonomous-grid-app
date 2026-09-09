@@ -86,31 +86,38 @@ class _BrowserAddressBarState extends State<BrowserAddressBar> {
         color: AppSurface.recess,
         borderRadius: BorderRadius.circular(AppControl.radius),
       ),
-      child: Center(
-        // Escape hands the keyboard back without navigating — the way out of a
-        // field you clicked into by accident, and what stops the key reaching
-        // the page behind it while the bar has focus.
-        child: CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.escape): _focus.unfocus,
-          },
-          child: TextField(
-            controller: _text,
-            focusNode: _focus,
-            onSubmitted: _submit,
-            textInputAction: TextInputAction.go,
-            style: TextStyle(fontSize: 12.5, color: AppPalette.textPrimary),
-            maxLines: 1,
-            decoration: InputDecoration(
-              isDense: true,
-              filled: false,
-              hintText: 'Search or enter an address',
-              hintStyle: TextStyle(fontSize: 12.5, color: AppPalette.textFaint),
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-            ),
+      // Escape hands the keyboard back without navigating — the way out of a
+      // field you clicked into by accident, and what stops the key reaching
+      // the page behind it while the bar has focus.
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): _focus.unfocus,
+        },
+        child: TextField(
+          controller: _text,
+          focusNode: _focus,
+          onSubmitted: _submit,
+          textInputAction: TextInputAction.go,
+          // The field fills the height the toolbar gives it and centres the
+          // text inside that. It used to be wrapped in a `Center`, which sizes
+          // the field to the font's own line box instead — and that box is not
+          // symmetric (a font reserves more room under the baseline than over
+          // it), so the address sat visibly high in the pill.
+          textAlignVertical: TextAlignVertical.center,
+          style: TextStyle(fontSize: 12.5, color: AppPalette.textPrimary),
+          maxLines: 1,
+          decoration: InputDecoration(
+            isDense: true,
+            filled: false,
+            hintText: 'Search or enter an address',
+            hintStyle: TextStyle(fontSize: 12.5, color: AppPalette.textFaint),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            // Horizontal only: the vertical placement is
+            // [TextAlignVertical.center]'s job, and padding here would fight
+            // it.
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10),
           ),
         ),
       ),
