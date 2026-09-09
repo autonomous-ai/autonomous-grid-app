@@ -470,7 +470,10 @@ class ConnectorLinkController extends Notifier<ConnectorLinkState> {
                 'refreshable ${token.canBeRefreshed}, '
                 'mcp_entry ${token.mcpEntry == null ? 'none' : 'yes'})',
           );
-          return _store(token);
+          // Awaited, not just returned: the `finally` below closes the
+          // callback socket, and an unawaited return runs it while the token is
+          // still being written.
+          return await _store(token);
       }
     } finally {
       // Cleared first: a Cancel landing after this point has nothing left to

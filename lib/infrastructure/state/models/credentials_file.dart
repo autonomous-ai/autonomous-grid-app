@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show listEquals, mapEquals;
+
 import 'network_credential.dart';
 
 /// Parsed `~/.grid/credentials.toml` (cli.py:349). Holds the session and the
@@ -87,6 +89,28 @@ class CredentialsFile {
 
   NetworkCredential? byName(String nameOrId) =>
       _firstWhere((n) => n.networkId == nameOrId || n.name == nameOrId);
+
+  /// Value equality, for the same reason [NetworkCredential] carries it: this is
+  /// `sessionProvider`'s state, rebuilt from disk on every invalidation, and 26
+  /// places watch it. Identity made an unchanged file read as a new sign-in.
+  @override
+  bool operator ==(Object other) =>
+      other is CredentialsFile &&
+      other.apiUrl == apiUrl &&
+      other.sessionToken == sessionToken &&
+      other.activeNetwork == activeNetwork &&
+      mapEquals(other.user, user) &&
+      listEquals(other.networks, networks);
+
+  @override
+  int get hashCode => Object.hash(
+    apiUrl,
+    sessionToken,
+    activeNetwork,
+    Object.hashAll(user.keys),
+    Object.hashAll(user.values),
+    Object.hashAll(networks),
+  );
 
   NetworkCredential? _firstWhere(bool Function(NetworkCredential) test) {
     for (final n in networks) {

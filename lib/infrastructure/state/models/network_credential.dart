@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show listEquals;
+
 import '../../api/models/managed_network.dart';
 
 /// The viewer's governance role on a network, taken from the `roles` claim.
@@ -144,6 +146,58 @@ class NetworkCredential {
   /// predate it — the same shape as the `archivedAt` epoch trap.
   bool isExpired(DateTime now) =>
       expiresAt > 0 && now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
+
+  /// Value equality, because this object is **provider state read off disk**.
+  ///
+  /// `credentials.toml` is re-parsed on every `sessionProvider` invalidation —
+  /// a `grid sync`, a token refresh, a rename — and each parse builds fresh
+  /// instances. Under identity equality that made every re-read look like a
+  /// change of grid: `SelectedNetwork` published a "new" value and all 33 of its
+  /// watchers recomputed, including the `FutureProvider`s that re-fetch models
+  /// and member usage over the network, and `servingEnginesProvider`, which
+  /// re-lists `~/.grid/run/engines` and spawns a `kill -0` per record — all for
+  /// a grid that had not moved. Measured at 5 redundant fan-outs per 5
+  /// invalidations; see `credential_identity_test.dart`.
+  ///
+  /// Comparing the fields keeps the propagation that *is* wanted: a refreshed
+  /// [accessToken] or a moved [expiresAt] is a real change and still notifies.
+  @override
+  bool operator ==(Object other) =>
+      other is NetworkCredential &&
+      other.networkId == networkId &&
+      other.name == name &&
+      other.networkType == networkType &&
+      other.lanSignalingUrl == lanSignalingUrl &&
+      other.accessToken == accessToken &&
+      other.refreshToken == refreshToken &&
+      other.email == email &&
+      other.nodeId == nodeId &&
+      other.deviceId == deviceId &&
+      other.memberEpoch == memberEpoch &&
+      other.networkEpoch == networkEpoch &&
+      other.expiresAt == expiresAt &&
+      other.refreshExpiresAt == refreshExpiresAt &&
+      listEquals(other.roles, roles) &&
+      listEquals(other.scopes, scopes);
+
+  @override
+  int get hashCode => Object.hash(
+    networkId,
+    name,
+    networkType,
+    lanSignalingUrl,
+    accessToken,
+    refreshToken,
+    email,
+    nodeId,
+    deviceId,
+    memberEpoch,
+    networkEpoch,
+    expiresAt,
+    refreshExpiresAt,
+    Object.hashAll(roles),
+    Object.hashAll(scopes),
+  );
 
   static List<String> _stringList(Object? value) =>
       value is List ? value.map((e) => e.toString()).toList() : const [];

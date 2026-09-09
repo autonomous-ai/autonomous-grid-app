@@ -156,7 +156,9 @@ class SkillsController extends AsyncNotifier<List<AgentSkill>> {
         // user's work, and the Author column should say so.
         landed = await writer.import(staging.path, intoPublic: true);
       });
-      return _landed(failure, landed);
+      // Awaited, not just returned: the `finally` below deletes the staging
+      // folder, and an unawaited return would race it against the hand-off.
+      return await _landed(failure, landed);
     } finally {
       if (staging.existsSync()) await staging.delete(recursive: true);
     }

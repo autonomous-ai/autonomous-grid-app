@@ -1,26 +1,22 @@
 import 'package:flutter/material.dart';
 
-/// [showDialog], with the dialog's own words selectable.
+/// [showDialog], as the one door every dialog in the app opens through.
 ///
-/// The app mounts one [SelectionArea] over everything (`grid_app.dart`), and a
-/// dialog is the one thing it cannot reach: `showDialog` pushes a route, and a
-/// route is a **sibling** entry in the navigator's overlay rather than a
-/// descendant of whatever was on screen when it opened. So the member list in
-/// "Who can use…" — a screenful of email addresses, which is about the most
-/// copyable thing this app displays — could be read and not taken.
+/// It adds no behaviour of its own today — it forwards each argument
+/// unchanged. What it buys is the funnel: 53 call sites that used to reach for
+/// `showDialog` by hand now name one function, so a default that has to change
+/// for every dialog at once (a barrier colour, a route setting, a wrapper the
+/// navigator needs) is changed here rather than hunted for.
 ///
-/// **Why not one region above the navigator instead.** `MaterialApp.builder`
-/// wraps the navigator, and a `SelectableRegion` mounted there has no `Overlay`
-/// above it; both branches of `SelectionOverlay.showToolbar` resolve
-/// `Overlay.of(context, rootOverlay: true)`, so the right-click that opens Copy
-/// would throw. Measured against Flutter 3.44's source, not assumed. Inside a
-/// route the lookup succeeds, which is why the region belongs *here*, once per
-/// dialog, rather than once for the app.
+/// It did carry a `SelectionArea`, so a dialog's words could be copied — a
+/// dialog is a sibling route in the navigator's overlay, not a descendant of
+/// the screen behind it, so the app-wide region never reached inside one. That
+/// region went with the app-wide one on 2026-09-09 (`e2a9aa50`): selecting the
+/// chrome is what a web page does, not a desktop app. A dialog that genuinely
+/// needs its text taken — a list of email addresses, a token — asks for it
+/// where it is shown, with a `SelectableText`.
 ///
-/// Use this instead of `showDialog` for anything with words in it. A dialog that
-/// is one sentence and two buttons loses nothing by using it either, so there is
-/// no judgement call at the call site — the rule is simply "dialogs open with
-/// this".
+/// Use this rather than `showDialog` directly, so the funnel stays whole.
 Future<T?> showAppDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,

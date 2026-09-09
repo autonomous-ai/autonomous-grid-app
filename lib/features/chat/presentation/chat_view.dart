@@ -1211,7 +1211,9 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // an agent finishing after the user moved on files its edits under the chat
     // that asked for them, and they're waiting there on the way back. Deferred
     // because writing a provider during build would throw, and only when the
-    // answer moved — this build runs on every keystroke and streamed token.
+    // answer moved — this build runs on every turn that starts or ends, every
+    // permission request and every model-field change, and a callback per
+    // build to rewrite an unchanged value is work the frame doesn't owe.
     if (ref.read(agentChatScopeProvider) != activeId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
@@ -1325,9 +1327,8 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // isn't there yet, and a header over either would name nothing — so
     // publish the answer rather than have the shell re-derive it. Deferred:
     // writing a provider during build would throw — and deferred only when the
-    // answer actually moved, since this build runs on every keystroke and every
-    // streamed token, and a callback per frame to rewrite an unchanged value is
-    // work the frame doesn't owe.
+    // answer actually moved, since a callback per build to rewrite an unchanged
+    // value is work the frame doesn't owe.
     //
     // **A terminal chat is never "new" in the sense that matters here.** Its
     // transcript stays empty for life — the CLI holds the conversation, and the
