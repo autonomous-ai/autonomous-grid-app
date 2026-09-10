@@ -224,7 +224,11 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // one: saved to the scope, the next new chat would open in Brute Force
     // with no group behind it to say which models — the mode without the
     // setup that gives it meaning.
-    if (routingModeForModelId(id) == null) {
+    //
+    // The subscription row is kept out for a sharper reason: a standing default
+    // is what a *new* chat opens on, and one that bills the person's own account
+    // must never be arrived at without being chosen — see [_landsOnItsOwn].
+    if (routingModeForModelId(id) == null && !isSubscriptionModelId(id)) {
       ref.read(chatScopePrefsProvider).setModel(id);
     }
     ref.read(chatSessionsProvider.notifier).setActiveModel(id);
@@ -1214,6 +1218,19 @@ class _ChatViewState extends ConsumerState<ChatView> {
       if (paths.isEmpty) return;
       ref.read(composerFileRequestProvider.notifier).taken();
       unawaited(_attachRequested(paths));
+    });
+
+    // The chat's model can move from outside this composer — the rail's target
+    // menu picks a grid or the subscription row, and writes it onto the chat.
+    // Without this the pill would go on naming the old model AND sending to it,
+    // because Send reads this field: two controls, two answers, one of them
+    // wrong. Restored rather than picked ([_setModelText] `fromUser: false`),
+    // since whoever moved it has already saved it. An empty model is the rail
+    // handing the chat back to the grid, which [_syncModelField] resolves to
+    // this grid's own default on the build that follows.
+    ref.listen(chatSessionsProvider.select((s) => s.active?.model), (_, model) {
+      if (model == null) return;
+      _setModelText(model);
     });
 
     // A run of text picked out of a file.

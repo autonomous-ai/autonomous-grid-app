@@ -186,3 +186,39 @@ class PillPanelMessage extends StatelessWidget {
     );
   }
 }
+
+/// How full a rate-limit window is: a rounded track with the spent fraction
+/// filled in accent.
+///
+/// Shared because two panels draw the same thing — the hardware panel's codex
+/// windows and [SubscriptionUsagePanel]'s — and a second copy would drift in
+/// height, radius or tone on surfaces that open from the same rail. A plain
+/// container split rather than `LinearProgressIndicator`, whose own metrics and
+/// colours belong to Material rather than to this panel family.
+class UsageTrack extends StatelessWidget {
+  const UsageTrack({super.key, required this.usedPercent});
+
+  /// 0–100, clamped: a vendor that answers 103 draws a full bar rather than one
+  /// that runs past its own track.
+  final double usedPercent;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final used = usedPercent.clamp(0, 100).toDouble();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(3),
+      child: Container(
+        height: 5,
+        color: AppPalette.textFaint.withValues(alpha: 0.22),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: used / 100,
+            child: Container(color: AppPalette.accent),
+          ),
+        ),
+      ),
+    );
+  }
+}

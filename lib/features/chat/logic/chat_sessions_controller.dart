@@ -780,6 +780,36 @@ class ChatSessionsController extends _ChatSessions
     _saveAndReplace(updated);
   }
 
+  /// Point the open chat at [model] from **outside the composer** — the rail's
+  /// target menu, which can name a model the composer is not showing.
+  ///
+  /// Starts the chat when the user is standing on a blank composer, the way
+  /// [setRoutingGroup] does: a choice made with nothing to keep it on would
+  /// simply vanish, and the rail would go on ticking a row the next message
+  /// ignores.
+  void setTargetModel(String model) {
+    if (model.isEmpty || state.sending) return;
+    if (state.active != null) {
+      setActiveModel(model);
+      return;
+    }
+    _commit(_activeOrNew(model), phase: const SendIdle(), makeActive: true);
+  }
+
+  /// Hand the open chat back to the grid's own pick — what choosing a grid in
+  /// the rail's target menu means for a chat that was answering off it.
+  ///
+  /// Empties the chat's model rather than naming one: the composer resolves an
+  /// empty field to this grid's default on its next build (`_syncModelField`),
+  /// and that is the one place that knows what this grid serves and which of it
+  /// the agent answering can use. Choosing here would be a second, worse copy
+  /// of that decision.
+  void clearTargetModel() {
+    final active = state.active;
+    if (active == null || active.model.isEmpty || state.sending) return;
+    _saveAndReplace(active.copyWith(model: ''));
+  }
+
   /// Route the open chat through [group] — which models answer in it, and
   /// whether that pick is held or re-made every turn (see [RoutingGroup]).
   ///

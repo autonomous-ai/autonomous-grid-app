@@ -40,11 +40,13 @@ class AppStatusRail extends StatelessWidget {
       ),
       child: SizedBox(
         height: height,
-        // Less on the right than the left: the version mark carries its own
-        // hover inset, so 10 there lands the text on the same optical margin as
-        // the readout's 12 on the left.
+        // Both ends are trimmed to what their own control insets: the version
+        // mark carries a hover inset on the right, and the grid name is now a
+        // menu trigger that carries one on the left ([GridTargetMenu]). Both
+        // land their ink on the same optical margin the readout used to sit at
+        // with a flat 12.
         child: const Padding(
-          padding: EdgeInsets.only(left: 12, right: 10),
+          padding: EdgeInsets.only(left: 6, right: 10),
           child: Row(
             children: [
               // [Expanded], because the readout reads from both ends: what this

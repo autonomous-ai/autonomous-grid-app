@@ -719,23 +719,7 @@ class _UsageBar extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        // A rounded track with the used fraction filled in accent — a plain
-        // Container split rather than LinearProgressIndicator so the height,
-        // radius and colours match the panel exactly.
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: Container(
-            height: 5,
-            color: AppPalette.textFaint.withValues(alpha: 0.22),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: used / 100,
-                child: Container(color: AppPalette.accent),
-              ),
-            ),
-          ),
-        ),
+        UsageTrack(usedPercent: used.toDouble()),
         if (window.resetAfterSeconds != null) ...[
           const SizedBox(height: 5),
           Text(

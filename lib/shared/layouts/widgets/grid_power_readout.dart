@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../features/auth/logic/session_controller.dart';
+import '../../../features/agents/logic/subscription_usage_provider.dart';
 import '../../../features/network/logic/grid_overview_refresh.dart';
 import '../../../features/network/logic/grid_power_provider.dart';
 import '../../../features/network/logic/member_providers.dart';
@@ -14,6 +15,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/ring_gauge.dart';
 import '../../widgets/status_dot.dart';
 import 'grid_models_panel.dart';
+import 'grid_target_menu.dart';
+import 'subscription_rail_row.dart';
 import 'grid_power_panel.dart';
 import 'grid_stat_panels.dart';
 
@@ -66,10 +69,15 @@ class _GridPowerReadoutState extends ConsumerState<GridPowerReadout> {
   ///
   /// One for the hardware panel, not two. The name and the chevron used to sit
   /// at opposite ends of a ~400px capsule, so each had to anchor the panel
-  /// under itself or it opened a long way from the pointer. They are one
-  /// stretch now — the chevron follows the memory figure — and a second link
-  /// would place the same panel in the same spot.
-  final _nameAnchor = _newFigureAnchor();
+  /// under itself or it opened a long way from the pointer. They are adjacent
+  /// now — memory, then the chevron — and a second link would place the same
+  /// panel in the same spot.
+  ///
+  /// It hangs from the **memory** stretch rather than from the grid's name,
+  /// because the name is no longer a readout: it is the control that changes
+  /// which grid this is (see [GridTargetMenu]), and a hardware panel opening
+  /// under the pointer on the way to that menu would be in the way of it.
+  final _powerAnchor = _newFigureAnchor();
 
   final _memberAnchor = _newFigureAnchor();
   final _nodeAnchor = _newFigureAnchor();
@@ -177,6 +185,15 @@ class _GridPowerReadoutState extends ConsumerState<GridPowerReadout> {
     final activity = ref.watch(gridActivityProvider);
     if (grid == null) return const SizedBox.shrink();
 
+    // The rail's other face. Asked before anything about the grid is read,
+    // because on this one none of it applies: the chat is answering on the
+    // assistant's own account, and the grid's memory, machines and throughput
+    // are facts about a machine that is not being asked anything. It reports
+    // what is actually being spent instead — see [SubscriptionRailRow].
+    if (ref.watch(subscriptionUsageAgentProvider) case final agent?) {
+      return SubscriptionRailRow(agent: agent);
+    }
+
     // The refresher wraps the *empty* case too. Gating it behind `isEmpty`
     // would leave a grid with nothing online permanently frozen: no pill, so no
     // polling, so the first node coming up would never be noticed — precisely
@@ -224,7 +241,7 @@ class _GridPowerReadoutState extends ConsumerState<GridPowerReadout> {
                         name: grid.name,
                         power: power,
                         members: members,
-                        nameAnchor: _nameAnchor,
+                        powerAnchor: _powerAnchor,
                         memberAnchor: _memberAnchor,
                         nodeAnchor: _nodeAnchor,
                         modelAnchor: _modelAnchor,
@@ -243,8 +260,8 @@ class _GridPowerReadoutState extends ConsumerState<GridPowerReadout> {
   /// The panel [kind] asks for, anchored to the figure it belongs to.
   Widget _panelFor(_PanelKind kind, String gridName) => switch (kind) {
     _PanelKind.power => GridPowerPanel(
-      link: _nameAnchor.link,
-      anchorKey: _nameAnchor.key,
+      link: _powerAnchor.link,
+      anchorKey: _powerAnchor.key,
       gridName: gridName,
       tapGroupId: _tapGroup,
       onEnter: () => _onEnter(_PanelKind.power),
@@ -393,7 +410,7 @@ class _PillRow extends StatelessWidget {
     required this.name,
     required this.power,
     required this.members,
-    required this.nameAnchor,
+    required this.powerAnchor,
     required this.memberAnchor,
     required this.nodeAnchor,
     required this.modelAnchor,
@@ -410,7 +427,7 @@ class _PillRow extends StatelessWidget {
   final int? members;
 
   /// The stretch that opens the hardware panel, and anchors it under itself.
-  final _FigureAnchor nameAnchor;
+  final _FigureAnchor powerAnchor;
 
   final _FigureAnchor memberAnchor;
   final _FigureAnchor nodeAnchor;
@@ -447,16 +464,11 @@ class _PillRow extends StatelessWidget {
     // a 26px strip that already has two.
     return Row(
       children: [
-        // The grid name (with the live dot before it) belongs to the grid as a
-        // whole, so it keeps the hardware panel — and the chevron that says so
-        // sits with it rather than at the far end of the row, which is now a
-        // different cluster entirely.
-        _HoverTarget(
-          kind: _PanelKind.power,
-          anchor: nameAnchor,
-          onEnter: onEnter,
-          onExit: onExit,
-          padding: const EdgeInsets.only(right: _HoverTarget._gap),
+        // WHICH GRID — a control, not a readout. The rail has named the active
+        // grid since before it could be changed from anywhere but a full-screen
+        // settings tab; this is that name becoming the way to change it, which
+        // is why no second picker was added above it.
+        GridTargetMenu(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -477,14 +489,29 @@ class _PillRow extends StatelessWidget {
                   ),
                 ),
               ),
-              // MEMORY — the ring and its figure, in the name's own stretch
-              // rather than in a walled-off one further along. It sat between
-              // the work figures and the counts, behind a rule, which put a
-              // fact about *this grid's hardware* among facts about what is
-              // running on it — and gave the whole-grid panel two openings with
-              // three unrelated stretches between them. No divider here on
-              // purpose: the rule is what would say "a separate thing", and
-              // this is the same thing the name is.
+            ],
+          ),
+        ),
+        // MEMORY — the ring and its figure, beside the name rather than in a
+        // walled-off stretch further along. It sat between the work figures and
+        // the counts, behind a rule, which put a fact about *this grid's
+        // hardware* among facts about what is running on it — and gave the
+        // whole-grid panel two openings with three unrelated stretches between
+        // them. No divider here on purpose: the rule is what would say "a
+        // separate thing", and this is the same thing the name is.
+        //
+        // It carries the hover and the panel for both halves now: the name
+        // beside it opens a menu on click, so leaving the panel on it would put
+        // one under the other.
+        _HoverTarget(
+          kind: _PanelKind.power,
+          anchor: powerAnchor,
+          onEnter: onEnter,
+          onExit: onExit,
+          padding: const EdgeInsets.only(right: _HoverTarget._gap),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               if (vram != null) ...[
                 const SizedBox(width: 9),
                 if (share != null) ...[
@@ -500,7 +527,7 @@ class _PillRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                 ],
-                _Stat(
+                RailStat(
                   value: ringIsMemory
                       ? formatVramShare(used, vram)
                       : formatVram(vram),
@@ -552,7 +579,7 @@ class _PillRow extends StatelessWidget {
               children: [
                 const _Divider(),
                 const SizedBox(width: 9),
-                _Stat(
+                RailStat(
                   value: formatCount(answered.freshInputTokens),
                   unit: _windowSuffix(answered.windowSeconds).trim(),
                 ),
@@ -747,8 +774,14 @@ class _Divider extends StatelessWidget {
 
 /// One figure in the pill. Numbers are tabular so the pill keeps its width when
 /// a value ticks over — otherwise the whole capsule jitters on every refresh.
-class _Stat extends StatelessWidget {
-  const _Stat({required this.value, required this.unit});
+/// One figure on the rail: the number, and the quiet word after it.
+///
+/// Public because the rail has a second face — [SubscriptionRailRow], which
+/// reports an account's limits where this one reports a grid's hardware. Two
+/// copies of these numbers would drift in weight and colour on the same 26px
+/// strip, which is where a difference of half a point is visible.
+class RailStat extends StatelessWidget {
+  const RailStat({super.key, required this.value, required this.unit});
 
   final String value;
   final String? unit;
