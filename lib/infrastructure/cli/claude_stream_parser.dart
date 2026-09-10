@@ -3,6 +3,7 @@ import 'agent_question.dart';
 import 'claude_content.dart';
 import 'claude_exec_event.dart';
 import 'claude_exec_service.dart' show kClaudeSessionSchedulerTools;
+import 'claude_task_list.dart';
 import 'claude_tools.dart';
 import 'model_control_tokens.dart';
 
@@ -113,8 +114,10 @@ class ClaudeStreamParser {
   /// deltas where `TodoWrite` sent the whole list, so the list is kept here
   /// and sent whole whenever it changes.
   ///
-  /// Only this turn's: every turn is a new process and a new parser, so a task
-  /// made in an earlier turn of the same session is not known here.
+  /// A turn is a new process and a new parser, but the list is the session's,
+  /// so it starts from what the CLI kept on disk ([inherit], see
+  /// `claude_task_list.dart`): 99 of 336 updates here named a task an earlier
+  /// turn had made, and were passed over until it did.
   final _tasks = <String, ({String content, String status})>{};
 
   /// `TaskCreate` calls waiting on the result that numbers their task, by call
@@ -128,6 +131,14 @@ class ClaudeStreamParser {
   /// How a `TaskCreate` result names the task it made: "Task #3 created
   /// successfully: …" — every one of 288 measured.
   static final _taskNumber = RegExp(r'Task #(\d+) created');
+
+  /// Start from the task list this session's earlier turns left — see
+  /// [_tasks]. Called once, before the first line.
+  void inherit(Iterable<ClaudeTask> tasks) {
+    for (final task in tasks) {
+      _tasks[task.id] = (content: task.subject, status: task.status);
+    }
+  }
 
   /// The events worth showing from one decoded line. Empty for a line that
   /// carries nothing (reasoning-token counts, rate-limit notices, a shape from
@@ -484,11 +495,10 @@ class ClaudeStreamParser {
     }
 
     // Claude Code 2.1's plan, which it keeps with these under `-p` — see
-    // [_tasks]. Not steps either; and a sub-agent's list is its own business,
-    // as its usage is, so it neither replaces the plan nor adds rows.
-    if (_taskTools.contains(name)) {
-      return parent == null ? _readTaskCall(id, name, input) : const [];
-    }
+    // [_tasks]. Not steps either. A sub-agent's calls count too: the list is
+    // the session's, and every sub-agent measured here wrote into its
+    // parent's (5 of 5).
+    if (_taskTools.contains(name)) return _readTaskCall(id, name, input);
 
     // Neither is a step the user watches happen: this one is a question, and it
     // belongs where they can answer it, not folded into a row. Falls through to

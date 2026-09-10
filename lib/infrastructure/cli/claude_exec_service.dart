@@ -6,6 +6,7 @@ import '../mcp/grid_browser_tool_permission.dart';
 import 'claude_exec_event.dart';
 import 'claude_permission.dart';
 import 'claude_stream_parser.dart';
+import 'claude_task_list.dart';
 import 'host_environment.dart';
 import 'text_file.dart';
 
@@ -425,21 +426,30 @@ class _ClaudeExecTurn {
   var _completed = false;
 
   ClaudeExecRun start() {
+    // Read alongside the spawn rather than after it, and handed to the parser
+    // before its first line: this turn's task updates can name tasks an earlier
+    // turn made. See `claude_task_list.dart`.
+    final inherited = _inheritedTasks();
     Process.start(
-      path,
-      claudeExecArgs(
-        model: model,
-        resumeSessionId: resumeSessionId,
-        mcpConfigPath: mcpConfigPath,
-        chrome: chrome,
-        withoutServerWebTools: withoutServerWebTools,
-      ),
-      workingDirectory: workdir,
-      environment: claudeExecEnvironment(
-        environment: environment,
-        dropEnvironment: dropEnvironment,
-      ),
-    ).then(_onStarted).catchError(_onStartError);
+          path,
+          claudeExecArgs(
+            model: model,
+            resumeSessionId: resumeSessionId,
+            mcpConfigPath: mcpConfigPath,
+            chrome: chrome,
+            withoutServerWebTools: withoutServerWebTools,
+          ),
+          workingDirectory: workdir,
+          environment: claudeExecEnvironment(
+            environment: environment,
+            dropEnvironment: dropEnvironment,
+          ),
+        )
+        .then((process) async {
+          _parser.inherit(await inherited);
+          _onStarted(process);
+        })
+        .catchError(_onStartError);
     return ClaudeExecRun(
       events: _events.stream,
       done: _done.future,
@@ -447,6 +457,24 @@ class _ClaudeExecTurn {
       answerPermission: answerPermission,
       steer: steer,
     );
+  }
+
+  /// The task list this session's earlier turns left, as the CLI keeps it —
+  /// nothing on a first turn, whose session has none yet.
+  Future<List<ClaudeTask>> _inheritedTasks() async {
+    final session = resumeSessionId;
+    if (session == null) return const [];
+    // The environment the child is given, since that is what decides where
+    // the CLI keeps the list.
+    final env = claudeExecEnvironment(
+      environment: environment,
+      dropEnvironment: dropEnvironment,
+    );
+    final dir = claudeTaskListDir(
+      configDir: claudeConfigDir(env),
+      listId: claudeTaskListId(env, session),
+    );
+    return claudeTasksToCarry(await readClaudeTaskList(dir));
   }
 
   void _onStarted(Process process) {

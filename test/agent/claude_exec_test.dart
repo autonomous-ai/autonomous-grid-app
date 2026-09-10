@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart';
@@ -9,6 +10,7 @@ import 'package:grid_app/infrastructure/cli/claude_exec_event.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_service.dart';
 import 'package:grid_app/infrastructure/cli/claude_permission.dart';
 import 'package:grid_app/infrastructure/cli/claude_stream_parser.dart';
+import 'package:grid_app/infrastructure/cli/claude_task_list.dart';
 import 'package:grid_app/infrastructure/cli/claude_tools.dart';
 
 /// One `stream_event` carrying a text delta — the shape the vendor's SSE arrives
@@ -452,8 +454,9 @@ void main() {
       expect((gone as ClaudePlanEvent).entries, isEmpty);
     });
 
-    test("a sub-agent's task list is its own — it neither replaces the plan "
-        'nor adds rows — and reading the list is not a step either', () {
+    test("a sub-agent's tasks join the same list — Claude Code keeps one per "
+        'session, and every sub-agent measured wrote into it — while reading '
+        'the list is still not a step', () {
       final parser = ClaudeStreamParser();
       expect(
         _read(parser, {
@@ -465,15 +468,57 @@ void main() {
                 'type': 'tool_use',
                 'id': 'c1',
                 'name': 'TaskCreate',
-                'input': {'subject': 'Its own'},
+                'input': {'subject': 'Its part'},
               },
             ],
           },
         }),
         isEmpty,
       );
+      expect(
+        _planOf(
+          _one(parser, {
+            'type': 'user',
+            'parent_tool_use_id': 'a1',
+            'message': {
+              'content': [
+                {
+                  'type': 'tool_result',
+                  'tool_use_id': 'c1',
+                  'content': 'Task #1 created successfully: Its part',
+                },
+              ],
+            },
+          }),
+        ),
+        [('Its part', AgentPlanStatus.pending)],
+      );
       expect(_read(parser, _task('l1', 'TaskList', const {})), isEmpty);
     });
+
+    test(
+      'a resumed turn starts from the list the session kept, so an update '
+      'to a task an earlier turn made lands — 99 of 336 did, and were lost',
+      () {
+        final parser = ClaudeStreamParser()
+          ..inherit(const [
+            (id: '3', subject: 'Ship it', status: 'in_progress'),
+            (id: '4', subject: 'Tell the team', status: 'pending'),
+          ]);
+        expect(
+          _planOf(
+            _one(
+              parser,
+              _task('u1', 'TaskUpdate', {'taskId': '3', 'status': 'completed'}),
+            ),
+          ),
+          [
+            ('Ship it', AgentPlanStatus.done),
+            ('Tell the team', AgentPlanStatus.pending),
+          ],
+        );
+      },
+    );
 
     test('a write announces itself before it runs, which is the only moment '
         'the old contents still exist to diff against', () {
@@ -1291,6 +1336,74 @@ void main() {
       final activity = (done as ClaudeActivityEvent).activity;
       expect(activity.status, AgentActivityStatus.failed);
       expect(activity.result, 'File has not been read yet.');
+    });
+  });
+
+  group('the task list the CLI keeps on disk', () {
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('claude-tasks'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    void write(String name, String body) =>
+        File('${dir.path}/$name').writeAsStringSync(body);
+    String task(String id, String subject, String status) => jsonEncode({
+      'id': id,
+      'subject': subject,
+      'description': '',
+      'status': status,
+      'blocks': <String>[],
+      'blockedBy': <String>[],
+    });
+
+    test('it lives where the CLI puts it: the config dir, then tasks, then '
+        'the list id with anything unsafe made a dash', () {
+      expect(
+        claudeTaskListDir(configDir: '/h/.claude', listId: 'a/b c'),
+        '/h/.claude/tasks/a-b-c',
+      );
+      expect(claudeConfigDir(const {'HOME': '/h'}), '/h/.claude');
+      expect(
+        claudeConfigDir(const {'HOME': '/h', 'CLAUDE_CONFIG_DIR': '/cfg'}),
+        '/cfg',
+      );
+    });
+
+    test("the list is the session's unless the turn names another, the way "
+        'the CLI picks it', () {
+      expect(claudeTaskListId(const {}, 's1'), 's1');
+      expect(
+        claudeTaskListId(const {'CLAUDE_CODE_TASK_LIST_ID': 'team'}, 's1'),
+        'team',
+      );
+    });
+
+    test('tasks read back in the order the CLI numbered them, past its '
+        'bookkeeping and any file that holds no task', () async {
+      write('10.json', task('10', 'Tenth', 'pending'));
+      write('2.json', task('2', 'Second', 'completed'));
+      write('1.json', task('1', 'First', 'in_progress'));
+      write('.highwatermark', '10');
+      write('.lock', '');
+      write('3.json', '{not json');
+      write('4.json', task('4', '   ', 'pending'));
+      final tasks = await readClaudeTaskList(dir.path);
+      expect([for (final t in tasks) t.id], ['1', '2', '10']);
+      expect(tasks.first, (id: '1', subject: 'First', status: 'in_progress'));
+    });
+
+    test(
+      'a first turn has no list, and that is an empty one, not an error',
+      () async {
+        expect(await readClaudeTaskList('${dir.path}/missing'), isEmpty);
+      },
+    );
+
+    test('a list whose every task is done is not carried into the next turn '
+        "— the CLI's own screen clears it — while one still open is", () {
+      const done = (id: '1', subject: 'A', status: 'completed');
+      const open = (id: '2', subject: 'B', status: 'pending');
+      expect(claudeTasksToCarry(const [done]), isEmpty);
+      expect(claudeTasksToCarry(const [done, open]), [done, open]);
     });
   });
 
