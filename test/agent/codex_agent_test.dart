@@ -8,12 +8,32 @@ import 'package:grid_app/infrastructure/cli/codex_app_server_parser.dart';
 import 'package:grid_app/infrastructure/cli/codex_app_server_service.dart';
 import 'package:grid_app/infrastructure/cli/codex_approval.dart';
 
+/// The one event a notification became, or null when it became none — what
+/// most of these tests are about. One that becomes several (a patch) is read
+/// with [parseCodexAppServerEvent] itself.
+CodexEvent? _event({
+  required String method,
+  required Map<String, dynamic> params,
+  required Map<String, String> messages,
+  String? thread,
+  Map<String, String> agents = const {},
+}) {
+  final events = parseCodexAppServerEvent(
+    method: method,
+    params: params,
+    messages: messages,
+    thread: thread,
+    agents: agents,
+  );
+  return events.isEmpty ? null : events.single;
+}
+
 void main() {
   group('the codex app-server stream, notification by notification', () {
     Map<String, String> answer() => <String, String>{};
 
     test('the opening thread carries the id to resume with later', () {
-      final event = parseCodexAppServerEvent(
+      final event = _event(
         method: 'thread/started',
         params: const {
           'thread': {'id': 'th-1'},
@@ -27,19 +47,19 @@ void main() {
     test('deltas build the answer as it is typed, and the finished block '
         'replaces them rather than doubling them', () {
       final messages = answer();
-      parseCodexAppServerEvent(
+      _event(
         method: 'item/agentMessage/delta',
         params: const {'itemId': 'm1', 'delta': 'Hel'},
         messages: messages,
       );
-      final streaming = parseCodexAppServerEvent(
+      final streaming = _event(
         method: 'item/agentMessage/delta',
         params: const {'itemId': 'm1', 'delta': 'lo'},
         messages: messages,
       );
       expect((streaming! as CodexMessageEvent).text, 'Hello');
 
-      final whole = parseCodexAppServerEvent(
+      final whole = _event(
         method: 'item/completed',
         params: const {
           'item': {'type': 'agentMessage', 'id': 'm1', 'text': 'Hello there'},
@@ -51,14 +71,14 @@ void main() {
 
     test('two messages in one turn are joined, not overwritten', () {
       final messages = answer();
-      parseCodexAppServerEvent(
+      _event(
         method: 'item/completed',
         params: const {
           'item': {'type': 'agentMessage', 'id': 'm1', 'text': 'First'},
         },
         messages: messages,
       );
-      final second = parseCodexAppServerEvent(
+      final second = _event(
         method: 'item/completed',
         params: const {
           'item': {'type': 'agentMessage', 'id': 'm2', 'text': 'Second'},
@@ -71,7 +91,7 @@ void main() {
     test('a command step keeps its live status — this protocol spells it '
         'inProgress, and reading it as unknown would show every finished '
         'command as still running', () {
-      final running = parseCodexAppServerEvent(
+      final running = _event(
         method: 'item/started',
         params: const {
           'item': {
@@ -88,7 +108,7 @@ void main() {
       expect(activity.label, 'ls -la');
       expect(activity.status, AgentActivityStatus.running);
 
-      final done = parseCodexAppServerEvent(
+      final done = _event(
         method: 'item/completed',
         params: const {
           'item': {
@@ -109,7 +129,7 @@ void main() {
     });
 
     test('a plan revision replaces the to-do list, blanks dropped', () {
-      final event = parseCodexAppServerEvent(
+      final event = _event(
         method: 'turn/plan/updated',
         params: const {
           'plan': [
@@ -127,7 +147,7 @@ void main() {
     });
 
     test('a turn that ends badly says so; one that simply ends does not', () {
-      final failed = parseCodexAppServerEvent(
+      final failed = _event(
         method: 'turn/completed',
         params: const {
           'turn': {
@@ -139,7 +159,7 @@ void main() {
       );
       expect((failed! as CodexTurnFailed).message, 'the grid refused');
       expect(
-        parseCodexAppServerEvent(
+        _event(
           method: 'turn/completed',
           params: const {
             'turn': {'status': 'completed'},
@@ -154,7 +174,7 @@ void main() {
         'reporting it would put a failure over a turn that goes on to '
         'answer', () {
       expect(
-        parseCodexAppServerEvent(
+        _event(
           method: 'error',
           params: const {
             'willRetry': true,
@@ -165,7 +185,7 @@ void main() {
         isNull,
       );
       expect(
-        parseCodexAppServerEvent(
+        _event(
           method: 'error',
           params: const {
             'willRetry': false,
@@ -181,7 +201,7 @@ void main() {
         'turn/completed arrived 2s before the parent\'s answer and used to '
         'kill the server mid-reply', () {
       final messages = answer();
-      final helper = parseCodexAppServerEvent(
+      final helper = _event(
         method: 'turn/completed',
         params: const {
           'threadId': 'helper-1',
@@ -190,7 +210,7 @@ void main() {
         messages: messages,
         thread: 'main',
       );
-      final own = parseCodexAppServerEvent(
+      final own = _event(
         method: 'turn/completed',
         params: const {
           'threadId': 'main',
@@ -207,7 +227,7 @@ void main() {
         'part of the answer; its steps nest there too', () {
       final messages = answer();
       final agents = <String, String>{};
-      final spawn = parseCodexAppServerEvent(
+      final spawn = _event(
         method: 'item/completed',
         params: const {
           'threadId': 'main',
@@ -231,7 +251,7 @@ void main() {
       expect(row.result, 'helper-1: running');
       expect(agents, {'helper-1': 'c1'});
 
-      final said = parseCodexAppServerEvent(
+      final said = _event(
         method: 'item/completed',
         params: const {
           'threadId': 'helper-1',
@@ -247,7 +267,7 @@ void main() {
       expect(note.parent, 'c1');
       expect(messages, isEmpty);
 
-      final ran = parseCodexAppServerEvent(
+      final ran = _event(
         method: 'item/started',
         params: const {
           'threadId': 'helper-1',
@@ -267,7 +287,7 @@ void main() {
 
     test('with no thread known — an older build, or the tests above — every '
         'notification is read as ours, exactly as before', () {
-      final event = parseCodexAppServerEvent(
+      final event = _event(
         method: 'item/completed',
         params: const {
           'threadId': 'whatever',
@@ -281,7 +301,7 @@ void main() {
     test('reasoning is shown as a thought — the summary when the model sends '
         'one, the content when a grid model streams it whole — and an empty '
         'one is nothing', () {
-      final full = parseCodexAppServerEvent(
+      final full = _event(
         method: 'item/completed',
         params: const {
           'item': {
@@ -297,7 +317,7 @@ void main() {
       expect(thought.kind, AgentActivityKind.thinking);
       expect(thought.label, 'The user wants me to spawn a sub-agent.');
       expect(
-        parseCodexAppServerEvent(
+        _event(
           method: 'item/started',
           params: const {
             'item': {
@@ -316,7 +336,7 @@ void main() {
     test('the items the CLI draws and the chat used to drop each get a row in '
         'the user\'s words', () {
       String label(Map<String, Object?> item) =>
-          (parseCodexAppServerEvent(
+          (_event(
                     method: 'item/completed',
                     params: {'item': item},
                     messages: answer(),
@@ -360,16 +380,12 @@ void main() {
         'later build all surface nothing', () {
       for (final method in ['turn/started', 'thread/tokenUsage/updated']) {
         expect(
-          parseCodexAppServerEvent(
-            method: method,
-            params: const {},
-            messages: answer(),
-          ),
+          _event(method: method, params: const {}, messages: answer()),
           isNull,
         );
       }
       expect(
-        parseCodexAppServerEvent(
+        _event(
           method: 'item/completed',
           params: const {
             'item': {'type': 'userMessage', 'id': 'u1'},
@@ -848,6 +864,237 @@ void main() {
 
     test('the model reasoning about what to do next is not', () {
       expect(isAgentWork(activity(AgentActivityKind.thinking)), isFalse);
+    });
+  });
+
+  group('what a Codex step says, the way its own panel says it', () {
+    Map<String, dynamic> item(Map<String, dynamic> body) => {
+      'threadId': 'th',
+      'turnId': 'tu',
+      'item': body,
+    };
+    List<CodexEvent> read(String method, Map<String, dynamic> body) =>
+        parseCodexAppServerEvent(
+          method: method,
+          params: item(body),
+          messages: <String, String>{},
+        );
+    AgentActivity row(List<CodexEvent> events) =>
+        (events.single as CodexActivityEvent).activity;
+    Map<String, dynamic> command(
+      String line,
+      List<Map<String, dynamic>> actions, {
+      String status = 'completed',
+    }) => {
+      'type': 'commandExecution',
+      'id': 'c1',
+      'command': line,
+      'status': status,
+      'aggregatedOutput': 'out',
+      'commandActions': actions,
+    };
+
+    test('a command that only read files is a read of those files, with the '
+        'command that did it still behind the fold', () {
+      const line = "cd /r && sed -n '1,200p' lib/a.dart";
+      final activity = row(
+        read(
+          'item/completed',
+          command(line, const [
+            {
+              'type': 'read',
+              'command': "sed -n '1,200p' lib/a.dart",
+              'name': 'a.dart',
+              'path': '/r/lib/a.dart',
+            },
+          ]),
+        ),
+      );
+      expect(activity.tool, 'Read');
+      expect(activity.label, 'Read · a.dart');
+      expect(activity.kind, AgentActivityKind.tool);
+      expect(activity.request, line);
+    });
+
+    test('a search says what it looked for, and where', () {
+      final activity = row(
+        read(
+          'item/completed',
+          command('cd /r && rg -n Paginated lib', const [
+            {
+              'type': 'search',
+              'command': 'rg -n Paginated lib',
+              'query': 'Paginated',
+              'path': 'lib',
+            },
+          ]),
+        ),
+      );
+      expect(activity.label, 'Search · Paginated in lib');
+    });
+
+    test('a command the parser could not name keeps its command line, and so '
+        'does one that did two kinds of thing', () {
+      final unknown = row(
+        read(
+          'item/completed',
+          command('hermes cron list', const [
+            {'type': 'unknown', 'command': 'hermes cron list'},
+          ]),
+        ),
+      );
+      expect(unknown.tool, 'Shell');
+      expect(unknown.label, 'hermes cron list');
+      expect(unknown.kind, AgentActivityKind.command);
+      final mixed = row(
+        read(
+          'item/completed',
+          command('ls lib && cat a.dart', const [
+            {'type': 'listFiles', 'command': 'ls lib', 'path': 'lib'},
+            {
+              'type': 'read',
+              'command': 'cat a.dart',
+              'name': 'a.dart',
+              'path': '/r/a.dart',
+            },
+          ]),
+        ),
+      );
+      expect(mixed.tool, 'Shell');
+    });
+
+    test('a declined command did nothing, so it is the command it asked to '
+        'run, not what it would have read', () {
+      final activity = row(
+        read(
+          'item/completed',
+          command('cat secrets', const [
+            {
+              'type': 'read',
+              'command': 'cat secrets',
+              'name': 'secrets',
+              'path': '/r/secrets',
+            },
+          ], status: 'declined'),
+        ),
+      );
+      expect(activity.tool, 'Shell');
+      expect(activity.status, AgentActivityStatus.failed);
+    });
+
+    test('a patch is a row per file with its diff, and once it lands the '
+        'record the open bar keeps — the kind arrives as {type: …}, and read '
+        'as a bare string it never once recorded a created file', () {
+      Map<String, dynamic> patch(String status) => {
+        'type': 'fileChange',
+        'id': 'p1',
+        'status': status,
+        'changes': [
+          {
+            'path': '/r/lib/a.dart',
+            'kind': {'type': 'update', 'move_path': null},
+            'diff': '@@ -1 +1 @@\n-a\n+b',
+          },
+          {
+            'path': '/r/lib/new.dart',
+            'kind': {'type': 'add'},
+            'diff': 'void main() {}\n',
+          },
+        ],
+      };
+      final started = read('item/started', patch('inProgress'));
+      final rows = [
+        for (final event in started) (event as CodexActivityEvent).activity,
+      ];
+      expect(
+        [for (final r in rows) r.label],
+        ['Edit · a.dart', 'Write · new.dart'],
+      );
+      expect(rows.first.status, AgentActivityStatus.running);
+      expect(
+        rows.first.request,
+        '--- /r/lib/a.dart\n+++ /r/lib/a.dart\n@@ -1 +1 @@\n-a\n+b',
+      );
+      expect(rows.last.request, 'void main() {}');
+
+      final landed = read('item/completed', patch('completed'));
+      final record = landed.whereType<CodexFileChangeEvent>().single;
+      expect(codexAddedPaths(record.changes), ['/r/lib/new.dart']);
+      expect(
+        {
+          for (final event in landed.whereType<CodexActivityEvent>())
+            event.activity.status,
+        },
+        {AgentActivityStatus.done},
+      );
+    });
+
+    test('a renamed file names both ends, and its record is where it went', () {
+      final events = read('item/completed', {
+        'type': 'fileChange',
+        'id': 'p2',
+        'status': 'completed',
+        'changes': [
+          {
+            'path': '/r/a.dart',
+            'kind': {'type': 'update', 'move_path': '/r/b.dart'},
+            'diff': '@@ -1 +1 @@\n-a\n+b',
+          },
+        ],
+      });
+      final activity = (events.first as CodexActivityEvent).activity;
+      expect(activity.label, 'Edit · a.dart → b.dart');
+      expect(activity.request, startsWith('--- /r/a.dart\n+++ /r/b.dart\n'));
+      expect(
+        events.whereType<CodexFileChangeEvent>().single.changes.single.path,
+        '/r/b.dart',
+      );
+    });
+
+    test("a connector's call reads the way a Claude connector row does, with "
+        "the tool's own words as its answer rather than a dump of the map", () {
+      final activity = row(
+        read('item/completed', {
+          'type': 'mcpToolCall',
+          'id': 'm1',
+          'server': 'gitnexus',
+          'tool': 'impact',
+          'status': 'completed',
+          'arguments': {'target': 'ChatStore', 'direction': 'upstream'},
+          'result': {
+            'content': [
+              {'type': 'text', 'text': '3 callers'},
+            ],
+          },
+        }),
+      );
+      expect(activity.label, 'gitnexus · impact · ChatStore');
+      expect(activity.tool, 'mcp__gitnexus__impact');
+      expect(activity.result, '3 callers');
+      expect(activity.request, contains('"target": "ChatStore"'));
+    });
+
+    test('a web search names the page it opened, and is done once the item '
+        'completes — it carries no status of its own to say so', () {
+      final opened = row(
+        read('item/completed', {
+          'type': 'webSearch',
+          'id': 'w1',
+          'query': '',
+          'action': {'type': 'openPage', 'url': 'https://example.com/a'},
+        }),
+      );
+      expect(opened.label, 'https://example.com/a');
+      expect(opened.status, AgentActivityStatus.done);
+      final searching = row(
+        read('item/started', {
+          'type': 'webSearch',
+          'id': 'w2',
+          'query': 'flutter riverpod',
+        }),
+      );
+      expect(searching.label, 'flutter riverpod');
+      expect(searching.status, AgentActivityStatus.running);
     });
   });
 }

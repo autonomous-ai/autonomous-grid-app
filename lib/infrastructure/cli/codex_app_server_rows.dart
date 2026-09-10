@@ -5,6 +5,7 @@ library;
 import 'agent_event.dart';
 import 'codex_agent_service.dart';
 import 'codex_app_server_items.dart' show codexItemStatus, codexPayloadText;
+import 'tool_subject.dart';
 
 /// The five things Codex does to a helper agent, in the user's words.
 const Map<String, String> kCodexCollabLabels = {
@@ -107,4 +108,93 @@ String codexTextLines(Object? raw) {
       else if (entry is Map && entry['text'] is String)
         '${entry['text']}'.trim(),
   ].where((line) => line.isNotEmpty).join('\n\n');
+}
+
+/// A connector's call, said the way a Claude connector row says it —
+/// `server · tool · subject` — and named `mcp__server__tool`, so it takes the
+/// connector glyph and title the feed gives every lane's MCP calls. It read as
+/// the bare tool name ("impact"), with its answer a dump of the result map.
+CodexEvent codexMcpRow(String id, Map<String, dynamic> item, String? parent) {
+  final server = '${item['server'] ?? ''}'.trim();
+  final tool = '${item['tool'] ?? ''}'.trim();
+  final arguments = item['arguments'];
+  final label = connectorLabel(
+    server: server,
+    tool: tool,
+    input: arguments is Map ? arguments.cast<String, dynamic>() : const {},
+  );
+  return CodexActivityEvent(
+    AgentActivity(
+      id: id,
+      kind: AgentActivityKind.tool,
+      label: label.isEmpty ? 'tool' : label,
+      status: codexItemStatus(item['status']),
+      tool: 'mcp__${server}__$tool',
+      request: clipToolPayload(codexPayloadText(arguments)),
+      result: clipToolPayload(
+        codexMcpResultText(item['result'] ?? item['error']),
+      ),
+      parent: parent,
+    ),
+  );
+}
+
+/// A connector's answer as text: the text of an MCP result's content blocks —
+/// what the tool said — else the whole thing, pretty-printed.
+String? codexMcpResultText(Object? result) {
+  if (result is Map && result['content'] is List) {
+    final text = codexTextLines(result['content']);
+    if (text.isNotEmpty) return text;
+  }
+  return codexPayloadText(result);
+}
+
+/// A web search, named by what it looked for, the page it opened, or the text
+/// it looked for on a page.
+///
+/// The item carries **no status** — the schema gives it `action` and `query`
+/// and nothing else — so reading one, as every other row does, left each web
+/// search running until the turn ended and then settled as unknown. It is
+/// running while the item is, and done once it [completed].
+CodexEvent codexWebSearchRow(
+  String id,
+  Map<String, dynamic> item, {
+  required bool completed,
+  String? parent,
+}) {
+  final about = codexWebSearchSubject(item);
+  return CodexActivityEvent(
+    AgentActivity(
+      id: id,
+      kind: AgentActivityKind.web,
+      label: about.isEmpty ? 'Web search' : about,
+      status: completed
+          ? AgentActivityStatus.done
+          : AgentActivityStatus.running,
+      tool: 'Web search',
+      request: clipToolPayload(about),
+      parent: parent,
+    ),
+  );
+}
+
+/// What a web search was about, from its `action` — a query, a page opened,
+/// or a pattern looked for on a page — with the item's own `query` as the
+/// fallback.
+String codexWebSearchSubject(Map<String, dynamic> item) {
+  final fromAction = switch (item['action']) {
+    {'type': 'openPage', 'url': final String url} => url,
+    {
+      'type': 'findInPage',
+      'pattern': final String pattern,
+      'url': final String url,
+    } =>
+      '"$pattern" in $url',
+    {'type': 'search', 'query': final String query} => query,
+    {'type': 'search', 'queries': final List<Object?> queries} =>
+      queries.whereType<String>().join(', '),
+    _ => '',
+  };
+  final fallback = '${item['query'] ?? ''}';
+  return (fromAction.trim().isNotEmpty ? fromAction : fallback).trim();
 }

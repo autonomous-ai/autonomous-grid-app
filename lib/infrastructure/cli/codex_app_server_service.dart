@@ -368,16 +368,16 @@ class _CodexAppServerTurn {
         _items['${item['id']}'] = item.cast<String, dynamic>();
       }
     }
-    final event = parseCodexAppServerEvent(
+    for (final event in parseCodexAppServerEvent(
       method: method,
       params: params,
       messages: _messages,
       thread: _thread,
       agents: _agents,
-    );
-    if (event == null) return;
-    _note(event);
-    _events.add(event);
+    )) {
+      _note(event);
+      _events.add(event);
+    }
   }
 
   /// The server is asking. Anything this app can't answer is declined with a

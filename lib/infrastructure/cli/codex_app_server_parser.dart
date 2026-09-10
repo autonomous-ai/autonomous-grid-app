@@ -39,7 +39,10 @@ export 'codex_app_server_items.dart';
 /// [agents] maps a helper thread's id to the `collabAgentToolCall` item that
 /// spawned it; filled in here as spawns complete, so it is the caller's map to
 /// keep across notifications, like [messages].
-CodexEvent? parseCodexAppServerEvent({
+///
+/// A list, because one notification can be several things: a patch is a row
+/// per file and the record the open/undo bar keeps. Most are one or none.
+List<CodexEvent> parseCodexAppServerEvent({
   required String method,
   required Map<String, dynamic> params,
   required Map<String, String> messages,
@@ -52,51 +55,54 @@ CodexEvent? parseCodexAppServerEvent({
     case 'thread/started':
       final started = params['thread'];
       final id = started is Map ? started['id'] : null;
-      return id is String && id.isNotEmpty ? CodexThreadStarted(id) : null;
+      return id is String && id.isNotEmpty
+          ? [CodexThreadStarted(id)]
+          : const [];
     case 'item/agentMessage/delta':
       // A helper's typing is not the answer; its whole message is read as a
       // note when the item completes.
-      if (helper) return null;
+      if (helper) return const [];
       final delta = params['delta'];
-      if (delta is! String || delta.isEmpty) return null;
+      if (delta is! String || delta.isEmpty) return const [];
       final id = '${params['itemId'] ?? ''}';
       messages[id] = (messages[id] ?? '') + delta;
-      return CodexMessageEvent(codexJoinedAnswer(messages));
+      return [CodexMessageEvent(codexJoinedAnswer(messages))];
     case 'item/started':
     case 'item/completed':
       final item = params['item'];
-      if (item is! Map) return null;
+      if (item is! Map) return const [];
       return parseCodexAppServerItem(
         item.cast<String, dynamic>(),
         messages,
         agents: agents,
         parent: helper ? agents[owner] : null,
         helper: helper,
+        completed: method == 'item/completed',
       );
     case 'turn/plan/updated':
-      if (helper) return null;
+      if (helper) return const [];
       final plan = _plan(params['plan']);
-      return plan.isEmpty ? null : CodexPlanEvent(plan);
+      return plan.isEmpty ? const [] : [CodexPlanEvent(plan)];
     case 'turn/completed':
       // A helper finishing its turn is a step done, not this turn over: the
       // parent is still working and has yet to answer.
-      if (helper) return null;
+      if (helper) return const [];
       final turn = params['turn'];
       final failure = turn is Map ? _turnFailure(turn) : null;
-      return failure == null
-          ? const CodexTurnCompleted()
-          : CodexTurnFailed(failure);
+      return [
+        failure == null ? const CodexTurnCompleted() : CodexTurnFailed(failure),
+      ];
     case 'error':
       // A retryable error is Codex telling us it is reconnecting, not that the
       // turn is over — saying "the turn failed" here would put an error over a
       // turn that goes on to answer.
-      if (params['willRetry'] == true) return null;
-      return CodexTurnFailed(_errorMessage(params['error']));
+      if (params['willRetry'] == true) return const [];
+      return [CodexTurnFailed(_errorMessage(params['error']))];
     default:
       // Token counts, rate limits, MCP startup, a notification a later build
       // adds: nothing to show. Tolerant on purpose — this protocol is marked
       // experimental and will grow.
-      return null;
+      return const [];
   }
 }
 

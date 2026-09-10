@@ -78,7 +78,12 @@ String agentStepTitle(AgentActivity step) {
     return running ? 'Thinking' : 'Thought';
   }
   final tool = step.tool?.trim() ?? '';
-  final name = tool.isNotEmpty ? tool : _labelHead(step.label);
+  // A connector's wire identifier is not a name: its label already says it in
+  // words ("gitnexus · impact · …", "Browser · navigate page · …"), so the
+  // title is the head of that rather than `mcp__gitnexus__impact`.
+  final name = tool.isNotEmpty && !_isMcpTool(tool)
+      ? tool
+      : _labelHead(step.label);
   final verb = running ? _gerund(name, step.kind) : null;
   return verb ?? (name.isEmpty ? 'Tool' : name);
 }
@@ -100,11 +105,17 @@ String agentStepDetail(AgentActivity step, AgentDetailMode mode) {
   // `git commit -m "fix crash"` — a command that was never run, shown as the
   // command that ran.
   final cut = _labelSplit.firstMatch(label);
-  if (cut != null && (tool.isEmpty || label.substring(0, cut.start) == tool)) {
+  final mcp = _isMcpTool(tool);
+  if (cut != null &&
+      (tool.isEmpty || mcp || label.substring(0, cut.start) == tool)) {
     return label.substring(cut.end).trim();
   }
-  return label == tool ? '' : label;
+  return label == tool || mcp ? '' : label;
 }
+
+/// Whether [tool] is a connector's, named on the wire as `mcp__server__tool`
+/// — by Claude Code, and by the rows the app makes of Codex's MCP calls.
+bool _isMcpTool(String tool) => tool.startsWith('mcp__');
 
 /// The language a step's request is coloured in when its row is opened, or ''
 /// to leave it plain.
@@ -129,7 +140,8 @@ String stepRequestLanguage(AgentActivity step) {
 
 /// A request that opens the way a unified diff does: `--- path`, `+++ path`.
 bool _isUnifiedDiff(String request) =>
-    request.startsWith('--- ') && request.contains('\n+++ ');
+    request.startsWith('diff --git ') ||
+    (request.startsWith('--- ') && request.contains('\n+++ '));
 
 /// The first word of a label, for a lane that never named its tool.
 String _labelHead(String label) {
@@ -144,7 +156,9 @@ String? _gerund(String tool, AgentActivityKind kind) => switch (tool) {
   'Read' || 'NotebookRead' => 'Reading',
   'Write' => 'Writing',
   'Edit' || 'NotebookEdit' => 'Editing',
+  'Delete' => 'Deleting',
   'Grep' || 'Glob' || 'Search' => 'Searching',
+  'List' => 'Listing',
   // `Agent` is the sub-agent tool's name in Claude Code 2.x — 338 calls in a
   // month here, and no `Task`, which is what it was called before.
   'Task' || 'Agent' => 'Working',
@@ -243,6 +257,11 @@ const Map<String, AgentToolFamily> _kToolFamilies = {
   'toolsearch': AgentToolFamily.search,
   'ls': AgentToolFamily.list,
   'list_files': AgentToolFamily.list,
+  // Codex's parsed command actions and patch kinds, as the app names their
+  // rows (`codex_command_actions.dart`, `codex_file_changes.dart`): the
+  // app-server sends `listFiles` and `delete`, and a row needs a word.
+  'list': AgentToolFamily.list,
+  'delete': AgentToolFamily.edit,
   'bash': AgentToolFamily.shell,
   'bashoutput': AgentToolFamily.shell,
   'killshell': AgentToolFamily.shell,

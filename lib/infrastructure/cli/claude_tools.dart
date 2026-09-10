@@ -20,7 +20,9 @@ library;
 import 'dart:convert';
 
 import '../../core/edit_diff.dart';
+import '../../core/folder_name.dart';
 import 'agent_event.dart';
+import 'tool_subject.dart';
 
 /// How the feed shows a call to one of Claude Code's tools.
 ///
@@ -298,7 +300,7 @@ class _BrowserTool extends ClaudeTool {
   @override
   String label(Map<String, dynamic> input) {
     final action = name.split('__').last.replaceAll('_', ' ').trim();
-    final about = _salientArgument(input, _kBrowserSubjects);
+    final about = toolSubject(input, _kBrowserSubjects);
     return [
       'Browser',
       if (action.isNotEmpty) action,
@@ -317,40 +319,17 @@ class _ConnectorTool extends ClaudeTool {
   @override
   String label(Map<String, dynamic> input) {
     final parts = name.split('__').where((p) => p.isNotEmpty).toList();
-    final server = parts.length > 1 ? parts[1].replaceAll('_', ' ') : '';
-    final tool = parts.length > 2 ? parts.last.replaceAll('_', ' ') : '';
-    final about = _salientArgument(input, _kConnectorSubjects);
-    return [
-      if (server.isNotEmpty) server,
-      if (tool.isNotEmpty) tool,
-      if (about.isNotEmpty) about,
-    ].join(' · ');
+    return connectorLabel(
+      server: parts.length > 1 ? parts[1] : '',
+      tool: parts.length > 2 ? parts.last : '',
+      input: input,
+    );
   }
 }
 
-/// The arguments that say what a connector's call is about, in the order
-/// they win. Measured, not borrowed: connector calls here carried `repo`,
-/// `target`, `direction`, `query`, `scope`, `topic` and `url` over a month,
-/// and only these five name a subject — the rest are options.
-const _kConnectorSubjects = ['query', 'target', 'url', 'topic', 'repo'];
-
-/// The same for the browser lanes, whose actions take a page, a query, text
-/// to type, or an element.
+/// The arguments that say what a browser call is about: its actions take a
+/// page, a query, text to type, or an element.
 const _kBrowserSubjects = ['url', 'query', 'text', 'value', 'selector', 'uid'];
-
-/// The first of [keys] that [input] fills with something readable — text or
-/// a number. Never a list or a map, which would print as `[a, b]`.
-String _salientArgument(Map<String, dynamic> input, List<String> keys) {
-  for (final key in keys) {
-    final text = switch (input[key]) {
-      final String value => value.trim(),
-      final num value => '$value',
-      _ => '',
-    };
-    if (text.isNotEmpty) return text;
-  }
-  return '';
-}
 
 /// A tool's name as the feed says it — a connector's as "server tool".
 String _spokenToolName(String name) => name.startsWith('mcp__')
@@ -392,12 +371,7 @@ String _mark(DiffLineKind kind) => switch (kind) {
 
 /// The last segment of a path — the feed has one line, and an absolute path
 /// spends all of it on folders the user already knows they're in.
-String _fileName(Object? path) {
-  final text = '${path ?? ''}'.trim();
-  if (text.isEmpty) return '';
-  final cut = text.lastIndexOf('/');
-  return cut == -1 ? text : text.substring(cut + 1);
-}
+String _fileName(Object? path) => folderName('${path ?? ''}'.trim());
 
 String? _text(Object? raw) =>
     raw is String && raw.trim().isNotEmpty ? raw : null;

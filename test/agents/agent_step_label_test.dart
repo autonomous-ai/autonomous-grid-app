@@ -176,4 +176,68 @@ void main() {
       expect(stepRequestLanguage(call('Other', 'Other', 'some output')), '');
     });
   });
+
+  group('a connector row, in either lane', () {
+    AgentActivity call(String label, String tool) => AgentActivity(
+      id: 'm',
+      kind: AgentActivityKind.tool,
+      label: label,
+      status: AgentActivityStatus.done,
+      tool: tool,
+    );
+
+    test('is titled by its server, not its wire identifier, with the rest '
+        'beside it', () {
+      final step = call(
+        'gitnexus · impact · ChatStore',
+        'mcp__gitnexus__impact',
+      );
+      expect(agentStepTitle(step), 'gitnexus');
+      expect(
+        agentStepDetail(step, AgentDetailMode.stepsCommands),
+        'impact · ChatStore',
+      );
+    });
+
+    test('a browser row keeps the word its label opens with', () {
+      final step = call(
+        'Browser · navigate page · example.com',
+        'mcp__claude-in-chrome__navigate_page',
+      );
+      expect(agentStepTitle(step), 'Browser');
+      expect(
+        agentStepDetail(step, AgentDetailMode.stepsCommands),
+        'navigate page · example.com',
+      );
+    });
+  });
+
+  group('the rows Codex commands and patches become', () {
+    test('take the glyph of what they did', () {
+      expect(
+        agentToolFamily(_step('List · lib', kind: AgentActivityKind.tool)),
+        AgentToolFamily.list,
+      );
+      expect(
+        agentToolFamily(_step('Delete · a.dart', kind: AgentActivityKind.tool)),
+        AgentToolFamily.edit,
+      );
+    });
+
+    test('a diff sent with git headers is still coloured as a diff', () {
+      expect(
+        stepRequestLanguage(
+          AgentActivity(
+            id: 'x',
+            kind: AgentActivityKind.tool,
+            label: 'Edit · a.dart',
+            status: AgentActivityStatus.done,
+            tool: 'Edit',
+            request: 'diff --git a/a.dart b/a.dart\n--- a/a.dart\n+++ b/a.dart',
+          ),
+        ),
+        'diff',
+      );
+    });
+  });
 }
