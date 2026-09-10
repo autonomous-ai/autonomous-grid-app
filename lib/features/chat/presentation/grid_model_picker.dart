@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/subscription_model.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/composer_trigger.dart';
@@ -12,6 +13,7 @@ import '../../../shared/widgets/skeleton.dart';
 import '../../agents/logic/active_chat_agent.dart';
 import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
+import '../../agents/logic/agent_status.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../playground/logic/chat_message.dart';
 import '../../network/logic/node_display.dart' show modelKey;
@@ -70,7 +72,7 @@ double _menuMaxHeight(BuildContext context) =>
     MediaQuery.sizeOf(context).height - _menuMargin * 2;
 
 /// What the list can grow to before it scrolls: the whole panel, less its own
-/// padding.
+/// padding and whatever [_MenuFooter] takes under it.
 ///
 /// Derived, not chosen. It used to be a flat 300 while `appMenuStyle` capped the
 /// panel at 240 — so a grid serving more than six models built a 310px list
@@ -79,8 +81,19 @@ double _menuMaxHeight(BuildContext context) =>
 /// place itself 70px taller than what draws: the list opened hanging in the
 /// middle of the conversation instead of on the pill. Same trap, same rule — the
 /// list's cap and the panel's must be the same number.
-double _maxListHeight(BuildContext context) =>
-    _menuMaxHeight(context) - _menuPadding * 2;
+double _maxListHeight(BuildContext context, {required bool withFooter}) =>
+    _menuMaxHeight(context) -
+    _menuPadding * 2 -
+    (withFooter ? _footerExtent : 0);
+
+/// Roughly what [_MenuFooter] takes: its hairline, its padding, and the two
+/// lines its note wraps to at this width.
+///
+/// Approximate on purpose: unlike [_optionRowHeight] this number is not what
+/// anything is placed by, only what the list's cap gives back so the panel it
+/// sits in still fits the window — and a panel taller than the window is what
+/// puts a second scroll view around the one that scrolls.
+const _footerExtent = 44.0;
 
 /// What one option row measures, measured with `getRect` rather than derived:
 /// text at 13/1.2 rounds up to a 16px line box inside `vertical: 8`, and the
@@ -196,6 +209,7 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         final option = _triggerOption(
           ref.watch(gridModelCatalogProvider),
           widget.currentModelId,
+          agentInstalled: ref.watch(anyAgentInstalledProvider),
         );
         // Which grid, not just which model: two grids can serve the same id (and
         // do — the same qwen sits on several), so the name alone left "whose
@@ -209,11 +223,12 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         final blocked = widget.visionBlocked;
         return ComposerTrigger(
           label: label,
-          tooltip: blocked
-              ? "You attached an image — pick a model that can read it to send"
-              : grid == null || option == null
-              ? 'Choose which model answers'
-              : '$label\non $grid',
+          tooltip: _tooltip(
+            label: label,
+            grid: grid,
+            option: option,
+            blocked: blocked,
+          ),
           // The same mark you picked by, so "am I about to chat or to draw?" is
           // answerable at a glance. Null while nothing's picked — the pill then
           // prompts rather than reports. While vision-blocked, the mark (and the
@@ -234,6 +249,29 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
         );
       },
     );
+  }
+
+  /// What the pill says on hover: which model, and where it answers.
+  ///
+  /// The grid is half the answer for every ordinary row — two grids serve the
+  /// same `qwen3`, and the name alone left "whose machine, and on whose bill"
+  /// unanswerable. The subscription row is the one where naming a grid would be
+  /// a lie: it is the choice not to use one, and the bill is the user's own.
+  String _tooltip({
+    required String label,
+    required String? grid,
+    required PlaygroundModelOption? option,
+    required bool blocked,
+  }) {
+    if (blocked) {
+      return 'You attached an image — pick a model that can read it to send';
+    }
+    if (grid == null || option == null) return 'Choose which model answers';
+    if (isSubscriptionModelId(widget.currentModelId)) {
+      return '$label\nAnswers on the account you signed the assistant in with, '
+          'not on this grid';
+    }
+    return '$label\non $grid';
   }
 
   /// An ordinary model pick, on its way to the composer.
@@ -290,7 +328,8 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
     if (trimmed.isEmpty) return 'Choose model';
     // The orchestrator rows are named, not derived: `modelShortLabel` would
     // read `auto/brute_force` as a maker-prefixed id and put "brute_force" on
-    // the pill.
+    // the pill. The subscription row needs no case of its own — it is named in
+    // [modelDisplayLabel], which every screen showing a model reads.
     return routingModeForModelId(trimmed)?.displayName ??
         modelShortLabel(trimmed);
   }
@@ -307,15 +346,16 @@ class _GridModelPickerState extends ConsumerState<GridModelPicker> {
   /// not a selection.
   PlaygroundModelOption? _triggerOption(
     List<GridModelGroup> groups,
-    String id,
-  ) {
+    String id, {
+    required bool agentInstalled,
+  }) {
     final trimmed = id.trim();
     if (trimmed.isEmpty) return null;
     for (final group in groups) {
-      for (final option in [
-        ...group.options,
-        ...routingModeOptions(group.options),
-      ]) {
+      for (final option in chatModelOptions(
+        group.options,
+        agentInstalled: agentInstalled,
+      )) {
         if (modelKey(option.id) == modelKey(trimmed)) return option;
       }
     }
@@ -376,7 +416,13 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
     // Menu content — detached from the anchor's rebuilds; watch theme itself.
     AppTheme.watch(context);
     final catalog = ref.watch(gridModelCatalogProvider);
-    final currentGridId = ref.watch(selectedNetworkProvider)?.networkId;
+    final grid = ref.watch(selectedNetworkProvider);
+    // Read once for the panel: it decides both whether the row is in the list
+    // and whether the note under it is drawn, and those two must never disagree.
+    final agentInstalled = ref.watch(anyAgentInstalledProvider);
+    final offersSubscription = subscriptionModelOptions(
+      agentInstalled: agentInstalled,
+    ).isNotEmpty;
     // Who answers decides what can be picked: a seat model only its own vendor's
     // CLI can drive is shown, but dead, rather than hidden — a model that
     // vanishes when you change assistant reads as the grid losing it.
@@ -399,7 +445,12 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: _maxListHeight(context)),
+            constraints: BoxConstraints(
+              maxHeight: _maxListHeight(
+                context,
+                withFooter: offersSubscription,
+              ),
+            ),
             // A list long enough to be cut has to say so. The menu panel draws a
             // scrollbar for *its* scroll view, but this list is a second one
             // inside it — and it is the one that scrolls, since the panel is now
@@ -418,11 +469,17 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
                     : Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: _rows(catalog, currentGridId, agent),
+                        children: _rows(
+                          catalog,
+                          grid,
+                          agent,
+                          agentInstalled: agentInstalled,
+                        ),
                       ),
               ),
             ),
           ),
+          if (offersSubscription) const _MenuFooter(),
         ],
       ),
     );
@@ -430,9 +487,11 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
 
   List<Widget> _rows(
     List<GridModelGroup> catalog,
-    String? currentGridId,
-    AgentTool? agent,
-  ) {
+    NetworkCredential? grid,
+    AgentTool? agent, {
+    required bool agentInstalled,
+  }) {
+    final currentGridId = grid?.networkId;
     final rows = <Widget>[];
     for (final group in catalog) {
       // A grid with nothing to offer says why — loading, or offline. A *ready*
@@ -501,13 +560,93 @@ class _ModelMenuState extends ConsumerState<_ModelMenu> {
       }
     }
     // Nothing to pick — the one case where the empty picker has to explain
-    // itself rather than open onto a blank panel.
+    // itself rather than open onto a blank panel. Asked before the rows below
+    // are added, because they are not this grid's: a build that offers the
+    // subscription row would otherwise leave a grid serving nothing looking as
+    // though it served something.
     if (rows.isEmpty) {
       rows.add(
         const _EmptyNote(message: "This grid isn't serving a model right now."),
       );
     }
+    if (grid != null) {
+      rows.addAll(
+        _subscriptionRows(grid, agent, agentInstalled: agentInstalled),
+      );
+    }
     return rows;
+  }
+
+  /// The row that answers off the grid, last and on its own — see
+  /// [subscriptionModelOptions]. Empty in a shipped build.
+  ///
+  /// It belongs to no grid, but the picker's callback names one because picking
+  /// a row is also how the chat's grid is set: it names the grid the chat is
+  /// already on, so choosing this moves the model and nothing else.
+  List<Widget> _subscriptionRows(
+    NetworkCredential grid,
+    AgentTool? agent, {
+    required bool agentInstalled,
+  }) => [
+    for (final option in subscriptionModelOptions(
+      agentInstalled: agentInstalled,
+    ))
+      _OptionRow(
+        option: option,
+        selected: option.id == widget.currentModelId,
+        // Hermes has no sign-in of its own to answer from — the row says so
+        // rather than taking a tap that ends in a turn with no model.
+        blockedFor: agent != null && !agentSupportsModel(agent, option.id)
+            ? agent
+            : null,
+        visionContext: widget.visionBlocked,
+        onTap: () {
+          widget.onSelect(grid, option);
+          widget.onClose();
+        },
+      ),
+  ];
+}
+
+/// What picking costs, said once at the bottom of the panel rather than on the
+/// row it applies to.
+///
+/// It exists for one row: every other in this list is a model the grid is
+/// serving, and picking one of those costs nothing anybody has to be warned
+/// about. **[kSubscriptionModelLabel] is billed to the person's own account**,
+/// and a row that reads like the models above it is exactly how that gets
+/// picked by accident — so the panel says so where it can't be missed, and
+/// draws no footer at all in a build that doesn't offer the row.
+class _MenuFooter extends StatelessWidget {
+  const _MenuFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context); // reads colour tokens; follow theme flips.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Divider(height: 1, thickness: 1, color: AppPalette.divider),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            _rowGutter + _rowInnerPad,
+            8,
+            12,
+            4,
+          ),
+          child: Text(
+            '$kSubscriptionModelLabel runs on the account you signed the '
+            "assistant in with — this grid isn't involved.",
+            style: TextStyle(
+              color: AppPalette.textFaint,
+              fontSize: 11.5,
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'turn_model_usage.dart';
 import '../../../core/app_environment.dart';
+import '../../../core/subscription_model.dart';
 import '../../../core/text_preview.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';

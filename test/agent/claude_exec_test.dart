@@ -122,6 +122,18 @@ void main() {
       expect(args, isNot(contains('--resume')));
     });
 
+    test("a turn on the user's own subscription names no model at all, so the "
+        'CLI answers on whatever their own claude is set to — an empty string '
+        'here would be a model named nothing', () {
+      final args = claudeExecArgs(model: null);
+      expect(args, isNot(contains('--model')));
+      expect(args, isNot(contains('')));
+      // Everything else about the turn is unchanged: it is the same lane, on a
+      // different account.
+      expect(args.first, '-p');
+      expect(args, containsAllInOrder(['--output-format', 'stream-json']));
+    });
+
     test('a later turn resumes the session instead of replaying the chat', () {
       final args = claudeExecArgs(model: 'm', resumeSessionId: 'sess-1');
       expect(args, containsAllInOrder(['--resume', 'sess-1']));

@@ -1,3 +1,4 @@
+import '../../../core/subscription_model.dart';
 import '../../provider_node/logic/api_engine_catalog.dart';
 import 'agent_catalog.dart';
 
@@ -21,6 +22,12 @@ const Set<String> kCliSeatKinds = {kClaudeSeatKind, ...kCodexSeatKinds};
 /// degrade — it dead-ends at the relay with "No machine on this grid is serving
 /// a model Codex can use right now", a wall the user only meets *after* sending,
 /// on a pair the composer offered them.
+///
+/// [kSubscriptionModelId] is the mirror image of a seat and blocked by the same
+/// reasoning: it is not a model at all but the choice to answer on the CLI's own
+/// sign-in, and only a CLI that *has* one can take it. Claude Code and Codex do;
+/// Hermes is a Python agent with no account of its own, so the turn would reach
+/// it with no model to answer from.
 ///
 /// Everything else — a gguf on someone's machine, `auto`, a key provider's model
 /// — answers plain chat-completions and is open to all three agents.
@@ -51,7 +58,8 @@ bool agentSupportsModel(AgentTool tool, String model) => switch (tool) {
   //  - a `codex-cli:*` seat is the same shape as the Claude one — the vendor's
   //    coding CLI answering a single turn behind the relay — and is blocked with
   //    it rather than waiting to be measured on somebody's 8am task.
-  AgentTool.hermes => !_namesKind(model, kCliSeatKinds),
+  AgentTool.hermes =>
+    !isSubscriptionModelId(model) && !_namesKind(model, kCliSeatKinds),
 };
 
 /// The mark on a model row the agent in force can't use — short, because it

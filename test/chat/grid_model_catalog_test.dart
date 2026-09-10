@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/core/subscription_model.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/chat/logic/grid_model_catalog.dart';
 import 'package:grid_app/features/chat/logic/routing_group.dart';
@@ -355,10 +356,7 @@ void main() {
         ),
       ];
 
-      expect(answerableGridOptions(models).map((o) => o.id), [
-        'Auto',
-        'qwen',
-      ]);
+      expect(answerableGridOptions(models).map((o) => o.id), ['Auto', 'qwen']);
     });
 
     test('also drops "Auto" once there are zero real models behind it — '
@@ -382,6 +380,45 @@ void main() {
       ];
 
       expect(answerableGridOptions(models), isEmpty);
+    });
+  });
+
+  group('the subscription row — the one choice that is not on the grid', () {
+    const served = [
+      PlaygroundModelOption(
+        id: 'maker/m1',
+        label: 'm1',
+        modality: PlaygroundModality.text,
+      ),
+    ];
+
+    test('a computer with no assistant installed is not offered it: only an '
+        'agent can answer this way, so the row would take the sentinel to the '
+        'relay and come back as an error about the grid', () {
+      expect(subscriptionModelOptions(agentInstalled: false), isEmpty);
+      expect(chatModelOptions(served, agentInstalled: false).map((o) => o.id), [
+        'maker/m1',
+      ]);
+    });
+
+    test('it is offered beside the grid\'s own models, named for whose account '
+        'answers rather than for a model nobody serves', () {
+      final option = subscriptionModelOptions(agentInstalled: true).single;
+      expect(option.id, kSubscriptionModelId);
+      expect(option.label, kSubscriptionModelLabel);
+      expect(option.modality, PlaygroundModality.text);
+      expect(
+        chatModelOptions(served, agentInstalled: true).map((o) => o.id),
+        containsAll(<String>['maker/m1', kSubscriptionModelId]),
+      );
+    });
+
+    test('it reads pictures, so attaching one does not silently send the turn '
+        'to a grid model instead', () {
+      expect(
+        subscriptionModelOptions(agentInstalled: true).single.vision,
+        isTrue,
+      );
     });
   });
 

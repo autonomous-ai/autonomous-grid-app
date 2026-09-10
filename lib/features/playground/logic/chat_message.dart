@@ -1,3 +1,4 @@
+import '../../../core/subscription_model.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_turn_part.dart';
 import '../../chat/logic/turn_model_share.dart';
@@ -252,6 +253,11 @@ String _pad(int value) => value.toString().padLeft(2, '0');
 /// the wire. Anything without a kind (a grid model, `auto`, the media modes)
 /// comes back trimmed and otherwise untouched.
 String modelDisplayLabel(String id) {
+  // Not an id at all but the choice to answer off the grid, so there is no
+  // maker and no model to punctuate — only whose account replied. Named here
+  // rather than at each screen, so the picker's pill, the transcript footer and
+  // the tooltip all say the same thing about the same turn.
+  if (isSubscriptionModelId(id)) return kSubscriptionModelLabel;
   final trimmed = withoutGridRunPrefix(id);
   final colon = trimmed.indexOf(':');
   if (colon <= 0) return trimmed;

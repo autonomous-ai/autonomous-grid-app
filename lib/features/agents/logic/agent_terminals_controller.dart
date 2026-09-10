@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/subscription_model.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../infrastructure/cli/agent_session_files.dart';
@@ -231,7 +232,9 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       final command = agentTerminalCommand(
         tool: tool,
         executable: executable,
-        model: model,
+        // Nothing to name on the user's own account: the CLI opens on whatever
+        // their own copy answers with. See [agentTerminalCommand].
+        model: subscriptionModelChosen(model) ? null : model,
         workdir: workdir,
         approval: approval,
         mcpConfigPath: setup.mcpConfig,
@@ -239,8 +242,12 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         session: handle,
         // The relay refuses the vendor's web tools on a grid model with a 400
         // that fails the whole step — the same rule the one-shot lane applies.
+        // A session on the user's own account never reaches the relay, so it
+        // keeps them.
         withoutServerWebTools:
-            tool == AgentTool.claude && !isClaudeSeatModel(model),
+            tool == AgentTool.claude &&
+            !subscriptionModelChosen(model) &&
+            !isClaudeSeatModel(model),
         // Hermes has no argv slot to put this in — its only positional is a
         // subcommand — so its opening message is held back here and pasted once
         // the TUI has taken the keyboard, exactly as a handover is. Kept in the
@@ -707,6 +714,10 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
     required NetworkCredential network,
     required String chatId,
   }) async {
+    // The one question both CLIs answer differently but ask the same way: is
+    // this session on the grid, or on the account the user signed the CLI in
+    // with? Hermes never gets here with it — see [agentSupportsModel].
+    final onGrid = !subscriptionModelChosen(model);
     if (tool == AgentTool.hermes) {
       // Pointed at the grid exactly the way every other Hermes spawn in this app
       // points it — `hermesEnvironment()` for `HERMES_HOME` and the `PATH`,
@@ -739,6 +750,7 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
         network: network,
         model: model,
         conversationId: chatId,
+        relayEnv: onGrid,
         session: true,
       );
       return (
@@ -753,10 +765,17 @@ class AgentTerminals extends Notifier<AgentTerminalsState> {
       network: network,
       model: model,
       conversationId: chatId,
+      relayEnv: onGrid,
       session: true,
     );
     return (
-      environment: HostEnvironment.terminalEnvironment(claude.environment),
+      environment: HostEnvironment.terminalEnvironment(
+        claude.environment,
+        // A pty inherits this process's environment, so an `ANTHROPIC_*` the
+        // app is carrying would reach the session and point it back at the
+        // relay — the credentials have to be taken away by name.
+        drop: claude.dropEnvironment,
+      ),
       mcpConfig: claude.mcpConfig,
       config: const <String>[],
       mcpToken: claude.mcpToken,

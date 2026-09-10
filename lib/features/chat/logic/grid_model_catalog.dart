@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/subscription_model.dart';
 import '../../../infrastructure/api/models/grid_overview.dart';
 import '../../../infrastructure/state/models/network_credential.dart';
 import '../../auth/logic/session_controller.dart';
@@ -118,6 +119,55 @@ List<PlaygroundModelOption> routingModeOptions(
       ),
   ];
 }
+
+/// The **[kSubscriptionModelLabel]** row the chat's picker offers under what the
+/// grid serves — the one row that is not a model at all, but the choice to
+/// answer off the grid entirely (see [subscriptionModelIsOffered]).
+///
+/// Empty in a shipped build. A list rather than a nullable option so it drops
+/// into [chatModelOptions] beside the orchestrator rows without a branch, and
+/// so "this build doesn't offer it" is expressed once, here.
+///
+/// It reads pictures ([PlaygroundModelOption.vision]) because the assistant's
+/// own account is behind it — the vendor's flagship, which does — and the two
+/// agents that can take this row open image files themselves anyway (see
+/// `agentReadsImagesForChat`).
+///
+/// [agentInstalled] is `anyAgentInstalledProvider`, and it is a bar rather than
+/// a nicety: **only an agent can answer this way.** A machine with none falls
+/// back to the grid's chat API for every turn (see `agentAnswersTurn`), which
+/// would take the sentinel to the relay and come back "no providers available
+/// for this model" — an error about the grid, for a row that was never on it.
+List<PlaygroundModelOption> subscriptionModelOptions({
+  required bool agentInstalled,
+}) => subscriptionModelIsOffered && agentInstalled
+    ? const [
+        PlaygroundModelOption(
+          id: kSubscriptionModelId,
+          label: kSubscriptionModelLabel,
+          modality: PlaygroundModality.text,
+          hosting: ModelHosting.cloud,
+          vision: true,
+        ),
+      ]
+    : const [];
+
+/// Everything the chat's model field may hold: what the grid [served], the
+/// orchestrator rows on top of it, and the subscription row beside them.
+///
+/// One list, read by the picker, by the composer that restores a chat's model
+/// and by the send that decides where a picture goes. They have to agree: a
+/// model the composer's list doesn't know is treated as an id typed by hand and
+/// dropped on the next switch, so a row offered by one and not the others is a
+/// choice that silently un-picks itself.
+List<PlaygroundModelOption> chatModelOptions(
+  List<PlaygroundModelOption> served, {
+  required bool agentInstalled,
+}) => [
+  ...served,
+  ...routingModeOptions(served),
+  ...subscriptionModelOptions(agentInstalled: agentInstalled),
+];
 
 /// [served] with the relay's own router-family catalog rows removed — "Brute
 /// Force" / "Feedback Loop" because [routingModeOptions] already replaces them

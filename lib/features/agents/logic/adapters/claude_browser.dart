@@ -1,3 +1,4 @@
+import '../../../../core/subscription_model.dart';
 import '../../../../infrastructure/cli/chrome_bridge_service.dart';
 import '../../../../infrastructure/cli/chrome_extension_probe.dart';
 import '../../../../infrastructure/state/agent_browser_choice.dart';
@@ -62,12 +63,19 @@ ClaudeBrowserPlan planClaudeBrowser({
   required bool cdpAllowed,
   required bool extensionAllowed,
 }) {
-  final seat = isClaudeSeatModel(model);
+  // Whichever way this turn already runs on Claude Code's own sign-in: a
+  // `claude:*` seat, which is Claude Code answering behind the relay, or the
+  // subscription row, which is Claude Code answering on the user's own account
+  // with no relay at all. The extension only talks to a session signed in with
+  // a claude.ai account, and both of these are one.
+  final ownSignIn = isClaudeSeatModel(model) || isSubscriptionModelId(model);
   final connected = extensionState == ChromeExtensionState.ready;
-  if (extensionAllowed && seat && cliSupportsChrome && connected) {
+  if (extensionAllowed && ownSignIn && cliSupportsChrome && connected) {
     return (
       lane: ClaudeBrowserLane.extension,
-      reason: 'Claude seat model and the Chrome extension is connected',
+      reason:
+          "Claude Code's own sign-in answers this turn and the Chrome "
+          'extension is connected',
     );
   }
   if (!cdpAllowed) {
@@ -82,7 +90,7 @@ ClaudeBrowserPlan planClaudeBrowser({
     return (
       lane: ClaudeBrowserLane.cdp,
       reason: _cdpReason(
-        seat: seat,
+        ownSignIn: ownSignIn,
         cliSupportsChrome: cliSupportsChrome,
         extensionState: extensionState,
       ),
@@ -97,11 +105,11 @@ ClaudeBrowserPlan planClaudeBrowser({
 /// Why the turn is on the app's own browser rather than the user's. Names the
 /// one thing that shut the extension out, so the log points at a fix.
 String _cdpReason({
-  required bool seat,
+  required bool ownSignIn,
   required bool cliSupportsChrome,
   required ChromeExtensionState extensionState,
 }) {
-  if (!seat) {
+  if (!ownSignIn) {
     return 'the grid model answers this turn, so the extension (which needs '
         "Claude Code's own sign-in) is out";
   }

@@ -39,6 +39,12 @@ import '../agent_catalog.dart';
 /// same list the one-shot lane builds. Claude Code takes its grid in the
 /// environment instead, so it ignores this.
 ///
+/// [model] is null for a session that answers on the CLI's **own** account
+/// (`kSubscriptionModelId`): no `--model` / `-m` is passed at all, so the
+/// program opens on whatever the user's own copy is set to. Not the same as an
+/// empty string, which every one of these CLIs would take as a model named
+/// nothing and refuse.
+///
 /// [withoutServerWebTools] takes Claude Code's vendor-served web tools away
 /// for a session on a model the relay can't serve them for — the same rule,
 /// and the same flag, as the one-shot lane's `claudeExecArgs`.
@@ -57,7 +63,7 @@ typedef AgentSession = ({String id, bool resume});
 ShellCommand agentTerminalCommand({
   required AgentTool tool,
   required String executable,
-  required String model,
+  required String? model,
   required String workdir,
   required AgentApprovalMode approval,
   String? mcpConfigPath,
@@ -127,7 +133,7 @@ List<String> claudePermissionArgs(AgentApprovalMode mode) => switch (mode) {
 /// and on 2026-08-27 the one-shot lane learned to keep its process alive for
 /// them as well. Two lanes, one tool list.
 List<String> _claudeTerminalArgs({
-  required String model,
+  required String? model,
   required AgentApprovalMode approval,
   required String? mcpConfigPath,
   required AgentSession? session,
@@ -138,8 +144,7 @@ List<String> _claudeTerminalArgs({
     ...(session.resume
         ? ['--resume', session.id]
         : ['--session-id', session.id]),
-  '--model',
-  model,
+  if (model != null) ...['--model', model],
   ...claudePermissionArgs(approval),
   if (withoutServerWebTools) ...['--disallowedTools', ...kClaudeServerWebTools],
   if (mcpConfigPath != null) ...[
@@ -159,7 +164,7 @@ List<String> _claudeTerminalArgs({
 /// gets Codex's own prompt about it, which is the CLI behaving as the user's own
 /// would.
 List<String> _codexTerminalArgs({
-  required String model,
+  required String? model,
   required String workdir,
   required AgentApprovalMode approval,
   required List<String> config,
@@ -176,8 +181,7 @@ List<String> _codexTerminalArgs({
     if (session != null && session.resume) ...['resume', session.id],
     '-C',
     workdir,
-    '-m',
-    model,
+    if (model != null) ...['-m', model],
     '-s',
     gate.sandbox,
     for (final override in [...config, 'approval_policy="${gate.policy}"']) ...[
@@ -241,7 +245,7 @@ List<String> hermesPermissionArgs(AgentApprovalMode mode) => switch (mode) {
 /// fatal here (Hermes prints `· error: session not found` and opens a fresh
 /// session), which is what lets that scheme repair itself.
 List<String> _hermesTerminalArgs({
-  required String model,
+  required String? model,
   required AgentApprovalMode approval,
   required AgentSession? session,
 }) => [
@@ -250,8 +254,7 @@ List<String> _hermesTerminalArgs({
   // otherwise, and the folder this chat is about is the app's to decide — it
   // is the one the pty opened in.
   '--no-restore-cwd',
-  '-m',
-  model,
+  if (model != null) ...['-m', model],
   if (session != null) ...['--resume', session.id],
   ...hermesPermissionArgs(approval),
 ];

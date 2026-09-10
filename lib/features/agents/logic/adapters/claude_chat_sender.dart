@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/subscription_model.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/cli/claude_exec_event.dart';
@@ -173,6 +174,12 @@ class ClaudeChatSender implements ChatSender {
     // restarts Chrome, or switches to a model the extension can't serve.
     final browser = await _openBrowser(model);
     final onExtension = browser.lane == ClaudeBrowserLane.extension;
+    // The user picked their own account over the grid. Runs the same way the
+    // extension lane does — off the relay, on Claude Code's own sign-in — and
+    // differs only in what it is told to answer with: nothing at all, so the
+    // model is whatever their `claude` uses.
+    final onSubscription = subscriptionModelChosen(model);
+    final ownAccount = onExtension || onSubscription;
 
     // The grid, the window it may fill, the connectors and Grid's own tools —
     // the same preparation the terminal lane runs, so a chat and a terminal
@@ -186,33 +193,38 @@ class ClaudeChatSender implements ChatSender {
       conversationId: conversationId,
       turnId: turnId,
       mcpExtra: browser.mcpExtra,
-      // On the extension lane Claude Code runs against its own sign-in, and
-      // must not be handed the relay's credentials at all.
-      relayEnv: !onExtension,
+      // On either own-account lane Claude Code runs against its own sign-in,
+      // and must not be handed the relay's credentials at all.
+      relayEnv: !ownAccount,
     );
     final mcpConfigPath = grid.mcpConfig;
     final environment = grid.environment;
 
-    // On that lane the relay's name for the seat (`claude:opus`) is not a model
-    // Claude Code knows.
-    final turnModel = onExtension ? claudeLocalModel(model) : model;
+    // What this run is told to answer with. On the extension lane the relay's
+    // name for the seat (`claude:opus`) is not a model Claude Code knows; on the
+    // subscription lane there is no model to name at all — the sentinel is a
+    // choice, not an id — so the CLI is passed none and stays on its own
+    // default. See [claudeExecArgs].
+    final turnModel = switch ((onSubscription, onExtension)) {
+      (true, _) => null,
+      (_, true) => claudeLocalModel(model),
+      _ => model,
+    };
     // Leaving a variable out of a map does not remove one already in the
     // parent, so the relay's credentials have to be taken away by name.
-    final dropEnvironment = onExtension
-        ? kClaudeRelayEnvKeys
-        : const <String>{};
+    final dropEnvironment = grid.dropEnvironment;
 
     // Whether to take away Claude Code's server-side web tools for this turn.
     //
     // They are the provider's to run, so whatever answers the request has to
-    // understand them. On the extension lane that is Anthropic itself; on a
+    // understand them. On either own-account lane that is Anthropic itself; on a
     // `claude:*` seat it is Claude Code behind the relay — both keep them. A
     // grid model does not: the relay has no chat-completions equivalent to
     // translate them into and refuses the **whole request**, so asking for
     // today's weather spent a step on `400 Unsupported tool type:
     // web_search_20250305` before the agent fell back to the `grid-web` skill.
     // Denied up front, the fallback is simply the route.
-    final withoutServerWebTools = !onExtension && !isClaudeSeatModel(model);
+    final withoutServerWebTools = !ownAccount && !isClaudeSeatModel(model);
 
     // Make room *before* the turn, not after the refusal.
     //
@@ -221,29 +233,37 @@ class ClaudeChatSender implements ChatSender {
     // [needsCompaction]. So the app asks the question itself, from where the
     // session stands ([AgentSessionSlot.contextTokens]), and asks for the
     // summary itself when the answer is yes.
-    _logContextStanding(
-      model: model,
-      window: window,
-      slot: turn.slot,
-      resuming: turn.resumeSessionId != null,
-    );
-    if (turn.resumeSessionId case final session?
-        when needsCompaction(
-          usedTokens: turn.slot.contextTokens,
-          engineWindow: window,
-        )) {
-      await _compact(
-        workdir: root,
-        model: turnModel,
-        environment: environment,
-        sessionId: session,
-        mcpConfigPath: mcpConfigPath,
-        chrome: onExtension,
-        withoutServerWebTools: withoutServerWebTools,
-        dropEnvironment: dropEnvironment,
-        chat: chat,
+    //
+    // Not on the user's own account: Claude Code picked the model there and
+    // never says which, so [window] is this app's assumption about a model it
+    // cannot name — and summarizing a conversation that had room costs a whole
+    // round trip and the detail the user was relying on. The CLI sizes and
+    // compacts its own context, against the figure it actually knows.
+    if (!onSubscription) {
+      _logContextStanding(
+        model: model,
+        window: window,
         slot: turn.slot,
+        resuming: turn.resumeSessionId != null,
       );
+      if (turn.resumeSessionId case final session?
+          when needsCompaction(
+            usedTokens: turn.slot.contextTokens,
+            engineWindow: window,
+          )) {
+        await _compact(
+          workdir: root,
+          model: turnModel,
+          environment: environment,
+          sessionId: session,
+          mcpConfigPath: mcpConfigPath,
+          chrome: onExtension,
+          withoutServerWebTools: withoutServerWebTools,
+          dropEnvironment: dropEnvironment,
+          chat: chat,
+          slot: turn.slot,
+        );
+      }
     }
 
     yield* _runTurn(
@@ -290,7 +310,7 @@ class ClaudeChatSender implements ChatSender {
   /// long, fails exactly the way it did before any of this existed.
   Future<void> _compact({
     required String workdir,
-    required String model,
+    required String? model,
     required Map<String, String> environment,
     required String sessionId,
     required String? mcpConfigPath,
@@ -469,7 +489,7 @@ class ClaudeChatSender implements ChatSender {
     required String workdir,
     required String prompt,
     required String? resumeSessionId,
-    required String model,
+    required String? model,
     required Map<String, String> environment,
     required bool planFirst,
     required AgentSessionSlot slot,
@@ -486,7 +506,7 @@ class ClaudeChatSender implements ChatSender {
     // tab shows the flags this turn really carried and not a second copy of them.
     final logId = log.begin(
       CliCallKind.start,
-      'claude -p $model (agent)',
+      'claude -p ${model ?? kSubscriptionModelId} (agent)',
       detail: agentTurnDetail(
         args: [
           'claude',
@@ -724,8 +744,12 @@ class ClaudeChatSender implements ChatSender {
   /// fail identically, which is the loop the user was stuck in — a fresh session
   /// replays only the recent messages, which is what [kClaudeContextFull]
   /// promises.
-  void _contextFull(String model, String raw, AgentSessionSlot slot) {
+  void _contextFull(String? model, String raw, AgentSessionSlot slot) {
     slot.sessionId = null;
+    // A window is learned *for a model id*, and a run on the user's own account
+    // named none — Claude Code chose the model itself and never says which. The
+    // session is still dropped above, which is the half that repairs the chat.
+    if (model == null) return;
     final window = contextWindowFromError(raw);
     if (window == null) return;
     _ref.read(learnedModelContextProvider.notifier).learn(model, window);

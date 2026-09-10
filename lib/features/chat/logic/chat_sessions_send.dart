@@ -38,9 +38,9 @@ mixin _ChatSend on _ChatSessions {
 
   /// Whether the picker says [model] can read an image.
   ///
-  /// The composer's own list, read the same way it reads it — `served` plus the
-  /// orchestrator rows on top ([routingModeOptions]) — because the two answers
-  /// have to agree: the composer's decides whether Send is unlocked, this one
+  /// The composer's own list, read the same way it reads it
+  /// ([chatModelOptions]), because the two answers have to agree: the
+  /// composer's decides whether Send is unlocked, this one
   /// decides where the turn actually goes, and a pair that disagrees either
   /// blocks a turn that would have worked or sends a picture to a model that
   /// can't see it.
@@ -49,12 +49,35 @@ mixin _ChatSend on _ChatSessions {
   /// was typed by hand): a model nothing has vouched for is not one to hand a
   /// picture to on the strength of a guess.
   bool _modelReadsImages(String model) {
-    final served = ref.read(playgroundModelsProvider);
-    for (final option in [...served, ...routingModeOptions(served)]) {
+    final options = chatModelOptions(
+      ref.read(playgroundModelsProvider),
+      agentInstalled: ref.read(anyAgentInstalledProvider),
+    );
+    for (final option in options) {
       if (option.id != model) continue;
       return option.vision && option.modality == PlaygroundModality.text;
     }
     return false;
+  }
+
+  /// What this turn actually asks for, which is the model the user picked in
+  /// every case but one: under Auto ([autoChosen]) the assistant is chosen per
+  /// question, so the turn runs on the grid's own router — the one model every
+  /// agent can use, so the routed one never dead-ends on a pair the composer
+  /// left showing.
+  ///
+  /// Two guards on that swap, and both are about not answering somewhere the
+  /// user didn't ask for:
+  ///
+  ///  - only on a grid that actually serves `auto`, since a grid without
+  ///    routing refuses it outright;
+  ///  - **never over the subscription row**, which is the choice to answer off
+  ///    the grid entirely. Swapping it for `auto` would quietly send the
+  ///    question to the grid instead — the opposite of what was picked — and
+  ///    the candidate pool below already narrows to the agents that can take it.
+  String _effectiveModel(String model, {required bool autoChosen}) {
+    if (!autoChosen || subscriptionModelChosen(model)) return model;
+    return ref.read(gridServesAutoModelProvider) ? kAutoModelId : model;
   }
 
   /// Send [message] in the open chat — or, when [into] names one, in that chat
@@ -132,13 +155,7 @@ mixin _ChatSend on _ChatSessions {
     // what actually goes on the wire; the conversation keeps the model the user
     // picked, so leaving Auto doesn't leave `auto` behind in their composer.
     final autoChosen = autoAgentChosen(_agentChoiceFor(target));
-    // Only swap to `auto` on a grid that actually serves it — a grid with no
-    // auto-routing would refuse `auto` outright. Where it isn't served the
-    // composer's own model stands, and the candidate pool below is narrowed to
-    // the agents that can answer with it.
-    final effectiveModel = (autoChosen && ref.read(gridServesAutoModelProvider))
-        ? kAutoModelId
-        : model;
+    final effectiveModel = _effectiveModel(model, autoChosen: autoChosen);
 
     // Plain text goes through the agent (it can use tools and keeps the
     // conversation's context); making a picture goes straight to the grid's
@@ -275,9 +292,7 @@ mixin _ChatSend on _ChatSessions {
       messages: messages,
     );
     final autoChosen = autoAgentChosen(_agentChoiceFor(conversation));
-    final effectiveModel = (autoChosen && ref.read(gridServesAutoModelProvider))
-        ? kAutoModelId
-        : model;
+    final effectiveModel = _effectiveModel(model, autoChosen: autoChosen);
     final viaAgent = agentAnswersTurn(
       modality: modality,
       hasAttachments: retryable.attachments.isNotEmpty,

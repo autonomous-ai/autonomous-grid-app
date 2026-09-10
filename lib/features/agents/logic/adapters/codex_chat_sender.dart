@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/subscription_model.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../../infrastructure/cli/agent_resume_point.dart';
 import '../../../../infrastructure/cli/codex_agent_service.dart';
@@ -144,6 +145,9 @@ class CodexChatSender implements ChatSender {
       model: model,
       conversationId: conversationId,
       turnId: turnId,
+      // The subscription row is the choice to answer on the user's own ChatGPT
+      // sign-in instead of on this grid — see [codexGridSetup].
+      relayEnv: !subscriptionModelChosen(model),
     );
     final turn = _slots.planTurn(
       key: '${network.networkId}|$model|$conversationId|$root',
@@ -201,7 +205,7 @@ class CodexChatSender implements ChatSender {
     // fails exactly like a model that wouldn't answer, so they belong on screen.
     final logId = log.begin(
       CliCallKind.start,
-      'codex app-server -m $model (agent)',
+      'codex app-server ($model, agent)',
       detail: agentTurnDetail(
         args: [
           'codex',

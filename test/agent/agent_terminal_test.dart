@@ -90,6 +90,33 @@ void main() {
       prompt: prompt,
     );
 
+    test('a session on the user\'s own account names no model to either CLI, '
+        'so each opens on whatever their own copy answers with — an empty '
+        'string would be a model named nothing and kill the session before '
+        'the TUI drew', () {
+      final claudeArgs = agentTerminalCommand(
+        tool: AgentTool.claude,
+        executable: '/bin/claude',
+        model: null,
+        workdir: '/tmp/project',
+        approval: AgentApprovalMode.ask,
+      ).arguments;
+      expect(claudeArgs, isNot(contains('--model')));
+      expect(claudeArgs, isNot(contains('')));
+
+      final codexArgs = agentTerminalCommand(
+        tool: AgentTool.codex,
+        executable: '/bin/codex',
+        model: null,
+        workdir: '/tmp/project',
+        approval: AgentApprovalMode.ask,
+      ).arguments;
+      expect(codexArgs, isNot(contains('-m')));
+      expect(codexArgs, isNot(contains('')));
+      // The folder is still the chat's — only the model went unnamed.
+      expect(codexArgs, containsAllInOrder(['-C', '/tmp/project']));
+    });
+
     test(
       'the message that started the chat is the CLI\'s own last argument, so '
       'the session opens with it already asked rather than the app guessing '

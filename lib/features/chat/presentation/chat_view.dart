@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/app_environment.dart';
 import '../../../core/composer_text.dart';
+import '../../../core/subscription_model.dart';
 import '../../../infrastructure/analytics/analytics_events.dart';
 import '../../../infrastructure/analytics/analytics_providers.dart';
 import '../../../infrastructure/cli/agent_resume_point.dart';
@@ -69,7 +70,7 @@ import '../logic/composer_snippet.dart';
 import '../logic/conversation.dart';
 import '../logic/file_attachments.dart';
 import '../logic/file_mention.dart';
-import '../logic/grid_model_catalog.dart' show routingModeOptions;
+import '../logic/grid_model_catalog.dart' show chatModelOptions;
 import '../logic/routing_group.dart' show routingModeForModelId;
 import 'queued_follow_ups.dart';
 import '../../../shared/widgets/composer_buttons.dart';
@@ -311,15 +312,28 @@ class _ChatViewState extends ConsumerState<ChatView> {
     // list: the composer still names what the grid has, and the picker's greyed
     // rows carry the reason — landing on an empty pill would say the grid was
     // empty, which is a different problem with a different fix.
-    final usable = [
+    final offered = [
       for (final option in options)
+        if (_landsOnItsOwn(option.id)) option,
+    ];
+    final usable = [
+      for (final option in offered)
         if (_agentCanUse(option.id)) option,
     ];
-    final pool = usable.isEmpty ? options : usable;
+    final pool = usable.isEmpty ? offered : usable;
     final saved = ref.read(chatScopeModelProvider);
     if (saved != null && pool.any((o) => o.id == saved)) return saved;
     return pool.isEmpty ? '' : pool.first.id;
   }
+
+  /// Whether the composer may settle on [id] without being asked to.
+  ///
+  /// False for the subscription row alone. Every other row is a model this grid
+  /// serves, so landing on one is the composer naming what is there — but that
+  /// one spends the user's **own** account, and a grid that happens to be
+  /// serving nothing would otherwise leave a new chat quietly pointed at it.
+  /// It is reached by picking it, and only by picking it.
+  bool _landsOnItsOwn(String id) => !isSubscriptionModelId(id);
 
   /// Whether the agent that would answer can do so with [id] — true when no
   /// agent stands between the chat and the grid (see [chatModelAgentProvider]).
@@ -341,6 +355,7 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final current = _model.text.trim();
     if (current.isEmpty || agentSupportsModel(agent, current)) return;
     for (final option in _options) {
+      if (!_landsOnItsOwn(option.id)) continue;
       if (!agentSupportsModel(agent, option.id)) continue;
       _setModelText(option.id, fromUser: true);
       return;
@@ -1166,13 +1181,17 @@ class _ChatViewState extends ConsumerState<ChatView> {
     final steerable = ref.watch(canSteerChatProvider(activeId));
     final error = ref.watch(chatSessionsProvider.select((s) => s.error));
     final openProject = ref.watch(openChatProjectProvider);
-    // The grid's models plus the two orchestrator rows the picker offers
-    // beside them, so a chat routed through one is remembered, restored and
-    // read for its modality exactly the way an ordinary pick is — the field
-    // holds the mode's id, and a list without it would treat that as a name
-    // the user typed by hand and drop it on the next switch.
+    // The grid's models plus every row the picker offers beside them — the two
+    // orchestrator rows and, in a developer build, the subscription one — so a
+    // chat on any of them is remembered, restored and read for its modality
+    // exactly the way an ordinary pick is. The field holds the row's id, and a
+    // list without it would treat that as a name the user typed by hand and
+    // drop it on the next switch.
     final served = ref.watch(playgroundModelsProvider);
-    final options = [...served, ...routingModeOptions(served)];
+    final options = chatModelOptions(
+      served,
+      agentInstalled: ref.watch(anyAgentInstalledProvider),
+    );
     // Still resolving means waiting on the *first* answer from either source —
     // see [playgroundModelsResolvingProvider] for why a later poll must not
     // count.

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/core/subscription_model.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_browser.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/infrastructure/cli/chrome_extension_probe.dart';
@@ -25,6 +26,18 @@ void main() {
         'because that is the browser holding the user\'s logins', () {
       expect(planWith().lane, ClaudeBrowserLane.extension);
     });
+
+    test(
+      'a turn on the user\'s own subscription takes the extension lane too — '
+      'it is the same claude.ai sign-in the extension needs, and this one '
+      'carries no relay credentials at all',
+      () {
+        expect(
+          planWith(model: kSubscriptionModelId).lane,
+          ClaudeBrowserLane.extension,
+        );
+      },
+    );
 
     test('a grid model never takes the extension lane: the turn carries relay '
         'credentials, which the extension refuses', () {

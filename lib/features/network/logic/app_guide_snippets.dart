@@ -264,6 +264,29 @@ List<String> codexGridOverrides({
   'model_providers.$kCodexAppProviderId.supports_websockets=false',
 ];
 
+/// The `-c` overrides for a run that answers on the user's **own** Codex
+/// sign-in — their ChatGPT subscription — instead of on a grid.
+///
+/// Naming the provider is not the same as leaving it unset, and that is the
+/// whole reason this exists. `openai` is Codex's built-in provider, the one its
+/// ChatGPT login authenticates; a user who pressed "Apply for me" in the guide
+/// has `model_provider = "$kCodexProviderId"` sitting in their own
+/// `~/.codex/config.toml`, so a run that overrode nothing would go straight back
+/// through the relay — the one thing this lane exists to avoid.
+///
+/// ⚠️ **The model is deliberately not named**, so the run uses whatever the
+/// user's own `codex` uses. That has a sharp edge: a `config.toml` that pins
+/// `model` to a *grid* model id sends that id to OpenAI, which refuses it. The
+/// alternative is this app choosing a model on somebody's paid account, which is
+/// worse — so the failure is left where it is legible (Codex names the model it
+/// was refused) rather than hidden behind a guess.
+///
+/// The same holds for everything else their machine already tells `codex` — a
+/// pinned model, an `OPENAI_API_KEY` exported in the shell the app was launched
+/// from. This lane hands the CLI nothing of the grid's and then leaves it alone,
+/// because "the user's own account" is exactly what their own setup says it is.
+const List<String> codexOwnAccountOverrides = ['model_provider="openai"'];
+
 /// The variables Claude Code reads a connection from: the endpoint, and the
 /// credential — under **both** names, because they travel in different headers
 /// (`ANTHROPIC_AUTH_TOKEN` → `Authorization: Bearer`, `ANTHROPIC_API_KEY` →

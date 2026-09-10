@@ -80,10 +80,13 @@ abstract interface class ClaudeExecService {
   ///
   /// [withoutServerWebTools] takes away [kClaudeServerWebTools] for a turn whose
   /// endpoint can't serve them.
+  ///
+  /// A null [model] names none, leaving the CLI on its own default — see
+  /// [claudeExecArgs].
   ClaudeExecRun run({
     required String workdir,
     required String prompt,
-    required String model,
+    required String? model,
     required Map<String, String> environment,
     String? resumeSessionId,
     String? mcpConfigPath,
@@ -249,8 +252,13 @@ const List<String> kClaudeSessionSchedulerTools = [
 ///   until the next `--flag`, which is safe here because the prompt goes on
 ///   stdin and this argv carries no positionals — and stays safe only as long
 ///   as that holds.
+/// - **A null [model] passes no `--model` at all**, which is not the same as
+///   passing an empty one: the CLI then answers on whatever the user's own
+///   `claude` is set to, out of the account it is signed in with. That is the
+///   whole of the subscription lane (`kSubscriptionModelId`) — there is no id to
+///   name, because the choice was to answer off the grid.
 List<String> claudeExecArgs({
-  required String model,
+  required String? model,
   String? resumeSessionId,
   String? mcpConfigPath,
   bool chrome = false,
@@ -267,8 +275,7 @@ List<String> claudeExecArgs({
   kClaudePermissionMode,
   '--permission-prompt-tool',
   kClaudePermissionPromptTool,
-  '--model',
-  model,
+  if (model != null) ...['--model', model],
   '--settings',
   kClaudeTurnSettings,
   if (chrome) '--chrome',
@@ -333,7 +340,7 @@ class ClaudeExecServiceImpl implements ClaudeExecService {
   ClaudeExecRun run({
     required String workdir,
     required String prompt,
-    required String model,
+    required String? model,
     required Map<String, String> environment,
     String? resumeSessionId,
     String? mcpConfigPath,
@@ -371,7 +378,7 @@ class _ClaudeExecTurn {
   final String path;
   final String workdir;
   final String prompt;
-  final String model;
+  final String? model;
   final Map<String, String> environment;
   final String? resumeSessionId;
   final String? mcpConfigPath;

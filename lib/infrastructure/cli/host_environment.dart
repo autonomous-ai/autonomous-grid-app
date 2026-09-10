@@ -135,15 +135,22 @@ class HostEnvironment {
   /// had inherited (no `/usr/local/bin`, no nvm — the reason `agentEnvironment`
   /// exists) while the same agent's chat turns ran with it fixed. Two lanes,
   /// one environment. [host] is for tests; the app passes nothing.
+  ///
+  /// [drop] names variables the session must **not** carry, taken out last —
+  /// the same removal, and for the same reason, as `claudeExecEnvironment`'s:
+  /// leaving a name out of [grid] does not remove one this process inherited,
+  /// and a session that has to reach the CLI's own sign-in needs the relay's
+  /// credentials gone rather than merely unset.
   static Map<String, String> terminalEnvironment(
     Map<String, String> grid, {
     Map<String, String>? host,
+    Set<String> drop = const {},
   }) => {
     ...agentEnvironment(
       environment: withoutInheritedAgentSession(host ?? Platform.environment),
     ),
     ...grid,
-  };
+  }..removeWhere((name, _) => drop.contains(name));
 
   static String? _relayBaseUrl;
   static String? _relayToken;

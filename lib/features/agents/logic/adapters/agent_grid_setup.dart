@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/subscription_model.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../../infrastructure/mcp/grid_mcp_provider.dart';
 import '../../../../infrastructure/mcp/grid_mcp_server.dart';
@@ -8,6 +9,7 @@ import '../../../network/logic/app_guide_snippets.dart';
 import '../../../network/logic/network_models_provider.dart';
 import '../model_context_window.dart';
 import 'agent_turn_env.dart';
+import 'claude_browser.dart';
 import 'claude_turn_mcp_config.dart';
 
 /// What a Claude Code run needs to answer on the app's grid, with the app's own
@@ -19,6 +21,7 @@ import 'claude_turn_mcp_config.dart';
 /// next turn's and can be forgotten.
 typedef ClaudeGridSetup = ({
   Map<String, String> environment,
+  Set<String> dropEnvironment,
   String? mcpConfig,
   String? mcpToken,
 });
@@ -38,10 +41,13 @@ typedef CodexGridSetup = ({
 /// in one lane and not the other looks exactly like a model that answers in the
 /// chat and refuses in the terminal.
 ///
-/// [relayEnv] false is the browser-extension lane, where Claude Code runs against
-/// its own sign-in and must not see the relay's credentials at all. The caller
-/// still has to *drop* what this process inherited ([kClaudeRelayEnvKeys]) —
-/// leaving a variable out of a map does not remove one already in the parent.
+/// [relayEnv] false is a run that answers on **Claude Code's own sign-in** and
+/// must not see the relay's credentials at all — the browser-extension lane,
+/// which Claude Code closes to any API-key session, and the subscription model
+/// ([subscriptionModelChosen]), which is that choice made on purpose. Leaving a
+/// variable out of a map does not remove one already in the parent, so the names
+/// to take away travel back in [ClaudeGridSetup.dropEnvironment] — the caller
+/// hands them to whichever spawn it owns rather than working them out twice.
 ///
 /// [turnId] is the one turn this run answers, when it is a turn at all — it
 /// rides out as the request header the relay attributes every call to, so a
@@ -105,6 +111,7 @@ Future<ClaudeGridSetup> claudeGridSetup(
           maxOutputTokens: agentReplyReserve(window),
         ),
     },
+    dropEnvironment: relayEnv ? const <String>{} : kClaudeRelayEnvKeys,
     mcpConfig: mcpConfig,
     mcpToken: token,
   );
@@ -152,12 +159,19 @@ String? _mcpToken(
 /// it summarizes on a default it picked for a model it isn't talking to. Only
 /// sent when a source actually named a figure — see
 /// [knownModelContextWindowProvider].
+///
+/// [relayEnv] false is the subscription model ([subscriptionModelChosen]): the
+/// run answers on the user's own ChatGPT sign-in, so it carries neither the
+/// grid's provider table nor its key, and names Codex's own provider instead
+/// ([codexOwnAccountOverrides]). Grid's **tools** still go with it — they are
+/// this app's, minted per run, and have nothing to do with who answers.
 Future<CodexGridSetup> codexGridSetup(
   Ref ref, {
   required NetworkCredential network,
   required String model,
   required String? conversationId,
   String? turnId,
+  bool relayEnv = true,
   bool session = false,
 }) async {
   final grid = ref.read(gridMcpServerProvider);
@@ -170,7 +184,11 @@ Future<CodexGridSetup> codexGridSetup(
   // transport rather than to the one call.
   final tools = url != null && token != null;
 
-  final window = ref.read(knownModelContextWindowProvider(model));
+  // Only ever asked about a grid model. On the user's own account Codex is
+  // talking to a model out of its own catalog, which it has the window for.
+  final window = relayEnv
+      ? ref.read(knownModelContextWindowProvider(model))
+      : null;
   // Codex says so itself — "Model metadata for <id> not found. Defaulting to
   // fallback metadata; this can degrade performance" — and on the `auto` router
   // it says so every session, because no source names a window for a model the
@@ -178,7 +196,7 @@ Future<CodexGridSetup> codexGridSetup(
   // [knownModelContextWindowProvider] for why telling Codex a figure this app
   // guessed is worse than leaving it on its own default. What was missing was
   // this line: the CLI's warning had nothing on our side to match it against.
-  if (window == null) {
+  if (window == null && relayEnv) {
     ref
         .read(appLogProvider)
         .info(
@@ -190,12 +208,15 @@ Future<CodexGridSetup> codexGridSetup(
 
   return (
     config: [
-      ...codexGridOverrides(
-        base: network.relayBaseUrl,
-        model: model,
-        contextWindow: window,
-        compactAt: window == null ? null : agentContextCeiling(window),
-      ),
+      if (relayEnv)
+        ...codexGridOverrides(
+          base: network.relayBaseUrl,
+          model: model,
+          contextWindow: window,
+          compactAt: window == null ? null : agentContextCeiling(window),
+        )
+      else
+        ...codexOwnAccountOverrides,
       // Grid's own tools, as `-c` overrides for this run alone. Codex has no
       // per-process lever for *skills* — `$CODEX_HOME/skills` is the only path
       // it reads and moving CODEX_HOME takes the user's login with it — so this
@@ -203,7 +224,7 @@ Future<CodexGridSetup> codexGridSetup(
       if (tools) ...gridMcpCodexOverrides(url: url),
     ],
     environment: {
-      kCodexAppApiKeyEnv: network.relayApiKey,
+      if (relayEnv) kCodexAppApiKeyEnv: network.relayApiKey,
       ...gridTurnEnv(conversationId, turnId: turnId),
       if (tools) kGridMcpTokenEnv: token,
     },

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/core/subscription_model.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_grid_link.dart';
 import 'package:grid_app/features/agents/logic/active_chat_agent.dart';
 import 'package:grid_app/features/agents/logic/agent_catalog.dart';
@@ -26,6 +27,25 @@ ProviderContainer _gridServing(List<String> ids) {
 }
 
 void main() {
+  group('the subscription choice needs a CLI with an account of its own', () {
+    test('Claude Code and Codex can take it — each has a sign-in the user pays '
+        'for and answers from', () {
+      expect(
+        agentSupportsModel(AgentTool.claude, kSubscriptionModelId),
+        isTrue,
+      );
+      expect(agentSupportsModel(AgentTool.codex, kSubscriptionModelId), isTrue);
+    });
+
+    test('Hermes cannot: it has no account of its own, so the turn would reach '
+        'it with no model to answer from at all', () {
+      expect(
+        agentSupportsModel(AgentTool.hermes, kSubscriptionModelId),
+        isFalse,
+      );
+    });
+  });
+
   group("an agent and a vendor's seat model have to match", () {
     test("Codex can't answer with a Claude seat's model — the pair reaches the "
         'grid as "no machine is serving a model Codex can use"', () {
