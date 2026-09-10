@@ -94,9 +94,11 @@ ClaudeTool claudeTool(String name) {
 /// Every tool with an entry of its own — each a name Claude Code actually
 /// sends. What isn't listed falls through to [claudeTool]'s fallbacks.
 ///
-/// `TodoWrite` and `AskUserQuestion` are missing on purpose: neither is a
-/// step the user watches happen. The parser turns the first into the plan and
-/// the second into a question to answer before either reaches this list.
+/// The plan tools are missing on purpose — `TodoWrite`, and the task list
+/// Claude Code 2.1 keeps under `-p` (`TaskCreate`, `TaskUpdate`, `TaskList`,
+/// `TaskGet`) — and so is `AskUserQuestion`: none is a step the user watches
+/// happen. The parser turns the first into the plan and the last into a card
+/// before any of them reaches this list.
 const List<ClaudeTool> _kTools = [
   _BashTool(),
   _GenericTool('BashOutput', kind: AgentActivityKind.command),

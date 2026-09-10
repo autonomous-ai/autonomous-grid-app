@@ -90,6 +90,27 @@ void main() {
         AgentToolFamily.search,
       );
     });
+
+    test('a sub-agent row is a sub-agent under the name Claude Code 2.x uses '
+        '— it drew the unclaimed wrench while only `Task` was listed', () {
+      final agent = _step(
+        'Agent · Review the diff',
+        kind: AgentActivityKind.tool,
+      );
+      expect(agentToolFamily(agent), AgentToolFamily.subAgent);
+      expect(
+        agentStepTitle(
+          AgentActivity(
+            id: 'a',
+            kind: AgentActivityKind.tool,
+            label: 'Agent · Review the diff',
+            status: AgentActivityStatus.running,
+            tool: 'Agent',
+          ),
+        ),
+        'Working',
+      );
+    });
   });
 
   group('stepRequestLanguage', () {

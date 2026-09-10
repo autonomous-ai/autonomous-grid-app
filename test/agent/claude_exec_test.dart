@@ -43,6 +43,29 @@ Map<String, dynamic> _toolResult(String id, {bool failed = false}) => {
   },
 };
 
+/// A tool's answer, as the CLI hands it back.
+Map<String, dynamic> _answered(String id, String text) => {
+  'type': 'user',
+  'message': {
+    'content': [
+      {'type': 'tool_result', 'tool_use_id': id, 'content': text},
+    ],
+  },
+};
+
+/// One of Claude Code 2.1's task-list calls.
+Map<String, dynamic> _task(
+  String id,
+  String name,
+  Map<String, dynamic> input,
+) => _assistant({'type': 'tool_use', 'id': id, 'name': name, 'input': input});
+
+/// The plan an event carries, as (wording, status) pairs.
+List<(String, AgentPlanStatus)> _planOf(ClaudeExecEvent event) => [
+  for (final entry in (event as ClaudePlanEvent).entries)
+    (entry.content, entry.status),
+];
+
 /// A backgrounded `Agent` call, as the model makes it.
 Map<String, dynamic> _agentCall(String id) => {
   'type': 'tool_use',
@@ -363,6 +386,93 @@ void main() {
         AgentPlanStatus.active,
       ]);
       expect(plan.first.content, 'Read the file');
+    });
+
+    test("Claude Code 2.1's task tools are the plan under -p — made, then "
+        'ticked off, and sent whole each time it changes', () {
+      final parser = ClaudeStreamParser();
+      // The call alone is no row, and the task has no number yet.
+      expect(
+        _read(
+          parser,
+          _task('c1', 'TaskCreate', {
+            'subject': 'Read the code',
+            'description': 'All of lib/',
+            'activeForm': 'Reading the code',
+          }),
+        ),
+        isEmpty,
+      );
+      expect(
+        _planOf(
+          _one(
+            parser,
+            _answered('c1', 'Task #1 created successfully: Read the code'),
+          ),
+        ),
+        [('Read the code', AgentPlanStatus.pending)],
+      );
+      _read(parser, _task('c2', 'TaskCreate', {'subject': 'Fix the test'}));
+      _read(
+        parser,
+        _answered('c2', 'Task #2 created successfully: Fix the test'),
+      );
+      expect(
+        _planOf(
+          _one(
+            parser,
+            _task('u1', 'TaskUpdate', {'taskId': '1', 'status': 'completed'}),
+          ),
+        ),
+        [
+          ('Read the code', AgentPlanStatus.done),
+          ('Fix the test', AgentPlanStatus.pending),
+        ],
+      );
+      // The update's own answer settles nothing: it was never a row.
+      expect(_read(parser, _answered('u1', 'Updated task #1 status')), isEmpty);
+    });
+
+    test('a deleted task leaves the plan, and an update to a task this turn '
+        'never saw made is passed over rather than drawn with no words', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _task('c1', 'TaskCreate', {'subject': 'Draft'}));
+      _read(parser, _answered('c1', 'Task #4 created successfully: Draft'));
+      expect(
+        _read(
+          parser,
+          _task('u9', 'TaskUpdate', {'taskId': '2', 'status': 'completed'}),
+        ),
+        isEmpty,
+      );
+      final gone = _one(
+        parser,
+        _task('u1', 'TaskUpdate', {'taskId': '4', 'status': 'deleted'}),
+      );
+      expect((gone as ClaudePlanEvent).entries, isEmpty);
+    });
+
+    test("a sub-agent's task list is its own — it neither replaces the plan "
+        'nor adds rows — and reading the list is not a step either', () {
+      final parser = ClaudeStreamParser();
+      expect(
+        _read(parser, {
+          'type': 'assistant',
+          'parent_tool_use_id': 'a1',
+          'message': {
+            'content': [
+              {
+                'type': 'tool_use',
+                'id': 'c1',
+                'name': 'TaskCreate',
+                'input': {'subject': 'Its own'},
+              },
+            ],
+          },
+        }),
+        isEmpty,
+      );
+      expect(_read(parser, _task('l1', 'TaskList', const {})), isEmpty);
     });
 
     test('a write announces itself before it runs, which is the only moment '

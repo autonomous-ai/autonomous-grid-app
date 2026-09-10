@@ -102,6 +102,33 @@ class ClaudeStreamParser {
   /// row in the timeline rather than one row moved about.
   var _waits = 0;
 
+  /// Claude Code's task list as this turn has seen it, by the number the CLI
+  /// gave each task, in the order they were made.
+  ///
+  /// Under `-p`, Claude Code 2.1 keeps its plan with `TaskCreate` and
+  /// `TaskUpdate`, not `TodoWrite`: over a month of this machine's sessions
+  /// the `sdk-cli` lane — this app's — made 256 and 334 of those calls and not
+  /// one `TodoWrite`, which only the VS Code lane still sends. So the checklist
+  /// a Claude chat is meant to show had stopped appearing. These calls are
+  /// deltas where `TodoWrite` sent the whole list, so the list is kept here
+  /// and sent whole whenever it changes.
+  ///
+  /// Only this turn's: every turn is a new process and a new parser, so a task
+  /// made in an earlier turn of the same session is not known here.
+  final _tasks = <String, ({String content, String status})>{};
+
+  /// `TaskCreate` calls waiting on the result that numbers their task, by call
+  /// id, with the task's wording.
+  final _taskCalls = <String, String>{};
+
+  /// The task-list tools — the plan, never a row. `TaskOutput` and `TaskStop`
+  /// are not among them: those drive background work, and are steps.
+  static const _taskTools = {'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'};
+
+  /// How a `TaskCreate` result names the task it made: "Task #3 created
+  /// successfully: …" — every one of 288 measured.
+  static final _taskNumber = RegExp(r'Task #(\d+) created');
+
   /// The events worth showing from one decoded line. Empty for a line that
   /// carries nothing (reasoning-token counts, rate-limit notices, a shape from
   /// a newer build we don't know) — the parser stays tolerant rather than
@@ -456,6 +483,13 @@ class ClaudeStreamParser {
       return [ClaudePlanEvent(parseAgentPlan(input['todos']))];
     }
 
+    // Claude Code 2.1's plan, which it keeps with these under `-p` — see
+    // [_tasks]. Not steps either; and a sub-agent's list is its own business,
+    // as its usage is, so it neither replaces the plan nor adds rows.
+    if (_taskTools.contains(name)) {
+      return parent == null ? _readTaskCall(id, name, input) : const [];
+    }
+
     // Neither is a step the user watches happen: this one is a question, and it
     // belongs where they can answer it, not folded into a row. Falls through to
     // an ordinary row when the call carries nothing answerable, so a malformed
@@ -495,6 +529,67 @@ class ClaudeStreamParser {
     return [ClaudeActivityEvent(activity), ClaudeFileWriteStarted(id, path)];
   }
 
+  /// A call on Claude Code's task list — see [_tasks]. A new task waits for
+  /// the number its result gives it; an update changes the list at once, the
+  /// way a `TodoWrite` does. Reading the list changes nothing.
+  List<ClaudeExecEvent> _readTaskCall(
+    String id,
+    String name,
+    Map<String, dynamic> input,
+  ) {
+    switch (name) {
+      case 'TaskCreate':
+        final subject = '${input['subject'] ?? ''}'.trim();
+        if (subject.isNotEmpty) _taskCalls[id] = subject;
+        return const [];
+      case 'TaskUpdate':
+        return _updateTask(input);
+      default:
+        return const [];
+    }
+  }
+
+  /// A task the CLI has just numbered, joining the plan as not yet started.
+  List<ClaudeExecEvent> _taskCreated(
+    String id,
+    String subject,
+    Object? content,
+  ) {
+    final result = claudeToolResult(content) ?? '';
+    final number = _taskNumber.firstMatch(result)?.group(1);
+    // Kept under the call's own id when no number came back: the task was
+    // made, and a plan that dropped it would be a step short.
+    _tasks[number ?? id] = (content: subject, status: 'pending');
+    return [ClaudePlanEvent(_plan())];
+  }
+
+  /// An update to a task this turn made — its status, its new wording, or its
+  /// removal. One this turn never saw made is passed over: all it carries is a
+  /// number, and a plan row with no words is worse than none.
+  List<ClaudeExecEvent> _updateTask(Map<String, dynamic> input) {
+    final key = '${input['taskId'] ?? ''}';
+    final task = _tasks[key];
+    if (task == null) return const [];
+    final status = input['status'];
+    if (status == 'deleted') {
+      _tasks.remove(key);
+      return [ClaudePlanEvent(_plan())];
+    }
+    final subject = '${input['subject'] ?? ''}'.trim();
+    _tasks[key] = (
+      content: subject.isEmpty ? task.content : subject,
+      status: status is String ? status : task.status,
+    );
+    return [ClaudePlanEvent(_plan())];
+  }
+
+  /// The task list as the plan the chat draws. Claude's statuses are the same
+  /// `pending`/`in_progress`/`completed` words [parseAgentPlan] reads.
+  List<AgentPlanEntry> _plan() => parseAgentPlan([
+    for (final task in _tasks.values)
+      {'content': task.content, 'status': task.status},
+  ]);
+
   /// A `user` message in this stream is Claude reporting back to itself: the
   /// results of the tools it just called. The row is found by its own id, which
   /// is unique across the turn whoever ran it; [parent] decides only whose
@@ -518,6 +613,10 @@ class ClaudeStreamParser {
     if (block['type'] != 'tool_result') return const [];
     final id = '${block['tool_use_id'] ?? ''}';
     final failed = block['is_error'] == true;
+    // The number the CLI gave a task it just made — see [_tasks].
+    if (_taskCalls.remove(id) case final subject?) {
+      return failed ? const [] : _taskCreated(id, subject, block['content']);
+    }
     final events = <ClaudeExecEvent>[];
 
     final call = _calls.remove(id);

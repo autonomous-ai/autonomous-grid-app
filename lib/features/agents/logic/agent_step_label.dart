@@ -145,7 +145,9 @@ String? _gerund(String tool, AgentActivityKind kind) => switch (tool) {
   'Write' => 'Writing',
   'Edit' || 'NotebookEdit' => 'Editing',
   'Grep' || 'Glob' || 'Search' => 'Searching',
-  'Task' => 'Working',
+  // `Agent` is the sub-agent tool's name in Claude Code 2.x — 338 calls in a
+  // month here, and no `Task`, which is what it was called before.
+  'Task' || 'Agent' => 'Working',
   _ => switch (kind) {
     AgentActivityKind.command => 'Running',
     AgentActivityKind.web => 'Searching the web',
@@ -255,6 +257,7 @@ const Map<String, AgentToolFamily> _kToolFamilies = {
   'fetch': AgentToolFamily.fetch,
   'browser': AgentToolFamily.fetch,
   'task': AgentToolFamily.subAgent,
+  'agent': AgentToolFamily.subAgent,
   'todowrite': AgentToolFamily.todo,
   'todo': AgentToolFamily.todo,
   'todo_list': AgentToolFamily.todo,
