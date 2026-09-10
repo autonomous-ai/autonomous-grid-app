@@ -63,6 +63,8 @@ docs/*
 !docs/architecture.md
 !docs/panel-protocol.md
 !docs/git-auto-install.md
+!docs/claude-rendering.md
+!docs/codex-rendering.md
 .playwright-mcp/*
 
 # ── The device firmware under device/ ────────────────────────────────────────
