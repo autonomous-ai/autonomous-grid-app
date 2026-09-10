@@ -62,7 +62,8 @@ void main() {
               'tool_use_id': 't1',
               'is_error': true,
               'content':
-                  '<tool_use_error>File has not been read yet.</tool_use_error>',
+                  '<tool_use_error>File has not been read yet.'
+                  '</tool_use_error>',
             },
           ]),
         ],

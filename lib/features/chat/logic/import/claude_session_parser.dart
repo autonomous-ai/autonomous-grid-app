@@ -146,7 +146,7 @@ String _fallbackTitle(String? preferred, List<ChatMessage> messages) {
 
 /// What the user actually said on a `user` line.
 ///
-/// Three things wear that role and are not the user talking, and each has to go:
+/// Three things wear that role and are not the user talking; each has to go:
 ///
 /// - **`tool_result` blocks.** Every tool the agent runs comes back as a `user`
 ///   line carrying the output. In this file 63 of the 73 `user` lines were
