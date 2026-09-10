@@ -1,4 +1,4 @@
-import '../../../shared/copy/plural.dart';
+import 'plural.dart';
 
 /// What a line in a proposed file change is: unchanged, going away, or new.
 enum DiffLineKind { context, removed, added }

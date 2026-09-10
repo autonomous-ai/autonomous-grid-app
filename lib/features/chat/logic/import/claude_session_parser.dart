@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../../infrastructure/cli/claude_content.dart';
 import '../../../playground/logic/chat_message.dart';
 import 'parsed_session.dart';
 
@@ -145,8 +146,7 @@ String _fallbackTitle(String? preferred, List<ChatMessage> messages) {
 
 /// What the user actually said on a `user` line.
 ///
-/// Two things wear that role and are not the user talking, and both have to go
-/// or the transcript doubles:
+/// Three things wear that role and are not the user talking; each has to go:
 ///
 /// - **`tool_result` blocks.** Every tool the agent runs comes back as a `user`
 ///   line carrying the output. In this file 63 of the 73 `user` lines were
@@ -156,8 +156,11 @@ String _fallbackTitle(String? preferred, List<ChatMessage> messages) {
 ///   was driven from an IDE — `<ide_opened_file>` and `<ide_selection>`. They
 ///   are addressed to the model, they are not what was typed, and some are long
 ///   enough to bury the actual question. See [stripInjectedContext].
+/// - **The CLI's note that the person stopped it.** `[Request interrupted by
+///   user]` is written into their turn, and imported as written it put words in
+///   their mouth. See [isClaudeInterruptNote].
 String _userText(Object? content) {
-  if (content is String) return stripInjectedContext(content);
+  if (content is String) return _typed(content);
   if (content is! List) return '';
   final parts = <String>[];
   for (final block in content) {
@@ -168,11 +171,16 @@ String _userText(Object? content) {
     if (block['type'] != 'text') continue;
     final text = _stringOrNull(block['text']);
     if (text == null) continue;
-    final cleaned = stripInjectedContext(text);
+    final cleaned = _typed(text);
     if (cleaned.isNotEmpty) parts.add(cleaned);
   }
   return parts.join('\n\n').trim();
 }
+
+/// [text] as the person typed it — injected context gone, and nothing at all
+/// when it is only the CLI saying they pressed Stop.
+String _typed(String text) =>
+    isClaudeInterruptNote(text) ? '' : stripInjectedContext(text);
 
 /// Fill [draft] from an assistant line's content blocks, in order.
 ///
@@ -225,26 +233,13 @@ void _settleResults(Object? content, Map<String, StepDraft> pending) {
     if (block['type'] != 'tool_result') continue;
     final step = pending.remove(_stringOrNull(block['tool_use_id']));
     if (step == null) continue;
-    step.result = _resultText(block['content']);
+    // The live feed's own reader, so an imported step and one watched as it
+    // ran say the same thing about how it went. See [claudeToolResult].
+    step.result = claudeToolResult(block['content']);
     // Written by the CLI as a real bool on some builds and the string "False"
     // on others, so only an explicit truth counts as a failure.
     step.failed = block['is_error'] == true || block['is_error'] == 'True';
   }
-}
-
-/// A tool result's content as text. It arrives as a plain string, or as the
-/// same block list a message uses.
-String? _resultText(Object? content) {
-  if (content is String) return content.trim().isEmpty ? null : content;
-  if (content is! List) return null;
-  final parts = <String>[];
-  for (final block in content) {
-    if (block is Map<String, dynamic> && block['type'] == 'text') {
-      final text = _stringOrNull(block['text']);
-      if (text != null) parts.add(text);
-    }
-  }
-  return parts.isEmpty ? null : parts.join('\n');
 }
 
 /// What the agent asked the tool to do, as text a person can read.

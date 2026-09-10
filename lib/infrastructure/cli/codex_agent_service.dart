@@ -46,8 +46,8 @@ enum CodexFileChangeKind { add, update, delete }
 /// One file Codex touched this turn: its (absolute) path and what happened to it.
 ///
 /// Only a freshly *added* file can be shown downstream with an honest
-/// before/after (see [codexAddedPaths]) — the transport now carries a unified
-/// diff per file, but nothing here reads it yet.
+/// before/after (see [codexAddedPaths]). The unified diff each file carries is
+/// drawn on its row in the feed (`codex_file_changes.dart`), not kept here.
 typedef CodexFileChange = ({String path, CodexFileChangeKind kind});
 
 /// The files Codex created, edited or removed in one `apply_patch`, surfaced

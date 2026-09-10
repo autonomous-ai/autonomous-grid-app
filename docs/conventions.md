@@ -233,9 +233,12 @@ are **deliberate** — don't "fix" them back.
   each tool's root pointer file says which.
 - **Branch off `main`, never commit straight to it.** Keep the diff scoped.
 - **Tracked docs:** this file, `docs/style-guide-grid-app.md`, `CLAUDE.md`,
-  `AGENTS.md`, `README.md` — everything §§1–11 tells you to read before working. The
-  rest of `docs/` is local-only working notes and stays gitignored — if a note becomes
-  a rule, move it here rather than leaving it on one machine.
+  `AGENTS.md`, `README.md` — everything §§1–11 tells you to read before working —
+  and the two agent-lane maps, `docs/claude-rendering.md` and
+  `docs/codex-rendering.md`: read one before changing how that agent's stream is
+  drawn, and change it with the code it maps. The rest of `docs/` is local-only
+  working notes and stays gitignored — if a note becomes a rule, move it here rather
+  than leaving it on one machine.
 
 ## 11. Accessibility
 

@@ -867,13 +867,12 @@ class _StepRowState extends State<_StepRow> {
                             _PayloadWell(
                               label: 'Request',
                               text: request,
-                              // A shell step's request is the command line; every
-                              // other tool's is the arguments object the agent
-                              // sent. Both are read faster in the transcript's own
-                              // code colours.
-                              code: step.kind == AgentActivityKind.command
-                                  ? 'bash'
-                                  : (request.startsWith('{') ? 'json' : ''),
+                              // Coloured as what it is — a command line, a file
+                              // change as a diff, the file a write wrote, the
+                              // arguments the agent sent — all read far faster
+                              // in the transcript's own code colours. See
+                              // [stepRequestLanguage].
+                              code: stepRequestLanguage(step),
                             ),
                           if (step.result case final result?) ...[
                             if (step.request != null) const SizedBox(height: 4),

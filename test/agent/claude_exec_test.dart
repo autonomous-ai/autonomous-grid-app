@@ -1,13 +1,17 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/agent_question.dart';
+import 'package:grid_app/infrastructure/cli/claude_content.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_event.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_service.dart';
 import 'package:grid_app/infrastructure/cli/claude_permission.dart';
 import 'package:grid_app/infrastructure/cli/claude_stream_parser.dart';
+import 'package:grid_app/infrastructure/cli/claude_task_list.dart';
+import 'package:grid_app/infrastructure/cli/claude_tools.dart';
 
 /// One `stream_event` carrying a text delta — the shape the vendor's SSE arrives
 /// in once `--include-partial-messages` is on.
@@ -40,6 +44,29 @@ Map<String, dynamic> _toolResult(String id, {bool failed = false}) => {
     ],
   },
 };
+
+/// A tool's answer, as the CLI hands it back.
+Map<String, dynamic> _answered(String id, String text) => {
+  'type': 'user',
+  'message': {
+    'content': [
+      {'type': 'tool_result', 'tool_use_id': id, 'content': text},
+    ],
+  },
+};
+
+/// One of Claude Code 2.1's task-list calls.
+Map<String, dynamic> _task(
+  String id,
+  String name,
+  Map<String, dynamic> input,
+) => _assistant({'type': 'tool_use', 'id': id, 'name': name, 'input': input});
+
+/// The plan an event carries, as (wording, status) pairs.
+List<(String, AgentPlanStatus)> _planOf(ClaudeExecEvent event) => [
+  for (final entry in (event as ClaudePlanEvent).entries)
+    (entry.content, entry.status),
+];
 
 /// A backgrounded `Agent` call, as the model makes it.
 Map<String, dynamic> _agentCall(String id) => {
@@ -362,6 +389,136 @@ void main() {
       ]);
       expect(plan.first.content, 'Read the file');
     });
+
+    test("Claude Code 2.1's task tools are the plan under -p — made, then "
+        'ticked off, and sent whole each time it changes', () {
+      final parser = ClaudeStreamParser();
+      // The call alone is no row, and the task has no number yet.
+      expect(
+        _read(
+          parser,
+          _task('c1', 'TaskCreate', {
+            'subject': 'Read the code',
+            'description': 'All of lib/',
+            'activeForm': 'Reading the code',
+          }),
+        ),
+        isEmpty,
+      );
+      expect(
+        _planOf(
+          _one(
+            parser,
+            _answered('c1', 'Task #1 created successfully: Read the code'),
+          ),
+        ),
+        [('Read the code', AgentPlanStatus.pending)],
+      );
+      _read(parser, _task('c2', 'TaskCreate', {'subject': 'Fix the test'}));
+      _read(
+        parser,
+        _answered('c2', 'Task #2 created successfully: Fix the test'),
+      );
+      expect(
+        _planOf(
+          _one(
+            parser,
+            _task('u1', 'TaskUpdate', {'taskId': '1', 'status': 'completed'}),
+          ),
+        ),
+        [
+          ('Read the code', AgentPlanStatus.done),
+          ('Fix the test', AgentPlanStatus.pending),
+        ],
+      );
+      // The update's own answer settles nothing: it was never a row.
+      expect(_read(parser, _answered('u1', 'Updated task #1 status')), isEmpty);
+    });
+
+    test('a deleted task leaves the plan, and an update to a task this turn '
+        'never saw made is passed over rather than drawn with no words', () {
+      final parser = ClaudeStreamParser();
+      _read(parser, _task('c1', 'TaskCreate', {'subject': 'Draft'}));
+      _read(parser, _answered('c1', 'Task #4 created successfully: Draft'));
+      expect(
+        _read(
+          parser,
+          _task('u9', 'TaskUpdate', {'taskId': '2', 'status': 'completed'}),
+        ),
+        isEmpty,
+      );
+      final gone = _one(
+        parser,
+        _task('u1', 'TaskUpdate', {'taskId': '4', 'status': 'deleted'}),
+      );
+      expect((gone as ClaudePlanEvent).entries, isEmpty);
+    });
+
+    test("a sub-agent's tasks join the same list — Claude Code keeps one per "
+        'session, and every sub-agent measured wrote into it — while reading '
+        'the list is still not a step', () {
+      final parser = ClaudeStreamParser();
+      expect(
+        _read(parser, {
+          'type': 'assistant',
+          'parent_tool_use_id': 'a1',
+          'message': {
+            'content': [
+              {
+                'type': 'tool_use',
+                'id': 'c1',
+                'name': 'TaskCreate',
+                'input': {'subject': 'Its part'},
+              },
+            ],
+          },
+        }),
+        isEmpty,
+      );
+      expect(
+        _planOf(
+          _one(parser, {
+            'type': 'user',
+            'parent_tool_use_id': 'a1',
+            'message': {
+              'content': [
+                {
+                  'type': 'tool_result',
+                  'tool_use_id': 'c1',
+                  'content': 'Task #1 created successfully: Its part',
+                },
+              ],
+            },
+          }),
+        ),
+        [('Its part', AgentPlanStatus.pending)],
+      );
+      expect(_read(parser, _task('l1', 'TaskList', const {})), isEmpty);
+    });
+
+    test(
+      'a resumed turn starts from the list the session kept, so an update '
+      'to a task an earlier turn made lands — 99 of 336 did, and were lost',
+      () {
+        final parser = ClaudeStreamParser()
+          ..inherit(const [
+            (id: '3', subject: 'Ship it', status: 'in_progress'),
+            (id: '4', subject: 'Tell the team', status: 'pending'),
+          ]);
+        expect(
+          _planOf(
+            _one(
+              parser,
+              _task('u1', 'TaskUpdate', {'taskId': '3', 'status': 'completed'}),
+            ),
+          ),
+          [
+            ('Ship it', AgentPlanStatus.done),
+            ('Tell the team', AgentPlanStatus.pending),
+          ],
+        );
+      },
+    );
 
     test('a write announces itself before it runs, which is the only moment '
         'the old contents still exist to diff against', () {
@@ -901,7 +1058,7 @@ void main() {
       'reading "Agent" with its description dropped',
       () {
         expect(
-          claudeToolLabel('Agent', const {
+          claudeTool('Agent').label(const {
             'description': 'Review the diff',
             'subagent_type': 'code-reviewer',
           }),
@@ -909,7 +1066,7 @@ void main() {
         );
         // The older name still answers, since the app pins no CLI version.
         expect(
-          claudeToolLabel('Task', const {'description': 'Review the diff'}),
+          claudeTool('Task').label(const {'description': 'Review the diff'}),
           'Task · Review the diff',
         );
       },
@@ -917,10 +1074,9 @@ void main() {
 
     test('a skill row names the skill that ran', () {
       expect(
-        claudeToolLabel('Skill', const {
-          'skill': 'grid-web',
-          'args': 'flutter',
-        }),
+        claudeTool(
+          'Skill',
+        ).label(const {'skill': 'grid-web', 'args': 'flutter'}),
         'Skill · grid-web',
       );
     });
@@ -929,9 +1085,325 @@ void main() {
         'behind it — a row spent entirely on `mcp__…__…` names nothing the '
         'user chose', () {
       expect(
-        claudeToolLabel('mcp__gitnexus__impact', const {'target': 'ChatStore'}),
+        claudeTool(
+          'mcp__gitnexus__impact',
+        ).label(const {'target': 'ChatStore'}),
         'gitnexus · impact · ChatStore',
       );
+    });
+
+    test('a read of part of a file says which lines — the offset is the '
+        'first line as the result numbers it, not the one before', () {
+      String read(Map<String, dynamic> input) => claudeTool(
+        'Read',
+      ).label({'file_path': '/r/conventions.md', ...input});
+      expect(
+        read({'offset': 490, 'limit': 80}),
+        'Read · conventions.md (lines 490–569)',
+      );
+      expect(read({'offset': 12}), 'Read · conventions.md (from line 12)');
+      expect(read({'limit': 200}), 'Read · conventions.md (lines 1–200)');
+      expect(read(const {}), 'Read · conventions.md');
+    });
+
+    test('a connector row takes its subject from the arguments connectors '
+        'here actually send, and never prints a list as one', () {
+      expect(
+        claudeTool(
+          'mcp__gitnexus__detect_changes',
+        ).label(const {'repo': 'grid-app', 'scope': 'all'}),
+        'gitnexus · detect changes · grid-app',
+      );
+      expect(
+        claudeTool('mcp__grid__grid_guide').label(const {'topic': 'loop'}),
+        'grid · grid guide · loop',
+      );
+      expect(
+        claudeTool('mcp__grid__web_search').label(const {
+          'query': ['a', 'b'],
+        }),
+        'grid · web search',
+      );
+    });
+
+    test('a tool search names the tools it went to load, the way the feed '
+        'names them', () {
+      expect(
+        claudeTool('ToolSearch').label(const {
+          'query': 'select:mcp__gitnexus__impact,Monitor',
+          'max_results': 2,
+        }),
+        'ToolSearch · gitnexus impact, Monitor',
+      );
+      expect(
+        claudeTool('ToolSearch').label(const {'query': 'slack send'}),
+        'ToolSearch · slack send',
+      );
+    });
+
+    test('a tool nobody has told the app about still gets a row, titled by '
+        'the file it touched', () {
+      final tool = claudeTool('SomethingNew');
+      expect(tool.label(const {'file_path': '/r/a.md'}), 'SomethingNew · a.md');
+      expect(tool.kind, AgentActivityKind.tool);
+      expect(tool.editsFiles, isFalse);
+    });
+
+    test('only the file tools edit files — which is what makes a permission '
+        'an edit, and a write something the chat can open', () {
+      expect(
+        [
+          for (final name in ['Edit', 'Write', 'NotebookEdit', 'Read', 'Bash'])
+            claudeTool(name).editsFiles,
+        ],
+        [true, true, true, false, false],
+      );
+    });
+  });
+
+  group('a file change opens as the change it made, not as its arguments', () {
+    test('an edit is the lines it swaps, as a diff with the file named', () {
+      expect(
+        claudeTool('Edit').request(const {
+          'file_path': '/repo/lib/a.dart',
+          'old_string': 'one\ntwo\nthree',
+          'new_string': 'one\n2\nthree',
+        }),
+        '--- /repo/lib/a.dart\n'
+        '+++ /repo/lib/a.dart\n'
+        ' one\n'
+        '-two\n'
+        '+2\n'
+        ' three',
+      );
+    });
+
+    test('a write is the file it wrote — readable, and copyable', () {
+      expect(
+        claudeTool('Write').request(const {
+          'file_path': '/repo/a.md',
+          'content': '# Title\n\nBody\n',
+        }),
+        '# Title\n\nBody\n',
+      );
+    });
+
+    test('an edit that changes nothing keeps its arguments, rather than a '
+        'diff with no lines in it', () {
+      expect(
+        claudeTool('Edit').request(const {
+          'file_path': 'a',
+          'old_string': 'x',
+          'new_string': 'x',
+        }),
+        startsWith('{'),
+      );
+    });
+
+    test('the row a call opens carries the change', () {
+      final events = _read(
+        ClaudeStreamParser(),
+        _assistant({
+          'type': 'tool_use',
+          'id': 'e1',
+          'name': 'Edit',
+          'input': {
+            'file_path': '/r/a.dart',
+            'old_string': 'a',
+            'new_string': 'b',
+          },
+        }),
+      );
+      final activity = events.whereType<ClaudeActivityEvent>().single.activity;
+      expect(activity.request, '--- /r/a.dart\n+++ /r/a.dart\n-a\n+b');
+    });
+  });
+
+  group('what a tool sent back reads as what it said, not as the wrapping the '
+      'CLI puts round it for the model', () {
+    test('an error reads as the error — 264 of them in a month arrived inside '
+        '<tool_use_error> tags', () {
+      expect(
+        claudeToolResult(
+          '<tool_use_error>String to replace not found in file.'
+          '</tool_use_error>',
+        ),
+        'String to replace not found in file.',
+      );
+    });
+
+    test(
+      'a reminder the CLI put in front of a file is not part of the file',
+      () {
+        expect(
+          claudeToolResult(
+            '<system-reminder>This memory is 3 days old.</system-reminder>\n'
+            '1\t# Notes',
+          ),
+          '1\t# Notes',
+        );
+      },
+    );
+
+    test('one it put after the output goes the same way', () {
+      expect(
+        claudeToolResult('done\n<system-reminder>note</system-reminder>'),
+        'done',
+      );
+    });
+
+    test('a result that is nothing but a reminder keeps its words — it is how '
+        'an empty file is reported', () {
+      expect(
+        claudeToolResult(
+          '<system-reminder>Warning: the file exists but the contents are '
+          'empty.</system-reminder>',
+        ),
+        'Warning: the file exists but the contents are empty.',
+      );
+    });
+
+    test("a reminder in the middle of a result is the file's own text, and "
+        'stays', () {
+      const file = 'a\n<system-reminder>quoted</system-reminder>\nb';
+      expect(claudeToolResult(file), file);
+    });
+
+    test("the CLI's refusal reads as the person's no, with their reason when "
+        'they gave one', () {
+      const refused =
+          "The user doesn't want to proceed with this tool use. The tool use "
+          'was rejected (eg. if it was a file edit, the new_string was NOT '
+          'written to the file).';
+      expect(
+        claudeToolResult(
+          '$refused STOP what you are doing and wait for the user to tell you '
+          'how to proceed.',
+        ),
+        'You said no to this.',
+      );
+      expect(
+        claudeToolResult(
+          '$refused The user provided the following reason for the '
+          'rejection: wrong file',
+        ),
+        'You said no: wrong file',
+      );
+    });
+
+    test('a tool search answers with the tools it loaded — names, not text '
+        'blocks, which left its row with nothing to open', () {
+      expect(
+        claudeToolResult(const [
+          {'type': 'tool_reference', 'tool_name': 'mcp__gitnexus__impact'},
+          {'type': 'tool_reference', 'tool_name': 'Monitor'},
+          {'type': 'image', 'source': <String, Object>{}},
+        ]),
+        'mcp__gitnexus__impact\nMonitor',
+      );
+    });
+
+    test('the tidied answer is what lands on the row the call started', () {
+      final parser = ClaudeStreamParser();
+      _read(
+        parser,
+        _assistant({
+          'type': 'tool_use',
+          'id': 'e1',
+          'name': 'Edit',
+          'input': {
+            'file_path': '/r/a.dart',
+            'old_string': 'a',
+            'new_string': 'b',
+          },
+        }),
+      );
+      final done = _one(parser, {
+        'type': 'user',
+        'message': {
+          'content': [
+            {
+              'type': 'tool_result',
+              'tool_use_id': 'e1',
+              'is_error': true,
+              'content':
+                  '<tool_use_error>File has not been read yet.'
+                  '</tool_use_error>',
+            },
+          ],
+        },
+      });
+      final activity = (done as ClaudeActivityEvent).activity;
+      expect(activity.status, AgentActivityStatus.failed);
+      expect(activity.result, 'File has not been read yet.');
+    });
+  });
+
+  group('the task list the CLI keeps on disk', () {
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('claude-tasks'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    void write(String name, String body) =>
+        File('${dir.path}/$name').writeAsStringSync(body);
+    String task(String id, String subject, String status) => jsonEncode({
+      'id': id,
+      'subject': subject,
+      'description': '',
+      'status': status,
+      'blocks': <String>[],
+      'blockedBy': <String>[],
+    });
+
+    test('it lives where the CLI puts it: the config dir, then tasks, then '
+        'the list id with anything unsafe made a dash', () {
+      expect(
+        claudeTaskListDir(configDir: '/h/.claude', listId: 'a/b c'),
+        '/h/.claude/tasks/a-b-c',
+      );
+      expect(claudeConfigDir(const {'HOME': '/h'}), '/h/.claude');
+      expect(
+        claudeConfigDir(const {'HOME': '/h', 'CLAUDE_CONFIG_DIR': '/cfg'}),
+        '/cfg',
+      );
+    });
+
+    test("the list is the session's unless the turn names another, the way "
+        'the CLI picks it', () {
+      expect(claudeTaskListId(const {}, 's1'), 's1');
+      expect(
+        claudeTaskListId(const {'CLAUDE_CODE_TASK_LIST_ID': 'team'}, 's1'),
+        'team',
+      );
+    });
+
+    test('tasks read back in the order the CLI numbered them, past its '
+        'bookkeeping and any file that holds no task', () async {
+      write('10.json', task('10', 'Tenth', 'pending'));
+      write('2.json', task('2', 'Second', 'completed'));
+      write('1.json', task('1', 'First', 'in_progress'));
+      write('.highwatermark', '10');
+      write('.lock', '');
+      write('3.json', '{not json');
+      write('4.json', task('4', '   ', 'pending'));
+      final tasks = await readClaudeTaskList(dir.path);
+      expect([for (final t in tasks) t.id], ['1', '2', '10']);
+      expect(tasks.first, (id: '1', subject: 'First', status: 'in_progress'));
+    });
+
+    test(
+      'a first turn has no list, and that is an empty one, not an error',
+      () async {
+        expect(await readClaudeTaskList('${dir.path}/missing'), isEmpty);
+      },
+    );
+
+    test('a list whose every task is done is not carried into the next turn '
+        "— the CLI's own screen clears it — while one still open is", () {
+      const done = (id: '1', subject: 'A', status: 'completed');
+      const open = (id: '2', subject: 'B', status: 'pending');
+      expect(claudeTasksToCarry(const [done]), isEmpty);
+      expect(claudeTasksToCarry(const [done, open]), [done, open]);
     });
   });
 
