@@ -112,10 +112,10 @@ class PanelTabsState {
 ///
 /// Not per chat: a panel is a place to *do* something next to whatever you are
 /// saying, so it stays open while you move between the conversations of one
-/// project. Per *project*, though, for the panels beside a conversation — each
-/// project keeps the panel it was left with, open or shut, tabs and all, and
-/// gets it back on the next launch (see `panelMemoryProvider`). Until
-/// 2026-09-10 it was one flag for the whole app, shut on every launch.
+/// project. Per *project*, though — each project keeps its panels the way it
+/// left them, open or shut, tabs and all, and gets them back on the next
+/// launch (see `panelMemoryProvider`). Until 2026-09-10 this was one flag per
+/// panel for the whole app, shut on every launch.
 final panelOpenProvider = NotifierProvider.family<PanelOpen, bool, PanelHost>(
   PanelOpen.new,
 );

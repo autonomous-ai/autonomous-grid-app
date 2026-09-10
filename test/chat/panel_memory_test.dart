@@ -75,16 +75,21 @@ void main() {
         ),
         // No real shell: what's under test is which terminals stay alive.
         shellStarterProvider.overrideWithValue((session, onError) {}),
+        // Both of the chat's panels follow the chat's project; Code's has no
+        // project open in these tests.
         panelScopeProvider.overrideWith(
-          (ref, host) => host == _side ? ref.watch(_onScreenProvider) : null,
+          (ref, host) =>
+              host == PanelHost.code ? null : ref.watch(_onScreenProvider),
         ),
       ],
     );
     addTearDown(c.dispose);
-    // Listened to, as the shell does: a provider nobody listens to is paused,
-    // and hears none of the project changes below.
-    c.listen(panelMemoryProvider(_side), (_, _) {});
-    c.read(panelMemoryProvider(_side).notifier).start();
+    for (final host in [_side, PanelHost.bottom]) {
+      // Listened to, as the shell does: a provider nobody listens to is
+      // paused, and hears none of the project changes below.
+      c.listen(panelMemoryProvider(host), (_, _) {});
+      c.read(panelMemoryProvider(host).notifier).start();
+    }
     return c;
   }
 
@@ -128,6 +133,29 @@ void main() {
 
       expect(tabsOf(c).activeId, shell);
       expect(c.read(panelOpenProvider(_side)), isTrue);
+      expect(c.read(terminalSessionsProvider)[shell], isNotNull);
+    });
+
+    test('the terminal strip under the chat follows the project too', () async {
+      // ⌃` in one project and then another: each keeps its own terminals, and
+      // the first one's go on running while the second is in front.
+      final c = launch();
+      await goTo(c, 'app');
+      final shell = c
+          .read(panelTabsProvider(PanelHost.bottom).notifier)
+          .open(PanelFeature.terminal);
+      c
+          .read(terminalSessionsProvider.notifier)
+          .ensure(tabId: shell, workdir: '/p/app');
+
+      await goTo(c, 'notes');
+
+      expect(c.read(panelTabsProvider(PanelHost.bottom)).tabs, isEmpty);
+      expect(c.read(panelOpenProvider(PanelHost.bottom)), isFalse);
+
+      await goTo(c, 'app');
+
+      expect(c.read(panelTabsProvider(PanelHost.bottom)).activeId, shell);
       expect(c.read(terminalSessionsProvider)[shell], isNotNull);
     });
   });
@@ -179,6 +207,25 @@ void main() {
       next.read(browserTabProvider(tab.id).notifier).attach(page);
       expect(page.loads, ['https://example.com/docs']);
     }, skip: embeddedWebSupported ? false : 'no web engine on this computer');
+
+    test('the terminal strip comes back open, as a new shell', () async {
+      // The shell it held ended with the app. The tab comes back, and the
+      // shell in it is a new one in the same folder once the tab is drawn.
+      final first = launch();
+      await goTo(first, 'app');
+      first
+          .read(panelTabsProvider(PanelHost.bottom).notifier)
+          .open(PanelFeature.terminal);
+      first.dispose();
+
+      final next = launch();
+      await goTo(next, 'app');
+
+      final strip = next.read(panelTabsProvider(PanelHost.bottom));
+      expect(strip.tabs.single.feature, PanelFeature.terminal);
+      expect(strip.activeId, strip.tabs.single.id);
+      expect(next.read(panelOpenProvider(PanelHost.bottom)), isTrue);
+    });
 
     test('a panel left shut comes back shut, its tabs behind it', () async {
       final first = launch();

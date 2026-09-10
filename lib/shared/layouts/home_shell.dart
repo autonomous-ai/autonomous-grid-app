@@ -19,7 +19,6 @@ import '../../features/scheduled/logic/task_unread_store.dart';
 import '../../infrastructure/platform/desktop_notifier.dart';
 import '../link_open.dart';
 import '../panels/panel_memory_controller.dart';
-import '../panels/panel_scope.dart';
 import '../panels/panel_tabs.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
@@ -90,10 +89,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // listener in `build` has no change left to fire on — so settle the
       // restored chat here too. Same reason as the line above.
       if (!ref.read(chatSessionsProvider).loading) settleRestoredChat(ref);
-      // Each project's side panel comes back the way it was left. Started here
+      // Each project's panels come back the way they were left. Started here
       // rather than in a build: taking up the chat the app reopened on opens
       // that project's tabs, and a build may not open anything.
-      for (final host in kRememberedPanels) {
+      for (final host in PanelHost.values) {
         ref.read(panelMemoryProvider(host).notifier).start();
       }
       // The launch update check lives here, not at startup: the shell is only
@@ -150,7 +149,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // Held open here rather than only read: Riverpod pauses a provider nobody
     // listens to, and a paused panel memory never hears the project change —
     // the panel would stay on whichever project the launch opened it on.
-    for (final host in kRememberedPanels) {
+    for (final host in PanelHost.values) {
       ref.listen(panelMemoryProvider(host), (_, _) {});
     }
 

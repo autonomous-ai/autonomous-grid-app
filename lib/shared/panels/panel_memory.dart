@@ -76,8 +76,8 @@ class PanelTabMemory {
   int get hashCode => Object.hash(feature, title, url, files);
 }
 
-/// What one side panel was showing for one project: whether it was open, the
-/// tabs in it, and which of them was in front.
+/// What one panel was showing for one project: whether it was open, the tabs
+/// in it, and which of them was in front.
 @immutable
 class PanelScopeMemory {
   PanelScopeMemory({
@@ -86,7 +86,7 @@ class PanelScopeMemory {
     this.active,
   }) : tabs = List.unmodifiable(tabs);
 
-  /// A project the panel was never opened beside.
+  /// A project the panel was never opened in.
   static final empty = PanelScopeMemory();
 
   final bool open;
@@ -140,7 +140,7 @@ class PanelScopeMemory {
   int get hashCode => Object.hash(open, active, Object.hashAll(tabs));
 }
 
-/// Persists what each side panel had open, per project — one file per panel,
+/// Persists what each panel had open, per project — one file per panel,
 /// `~/.grid/app/panel_tabs/<panel>.json`, keyed by the scope the panel was
 /// showing (see `panelScopeProvider`).
 ///

@@ -162,9 +162,9 @@ class GridPaths {
   /// App-owned; the CLI never touches it.
   static File get panelRecapsFile => File('${home.path}/app/panel_recaps.json');
 
-  /// What each side panel had open, per project — its tabs, the page a browser
-  /// tab was on, the file a Files tab was showing — one file per panel
-  /// (`~/.grid/app/panel_tabs/<panel>.json`), so a project's panel comes back
+  /// What each panel had open, per project — its tabs, the page a browser tab
+  /// was on, the file a Files tab was showing — one file per panel
+  /// (`~/.grid/app/panel_tabs/<panel>.json`), so a project's panels come back
   /// after a restart. Not the Grid Panel's: that is [panelRecapsFile].
   /// App-owned; the CLI never touches it, and cloud sync leaves it behind on
   /// purpose — the paths in it name this computer's disk.

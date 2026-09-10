@@ -9,13 +9,13 @@ import 'panel_memory.dart';
 import 'panel_scope.dart';
 import 'panel_tabs.dart';
 
-/// What each project's side panel had open, kept for it — through a trip to
+/// What each project's panels had open, kept for it — through a trip to
 /// another project and back, and through the app closing.
 ///
 /// Until 2026-09-10 a panel was one set of tabs for the whole app: a page
 /// opened beside one project's chat was still there beside the next project's,
 /// and none of it was there after a restart. Now a project is a place the
-/// panel belongs to, the way a folder is the place an editor window belongs to.
+/// panels belong to, the way a folder is the place an editor window belongs to.
 ///
 /// Two layers, because they can hold different things:
 ///
@@ -200,8 +200,8 @@ class PanelMemory extends Notifier<String?> {
       ref
           .read(appLogProvider)
           .failure(
-            'side-panel',
-            'Could not remember what the side panel had open',
+            'panel-tabs',
+            'Could not remember what the ${host.name} panel had open',
             error: error,
             stackTrace: stack,
           );
