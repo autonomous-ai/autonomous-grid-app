@@ -4,10 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_chat_sender.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_app/infrastructure/cli/agent_question.dart';
+import 'package:grid_app/infrastructure/cli/claude_content.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_event.dart';
 import 'package:grid_app/infrastructure/cli/claude_exec_service.dart';
 import 'package:grid_app/infrastructure/cli/claude_permission.dart';
 import 'package:grid_app/infrastructure/cli/claude_stream_parser.dart';
+import 'package:grid_app/infrastructure/cli/claude_tools.dart';
 
 /// One `stream_event` carrying a text delta — the shape the vendor's SSE arrives
 /// in once `--include-partial-messages` is on.
@@ -901,7 +903,7 @@ void main() {
       'reading "Agent" with its description dropped',
       () {
         expect(
-          claudeToolLabel('Agent', const {
+          claudeTool('Agent').label(const {
             'description': 'Review the diff',
             'subagent_type': 'code-reviewer',
           }),
@@ -909,7 +911,7 @@ void main() {
         );
         // The older name still answers, since the app pins no CLI version.
         expect(
-          claudeToolLabel('Task', const {'description': 'Review the diff'}),
+          claudeTool('Task').label(const {'description': 'Review the diff'}),
           'Task · Review the diff',
         );
       },
@@ -917,10 +919,9 @@ void main() {
 
     test('a skill row names the skill that ran', () {
       expect(
-        claudeToolLabel('Skill', const {
-          'skill': 'grid-web',
-          'args': 'flutter',
-        }),
+        claudeTool(
+          'Skill',
+        ).label(const {'skill': 'grid-web', 'args': 'flutter'}),
         'Skill · grid-web',
       );
     });
@@ -929,9 +930,256 @@ void main() {
         'behind it — a row spent entirely on `mcp__…__…` names nothing the '
         'user chose', () {
       expect(
-        claudeToolLabel('mcp__gitnexus__impact', const {'target': 'ChatStore'}),
+        claudeTool(
+          'mcp__gitnexus__impact',
+        ).label(const {'target': 'ChatStore'}),
         'gitnexus · impact · ChatStore',
       );
+    });
+
+    test('a read of part of a file says which lines — the offset is the '
+        'first line as the result numbers it, not the one before', () {
+      String read(Map<String, dynamic> input) => claudeTool(
+        'Read',
+      ).label({'file_path': '/r/conventions.md', ...input});
+      expect(
+        read({'offset': 490, 'limit': 80}),
+        'Read · conventions.md (lines 490–569)',
+      );
+      expect(read({'offset': 12}), 'Read · conventions.md (from line 12)');
+      expect(read({'limit': 200}), 'Read · conventions.md (lines 1–200)');
+      expect(read(const {}), 'Read · conventions.md');
+    });
+
+    test('a connector row takes its subject from the arguments connectors '
+        'here actually send, and never prints a list as one', () {
+      expect(
+        claudeTool(
+          'mcp__gitnexus__detect_changes',
+        ).label(const {'repo': 'grid-app', 'scope': 'all'}),
+        'gitnexus · detect changes · grid-app',
+      );
+      expect(
+        claudeTool('mcp__grid__grid_guide').label(const {'topic': 'loop'}),
+        'grid · grid guide · loop',
+      );
+      expect(
+        claudeTool('mcp__grid__web_search').label(const {
+          'query': ['a', 'b'],
+        }),
+        'grid · web search',
+      );
+    });
+
+    test('a tool search names the tools it went to load, the way the feed '
+        'names them', () {
+      expect(
+        claudeTool('ToolSearch').label(const {
+          'query': 'select:mcp__gitnexus__impact,Monitor',
+          'max_results': 2,
+        }),
+        'ToolSearch · gitnexus impact, Monitor',
+      );
+      expect(
+        claudeTool('ToolSearch').label(const {'query': 'slack send'}),
+        'ToolSearch · slack send',
+      );
+    });
+
+    test('a tool nobody has told the app about still gets a row, titled by '
+        'the file it touched', () {
+      final tool = claudeTool('SomethingNew');
+      expect(tool.label(const {'file_path': '/r/a.md'}), 'SomethingNew · a.md');
+      expect(tool.kind, AgentActivityKind.tool);
+      expect(tool.editsFiles, isFalse);
+    });
+
+    test('only the file tools edit files — which is what makes a permission '
+        'an edit, and a write something the chat can open', () {
+      expect(
+        [
+          for (final name in ['Edit', 'Write', 'NotebookEdit', 'Read', 'Bash'])
+            claudeTool(name).editsFiles,
+        ],
+        [true, true, true, false, false],
+      );
+    });
+  });
+
+  group('a file change opens as the change it made, not as its arguments', () {
+    test('an edit is the lines it swaps, as a diff with the file named', () {
+      expect(
+        claudeTool('Edit').request(const {
+          'file_path': '/repo/lib/a.dart',
+          'old_string': 'one\ntwo\nthree',
+          'new_string': 'one\n2\nthree',
+        }),
+        '--- /repo/lib/a.dart\n'
+        '+++ /repo/lib/a.dart\n'
+        ' one\n'
+        '-two\n'
+        '+2\n'
+        ' three',
+      );
+    });
+
+    test('a write is the file it wrote — readable, and copyable', () {
+      expect(
+        claudeTool('Write').request(const {
+          'file_path': '/repo/a.md',
+          'content': '# Title\n\nBody\n',
+        }),
+        '# Title\n\nBody\n',
+      );
+    });
+
+    test('an edit that changes nothing keeps its arguments, rather than a '
+        'diff with no lines in it', () {
+      expect(
+        claudeTool('Edit').request(const {
+          'file_path': 'a',
+          'old_string': 'x',
+          'new_string': 'x',
+        }),
+        startsWith('{'),
+      );
+    });
+
+    test('the row a call opens carries the change', () {
+      final events = _read(
+        ClaudeStreamParser(),
+        _assistant({
+          'type': 'tool_use',
+          'id': 'e1',
+          'name': 'Edit',
+          'input': {
+            'file_path': '/r/a.dart',
+            'old_string': 'a',
+            'new_string': 'b',
+          },
+        }),
+      );
+      final activity = events.whereType<ClaudeActivityEvent>().single.activity;
+      expect(activity.request, '--- /r/a.dart\n+++ /r/a.dart\n-a\n+b');
+    });
+  });
+
+  group('what a tool sent back reads as what it said, not as the wrapping the '
+      'CLI puts round it for the model', () {
+    test('an error reads as the error — 264 of them in a month arrived inside '
+        '<tool_use_error> tags', () {
+      expect(
+        claudeToolResult(
+          '<tool_use_error>String to replace not found in file.'
+          '</tool_use_error>',
+        ),
+        'String to replace not found in file.',
+      );
+    });
+
+    test(
+      'a reminder the CLI put in front of a file is not part of the file',
+      () {
+        expect(
+          claudeToolResult(
+            '<system-reminder>This memory is 3 days old.</system-reminder>\n'
+            '1\t# Notes',
+          ),
+          '1\t# Notes',
+        );
+      },
+    );
+
+    test('one it put after the output goes the same way', () {
+      expect(
+        claudeToolResult('done\n<system-reminder>note</system-reminder>'),
+        'done',
+      );
+    });
+
+    test('a result that is nothing but a reminder keeps its words — it is how '
+        'an empty file is reported', () {
+      expect(
+        claudeToolResult(
+          '<system-reminder>Warning: the file exists but the contents are '
+          'empty.</system-reminder>',
+        ),
+        'Warning: the file exists but the contents are empty.',
+      );
+    });
+
+    test("a reminder in the middle of a result is the file's own text, and "
+        'stays', () {
+      const file = 'a\n<system-reminder>quoted</system-reminder>\nb';
+      expect(claudeToolResult(file), file);
+    });
+
+    test("the CLI's refusal reads as the person's no, with their reason when "
+        'they gave one', () {
+      const refused =
+          "The user doesn't want to proceed with this tool use. The tool use "
+          'was rejected (eg. if it was a file edit, the new_string was NOT '
+          'written to the file).';
+      expect(
+        claudeToolResult(
+          '$refused STOP what you are doing and wait for the user to tell you '
+          'how to proceed.',
+        ),
+        'You said no to this.',
+      );
+      expect(
+        claudeToolResult(
+          '$refused The user provided the following reason for the '
+          'rejection: wrong file',
+        ),
+        'You said no: wrong file',
+      );
+    });
+
+    test('a tool search answers with the tools it loaded — names, not text '
+        'blocks, which left its row with nothing to open', () {
+      expect(
+        claudeToolResult(const [
+          {'type': 'tool_reference', 'tool_name': 'mcp__gitnexus__impact'},
+          {'type': 'tool_reference', 'tool_name': 'Monitor'},
+          {'type': 'image', 'source': <String, Object>{}},
+        ]),
+        'mcp__gitnexus__impact\nMonitor',
+      );
+    });
+
+    test('the tidied answer is what lands on the row the call started', () {
+      final parser = ClaudeStreamParser();
+      _read(
+        parser,
+        _assistant({
+          'type': 'tool_use',
+          'id': 'e1',
+          'name': 'Edit',
+          'input': {
+            'file_path': '/r/a.dart',
+            'old_string': 'a',
+            'new_string': 'b',
+          },
+        }),
+      );
+      final done = _one(parser, {
+        'type': 'user',
+        'message': {
+          'content': [
+            {
+              'type': 'tool_result',
+              'tool_use_id': 'e1',
+              'is_error': true,
+              'content':
+                  '<tool_use_error>File has not been read yet.</tool_use_error>',
+            },
+          ],
+        },
+      });
+      final activity = (done as ClaudeActivityEvent).activity;
+      expect(activity.status, AgentActivityStatus.failed);
+      expect(activity.result, 'File has not been read yet.');
     });
   });
 

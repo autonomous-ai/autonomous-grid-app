@@ -8,7 +8,7 @@ import '../../../shared/widgets/app_spinner.dart';
 import '../../../shared/widgets/composer_notice_bar.dart';
 import '../../../shared/widgets/toast.dart';
 import '../logic/agent_changes.dart';
-import '../logic/edit_diff.dart';
+import '../../../core/edit_diff.dart';
 import 'diff_view.dart';
 
 /// A slim bar above the composer summarising what the agent changed in this

@@ -1,4 +1,5 @@
 import '../../../infrastructure/cli/agent_event.dart';
+import '../../../shared/code/code_highlight.dart';
 import '../../../shared/copy/plural.dart';
 
 /// How one step in the activity feed reads at the chosen level of detail.
@@ -104,6 +105,31 @@ String agentStepDetail(AgentActivity step, AgentDetailMode mode) {
   }
   return label == tool ? '' : label;
 }
+
+/// The language a step's request is coloured in when its row is opened, or ''
+/// to leave it plain.
+///
+/// Read off what the request *is*, since each lane puts a different thing
+/// there: a shell step's is its command line; a file change arrives as a
+/// unified diff (Claude's `Edit` entry in `claude_tools.dart`); a Claude
+/// `Write` carries the file it wrote, coloured as that file's own language;
+/// anything else that opens with a brace is the arguments object the agent
+/// sent. A guess would colour a log as code, so the rest stays plain.
+String stepRequestLanguage(AgentActivity step) {
+  final request = step.request ?? '';
+  if (step.kind == AgentActivityKind.command) return 'bash';
+  if (_isUnifiedDiff(request)) return 'diff';
+  if (step.tool == 'Write') {
+    final file = agentStepDetail(step, AgentDetailMode.stepsCommands);
+    final language = languageForPath(file);
+    if (language.isNotEmpty) return language;
+  }
+  return request.startsWith('{') ? 'json' : '';
+}
+
+/// A request that opens the way a unified diff does: `--- path`, `+++ path`.
+bool _isUnifiedDiff(String request) =>
+    request.startsWith('--- ') && request.contains('\n+++ ');
 
 /// The first word of a label, for a lane that never named its tool.
 String _labelHead(String label) {
@@ -212,6 +238,7 @@ const Map<String, AgentToolFamily> _kToolFamilies = {
   'search': AgentToolFamily.search,
   'search_files': AgentToolFamily.search,
   'find': AgentToolFamily.search,
+  'toolsearch': AgentToolFamily.search,
   'ls': AgentToolFamily.list,
   'list_files': AgentToolFamily.list,
   'bash': AgentToolFamily.shell,

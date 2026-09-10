@@ -5,7 +5,7 @@ import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/code_text_scope.dart';
 import '../logic/agent_permissions.dart';
-import '../logic/edit_diff.dart';
+import '../../../core/edit_diff.dart';
 import 'diff_view.dart';
 
 /// The assistant has stopped mid-answer and is asking before it touches this

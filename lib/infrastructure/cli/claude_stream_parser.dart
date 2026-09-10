@@ -1,34 +1,10 @@
-import 'dart:convert';
-
 import 'agent_event.dart';
 import 'agent_question.dart';
+import 'claude_content.dart';
 import 'claude_exec_event.dart';
 import 'claude_exec_service.dart' show kClaudeSessionSchedulerTools;
+import 'claude_tools.dart';
 import 'model_control_tokens.dart';
-
-/// The tools Claude Code uses to change a file. Only these produce a
-/// [ClaudeFileWriteStarted] / [ClaudeFileWriteFinished] pair, so the chat offers
-/// to open what the agent actually wrote rather than every path it merely read.
-const Set<String> kClaudeFileWriteTools = {'Write', 'Edit', 'NotebookEdit'};
-
-/// Tools whose *result* is the CLI coaching the model, not telling the user
-/// anything.
-///
-/// `EnterPlanMode` answers with a page of instructions addressed to the
-/// assistant — "You should now focus on exploring the codebase… DO NOT write or
-/// edit any files yet" — and `ExitPlanMode` with the sentence that releases it.
-/// Both landed in the transcript verbatim, which read as the app telling the
-/// user what to do. The row still shows (the agent did switch modes), the
-/// payload behind it doesn't.
-const Set<String> kClaudeCoachingTools = {'EnterPlanMode', 'ExitPlanMode'};
-
-/// The plan-mode tools in the user's words. Every other tool row is titled by
-/// what it acted on ([claudeToolLabel]); these two act on nothing, so without
-/// this they show the CLI's own identifier and nothing else.
-const Map<String, String> kClaudePhrasedTools = {
-  'EnterPlanMode': 'Planning before changing anything',
-  'ExitPlanMode': 'Finished the plan',
-};
 
 /// Turns the JSONL of `claude -p --output-format stream-json` into the shapes
 /// the chat already renders.
@@ -489,10 +465,14 @@ class ClaudeStreamParser {
       if (questions.isNotEmpty) return [ClaudeQuestionsEvent(questions)];
     }
 
+    // What the row says and what its fold holds is the tool's own business —
+    // one entry per tool, the way Claude's VS Code panel keeps them. See
+    // `claude_tools.dart`.
+    final tool = claudeTool(name);
     final activity = AgentActivity(
       id: id,
-      kind: claudeToolKind(name),
-      label: claudeToolLabel(name, input),
+      kind: tool.kind,
+      label: tool.label(input),
       status: AgentActivityStatus.running,
       tool: name,
       parent: parent,
@@ -500,14 +480,14 @@ class ClaudeStreamParser {
       // them for the row; the row can be opened, and what is behind it should be
       // what Claude actually asked for — a `Bash` step says `Bash · cd … && …`
       // in one clipped line, and the command it ran is three lines long.
-      request: claudeToolRequest(name, input),
+      request: clipToolPayload(tool.request(input)),
     );
     _calls[id] = activity;
     if (kClaudeSessionSchedulerTools.contains(name)) _scheduling[id] = input;
 
     // Recorded whoever ran it: a sub-agent's write changes the same disk, and
     // the undo behind it is the only way back for either.
-    final path = kClaudeFileWriteTools.contains(name)
+    final path = tool.editsFiles
         ? '${input['file_path'] ?? input['notebook_path'] ?? ''}'
         : '';
     if (path.isEmpty) return [ClaudeActivityEvent(activity)];
@@ -548,9 +528,9 @@ class ClaudeStreamParser {
             status: failed
                 ? AgentActivityStatus.failed
                 : AgentActivityStatus.done,
-            result: kClaudeCoachingTools.contains(call.tool)
-                ? null
-                : claudeToolResult(block['content']),
+            result: claudeTool(call.tool ?? '').showsResult
+                ? claudeToolResult(block['content'])
+                : null,
           ),
         ),
       );
@@ -756,179 +736,6 @@ Map<String, String> claudeServerStatuses(Object? node) {
       if (entry is Map && entry['name'] is String)
         '${entry['name']}': '${entry['status'] ?? 'unknown'}',
   };
-}
-
-/// Which icon a tool call gets in the activity feed. Claude names its tools, so
-/// this is a lookup rather than a guess: a shell command reads as a command, the
-/// two web tools as web look-ups, and everything else — the file tools, the
-/// searches, MCP servers — as a tool.
-AgentActivityKind claudeToolKind(String name) => switch (name) {
-  'Bash' || 'BashOutput' || 'KillShell' => AgentActivityKind.command,
-  'WebSearch' || 'WebFetch' => AgentActivityKind.web,
-  _ when isBrowserTool(name) => AgentActivityKind.web,
-  _ => AgentActivityKind.tool,
-};
-
-/// The MCP servers a browser lane hands the turn: the Claude in Chrome
-/// extension, and the app's own browser over the DevTools protocol.
-const List<String> kBrowserToolPrefixes = [
-  'mcp__claude-in-chrome__',
-  'mcp__chrome-devtools__',
-];
-
-/// Whether [name] is a call into a browser rather than into this computer.
-///
-/// The feed is the only place a user sees that an agent is driving their
-/// browser — there is no button that turned it on and none that shows it is
-/// running — so a browser step reading `mcp__claude-in-chrome__navigate_page`
-/// is a step nobody can act on.
-bool isBrowserTool(String name) => kBrowserToolPrefixes.any(name.startsWith);
-
-/// A tool call's arguments, as the fold under its row shows them.
-///
-/// Verified against the real binary (Claude Code 2.1, `claude -p --output-format
-/// stream-json`): every `tool_use` block carries its whole `input` map — `Bash`
-/// gives `{command, description}`, `Read` gives `{file_path, limit}`, an MCP
-/// call gives whatever that server declared. So the fold shows the call itself,
-/// pretty-printed, rather than the app's own one-line summary of it a second
-/// time.
-///
-/// A lone `command` (which is what `Bash` mostly is) is unwrapped to the bare
-/// command line: a shell command wearing JSON quotes and `\n` escapes is harder
-/// to read than the thing itself, and it is the one payload a user is most
-/// likely to want to copy.
-String? claudeToolRequest(String name, Map<String, dynamic> input) {
-  if (input.isEmpty) return null;
-  final command = input['command'];
-  // Only the shell tool, by name. Gating on "has a `command` key" alone unwrapped
-  // calls that merely happen to have one — a browser server's
-  // `{command: 'click', selector: '#buy'}` came out as the word `click`, with
-  // the half that said what was clicked thrown away.
-  if (name == 'Bash' && command is String && command.trim().isNotEmpty) {
-    return clipToolPayload(command);
-  }
-  // The plan itself, as the markdown the model wrote — the one payload here a
-  // user reads rather than inspects, and JSON quoting turns it into one long
-  // line of `\n`.
-  final plan = input['plan'];
-  if (name == 'ExitPlanMode' && plan is String && plan.trim().isNotEmpty) {
-    return clipToolPayload(plan.trim());
-  }
-  try {
-    return clipToolPayload(const JsonEncoder.withIndent('  ').convert(input));
-  } on JsonUnsupportedObjectError {
-    // A shape `dart:convert` can't walk. The row and its title still stand;
-    // only the fold goes, which is better than dropping the step.
-    return null;
-  }
-}
-
-/// What a tool handed back, as the fold under its row shows it.
-///
-/// Verified against the real binary: a `tool_result` block carries `content`,
-/// which is a plain string for the tools people actually watch (`Read` returns
-/// the numbered lines, `Bash` returns its output, and a failure returns
-/// `Exit code 1` and the error). Tools that answer with structured blocks —
-/// images, some MCP servers — send the array form instead, so both are read and
-/// anything that is neither is dropped rather than stringified into `[{…}]`.
-///
-/// Returned **uncapped**: [AgentActivity.settled] is what caps it, and clipping
-/// here as well counted the cut against the already-cut string — a 200KB read
-/// came out saying 26 characters were dropped instead of 196,050.
-String? claudeToolResult(Object? content) {
-  if (content is String) return content;
-  if (content is! List) return null;
-  final buffer = StringBuffer();
-  for (final block in content) {
-    if (block is Map && block['type'] == 'text' && block['text'] is String) {
-      buffer.writeln(block['text'] as String);
-    }
-  }
-  return buffer.toString();
-}
-
-/// The one line the feed shows for a tool call — the thing the call is *about*,
-/// not the tool's name, wherever the input carries it. A row reading "Bash"
-/// eight times says nothing; the commands do.
-String claudeToolLabel(String name, Map<String, dynamic> input) {
-  if (isBrowserTool(name)) return browserToolLabel(name, input);
-  if (kClaudePhrasedTools[name] case final phrase?) return phrase;
-  if (name.startsWith('mcp__')) return mcpToolLabel(name, input);
-  final detail = switch (name) {
-    'Bash' => input['command'],
-    'WebSearch' => input['query'],
-    'WebFetch' => input['url'],
-    // `Agent` is what this tool is called in Claude Code 2.x; `Task` was its
-    // name before, and both are kept because the app pins no version of the
-    // CLI. Measured across the recent sessions on this machine: 31 `Agent`
-    // calls, no `Task` at all — so the row this line titles had been reading
-    // "Agent" and nothing else, with the description it carries thrown away.
-    'Agent' || 'Task' => input['description'],
-    // Which skill, not that a skill ran.
-    'Skill' => input['skill'],
-    // The next tick and why, or that the loop is being ended.
-    'ScheduleWakeup' =>
-      input['stop'] == true
-          ? 'stop'
-          : 'in ${input['delaySeconds']}s · ${input['reason'] ?? ''}',
-    'CronCreate' => input['cron'],
-    'Glob' || 'Grep' => input['pattern'],
-    _ => _fileName(input['file_path'] ?? input['notebook_path']),
-  };
-  final text = '${detail ?? ''}'.trim();
-  return text.isEmpty ? name : '$name · $text';
-}
-
-/// One browser step, said the way the user would say it: "Browser · navigate
-/// page · example.com".
-///
-/// The server name is dropped rather than shown. Which of the two lanes drove
-/// the browser is a routing detail the log already carries; on screen it would
-/// only ask the user to learn the difference between two things that look
-/// identical from where they sit.
-String browserToolLabel(String name, Map<String, dynamic> input) {
-  final action = name.split('__').last.replaceAll('_', ' ').trim();
-  final detail =
-      input['url'] ??
-      input['query'] ??
-      input['text'] ??
-      input['value'] ??
-      input['selector'] ??
-      input['uid'];
-  final text = '${detail ?? ''}'.trim();
-  return [
-    'Browser',
-    if (action.isNotEmpty) action,
-    if (text.isNotEmpty) text,
-  ].join(' · ');
-}
-
-/// A connector's tool, as `server · tool` rather than the wire identifier.
-///
-/// MCP names arrive as `mcp__<server>__<tool>` —
-/// `mcp__plugin_playwright_playwright__browser_navigate` is one real row — and
-/// a line of that spends its whole width on plumbing the user never chose by
-/// name. The browser servers have their own label ([browserToolLabel]) because
-/// their action words are worth reading; this is every other connector.
-String mcpToolLabel(String name, Map<String, dynamic> input) {
-  final parts = name.split('__').where((p) => p.isNotEmpty).toList();
-  final server = parts.length > 1 ? parts[1].replaceAll('_', ' ') : '';
-  final tool = parts.length > 2 ? parts.last.replaceAll('_', ' ') : '';
-  final detail = '${input['query'] ?? input['target'] ?? ''}'.trim();
-  return [
-    if (server.isNotEmpty) server,
-    if (tool.isNotEmpty) tool,
-    if (detail.isNotEmpty) detail,
-  ].join(' · ');
-}
-
-/// The last segment of a path — the feed has one line, and an absolute path
-/// spends all of it on folders the user already knows they're in.
-String _fileName(Object? path) {
-  final text = '${path ?? ''}'.trim();
-  if (text.isEmpty) return '';
-  final cut = text.lastIndexOf('/');
-  return cut == -1 ? text : text.substring(cut + 1);
 }
 
 /// One line saying where a background task has got to, from a

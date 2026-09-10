@@ -1,6 +1,6 @@
 import '../mcp/grid_browser_tool_permission.dart';
 import 'agent_event.dart';
-import 'claude_stream_parser.dart';
+import 'claude_tools.dart';
 
 /// What `--permission-prompt-tool` is given so Claude Code asks *this app*
 /// before it runs a tool.
@@ -189,7 +189,7 @@ AgentPermission? parseClaudePermission(
 /// unasked would be a no from a chat that promised to ask.
 AgentPermissionKind claudeToolPermissionKind(String tool) {
   if (tool == kClaudeShellTool) return AgentPermissionKind.command;
-  if (kClaudeFileWriteTools.contains(tool)) return AgentPermissionKind.edit;
+  if (claudeTool(tool).editsFiles) return AgentPermissionKind.edit;
   return AgentPermissionKind.other;
 }
 

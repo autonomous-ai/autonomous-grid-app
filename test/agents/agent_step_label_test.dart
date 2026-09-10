@@ -79,4 +79,80 @@ void main() {
       );
     });
   });
+
+  group('agentToolFamily', () {
+    test('a tool search is a search, not the wrench kept for tools nobody '
+        'has claimed', () {
+      expect(
+        agentToolFamily(
+          _step('ToolSearch · Monitor', kind: AgentActivityKind.tool),
+        ),
+        AgentToolFamily.search,
+      );
+    });
+  });
+
+  group('stepRequestLanguage', () {
+    AgentActivity call(
+      String tool,
+      String label,
+      String request, {
+      AgentActivityKind kind = AgentActivityKind.tool,
+    }) => AgentActivity(
+      id: 'x',
+      kind: kind,
+      label: label,
+      status: AgentActivityStatus.done,
+      tool: tool,
+      request: request,
+    );
+
+    test('a command line is coloured as shell', () {
+      expect(
+        stepRequestLanguage(
+          call('Bash', 'Bash · ls', 'ls -la', kind: AgentActivityKind.command),
+        ),
+        'bash',
+      );
+    });
+
+    test('a file change is coloured as the diff it is', () {
+      expect(
+        stepRequestLanguage(
+          call('Edit', 'Edit · a.dart', '--- /r/a.dart\n+++ /r/a.dart\n-a\n+b'),
+        ),
+        'diff',
+      );
+    });
+
+    test('a written file is coloured as its own language', () {
+      expect(
+        stepRequestLanguage(
+          call('Write', 'Write · main.dart', 'void main() {}'),
+        ),
+        'dart',
+      );
+    });
+
+    test('a written file with no grammar to colour it falls back to the rules '
+        'for any request', () {
+      expect(
+        stepRequestLanguage(call('Write', 'Write · notes.zzz', 'hello')),
+        '',
+      );
+    });
+
+    test('arguments are coloured as JSON', () {
+      expect(
+        stepRequestLanguage(
+          call('Grep', 'Grep · foo', '{\n  "pattern": "foo"\n}'),
+        ),
+        'json',
+      );
+    });
+
+    test('anything else stays plain rather than coloured by a guess', () {
+      expect(stepRequestLanguage(call('Other', 'Other', 'some output')), '');
+    });
+  });
 }
