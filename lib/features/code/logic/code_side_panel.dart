@@ -6,7 +6,8 @@ import '../../../shared/panels/panel_tabs.dart';
 
 /// Whether the Code side panel is open. Off by default: the conversation is what
 /// the screen is for, and a panel that lets itself in takes a third of the pane
-/// before anyone has read a line.
+/// before anyone has read a line. Once opened it is the project's: each Code
+/// project keeps the panel it was left with (see `panelMemoryProvider`).
 ///
 /// The shared panel flag, under the name Code's own files use — the panel beside
 /// a project is the same panel as the one beside a chat, tabs, launcher and all

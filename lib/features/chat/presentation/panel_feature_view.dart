@@ -134,9 +134,10 @@ class _FilesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final folder = ref.watch(activeChatWorkdirProvider);
 
-    // The tab is rooted at whichever folder the open chat works in, and
-    // switching chats can move it to another one. Telling it so is what clears
-    // the folders and the file it was showing out of the folder it just left.
+    // The tab is rooted at whichever folder the open chat works in, and that
+    // folder can move under it (see `FilesBrowser.showRoot`). Telling it so is
+    // what clears the folders and the file it was showing out of the folder it
+    // just left.
     //
     // After the frame, never during it, and for the same reason as `_ReviewTab`
     // above: writing a provider while another is building is what Riverpod

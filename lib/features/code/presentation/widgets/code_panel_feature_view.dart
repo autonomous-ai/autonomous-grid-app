@@ -117,9 +117,9 @@ class _FilesTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // The tab is rooted at the open project's copy, and switching projects moves
-    // it to another one. Telling it so is what clears the folders and the file
-    // it was showing out of the folder it just left.
+    // The tab is rooted at the open project's copy, which can move under it
+    // (see `FilesBrowser.showRoot`). Telling it so is what clears the folders
+    // and the file it was showing out of the folder it just left.
     //
     // After the frame, never during it: writing a provider while another is
     // building is what Riverpod forbids outright.

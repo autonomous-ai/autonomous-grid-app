@@ -18,6 +18,8 @@ import '../../features/scheduled/logic/task_conversation_id.dart';
 import '../../features/scheduled/logic/task_unread_store.dart';
 import '../../infrastructure/platform/desktop_notifier.dart';
 import '../link_open.dart';
+import '../panels/panel_memory_controller.dart';
+import '../panels/panel_scope.dart';
 import '../panels/panel_tabs.dart';
 import '../theme/app_theme.dart';
 import 'settings_pane.dart';
@@ -88,6 +90,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       // listener in `build` has no change left to fire on — so settle the
       // restored chat here too. Same reason as the line above.
       if (!ref.read(chatSessionsProvider).loading) settleRestoredChat(ref);
+      // Each project's side panel comes back the way it was left. Started here
+      // rather than in a build: taking up the chat the app reopened on opens
+      // that project's tabs, and a build may not open anything.
+      for (final host in kRememberedPanels) {
+        ref.read(panelMemoryProvider(host).notifier).start();
+      }
       // The launch update check lives here, not at startup: the shell is only
       // reached once first-run setup is done or skipped, so Sparkle's "restart
       // to update" prompt can't land on top of a model download.
@@ -138,6 +146,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       if (was != true || now) return;
       settleRestoredChat(ref);
     });
+
+    // Held open here rather than only read: Riverpod pauses a provider nobody
+    // listens to, and a paused panel memory never hears the project change —
+    // the panel would stay on whichever project the launch opened it on.
+    for (final host in kRememberedPanels) {
+      ref.listen(panelMemoryProvider(host), (_, _) {});
+    }
 
     final section = ref.watch(shellSectionProvider);
 

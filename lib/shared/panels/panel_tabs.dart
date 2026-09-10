@@ -110,10 +110,12 @@ class PanelTabsState {
 
 /// Whether a panel is open.
 ///
-/// Deliberately not persisted, and deliberately not per-chat or per-project: a
-/// panel is a place to *do* something next to whatever you are saying, so it
-/// stays open while you move between conversations and starts closed in a
-/// window you have just opened.
+/// Not per chat: a panel is a place to *do* something next to whatever you are
+/// saying, so it stays open while you move between the conversations of one
+/// project. Per *project*, though, for the panels beside a conversation — each
+/// project keeps the panel it was left with, open or shut, tabs and all, and
+/// gets it back on the next launch (see `panelMemoryProvider`). Until
+/// 2026-09-10 it was one flag for the whole app, shut on every launch.
 final panelOpenProvider = NotifierProvider.family<PanelOpen, bool, PanelHost>(
   PanelOpen.new,
 );
@@ -174,7 +176,7 @@ class PanelTabs extends Notifier<PanelTabsState> {
   /// showing this file" needs it before the tab has drawn once.
   String open(PanelFeature feature) {
     final tab = PanelTab(
-      id: '${host.name}-tab-${++_seq}',
+      id: nextId(),
       feature: feature,
       title: _titleFor(feature),
     );
@@ -182,6 +184,22 @@ class PanelTabs extends Notifier<PanelTabsState> {
     ref.read(panelOpenProvider(host).notifier).open();
     return tab.id;
   }
+
+  /// A fresh tab id, off the same counter [open] draws from.
+  ///
+  /// For tabs coming back from disk: an id belongs to one launch, so a tab put
+  /// back gets a new one — and drawing it from here is what keeps it clear of
+  /// a tab opened a moment later.
+  String nextId() => '${host.name}-tab-${++_seq}';
+
+  /// Put [next] in the panel in place of what is there, closing nothing.
+  ///
+  /// The one way tabs leave the strip still alive: a project's tabs are put
+  /// away when the user moves to another project and brought back when they
+  /// return (see `panelMemoryProvider`), so the shell in a terminal and the
+  /// place in a Files tab have to outlast being off screen. [close] is the verb
+  /// that ends a tab.
+  void swap(PanelTabsState next) => state = next;
 
   /// Brings [feature] to the front, opening a tab for it only if none is.
   ///
