@@ -162,6 +162,14 @@ class GridPaths {
   /// App-owned; the CLI never touches it.
   static File get panelRecapsFile => File('${home.path}/app/panel_recaps.json');
 
+  /// What each panel had open, per project — its tabs, the page a browser tab
+  /// was on, the file a Files tab was showing — one file per panel
+  /// (`~/.grid/app/panel_tabs/<panel>.json`), so a project's panels come back
+  /// after a restart. Not the Grid Panel's: that is [panelRecapsFile].
+  /// App-owned; the CLI never touches it, and cloud sync leaves it behind on
+  /// purpose — the paths in it name this computer's disk.
+  static Directory get panelTabsDir => Directory('${home.path}/app/panel_tabs');
+
   /// The first-run onboarding choice (run a model locally, use a cloud provider,
   /// or set up later) — remembered so a user who already picked a path isn't
   /// asked again on every launch, including the paths that install nothing.

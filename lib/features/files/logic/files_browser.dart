@@ -14,6 +14,23 @@ class FilesBrowserState {
     this.showTree = true,
   }) : expanded = Set.unmodifiable(expanded);
 
+  /// Lenient: anything missing, or not the shape [toJson] writes, reads as the
+  /// tab's resting state rather than failing the panel it is in.
+  factory FilesBrowserState.fromJson(Object? raw) {
+    if (raw is! Map) return FilesBrowserState();
+    final expanded = raw['expanded'];
+    return FilesBrowserState(
+      root: _pathFrom(raw['root']),
+      selected: _pathFrom(raw['selected']),
+      expanded: {
+        if (expanded is List)
+          for (final path in expanded) ?_pathFrom(path),
+      },
+      showSource: raw['showSource'] == true,
+      showTree: raw['showTree'] != false,
+    );
+  }
+
   /// The folder this tab was last pointed at, or null before it has been
   /// pointed anywhere.
   ///
@@ -63,6 +80,51 @@ class FilesBrowserState {
     showSource: showSource ?? this.showSource,
     showTree: showTree ?? this.showTree,
   );
+
+  /// What of this tab outlasts it being off screen — its project put away, or
+  /// the app closed: everything but the filter box, which is a search in
+  /// progress rather than a place.
+  FilesBrowserState get remembered => FilesBrowserState(
+    root: root,
+    expanded: expanded,
+    selected: selected,
+    showSource: showSource,
+    showTree: showTree,
+  );
+
+  /// [remembered], the way `~/.grid/app/panel_tabs` keeps it.
+  Map<String, Object?> toJson() => {
+    if (root != null) 'root': root,
+    if (selected != null) 'selected': selected,
+    if (expanded.isNotEmpty) 'expanded': [...expanded],
+    if (showSource) 'showSource': true,
+    if (!showTree) 'showTree': false,
+  };
+
+  static String? _pathFrom(Object? raw) =>
+      raw is String && raw.isNotEmpty ? raw : null;
+
+  // By value: Riverpod notifies on `!=`, and the panel's memory selects
+  // [remembered] — a new object on every read — to hear the tab move.
+  @override
+  bool operator ==(Object other) =>
+      other is FilesBrowserState &&
+      other.root == root &&
+      other.selected == selected &&
+      other.query == query &&
+      other.showSource == showSource &&
+      other.showTree == showTree &&
+      setEquals(other.expanded, expanded);
+
+  @override
+  int get hashCode => Object.hash(
+    root,
+    selected,
+    query,
+    showSource,
+    showTree,
+    Object.hashAllUnordered(expanded),
+  );
 }
 
 /// One of these per Files tab, keyed by the tab's id.
@@ -97,17 +159,18 @@ class FilesBrowser extends Notifier<FilesBrowserState> {
   /// Point this tab at [root], forgetting the last folder if it was a different
   /// one.
   ///
-  /// A tab is rooted at the folder the open chat works in, so switching to a
-  /// chat in another project — or to one in none, which browses the app's
-  /// workspace — re-roots it underneath the user. Nothing it was holding
-  /// survives that: the tree would come back showing this folder with the other
-  /// one's folders opened under it, and a file out of the other one still on
-  /// screen beside them.
+  /// A tab is rooted at the folder the open chat works in, and that folder can
+  /// still move underneath it — a project pointed at another folder after its
+  /// own moved in Finder, say. (Moving to a chat in another project doesn't any
+  /// more: each project has tabs of its own, see `panelMemoryProvider`.)
+  /// Nothing the tab was holding survives a re-rooting: the tree would come
+  /// back showing this folder with the other one's folders opened under it, and
+  /// a file out of the other one still on screen beside them.
   ///
   /// Called on every rebuild of the tab, so the ordinary case — moving between
   /// chats inside one folder — has to cost nothing, which is what the first
-  /// line is for. A tab whose file was chosen before it first drew ([reveal])
-  /// arrives already carrying its root, so this leaves it alone too.
+  /// line is for. A tab whose file was chosen before it first drew ([reveal],
+  /// [restore]) arrives already carrying its root, so this leaves it alone too.
   void showRoot(String root) {
     if (state.root == root) return;
     // The *place* resets; how the tab is set up to read does not. Hiding the
@@ -143,6 +206,14 @@ class FilesBrowser extends Notifier<FilesBrowserState> {
     // show.
     state = state.copyWith(expanded: expanded, root: root, selected: path);
   }
+
+  /// Put this tab back where it was: the folders it had open and the file it
+  /// was showing when the app last closed.
+  ///
+  /// Carries its root for the reason [reveal] does — it runs before the tab has
+  /// drawn once. A folder that really has moved since is still a re-rooting,
+  /// and [showRoot] clears the tab as it should.
+  void restore(FilesBrowserState remembered) => state = remembered;
 
   void setQuery(String query) => state = state.copyWith(query: query);
 

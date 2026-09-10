@@ -5,12 +5,9 @@ import '../../../shared/panels/panel_tabs.dart';
 /// open.
 ///
 /// The shared panel flag under a name the chat's own files can use without
-/// naming a host every time. Deliberately not persisted, and deliberately not
-/// per-chat: the panel is a place to *do* something next to whatever you are
-/// saying, so it stays open while you move between chats and starts closed in a
-/// window you have just opened. The project rail's override sticks because it
-/// answers "do I want to see this project's cards"; this one answers "am I
-/// working in here right now".
+/// naming a host every time. Not per chat — it stays open while you move
+/// between the chats of one project — but per project, and remembered across
+/// launches with the tabs in it: see `panelMemoryProvider`.
 final previewPanelOpenProvider = panelOpenProvider(PanelHost.preview);
 
 /// Whether the preview panel has the whole pane, with the conversation slid out

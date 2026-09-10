@@ -89,17 +89,42 @@ class BrowserTab extends Notifier<BrowserPageState> {
       BrowserSearchEngine.byId(ref.read(chatPrefsProvider).browserSearchEngine);
 
   /// The engine is up and can be driven.
+  ///
+  /// Up *again*, too: a tab's engine goes with its widget, and the widget goes
+  /// whenever the tab leaves the tree — parked with its project while the user
+  /// works in another, or carried between the docked and the floating panel
+  /// as the window is resized. This controller outlives both, so a new engine
+  /// is sent back to the page the tab was on rather than left blank under an
+  /// address bar that still names it.
   void attach(BrowserPageHandle page) {
     _page = page;
-    final pending = _pending;
-    if (pending == null) return;
+    final next = _pending ?? _onScreen;
     _pending = null;
-    page.load(pending);
+    if (next != null) page.load(next);
+  }
+
+  /// The page this tab is showing, or null for one never pointed anywhere.
+  String? get _onScreen {
+    final url = state.url;
+    return url.isEmpty || url == blankPage ? null : url;
   }
 
   void detach() {
     _page = null;
     _pending = null;
+  }
+
+  /// Go back to [url], the page this tab was on when the app last closed.
+  ///
+  /// Stricter than [submit], because this is read off disk rather than typed:
+  /// only an address already carrying a scheme the bar would open. A file
+  /// edited by hand must not be what sends a tab to a search for its contents,
+  /// or hands the system a `mailto:` to open on launch. Anything else leaves
+  /// the tab where it opened.
+  void restore(String url) {
+    if (Uri.tryParse(url)?.hasScheme != true) return;
+    final address = addressBarUrl(url, engine: _engine);
+    if (address != null) _goTo(address);
   }
 
   /// Go where the user typed.

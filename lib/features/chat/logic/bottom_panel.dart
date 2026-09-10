@@ -5,6 +5,8 @@ import '../../../shared/panels/panel_tabs.dart';
 ///
 /// Its own flag rather than a mode of the preview panel: the two occupy
 /// different edges and are read at the same time, so opening one must never
-/// close the other. Not persisted, for the same reason the preview panel isn't
-/// — see `previewPanelOpenProvider`.
+/// close the other. Remembered per project like that one (see
+/// `panelMemoryProvider`): each project keeps its own terminals down here,
+/// still running while the user is in another, and gets the strip back as it
+/// left it on the next launch.
 final bottomPanelOpenProvider = panelOpenProvider(PanelHost.bottom);
