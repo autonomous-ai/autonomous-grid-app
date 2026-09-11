@@ -46,6 +46,11 @@ final class TelegramRefused extends TelegramFailure {
   bool get badMarkup =>
       status == 400 && description.toLowerCase().contains('parse entities');
 
+  /// An edit that would leave the message exactly as it is — a menu redrawn
+  /// with nothing changed, which is not a failure.
+  bool get notModified =>
+      status == 400 && description.toLowerCase().contains('not modified');
+
   @override
   String get message => description;
 }
@@ -72,11 +77,18 @@ abstract interface class TelegramBotApi {
     int chatId,
     String text, {
     bool html = false,
-    List<TelegramButton> buttons = const [],
+    TelegramKeyboard rows = const [],
   });
 
-  /// Replace a message's text, dropping any buttons under it.
-  Future<void> editMessage(int chatId, int messageId, String text);
+  /// Replace a message's text and buttons — how a menu moves from screen to
+  /// screen in place. No [rows] takes the buttons off.
+  Future<void> editMessage(
+    int chatId,
+    int messageId,
+    String text, {
+    bool html = false,
+    TelegramKeyboard rows = const [],
+  });
 
   /// "typing…" under the bot's name, for about five seconds.
   Future<void> sendTyping(int chatId);
@@ -137,24 +149,40 @@ class HttpTelegramBotApi implements TelegramBotApi {
     int chatId,
     String text, {
     bool html = false,
-    List<TelegramButton> buttons = const [],
+    TelegramKeyboard rows = const [],
   }) async {
     final result = await _call('sendMessage', {
       'chat_id': chatId,
       'text': text,
-      if (html) 'parse_mode': 'HTML',
-      'link_preview_options': const {'is_disabled': true},
-      if (buttons.isNotEmpty) 'reply_markup': telegramKeyboard(buttons),
+      ..._format(html: html, rows: rows),
     });
     final id = result is Map ? result['message_id'] : null;
     return id is int ? id : 0;
   }
 
   @override
-  Future<void> editMessage(int chatId, int messageId, String text) => _call(
-    'editMessageText',
-    {'chat_id': chatId, 'message_id': messageId, 'text': text},
-  );
+  Future<void> editMessage(
+    int chatId,
+    int messageId,
+    String text, {
+    bool html = false,
+    TelegramKeyboard rows = const [],
+  }) => _call('editMessageText', {
+    'chat_id': chatId,
+    'message_id': messageId,
+    'text': text,
+    ..._format(html: html, rows: rows),
+  });
+
+  /// What a sent or edited message carries besides its words.
+  Map<String, Object?> _format({
+    required bool html,
+    required TelegramKeyboard rows,
+  }) => {
+    if (html) 'parse_mode': 'HTML',
+    'link_preview_options': const {'is_disabled': true},
+    if (rows.isNotEmpty) 'reply_markup': telegramKeyboard(rows),
+  };
 
   @override
   Future<void> sendTyping(int chatId) =>

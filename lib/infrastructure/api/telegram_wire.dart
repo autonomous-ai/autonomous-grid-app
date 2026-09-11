@@ -13,6 +13,9 @@ typedef TelegramBotIdentity = ({int id, String username, String name});
 /// and Telegram caps it at 64 bytes.
 typedef TelegramButton = ({String label, String data});
 
+/// The buttons under a message, row by row.
+typedef TelegramKeyboard = List<List<TelegramButton>>;
+
 /// One entry from `getUpdates`, reduced to what the bot acts on.
 sealed class TelegramUpdate {
   const TelegramUpdate(this.updateId);
@@ -113,12 +116,13 @@ TelegramBotIdentity? parseTelegramIdentity(Object? raw) {
   return (id: id, username: username, name: name is String ? name : username);
 }
 
-/// Buttons stacked one per row: three answers side by side don't fit a phone.
-Map<String, Object?> telegramKeyboard(List<TelegramButton> buttons) => {
+/// [rows] as Telegram's `inline_keyboard`.
+Map<String, Object?> telegramKeyboard(TelegramKeyboard rows) => {
   'inline_keyboard': [
-    for (final button in buttons)
+    for (final row in rows)
       [
-        {'text': button.label, 'callback_data': button.data},
+        for (final button in row)
+          {'text': button.label, 'callback_data': button.data},
       ],
   ],
 };

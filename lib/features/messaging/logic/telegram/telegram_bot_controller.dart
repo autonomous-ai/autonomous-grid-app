@@ -9,15 +9,18 @@ import '../../../agents/logic/agent_permissions.dart';
 import '../messaging_platform.dart';
 import '../messaging_state.dart';
 import 'telegram_bot_store.dart';
+import 'telegram_menus.dart';
 import 'telegram_permission_relay.dart';
 import 'telegram_poll.dart';
 import 'telegram_rules.dart';
+import 'telegram_sessions.dart';
 import 'telegram_turns.dart';
 
 const String _kGreeting =
     "Hi! I'm Grid, answering from your computer. Send a message and the "
-    'assistant there replies.\n\n/new starts a fresh conversation, /stop stops '
-    'an answer.';
+    'assistant there replies.\n\n'
+    '/sessions picks a project or a chat · /new starts a new chat · /model '
+    'changes the model · /stop stops an answer.';
 
 /// The Telegram bot Grid answers as, in the app itself.
 sealed class TelegramBotState {
@@ -70,9 +73,13 @@ final telegramBotProvider =
       TelegramBotController.new,
     );
 
-class TelegramBotController extends Notifier<TelegramBotState> {
+/// Runs the bot, and keeps which Grid chat each Telegram chat is in (see
+/// [TelegramThreads]) — in its state, and saved with the rest of the bot.
+class TelegramBotController extends Notifier<TelegramBotState>
+    implements TelegramThreads {
   TelegramPoll? _poll;
   TelegramTurns? _turns;
+  TelegramMenus? _menus;
   TelegramPermissionRelay? _relay;
 
   /// Ids already logged as not on the list, so a stranger's every message
@@ -126,7 +133,6 @@ class TelegramBotController extends Notifier<TelegramBotState> {
     await _store.write(config);
     _log.info('telegram', 'connected @${identity.username}, answering in Grid');
     _start(config, api);
-    unawaited(telegramQuietly(_log, api.setCommands(kTelegramCommandMenu)));
     return null;
   }
 
@@ -144,6 +150,70 @@ class TelegramBotController extends Notifier<TelegramBotState> {
     await resume();
   }
 
+  @override
+  String? current(int chatId) => _config?.threadFor(chatId);
+
+  @override
+  TelegramDraft? draftFor(String conversationId) =>
+      _config?.draftFor(conversationId);
+
+  @override
+  Future<void> point(int chatId, String conversationId) =>
+      _save((config) => config.withThread(chatId, conversationId));
+
+  @override
+  Future<String> startNew(
+    int chatId, {
+    String? projectId,
+    String? model,
+  }) async {
+    final id = telegramConversationId(chatId, DateTime.now());
+    await _save(
+      (config) => config.withThread(
+        chatId,
+        id,
+        draft: (projectId: projectId, model: model),
+      ),
+    );
+    return id;
+  }
+
+  @override
+  Future<void> setDraftModel(String conversationId, String model) =>
+      _save((config) {
+        final draft = config.draftFor(conversationId);
+        return config.withDraft(conversationId, (
+          projectId: draft?.projectId,
+          model: model,
+        ));
+      });
+
+  @override
+  Future<void> started(String conversationId) =>
+      _save((config) => config.withoutDraft(conversationId));
+
+  TelegramBotConfig? get _config => switch (state) {
+    TelegramBotOn(:final config) => config,
+    _ => null,
+  };
+
+  /// Apply [change] to the running bot's config, and save it.
+  Future<void> _save(
+    TelegramBotConfig Function(TelegramBotConfig config) change,
+  ) async {
+    final current = state;
+    if (current is! TelegramBotOn) {
+      throw StateError('the Telegram bot was disconnected');
+    }
+    final config = change(current.config);
+    state = TelegramBotOn(
+      config: config,
+      link: current.link,
+      detail: current.detail,
+    );
+    await _store.write(config);
+  }
+
   String _connectError(TelegramFailure error) => switch (error) {
     TelegramRefused(badToken: true) =>
       "Telegram didn't accept that token. Copy it again from @BotFather — the "
@@ -158,7 +228,8 @@ class TelegramBotController extends Notifier<TelegramBotState> {
   void _start(TelegramBotConfig config, [TelegramBotApi? given]) {
     _stop();
     final api = given ?? ref.read(telegramBotApiProvider)(config.token);
-    _turns = TelegramTurns(ref, api, threadFor: _threadFor);
+    final turns = _turns = TelegramTurns(ref, api, threads: this);
+    _menus = TelegramMenus(ref, api, turns: turns);
     final relay = _relay = TelegramPermissionRelay(
       api,
       answer: (id, choice) =>
@@ -167,6 +238,9 @@ class TelegramBotController extends Notifier<TelegramBotState> {
     );
     state = TelegramBotOn(config: config, link: MessagingLink.connecting);
     relay.onPermissions(ref.read(agentPermissionsProvider));
+    // On every start, not only at connect: a bot connected before a command
+    // existed learns it the next time Grid opens.
+    _quietly(api.setCommands(kTelegramCommandMenu));
     final poll = _poll = TelegramPoll(
       api,
       onUpdate: _onUpdate,
@@ -179,6 +253,7 @@ class TelegramBotController extends Notifier<TelegramBotState> {
     _poll?.stop();
     _poll = null;
     _turns = null;
+    _menus = null;
     _relay = null;
   }
 
@@ -198,17 +273,22 @@ class TelegramBotController extends Notifier<TelegramBotState> {
   }
 
   void _onUpdate(TelegramUpdate update) {
-    final current = state;
+    final allowed = _config?.allowedUsers;
     final turns = _turns;
+    final menus = _menus;
     final relay = _relay;
-    if (current is! TelegramBotOn || turns == null || relay == null) return;
-    final allowed = current.config.allowedUsers;
+    if (allowed == null || turns == null || menus == null || relay == null) {
+      return;
+    }
     switch (update) {
       case TelegramText():
-        _onText(update, allowed, turns);
-      case TelegramButtonPress(:final fromId):
+        _onText(update, allowed, turns, menus);
+      case TelegramButtonPress(:final fromId, :final data):
         if (!allowed.contains('$fromId')) return;
-        unawaited(telegramQuietly(_log, relay.onPress(update)));
+        final tap = parseTelegramMenuTap(data);
+        _quietly(
+          tap == null ? relay.onPress(update) : menus.onTap(update, tap),
+        );
       case TelegramOtherMessage(
         :final chatId,
         :final fromId,
@@ -229,6 +309,7 @@ class TelegramBotController extends Notifier<TelegramBotState> {
     TelegramText message,
     List<String> allowed,
     TelegramTurns turns,
+    TelegramMenus menus,
   ) {
     final chatId = message.chatId;
     final ok = telegramMayAnswer(
@@ -248,45 +329,19 @@ class TelegramBotController extends Notifier<TelegramBotState> {
       case TelegramCommand.start:
         turns.note(chatId, _kGreeting);
       case TelegramCommand.fresh:
-        unawaited(telegramQuietly(_log, _fresh(chatId, turns)));
+        _quietly(menus.fresh(chatId));
+      case TelegramCommand.sessions:
+        _quietly(menus.sessions(chatId));
+      case TelegramCommand.model:
+        _quietly(menus.model(chatId));
       case TelegramCommand.stop:
-        turns.stop(chatId, _threadOf(chatId));
+        turns.stop(chatId);
       case null:
         turns.ask(message);
     }
   }
 
-  Future<void> _fresh(int chatId, TelegramTurns turns) async {
-    await _threadFor(chatId, fresh: true);
-    await turns.reply(
-      chatId,
-      'Started a fresh conversation. The last one is still in Chat on your '
-      'computer.',
-    );
-  }
-
-  String? _threadOf(int chatId) => switch (state) {
-    TelegramBotOn(:final config) => config.threadFor(chatId),
-    _ => null,
-  };
-
-  Future<String> _threadFor(int chatId, {bool fresh = false}) async {
-    final current = state;
-    if (current is! TelegramBotOn) {
-      throw StateError('the Telegram bot was disconnected');
-    }
-    final existing = current.config.threadFor(chatId);
-    if (existing != null && !fresh) return existing;
-    final id = telegramConversationId(chatId, DateTime.now());
-    final config = current.config.withThread(chatId, id);
-    state = TelegramBotOn(
-      config: config,
-      link: current.link,
-      detail: current.detail,
-    );
-    await _store.write(config);
-    return id;
-  }
+  void _quietly(Future<void> work) => unawaited(telegramQuietly(_log, work));
 
   void _noteStranger(int fromId) {
     if (!_strangers.add(fromId)) return;

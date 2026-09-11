@@ -780,6 +780,17 @@ class ChatSessionsController extends _ChatSessions
     _saveAndReplace(updated);
   }
 
+  /// Point chat [id] at [model] without opening it — a model picked from
+  /// outside the window (Telegram's `/model`). The same rules as
+  /// [setActiveModel]: a no-op while that chat's reply is streaming, and
+  /// `updatedAt` is left alone.
+  void setChatModel(String id, String model) {
+    if (model.isEmpty || state.sendingFor(id)) return;
+    final chat = _find(id);
+    if (chat == null || chat.model == model) return;
+    _saveAndReplace(chat.copyWith(model: model));
+  }
+
   /// Point the open chat at [model] from **outside the composer** — the rail's
   /// target menu, which can name a model the composer is not showing.
   ///
@@ -1075,6 +1086,7 @@ class ChatSessionsController extends _ChatSessions
     required String id,
     required String title,
     required AgentApprovalMode approval,
+    String? projectId,
   }) {
     final existing = _find(id);
     if (existing != null) return existing;
@@ -1085,7 +1097,8 @@ class ChatSessionsController extends _ChatSessions
       model: '',
       createdAt: now,
       updatedAt: now,
-      agent: ref.read(chatAgentChoiceProvider(null)),
+      projectId: projectId,
+      agent: ref.read(chatAgentChoiceProvider(projectId)),
       surface: AgentChatSurface.list,
       approval: approval,
       titleLocked: true,

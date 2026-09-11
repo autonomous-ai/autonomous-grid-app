@@ -18,7 +18,9 @@ const String kTelegramChatPrefix = 'telegram-';
 /// for each. Anything else starting with `/` goes to the assistant as typed,
 /// the way the Chat composer forwards it.
 const Map<String, String> kTelegramCommandMenu = {
-  'new': 'Start a fresh conversation',
+  'new': 'Start a new chat',
+  'sessions': 'Browse & switch chats',
+  'model': 'View & change model',
   'stop': 'Stop the answer in progress',
 };
 
@@ -27,8 +29,14 @@ enum TelegramCommand {
   /// Telegram sends this the first time someone opens the bot.
   start,
 
-  /// Start a new Grid chat for this Telegram chat.
+  /// Start a new Grid chat, where the current one is (its project, or none).
   fresh,
+
+  /// Pick a project or the plain chats, then a chat in it to carry on.
+  sessions,
+
+  /// See and change the model the current chat answers with.
+  model,
 
   /// Stop the answer being written.
   stop,
@@ -59,6 +67,8 @@ TelegramCommand? parseTelegramCommand(String text) {
   return switch (first.substring(1).split('@').first) {
     'start' => TelegramCommand.start,
     'new' => TelegramCommand.fresh,
+    'sessions' => TelegramCommand.sessions,
+    'model' => TelegramCommand.model,
     'stop' => TelegramCommand.stop,
     _ => null,
   };

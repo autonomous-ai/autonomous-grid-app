@@ -9,14 +9,36 @@ import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../auth/logic/session_controller.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../../chat/logic/chat_settled.dart';
+import '../../../chat/logic/conversation.dart';
 import '../../../chat/logic/turn_model.dart';
 import '../../../playground/logic/playground_models.dart';
+import '../../../projects/logic/project.dart';
+import 'telegram_bot_store.dart';
 import 'telegram_markup.dart';
 import 'telegram_rules.dart';
 
-/// The Grid chat Telegram chat `chatId` is carrying on — a new one when there
-/// is none yet, or when [fresh] asks for one.
-typedef TelegramThreadFor = Future<String> Function(int chatId, {bool fresh});
+/// Which Grid chat each Telegram chat is carrying on. The bot keeps it (and
+/// saves it); turns read it, and `/new` and `/sessions` move it.
+abstract interface class TelegramThreads {
+  /// The Grid chat Telegram chat [chatId] is carrying on, if any.
+  String? current(int chatId);
+
+  /// The draft behind [conversationId], while that chat hasn't started.
+  TelegramDraft? draftFor(String conversationId);
+
+  /// Carry [chatId] on in [conversationId], a chat Grid already has.
+  Future<void> point(int chatId, String conversationId);
+
+  /// Point [chatId] at a new chat in [projectId] (null for a plain chat),
+  /// which its next message starts.
+  Future<String> startNew(int chatId, {String? projectId, String? model});
+
+  /// Remember [model] for [conversationId], a chat not started yet.
+  Future<void> setDraftModel(String conversationId, String model);
+
+  /// [conversationId] has started, so its draft is done with.
+  Future<void> started(String conversationId);
+}
 
 /// [work], with a failure logged rather than thrown: a lost "typing…" or a
 /// courtesy note must not take down the turn it decorates.
@@ -28,6 +50,20 @@ Future<void> telegramQuietly(AppLog log, Future<void> work) async {
   }
 }
 
+/// The model a Telegram turn answers with: the chat's own, else the one picked
+/// for it before it started, else its project's, else the app's, else whatever
+/// the grid serves first — see [firstModelChoice].
+String telegramModelFor(Ref ref, {Conversation? chat, TelegramDraft? draft}) {
+  final projectId = chat?.projectId ?? draft?.projectId;
+  return firstModelChoice([
+    chat?.model,
+    draft?.model,
+    ref.read(projectByIdProvider(projectId))?.model,
+    ref.read(chatPrefsProvider).model,
+    ref.read(playgroundModelsProvider).firstOrNull?.id,
+  ]);
+}
+
 /// Turns a Telegram message into a turn in a Grid chat, and the answer back
 /// into Telegram messages.
 ///
@@ -36,11 +72,11 @@ Future<void> telegramQuietly(AppLog log, Future<void> work) async {
 /// keeps its context, and is answered by the same assistant and model the user
 /// picked there — not a second, lesser copy of the Chat tab.
 class TelegramTurns {
-  TelegramTurns(this._ref, this._api, {required this.threadFor});
+  TelegramTurns(this._ref, this._api, {required this.threads});
 
   final Ref _ref;
   final TelegramBotApi _api;
-  final TelegramThreadFor threadFor;
+  final TelegramThreads threads;
 
   /// The tail of each Telegram chat's queue: one message at a time, in order.
   final Map<int, Future<void>> _queue = {};
@@ -50,10 +86,13 @@ class TelegramTurns {
 
   AppLog get _log => _ref.read(appLogProvider);
 
+  /// Whether Telegram chat [chatId] has a message being answered or waiting.
+  bool busy(int chatId) => _queue.containsKey(chatId);
+
   /// Answer [message] after whatever this chat is already answering.
   void ask(TelegramText message) {
     final chatId = message.chatId;
-    if (_queue.containsKey(chatId)) {
+    if (busy(chatId)) {
       note(chatId, 'Still on your last message — this one is next.');
     }
     final generation = _generation[chatId] ?? 0;
@@ -69,12 +108,12 @@ class TelegramTurns {
     );
   }
 
-  /// Stop the answer being written in [conversationId], and drop whatever
-  /// Telegram chat [chatId] had queued behind it — Stop means stop.
-  void stop(int chatId, String? conversationId) {
+  /// Stop the answer being written in Telegram chat [chatId], and drop what it
+  /// had queued behind it — Stop means stop.
+  void stop(int chatId) {
     _generation[chatId] = (_generation[chatId] ?? 0) + 1;
-    if (conversationId == null) return;
-    _ref.read(chatSessionsProvider.notifier).stopChat(conversationId);
+    final id = threads.current(chatId);
+    if (id != null) _ref.read(chatSessionsProvider.notifier).stopChat(id);
   }
 
   /// Send [markdown] to [chatId] without waiting, a failure only logged.
@@ -122,17 +161,18 @@ class TelegramTurns {
         'Open Grid on your computer and pick one.',
       );
     }
-    final prefs = _ref.read(chatPrefsProvider);
+    final id =
+        threads.current(message.chatId) ??
+        await threads.startNew(message.chatId);
+    final draft = threads.draftFor(id);
     final chat = sessions.ensureBackgroundChat(
-      id: await threadFor(message.chatId),
+      id: id,
       title: 'Telegram · ${message.fromName}',
-      approval: telegramApprovalMode(prefs.approval),
+      approval: telegramApprovalMode(_ref.read(chatPrefsProvider).approval),
+      projectId: draft?.projectId,
     );
-    final model = firstModelChoice([
-      chat.model,
-      prefs.model,
-      _ref.read(playgroundModelsProvider).firstOrNull?.id,
-    ]);
+    final model = telegramModelFor(_ref, chat: chat, draft: draft);
+    if (draft != null) await threads.started(id);
     if (model.isEmpty) {
       return reply(
         message.chatId,
@@ -141,21 +181,24 @@ class TelegramTurns {
       );
     }
     // Someone may be typing in this chat on the computer; their turn first.
-    await chatSettled(_ref, chat.id);
-    final before = _answersIn(chat.id).length;
+    await chatSettled(_ref, id);
+    final before = _answersIn(id).length;
     final typing = _typing(message.chatId);
     try {
       await sessions.send(
         network: network,
         model: model,
         message: message.text,
-        into: chat.id,
+        into: id,
+        // A plan waits on a bar only the window has; from a phone the
+        // assistant asks before each action instead, as after an approval.
+        planFirst: false,
       );
-      await chatSettled(_ref, chat.id);
+      await chatSettled(_ref, id);
     } finally {
       typing.cancel();
     }
-    await _report(message.chatId, chat.id, before);
+    await _report(message.chatId, id, before);
   }
 
   /// What the assistant said since [before], then why it stopped short if it

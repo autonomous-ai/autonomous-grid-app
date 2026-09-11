@@ -89,7 +89,10 @@ class TelegramPermissionRelay {
             chatId,
             telegramPermissionText(request),
             html: true,
-            buttons: buttons,
+            // One answer per row: three side by side don't fit a phone.
+            rows: [
+              for (final button in buttons) [button],
+            ],
           )
           .then((id) => asked.messageId = id)
           .catchError((Object error) {
