@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'messaging_controller.dart';
+import 'messaging_actions.dart';
 import 'messaging_platform.dart';
 
 /// Whether this computer can be reached — and answer — from somewhere else.
@@ -24,7 +24,7 @@ final remoteReachProvider = Provider<RemoteReach>((ref) {
   final connected = <String>[];
   var answering = false;
   for (final platform in MessagingPlatform.values) {
-    final state = ref.watch(messagingProvider(platform)).value;
+    final state = ref.watch(messagingStateProvider(platform)).value;
     if (state is! MessagingConnected) continue;
     connected.add(platform.label);
     if (state.link == MessagingLink.answering) answering = true;

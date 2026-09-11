@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../../core/owner_only_file.dart';
 
 /// One OAuth client this machine registered for itself (RFC 7591).
 ///
@@ -188,7 +189,7 @@ class DcrClientStore {
         file.path,
       );
     }
-    await _restrictPermissions();
+    await restrictToOwner(file);
   }
 
   /// The registration for [issuer], or null when this machine has none.
@@ -205,18 +206,6 @@ class DcrClientStore {
     final clients = await read();
     if (clients.remove(issuer) == null) return;
     await write(clients);
-  }
-
-  /// Owner-only, best-effort — same reasoning as the token store: a weaker mode
-  /// beats an abandoned write, since losing this means the connector silently
-  /// stops being renewable.
-  Future<void> _restrictPermissions() async {
-    if (Platform.isWindows) return;
-    try {
-      await Process.run('chmod', ['600', file.path]);
-    } on Object {
-      // Nothing to do and nothing to say.
-    }
   }
 }
 

@@ -205,6 +205,13 @@ class GridPaths {
   static File get taskDeliveryFile =>
       File('${home.path}/app/task_delivery.json');
 
+  /// The Telegram bot Grid answers as — its token, who may message it, and which
+  /// chat each Telegram conversation carries on (`~/.grid/app/telegram_bot.json`,
+  /// mode `600`). App-owned; the CLI never touches it, and Sync & Backup leaves it
+  /// behind on purpose: the token is a password, and two computers polling one
+  /// bot take turns stealing each other's messages.
+  static File get telegramBotFile => File('${home.path}/app/telegram_bot.json');
+
   /// The scheduled tasks whose latest result the user hasn't opened yet (a plain
   /// list of job ids) — what the sidebar and the Scheduled list badge, so an
   /// overnight run isn't something to remember to go look for. App-owned.

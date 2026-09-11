@@ -1060,6 +1060,40 @@ class ChatSessionsController extends _ChatSessions
     );
   }
 
+  /// Chat [id], started here if this computer doesn't have it yet — for turns
+  /// that arrive from outside the composer (a Telegram message), which
+  /// [send]'s `into` needs to land in a chat that already exists.
+  ///
+  /// Never opens it: whatever the window shows stays put, the same promise
+  /// [deliverFromAgent] makes. The agent, [approval] and the surface are
+  /// written down at birth, as [_activeOrNew] does for a chat started in the
+  /// composer — the surface always the message list, since a terminal needs
+  /// somebody at the keyboard. [title] is kept for good: the agent renaming the
+  /// chat after its topic would lose the one thing that says where it came
+  /// from.
+  Conversation ensureBackgroundChat({
+    required String id,
+    required String title,
+    required AgentApprovalMode approval,
+  }) {
+    final existing = _find(id);
+    if (existing != null) return existing;
+    final now = DateTime.now();
+    final started = Conversation(
+      id: id,
+      title: title,
+      model: '',
+      createdAt: now,
+      updatedAt: now,
+      agent: ref.read(chatAgentChoiceProvider(null)),
+      surface: AgentChatSurface.list,
+      approval: approval,
+      titleLocked: true,
+    );
+    _commit(started, phase: const SendIdle());
+    return started;
+  }
+
   /// Put an already-saved chat under [projectId] when it isn't there yet — used
   /// to reconcile a scheduled task's chat that was created before the app linked
   /// the task to a project, without waiting on the next run to deliver.

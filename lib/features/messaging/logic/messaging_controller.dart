@@ -36,7 +36,8 @@ final messagingProvider =
       MessagingPlatform
     >(MessagingController.new);
 
-class MessagingController extends AsyncNotifier<MessagingState> {
+class MessagingController extends AsyncNotifier<MessagingState>
+    implements MessagingActions {
   MessagingController(this._platform);
 
   /// The platform this controller answers for — Riverpod hands it to the factory
@@ -53,7 +54,7 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     final env = await gateway.readEnv();
     // The primary credential (the bot token) being set is what "connected"
     // means — an empty one is a computer with no bot at all.
-    if ((env[_platform.credentials.first.envKey] ?? '').isEmpty) {
+    if ((env[_platform.credentials.first.key] ?? '').isEmpty) {
       return const MessagingDisconnected();
     }
 
@@ -74,10 +75,8 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     );
   }
 
-  /// Connect the bot and start answering. Returns null on success, else a line
-  /// to show. [credentials] maps each of the platform's `.env` keys to its
-  /// pasted value; [userId] is the one person allowed to message it to begin
-  /// with — without it the bot would answer anyone who found it.
+  /// Write the bot into Hermes's `.env` and (re)start the gateway so it loads.
+  @override
   Future<String?> connect({
     required Map<String, String> credentials,
     required String userId,
@@ -98,7 +97,7 @@ class MessagingController extends AsyncNotifier<MessagingState> {
     try {
       await gateway.writeEnv({
         for (final field in _platform.credentials)
-          field.envKey: (credentials[field.envKey] ?? '').trim(),
+          field.key: (credentials[field.key] ?? '').trim(),
         _platform.allowedUsersKey: trimmedUser,
         // A task's result goes to the person who set this up — on Telegram their
         // own chat is their user id; other platforms deliver to a channel we
@@ -119,12 +118,13 @@ class MessagingController extends AsyncNotifier<MessagingState> {
   }
 
   /// Forget the bot, and stop the gateway answering as it.
+  @override
   Future<String?> disconnect() async {
     final gateway = ref.read(hermesGatewayServiceProvider);
     if (gateway == null) return _noAgent;
     try {
       await gateway.removeEnv({
-        for (final field in _platform.credentials) field.envKey,
+        for (final field in _platform.credentials) field.key,
         _platform.allowedUsersKey,
         if (_platform.homeChannelKey != null) _platform.homeChannelKey!,
       });
@@ -139,6 +139,7 @@ class MessagingController extends AsyncNotifier<MessagingState> {
 
   /// Start the thing that answers messages, then re-check — so the warning
   /// clears itself instead of leaving the user wondering whether it worked.
+  @override
   Future<String?> start() async {
     final gateway = ref.read(hermesGatewayServiceProvider);
     if (gateway == null) return _noAgent;
@@ -162,7 +163,7 @@ class MessagingController extends AsyncNotifier<MessagingState> {
   /// fine — caught here so "the bot never answers" becomes a fixable error.
   String? _firstInvalid(Map<String, String> credentials, String userId) {
     for (final field in _platform.credentials) {
-      final error = field.validate?.call(credentials[field.envKey] ?? '');
+      final error = field.validate?.call(credentials[field.key] ?? '');
       if (error != null) return error;
     }
     return _platform.userIdValidate(userId);

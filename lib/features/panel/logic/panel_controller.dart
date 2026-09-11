@@ -20,6 +20,7 @@ import '../../agents/logic/auto_agent.dart';
 import '../../auth/logic/session_controller.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../chat/logic/conversation.dart';
+import '../../chat/logic/turn_model.dart';
 import '../../playground/logic/playground_models.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/logic/selected_project.dart';
@@ -838,21 +839,13 @@ class PanelController {
 
   /// What to answer a panel turn with: the project's own model, else the one
   /// that chat last ran on, else the app's standing choice, else whatever this
-  /// grid is serving.
-  ///
-  /// The remembered choices are taken as they stand rather than checked against
-  /// the grid's list. That list is fetched, and it is empty for the first
-  /// moment of a session and on every refresh — checking against it would turn
-  /// a panel turn into "no model available" over a grid serving a dozen.
-  String _modelFor(Project project, Conversation? target) {
-    final remembered =
-        project.model ?? target?.model ?? _ref.read(chatPrefsProvider).model;
-    if (remembered != null && remembered.trim().isNotEmpty) {
-      return remembered.trim();
-    }
-    final options = _ref.read(playgroundModelsProvider);
-    return options.isEmpty ? '' : options.first.id;
-  }
+  /// grid is serving — see [firstModelChoice].
+  String _modelFor(Project project, Conversation? target) => firstModelChoice([
+    project.model,
+    target?.model,
+    _ref.read(chatPrefsProvider).model,
+    _ref.read(playgroundModelsProvider).firstOrNull?.id,
+  ]);
 
   /// Tell the panel a turn it asked for is not happening, and why.
   void _refuseTurn(String chatId, String message) {

@@ -6,14 +6,46 @@
 /// it can be tested rather than guessed at in a widget.
 library;
 
+/// What the Messages screen can do to one platform's bot, whatever runs it —
+/// Grid itself or Hermes's gateway. Every method returns null on success, else
+/// the line to show.
+abstract interface class MessagingActions {
+  /// [credentials] maps each of the platform's [CredentialField.key]s to its
+  /// pasted value; [userId] is the one person allowed to message the bot to
+  /// begin with — without it the bot would answer anyone who found it.
+  Future<String?> connect({
+    required Map<String, String> credentials,
+    required String userId,
+  });
+
+  /// Forget the bot, and stop answering as it.
+  Future<String?> disconnect();
+
+  /// Start answering again — the "Turn it on" button.
+  Future<String?> start();
+}
+
+/// What runs a platform's bot — which decides what the screen promises about
+/// when it answers.
+enum MessagingHost {
+  /// Grid itself: it answers while Grid is open.
+  grid,
+
+  /// Hermes's background gateway: it starts with the computer and answers
+  /// whether or not Grid is open.
+  hermes,
+}
+
 /// What a platform is on this computer.
 sealed class MessagingState {
-  const MessagingState();
+  const MessagingState({required this.host});
+
+  final MessagingHost host;
 }
 
 /// No bot connected — the screen asks for one.
 class MessagingDisconnected extends MessagingState {
-  const MessagingDisconnected();
+  const MessagingDisconnected({super.host = MessagingHost.hermes});
 }
 
 /// Whether a connected bot is actually answering right now — the honest half,
@@ -40,6 +72,9 @@ class MessagingConnected extends MessagingState {
     required this.allowedUsers,
     required this.link,
     this.detail,
+    this.handle,
+    this.note,
+    super.host = MessagingHost.hermes,
   });
 
   /// Who may message it. Never empty — the app won't connect a bot without one.
@@ -50,6 +85,13 @@ class MessagingConnected extends MessagingState {
   /// gateway's own reason (a bad token, another process on the same bot) or the
   /// gateway simply being off. Null otherwise.
   final String? detail;
+
+  /// What a person searches for to find the bot (`@grid_helper_bot`), when
+  /// known.
+  final String? handle;
+
+  /// One more thing the screen should say about this bot, if any.
+  final String? note;
 }
 
 /// Map the gateway's raw signals to the honest UI link. [gatewayAlive] is the

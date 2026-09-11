@@ -5,18 +5,20 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 /// lay them out consistently across every platform.
 typedef ConnectStep = ({int number, String title, String detail});
 
-/// One secret a platform's connect form collects and writes into Hermes's `.env`
-/// under [envKey] — a bot token, plus (for Slack) an app token for Socket Mode.
+/// One secret a platform's connect form collects, named by [key] — a bot
+/// token, plus (for Slack) an app token for Socket Mode.
 class CredentialField {
   const CredentialField({
-    required this.envKey,
+    required this.key,
     required this.label,
     required this.hint,
     this.validate,
   });
 
-  /// The `.env` key Hermes reads this secret from (e.g. `SLACK_BOT_TOKEN`).
-  final String envKey;
+  /// Names this secret in the map the connect form hands its controller — and,
+  /// for a platform Hermes runs, is the `.env` key it reads it from
+  /// (`SLACK_BOT_TOKEN`).
+  final String key;
   final String label;
   final String hint;
 
@@ -28,10 +30,10 @@ class CredentialField {
 
 /// A chat platform the assistant can answer from — Telegram, Discord or Slack.
 ///
-/// They differ only in data: which secrets to collect, which `.env` keys Hermes
-/// reads them from, and the words a person recognises. One generalised gateway,
-/// controller and screen drive all three off this, so adding the next platform is
-/// a new entry here, not a new feature.
+/// Grid answers Telegram itself (`telegramBotProvider`); Discord and Slack are
+/// answered by Hermes's gateway. Past that they differ only in data: which
+/// secrets to collect, which `.env` keys Hermes keeps them under, and the words
+/// a person recognises — one screen drives all three off this.
 enum MessagingPlatform {
   telegram(
     key: 'telegram',
@@ -42,7 +44,7 @@ enum MessagingPlatform {
     homeChannelIsUserId: true,
     credentials: [
       CredentialField(
-        envKey: 'TELEGRAM_BOT_TOKEN',
+        key: 'TELEGRAM_BOT_TOKEN',
         label: 'Bot token',
         hint: '8123456789:AAF…',
         validate: validateTelegramToken,
@@ -69,7 +71,9 @@ enum MessagingPlatform {
       (
         number: 3,
         title: 'Paste them in',
-        detail: 'Then the bot answers you, from this computer.',
+        detail:
+            'Then message your bot. Grid answers it from this computer while '
+            "it's open.",
       ),
     ],
   ),
@@ -82,7 +86,7 @@ enum MessagingPlatform {
     homeChannelIsUserId: false,
     credentials: [
       CredentialField(
-        envKey: 'DISCORD_BOT_TOKEN',
+        key: 'DISCORD_BOT_TOKEN',
         label: 'Bot token',
         hint: 'MTA1…',
         validate: validateDiscordToken,
@@ -125,13 +129,13 @@ enum MessagingPlatform {
     homeChannelIsUserId: false,
     credentials: [
       CredentialField(
-        envKey: 'SLACK_BOT_TOKEN',
+        key: 'SLACK_BOT_TOKEN',
         label: 'Bot token',
         hint: 'xoxb-…',
         validate: validateSlackBotToken,
       ),
       CredentialField(
-        envKey: 'SLACK_APP_TOKEN',
+        key: 'SLACK_APP_TOKEN',
         label: 'App token',
         hint: 'xapp-…',
         validate: validateSlackAppToken,
@@ -191,6 +195,10 @@ enum MessagingPlatform {
   /// The `.env` key holding the comma-separated allowlist — who may message the
   /// bot. Empty means *anyone*, which is why the app refuses to connect without
   /// at least one id.
+  ///
+  /// This and [homeChannelKey] are Hermes's. For Telegram they are only read
+  /// to show — and on disconnect remove — a bot Hermes still runs from before
+  /// Grid answered Telegram itself.
   final String allowedUsersKey;
 
   /// The `.env` key for where a scheduled task's answer is delivered, or null

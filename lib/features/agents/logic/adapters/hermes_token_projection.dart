@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/agent_homes.dart';
 import '../../../../core/grid_paths.dart';
+import '../../../../core/owner_only_file.dart';
 import '../connector_token.dart';
 
 /// Writes the app's connector tokens into the files Hermes reads them from.
@@ -85,7 +86,7 @@ class HermesTokenProjection {
         const JsonEncoder.withIndent('  ').convert(_toHermesJson(token)),
         flush: true,
       );
-      await _restrict(tokenFile(token.connector));
+      await restrictToOwner(tokenFile(token.connector));
     }
 
     final keep = {for (final token in tokens) safeFileName(token.connector)};
@@ -115,17 +116,6 @@ class HermesTokenProjection {
       if (token.scope.isNotEmpty) 'scope': token.scope,
       if (token.refreshToken != null) 'refresh_token': token.refreshToken,
     };
-  }
-
-  /// Best-effort, exactly like the master store's: a weaker mode is better than
-  /// a connector that silently stops working because the write was abandoned.
-  Future<void> _restrict(File file) async {
-    if (Platform.isWindows) return;
-    try {
-      await Process.run('chmod', ['600', file.path]);
-    } on Object {
-      // Nothing to do and nothing to say.
-    }
   }
 }
 
