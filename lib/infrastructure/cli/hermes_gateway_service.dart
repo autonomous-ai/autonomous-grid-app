@@ -27,9 +27,9 @@ class HermesGatewayException implements Exception {
 /// aren't loaded. [error] is the gateway's reason when it isn't connected.
 typedef PlatformLinkStatus = ({String state, String? error});
 
-/// Drives Hermes's messaging gateway — the thing that lets the user talk to the
-/// assistant from Telegram, Discord or Slack, and lets a scheduled task send its
-/// answer there.
+/// Drives Hermes's messaging gateway — the background program that runs
+/// scheduled tasks, and that answered Telegram before Grid answered it itself
+/// (a bot connected back then still runs here until the user moves it).
 ///
 /// The gateway is Hermes's, not the app's: it runs as a background service on
 /// this computer, reads its credentials from `~/.hermes/.env`, and answers with
@@ -51,7 +51,7 @@ abstract interface class HermesGatewayService {
   Future<void> removeEnv(Set<String> keys);
 
   /// The live link for the platform Hermes calls [platformKey]
-  /// (`telegram`/`discord`/`slack`) — whether it actually connected, and why it
+  /// (`telegram`) — whether it actually connected, and why it
   /// didn't. Read from the gateway's own state file, so the screen can't claim
   /// "Answering" when Hermes has the bot marked disconnected.
   Future<PlatformLinkStatus> readLink(String platformKey);

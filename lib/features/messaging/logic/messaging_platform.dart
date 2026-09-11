@@ -1,58 +1,44 @@
-import 'package:flutter/widgets.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-
-/// One step in a platform's "make a bot" instructions — numbered so the form can
-/// lay them out consistently across every platform.
+/// One step in the "make a bot" instructions — numbered so the form lays them
+/// out the same way every time.
 typedef ConnectStep = ({int number, String title, String detail});
 
-/// One secret a platform's connect form collects, named by [key] — a bot
-/// token, plus (for Slack) an app token for Socket Mode.
+/// One secret the connect form collects, named by [key] — the bot token.
 class CredentialField {
   const CredentialField({
     required this.key,
     required this.label,
     required this.hint,
-    this.validate,
   });
 
-  /// Names this secret in the map the connect form hands its controller — and,
-  /// for a platform Hermes runs, is the `.env` key it reads it from
-  /// (`SLACK_BOT_TOKEN`).
+  /// Names this secret in the map the connect form hands its controller — and
+  /// is the `.env` key Hermes kept it under, back when Hermes ran the bot.
   final String key;
   final String label;
   final String hint;
-
-  /// A line to show when the pasted value is the wrong shape, or null when it's
-  /// fine — turning "the bot never answers" into an error the user can fix before
-  /// connecting.
-  final String? Function(String value)? validate;
 }
 
-/// A chat platform the assistant can answer from — Telegram, Discord or Slack.
+/// The chat app the assistant answers from: Telegram, which Grid answers
+/// itself (`telegramBotProvider`).
 ///
-/// Grid answers Telegram itself (`telegramBotProvider`); Discord and Slack are
-/// answered by Hermes's gateway. Past that they differ only in data: which
-/// secrets to collect, which `.env` keys Hermes keeps them under, and the words
-/// a person recognises — one screen drives all three off this.
+/// Discord and Slack went on 2026-09-11. They could only be answered through
+/// Hermes's background gateway — with nothing asking before the assistant
+/// acted, and nothing of the conversation in Chat. Still an enum, so the screen
+/// is drawn from this data rather than from strings scattered through widgets.
 enum MessagingPlatform {
   telegram(
     key: 'telegram',
     label: 'Telegram',
-    icon: LucideIcons.send,
     allowedUsersKey: 'TELEGRAM_ALLOWED_USERS',
     homeChannelKey: 'TELEGRAM_HOME_CHANNEL',
-    homeChannelIsUserId: true,
     credentials: [
       CredentialField(
         key: 'TELEGRAM_BOT_TOKEN',
         label: 'Bot token',
         hint: '8123456789:AAF…',
-        validate: validateTelegramToken,
       ),
     ],
     userIdLabel: 'Your Telegram id',
     userIdHint: '123456789',
-    userIdValidate: validateTelegramId,
     steps: [
       (
         number: 1,
@@ -76,142 +62,35 @@ enum MessagingPlatform {
             "it's open.",
       ),
     ],
-  ),
-  discord(
-    key: 'discord',
-    label: 'Discord',
-    icon: LucideIcons.messageCircle,
-    allowedUsersKey: 'DISCORD_ALLOWED_USERS',
-    homeChannelKey: null,
-    homeChannelIsUserId: false,
-    credentials: [
-      CredentialField(
-        key: 'DISCORD_BOT_TOKEN',
-        label: 'Bot token',
-        hint: 'MTA1…',
-        validate: validateDiscordToken,
-      ),
-    ],
-    userIdLabel: 'Your Discord user id',
-    userIdHint: '317361883817000000',
-    userIdValidate: validateDiscordId,
-    steps: [
-      (
-        number: 1,
-        title: 'Make an application',
-        detail:
-            'At discord.com/developers, create an application, open its Bot '
-            'page, and copy the token. Turn on the Message Content intent while '
-            "you're there.",
-      ),
-      (
-        number: 2,
-        title: 'Invite the bot to your server',
-        detail:
-            'From OAuth2 ▸ URL Generator pick the bot scope, open the link, and '
-            'add it to a server you and the bot share.',
-      ),
-      (
-        number: 3,
-        title: 'Find your user id',
-        detail:
-            'Turn on Developer Mode (Settings ▸ Advanced), right-click your '
-            'name, and Copy User ID. Only the ids you list may message it.',
-      ),
-    ],
-  ),
-  slack(
-    key: 'slack',
-    label: 'Slack',
-    icon: LucideIcons.hash,
-    allowedUsersKey: 'SLACK_ALLOWED_USERS',
-    homeChannelKey: null,
-    homeChannelIsUserId: false,
-    credentials: [
-      CredentialField(
-        key: 'SLACK_BOT_TOKEN',
-        label: 'Bot token',
-        hint: 'xoxb-…',
-        validate: validateSlackBotToken,
-      ),
-      CredentialField(
-        key: 'SLACK_APP_TOKEN',
-        label: 'App token',
-        hint: 'xapp-…',
-        validate: validateSlackAppToken,
-      ),
-    ],
-    userIdLabel: 'Your Slack member id',
-    userIdHint: 'U01234ABCDE',
-    userIdValidate: validateSlackId,
-    steps: [
-      (
-        number: 1,
-        title: 'Create a Slack app',
-        detail:
-            'At api.slack.com/apps create an app, turn on Socket Mode, and add '
-            'the message scopes. Install it to your workspace.',
-      ),
-      (
-        number: 2,
-        title: 'Copy both tokens',
-        detail:
-            'The bot token (starts xoxb-) from OAuth & Permissions, and an '
-            'app-level token (starts xapp-) from Basic Information.',
-      ),
-      (
-        number: 3,
-        title: 'Find your member id',
-        detail:
-            'In Slack, open your profile ▸ ⋯ ▸ Copy member ID. Only the ids you '
-            'list may message it.',
-      ),
-    ],
   );
 
   const MessagingPlatform({
     required this.key,
     required this.label,
-    required this.icon,
     required this.credentials,
     required this.allowedUsersKey,
     required this.homeChannelKey,
-    required this.homeChannelIsUserId,
     required this.userIdLabel,
     required this.userIdHint,
-    required this.userIdValidate,
     required this.steps,
   });
 
-  /// Hermes's own platform key — used for `platform_toolsets.<key>`, the
-  /// `gateway_state.json` `platforms.<key>` entry, and nothing the user sees.
+  /// Hermes's own key for the platform — `gateway_state.json`'s
+  /// `platforms.<key>` and `platform_toolsets.<key>`. Nothing the user sees.
   final String key;
   final String label;
-  final IconData icon;
 
   /// The secrets to collect, in the order the form shows them.
   final List<CredentialField> credentials;
 
-  /// The `.env` key holding the comma-separated allowlist — who may message the
-  /// bot. Empty means *anyone*, which is why the app refuses to connect without
-  /// at least one id.
-  ///
-  /// This and [homeChannelKey] are Hermes's. For Telegram they are only read
-  /// to show — and on disconnect remove — a bot Hermes still runs from before
-  /// Grid answered Telegram itself.
+  /// The `.env` keys Hermes kept a bot's allowlist and scheduled-result chat
+  /// under. Read to show — and removed on disconnect — a bot Hermes still runs
+  /// from before Grid answered Telegram itself; nothing writes them any more.
   final String allowedUsersKey;
-
-  /// The `.env` key for where a scheduled task's answer is delivered, or null
-  /// when the platform's home is a channel we don't collect yet (Discord, Slack).
-  final String? homeChannelKey;
-
-  /// Whether [homeChannelKey] is the user's own id (Telegram — a task's result
-  /// goes to their own chat with the bot). False when it's a separate channel.
-  final bool homeChannelIsUserId;
+  final String homeChannelKey;
 
   final String userIdLabel;
   final String userIdHint;
-  final String? Function(String value) userIdValidate;
 
   final List<ConnectStep> steps;
 }
@@ -236,65 +115,6 @@ String? validateTelegramId(String id) {
   }
   if (!RegExp(r'^\d{5,}$').hasMatch(trimmed)) {
     return 'A Telegram id is a number — message @userinfobot to get yours.';
-  }
-  return null;
-}
-
-/// A Discord bot token is a long dotted string from the Bot page.
-String? validateDiscordToken(String token) {
-  final trimmed = token.trim();
-  if (trimmed.isEmpty) return 'Paste the token from your bot on Discord.';
-  if (trimmed.length < 50 || !trimmed.contains('.')) {
-    return "That doesn't look like a Discord bot token — copy it from the "
-        "application's Bot page.";
-  }
-  return null;
-}
-
-/// A Discord user id is a numeric snowflake (17–20 digits).
-String? validateDiscordId(String id) {
-  final trimmed = id.trim();
-  if (trimmed.isEmpty) {
-    return 'Add your Discord id, or the bot would answer anyone who finds it.';
-  }
-  if (!RegExp(r'^\d{17,20}$').hasMatch(trimmed)) {
-    return 'A Discord id is a long number — right-click your name ▸ Copy User '
-        'ID (Developer Mode on).';
-  }
-  return null;
-}
-
-/// A Slack bot token starts with `xoxb-`.
-String? validateSlackBotToken(String token) {
-  final trimmed = token.trim();
-  if (trimmed.isEmpty) return 'Paste the bot token (starts xoxb-).';
-  if (!RegExp(r'^xoxb-[A-Za-z0-9-]+$').hasMatch(trimmed)) {
-    return 'A Slack bot token starts with xoxb- — copy it from OAuth & '
-        'Permissions.';
-  }
-  return null;
-}
-
-/// A Slack app-level token starts with `xapp-` (Socket Mode).
-String? validateSlackAppToken(String token) {
-  final trimmed = token.trim();
-  if (trimmed.isEmpty) return 'Paste the app token (starts xapp-).';
-  if (!RegExp(r'^xapp-[A-Za-z0-9-]+$').hasMatch(trimmed)) {
-    return 'A Slack app token starts with xapp- — make one under Basic '
-        'Information.';
-  }
-  return null;
-}
-
-/// A Slack member id starts with `U` (or `W`), then letters and digits.
-String? validateSlackId(String id) {
-  final trimmed = id.trim();
-  if (trimmed.isEmpty) {
-    return 'Add your Slack id, or the bot would answer anyone who finds it.';
-  }
-  if (!RegExp(r'^[UW][A-Z0-9]{6,}$').hasMatch(trimmed)) {
-    return 'A Slack member id looks like U01234ABCDE — profile ▸ ⋯ ▸ Copy '
-        'member ID.';
   }
   return null;
 }

@@ -3,16 +3,9 @@ part of 'messages_view.dart';
 /// Connecting a bot for one platform, in the steps it takes — and the one thing
 /// that keeps it yours: the list of who may message it.
 class PlatformConnectForm extends ConsumerStatefulWidget {
-  const PlatformConnectForm({
-    super.key,
-    required this.platform,
-    required this.host,
-  });
+  const PlatformConnectForm({super.key, required this.platform});
 
   final MessagingPlatform platform;
-
-  /// What will run the bot once connected — it decides what the form promises.
-  final MessagingHost host;
 
   @override
   ConsumerState<PlatformConnectForm> createState() =>
@@ -20,8 +13,8 @@ class PlatformConnectForm extends ConsumerStatefulWidget {
 }
 
 class _PlatformConnectFormState extends ConsumerState<PlatformConnectForm> {
-  /// One controller per credential the platform asks for, keyed by its `.env`
-  /// key so [connect] can hand the notifier a value for each.
+  /// One controller per credential the platform asks for, keyed by its
+  /// [CredentialField.key] so [_connect] can hand the notifier a value for each.
   late final Map<String, TextEditingController> _fields;
   final _userId = TextEditingController();
   bool _connecting = false;
@@ -51,7 +44,7 @@ class _PlatformConnectFormState extends ConsumerState<PlatformConnectForm> {
       _error = null;
     });
     final error = await ref
-        .read(messagingActionsProvider(widget.platform))
+        .read(telegramMessagingProvider.notifier)
         .connect(
           credentials: {
             for (final entry in _fields.entries) entry.key: entry.value.text,
@@ -91,7 +84,7 @@ class _PlatformConnectFormState extends ConsumerState<PlatformConnectForm> {
               hint: platform.userIdHint,
             ),
             const SizedBox(height: 24),
-            _Honesty(platform: platform, host: widget.host),
+            _Honesty(platform: platform),
             if (_error != null) ...[
               const SizedBox(height: 16),
               Text(
@@ -127,36 +120,21 @@ class _PlatformConnectFormState extends ConsumerState<PlatformConnectForm> {
 
 /// What the user is actually turning on. Said before they turn it on, not after.
 class _Honesty extends StatelessWidget {
-  const _Honesty({required this.platform, required this.host});
+  const _Honesty({required this.platform});
 
   final MessagingPlatform platform;
-  final MessagingHost host;
 
-  List<String> get _lines => switch (host) {
-    MessagingHost.grid => [
-      'Only the ids you list can message the bot. Anyone else is ignored, and '
-          'so is every group — even one you are in.',
-      'A message is answered by the assistant you use in Chat, with the access '
-          'it has there. When Chat asks before acting, the bot asks you in '
-          '${platform.label} first — no answer within a minute counts as no.',
-      'It answers while Grid is open on this computer. Closing Grid, or the '
-          "computer going to sleep, stops it — it isn't a bot in the cloud.",
-      'Each ${platform.label} conversation also shows up in Chat, so you can '
-          'carry it on at the computer.',
-    ],
-    MessagingHost.hermes => [
-      'Only the ids you list can message the bot. Anyone else is ignored.',
-      'A message runs the assistant on this computer with everything it has — '
-          'reading and changing your files, and running commands. Nothing asks '
-          'you first: nobody is at the machine when a ${platform.label} message '
-          'arrives, so the list above is what decides who can do this.',
-      "It goes quiet when this computer sleeps or shuts down. It isn't a bot in "
-          'the cloud.',
-      'Connecting turns on a small background program that listens for your '
-          'messages. It starts up with this computer; disconnecting stops the '
-          'bot answering, but leaves that program running.',
-    ],
-  };
+  List<String> get _lines => [
+    'Only the ids you list can message the bot. Anyone else is ignored, and so '
+        'is every group — even one you are in.',
+    'A message is answered by the assistant you use in Chat, with the access it '
+        'has there. When Chat asks before acting, the bot asks you in '
+        '${platform.label} first — no answer within a minute counts as no.',
+    'It answers while Grid is open on this computer. Closing Grid, or the '
+        "computer going to sleep, stops it — it isn't a bot in the cloud.",
+    'Each ${platform.label} conversation also shows up in Chat, so you can '
+        'carry it on at the computer.',
+  ];
 
   @override
   Widget build(BuildContext context) {

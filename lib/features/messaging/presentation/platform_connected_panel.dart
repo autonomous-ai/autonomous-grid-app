@@ -27,7 +27,7 @@ class PlatformConnectedPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final actions = ref.read(messagingActionsProvider(platform));
+    final actions = ref.read(telegramMessagingProvider.notifier);
     final theme = Theme.of(context);
     final note = connected.note;
 
