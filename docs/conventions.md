@@ -135,7 +135,8 @@ are **deliberate** — don't "fix" them back.
 - **Only the grid, the agents, and wire formats are tested.** `test/` holds exactly
   these areas and no others: `agent`, `agents`, `network`, `chat`, `code`,
   `playground`, `connectors`, `skills`, `scheduled`, `mcp`, `models`, `node_setup`,
-  `panel`, `vectors`, `provider`, `provider_node`, `auto_router`, `messaging`.
+  `panel`, `vectors`, `provider`, `provider_node`, `auto_router`, `messaging`,
+  `pairing`.
   Everything else went on
   2026-08-11 (~700 tests: review, projects, onboarding, messaging, terminal, prompts,
   appearance, layouts, logging, core, and the CLI/credentials/store/wire-parse
@@ -149,7 +150,15 @@ are **deliberate** — don't "fix" them back.
   subset and 4096-character limit it writes — is a format agreed with Telegram,
   and the gate deciding who may make this computer act is not something to
   prove by hand. It tests that protocol and that gate, never the Messages
-  screen. The reason §8 cuts tests is that UI
+  screen. **`pairing` joined them on 2026-09-14** on the same grounds: the
+  encrypted channel to the phone app is a byte format agreed with a binary that
+  ships separately from this one — a handshake transcript, an HKDF schedule and
+  a frame layout that two independently released builds must derive identically
+  or not talk at all. It is also the worst possible thing to debug by running the
+  app: a one-byte disagreement in the transcript surfaces as a decrypt failure
+  on frame one, with nothing on either side naming the field that differs. It
+  tests the codec and the key schedule, never a pairing screen. The reason §8
+  cuts tests is that UI
   rots faster than tests catch it; a codec is the opposite — it never rots, it is
   pure, and it fails as a desync three layers away from the mistake, which running
   the app diagnoses very badly. Adding an area is still a decision to argue for
@@ -158,6 +167,11 @@ are **deliberate** — don't "fix" them back.
   `scripts/gen_panel_vectors.py` — a third implementation — and read by both the
   Dart codec and the firmware's host-compiled test. A copy per side would let one
   drift and still pass, which is the one thing a shared vector file prevents.
+  `pairing` earns its keep there the same way: `e2ee_handshake.txt` comes from
+  `scripts/gen_e2ee_vectors.py`, and that script's `--selftest` reproduces a
+  *different project's* published known-answer vector before it will write the
+  file — so the evidence is that two unrelated implementations agree, not that
+  this one agrees with itself.
   **TODO(BE): that cut is not free**, and it took real guards with it —
   `GridCliService`'s argv and logging, `credentials.toml` parsing, `GridHomeStore`,
   and `GridOverview.fromJson` are now checked by nobody. Those are exactly the
