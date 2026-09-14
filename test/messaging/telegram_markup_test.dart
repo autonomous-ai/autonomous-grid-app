@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/messaging/logic/telegram/telegram_markup.dart';
+import 'package:grid_app/features/messaging/logic/telegram/telegram_stream.dart';
 
 void main() {
   group('an answer in Telegram HTML', () {
@@ -68,6 +69,32 @@ void main() {
 
     test('a short answer is one message', () {
       expect(telegramChunks('hi'), [(text: 'hi', html: true)]);
+    });
+  });
+
+  group('drawing an answer as it arrives', () {
+    const first = (text: 'one', html: true);
+    const second = (text: 'two', html: true);
+
+    test('a message already showing those words is left alone, so a long '
+        'answer costs one edit a flush rather than a screenful', () {
+      expect(telegramStreamEdits(const ['one'], const [first]), isEmpty);
+    });
+
+    test('the message that grew is edited, and the part past it is sent', () {
+      final edits = telegramStreamEdits(const ['on'], const [first, second]);
+
+      expect(
+        [for (final edit in edits) (edit.index, edit.fresh)],
+        [(0, false), (1, true)],
+      );
+    });
+
+    test('nothing on the phone yet means every message is a new one', () {
+      expect(
+        telegramStreamEdits(const [], const [first, second]),
+        hasLength(2),
+      );
     });
   });
 }

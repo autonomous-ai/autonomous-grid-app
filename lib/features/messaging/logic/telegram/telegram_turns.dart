@@ -16,6 +16,7 @@ import '../../../projects/logic/project.dart';
 import 'telegram_bot_store.dart';
 import 'telegram_markup.dart';
 import 'telegram_rules.dart';
+import 'telegram_stream.dart';
 
 /// Which Grid chat each Telegram chat is carrying on. The bot keeps it (and
 /// saves it); turns read it, and `/new` and `/sessions` move it.
@@ -184,6 +185,14 @@ class TelegramTurns {
     await chatSettled(_ref, id);
     final before = _answersIn(id).length;
     final typing = _typing(message.chatId);
+    // The answer goes out as it is written, not in one piece at the end.
+    final stream = TelegramStream(
+      _ref,
+      _api,
+      chatId: message.chatId,
+      conversationId: id,
+      log: _log,
+    )..listen();
     try {
       await sessions.send(
         network: network,
@@ -197,20 +206,34 @@ class TelegramTurns {
       await chatSettled(_ref, id);
     } finally {
       typing.cancel();
+      await stream.close();
     }
-    await _report(message.chatId, id, before);
+    await _report(
+      message.chatId,
+      id,
+      before: before,
+      streamed: stream.delivered,
+    );
   }
 
-  /// What the assistant said since [before], then why it stopped short if it
-  /// did. Read from the transcript, because the transcript is the record.
-  Future<void> _report(int chatId, String id, int before) async {
-    final answers = _answersIn(id).skip(before).toList();
+  /// Whatever the assistant said that the stream didn't already put on the
+  /// phone, then why it stopped short if it did. Read from the transcript,
+  /// because the transcript is the record.
+  Future<void> _report(
+    int chatId,
+    String id, {
+    required int before,
+    required int streamed,
+  }) async {
+    final answers = _answersIn(id).skip(before + streamed).toList();
     for (final answer in answers) {
       await reply(chatId, answer);
     }
     final error = _ref.read(chatSessionsProvider).errorFor(id);
     if (error != null) return reply(chatId, "Couldn't finish: $error");
-    if (answers.isEmpty) await reply(chatId, 'Stopped before it answered.');
+    if (answers.isEmpty && streamed == 0) {
+      await reply(chatId, 'Stopped before it answered.');
+    }
   }
 
   /// Every non-empty thing the assistant said in chat [id], oldest first.
