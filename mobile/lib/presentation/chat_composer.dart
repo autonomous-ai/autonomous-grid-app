@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_attachments.dart';
 import '../logic/phone_chat_options.dart';
@@ -57,12 +58,17 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final send = ref.watch(phoneSendProvider(widget.chatId));
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: theme.dividerColor)),
+        color: AppPalette.windowBg,
+        // A hairline and the composer's own lift, the way the desktop's
+        // composer floats over its transcript — not a plain top border.
+        border: Border(top: BorderSide(color: AppPalette.divider)),
+        boxShadow: AppSurface.composerShadow,
       ),
       child: SafeArea(
         top: false,
@@ -96,13 +102,34 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                     maxLines: 5,
                     textInputAction: TextInputAction.newline,
                     keyboardType: TextInputType.multiline,
-                    decoration: const InputDecoration(
+                    style: theme.textTheme.bodyMedium,
+                    decoration: InputDecoration(
                       hintText: 'Message',
-                      border: OutlineInputBorder(),
+                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppPalette.textFaint,
+                      ),
+                      filled: true,
+                      fillColor: AppPalette.cardBg,
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
+                      // A quiet fill with a hairline, not a boxed field: the
+                      // app's inputs are recessed surfaces, never outlines.
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppCard.radius),
+                        borderSide: BorderSide(color: AppGlass.hair),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppCard.radius),
+                        borderSide: BorderSide(color: AppGlass.hair),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppCard.radius),
+                        borderSide: BorderSide(
+                          color: AppPalette.accentOnSurface,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 11,
                       ),
                     ),
                   ),
@@ -142,20 +169,31 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     if (!working) {
       return IconButton.filled(
         tooltip: 'Send',
         onPressed: onSend,
-        icon: const Icon(Icons.arrow_upward),
+        iconSize: 18,
+        style: IconButton.styleFrom(
+          backgroundColor: AppPalette.accent,
+          foregroundColor: Colors.white,
+          minimumSize: const Size.square(40),
+        ),
+        icon: const Icon(Icons.arrow_upward_rounded),
       );
     }
     return IconButton(
       tooltip: 'Stop waiting for the answer',
       onPressed: onStopWaiting,
-      icon: const SizedBox(
-        height: 20,
-        width: 20,
-        child: CircularProgressIndicator(strokeWidth: 2),
+      style: IconButton.styleFrom(minimumSize: const Size.square(40)),
+      icon: SizedBox(
+        height: 18,
+        width: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: AppPalette.textFaint,
+        ),
       ),
     );
   }
@@ -173,6 +211,7 @@ class _Pickers extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final options = ref.watch(chatOptionsProvider(chatId));
     // Nothing at all while it loads or if it fails. The pills describe what a
     // message would do; drawn from a guess they would describe something else,

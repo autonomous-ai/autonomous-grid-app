@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_chats.dart';
 import '../logic/phone_media.dart';
@@ -25,21 +26,30 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     final mine = line.role == 'user';
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: mine
+            ? const EdgeInsets.fromLTRB(14, 10, 14, 10)
+            : EdgeInsets.zero,
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.85,
+          // The assistant's side runs the full width — it is prose, and
+          // narrowing it to bubble width costs a line break every sentence.
+          maxWidth: mine
+              ? MediaQuery.of(context).size.width * 0.82
+              : double.infinity,
         ),
         decoration: BoxDecoration(
-          color: mine
-              ? theme.colorScheme.primaryContainer
-              : theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
+          // The user's own turn sits on `bubbleFill`, the assistant's on
+          // nothing at all — the same asymmetry the desktop transcript uses.
+          // Two filled bubbles facing each other is a messaging app; this is a
+          // document with one side quoted back.
+          color: mine ? AppGlass.bubbleFill : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppCard.radius),
         ),
         child: Column(
           crossAxisAlignment: mine
@@ -76,25 +86,29 @@ class ChatBubble extends StatelessWidget {
 /// block quote and code backgrounds have to come from the theme or they are
 /// invisible in dark mode.
 MarkdownStyleSheet _sheet(ThemeData theme) {
+  // The app's own mono stack, not a hardcoded 'Menlo': the style guide is
+  // explicit that the family name decides whether this reaches real SF Mono or
+  // silently falls through.
   final mono = theme.textTheme.bodySmall?.copyWith(
-    fontFamily: 'Menlo',
-    fontFamilyFallback: const ['Courier', 'monospace'],
+    fontFamily: AppFont.mono,
+    fontFamilyFallback: AppFont.monoFallback,
   );
   return MarkdownStyleSheet.fromTheme(theme).copyWith(
     p: theme.textTheme.bodyMedium,
     code: mono,
     codeblockPadding: const EdgeInsets.all(12),
     codeblockDecoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(10),
+      color: AppCard.inset,
+      borderRadius: BorderRadius.circular(AppCard.insetRadius),
+      border: Border.all(color: AppCard.insetHair),
     ),
     blockquoteDecoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(8),
+      color: AppCard.inset,
+      borderRadius: BorderRadius.circular(AppCard.insetRadius),
     ),
     blockquotePadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
     horizontalRuleDecoration: BoxDecoration(
-      border: Border(top: BorderSide(color: theme.dividerColor)),
+      border: Border(top: BorderSide(color: AppPalette.divider)),
     ),
   );
 }
@@ -119,6 +133,7 @@ class _Attachment extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     if (item.kind != 'image') {
       return Padding(
@@ -149,7 +164,7 @@ class _Attachment extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppCard.insetRadius),
         child: bytes.when(
           // A fixed box while it loads, so the transcript does not jump when a
           // picture lands under the thumb that is scrolling it.
@@ -183,10 +198,13 @@ class _Placeholder extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Container(
-    height: 160,
-    width: 220,
-    color: Theme.of(context).colorScheme.surfaceContainerHigh,
-    child: child,
-  );
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Container(
+      height: 160,
+      width: 220,
+      color: AppCard.inset,
+      child: child,
+    );
+  }
 }

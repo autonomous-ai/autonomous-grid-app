@@ -3,10 +3,12 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_chats.dart';
 import 'chat_screen.dart';
 import 'chat_tile.dart';
+import 'grid_app_bar.dart';
 import 'new_chat_screen.dart';
 
 /// Pushes the transcript of [chat].
@@ -38,21 +40,31 @@ class ChatListScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final chats = ref.watch(chatListProvider);
     final projects = ref.watch(projectsProvider).value ?? const {};
     return Scaffold(
-      appBar: AppBar(title: Text(title ?? 'Chats')),
+      backgroundColor: AppPalette.windowBg,
+      appBar: GridAppBar(title: title ?? 'Chats'),
       // Carries the project through, so starting a chat from inside one lands
       // it there instead of making somebody pick the project they are looking
       // at.
       floatingActionButton: FloatingActionButton(
         tooltip: 'New chat',
+        backgroundColor: AppPalette.accent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        // The app's card rounding rather than a circle: nothing else here is a
+        // stadium, and a floating circle reads as another product's button.
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppCard.radius),
+        ),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => NewChatScreen(projectId: projectId),
           ),
         ),
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add_rounded, size: 20),
       ),
       body: chats.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -103,7 +115,9 @@ class _NoChats extends StatelessWidget {
         'No chats on your computer yet. Start one in Grid over there and it '
         'will show up here.',
         textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodyMedium,
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
       ),
     ),
   );
@@ -125,7 +139,9 @@ class _ListProblem extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
           ),
           const SizedBox(height: 16),
           FilledButton(onPressed: onRetry, child: const Text('Try again')),

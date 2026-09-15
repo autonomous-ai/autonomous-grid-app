@@ -7,11 +7,13 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/pairing_links.dart';
 import '../logic/phone_chats.dart';
 import '../logic/phone_link_controller.dart';
 import 'connected_view.dart';
+import 'grid_app_bar.dart';
 import 'pair_form.dart';
 
 /// Grid's only screen.
@@ -60,16 +62,18 @@ class _LinkScreenState extends ConsumerState<LinkScreen> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final link = ref.watch(phoneLinkProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Grid'),
+      backgroundColor: AppPalette.windowBg,
+      appBar: GridAppBar(
+        title: 'Grid',
         actions: [
           if (link is PhoneLinkConnected)
-            IconButton(
+            GridBarButton(
               tooltip: 'Refresh',
+              icon: Icons.refresh_rounded,
               onPressed: () => _refresh(ref),
-              icon: const Icon(Icons.refresh),
             ),
         ],
       ),
@@ -104,22 +108,33 @@ class _Working extends StatelessWidget {
   final String step;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(
-          width: 22,
-          height: 22,
-          child: CircularProgressIndicator(strokeWidth: 2.4),
-        ),
-        const SizedBox(height: 18),
-        // The step, not a generic spinner: when this takes a while, which half
-        // it is stuck in is the only useful thing on the screen.
-        Text(step, style: Theme.of(context).textTheme.bodyMedium),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppPalette.accentOnSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          // The step, not a generic spinner: when this takes a while, which
+          // half it is stuck in is the only useful thing on the screen.
+          Text(
+            step,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Paired, but not connected. Offers the action that might fix it.
@@ -130,23 +145,31 @@ class _Stuck extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text("Can't reach your computer", style: theme.textTheme.headlineSmall),
-        const SizedBox(height: 10),
-        Text(message, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 24),
-        FilledButton(
-          onPressed: () => ref.read(phoneLinkProvider.notifier).reconnect(),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Try again'),
+        Text("Can't reach your computer", style: theme.textTheme.titleLarge),
+        const SizedBox(height: 8),
+        Text(
+          message,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: AppPalette.textSecondary,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 24),
+        FilledButton(
+          // Taller than the shared 32, and deliberately: that number is a
+          // *pointer* target on a desktop. Apple asks for 44 under a thumb, and
+          // a 32px primary action on a phone is a button people miss.
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
+          onPressed: () => ref.read(phoneLinkProvider.notifier).reconnect(),
+          child: const Text('Try again'),
+        ),
+        const SizedBox(height: 8),
         TextButton(
+          style: TextButton.styleFrom(minimumSize: const Size.fromHeight(44)),
           onPressed: () => ref.read(phoneLinkProvider.notifier).unpair(),
           child: const Text('Use a different pairing code'),
         ),

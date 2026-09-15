@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -22,11 +23,17 @@ class AttachButton extends ConsumerWidget {
   final String chatId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => IconButton(
-    tooltip: 'Attach',
-    icon: const Icon(Icons.add),
-    onPressed: () => _choose(context, ref),
-  );
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    return IconButton(
+      tooltip: 'Attach',
+      iconSize: 20,
+      color: AppPalette.textSecondary,
+      style: IconButton.styleFrom(minimumSize: const Size.square(40)),
+      icon: const Icon(Icons.add_rounded),
+      onPressed: () => _choose(context, ref),
+    );
+  }
 
   Future<void> _choose(BuildContext context, WidgetRef ref) async {
     final source = await showModalBottomSheet<_Source>(
@@ -89,6 +96,7 @@ class AttachmentChips extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
     final staged = ref.watch(attachmentsProvider(chatId));
     if (staged.isEmpty) return const SizedBox.shrink();
     return Padding(

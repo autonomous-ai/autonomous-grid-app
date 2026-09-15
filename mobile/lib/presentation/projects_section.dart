@@ -9,9 +9,11 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_chats.dart';
 import 'chat_list_screen.dart';
+import 'parts.dart';
 
 /// The project list.
 class ProjectsSection extends ConsumerWidget {
@@ -19,7 +21,7 @@ class ProjectsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    AppTheme.watch(context);
     final projects = ref.watch(projectsProvider);
     // Nothing at all rather than an empty heading: a computer with no projects
     // is a normal computer, and a "Projects" title over blank space reads as
@@ -34,8 +36,7 @@ class ProjectsSection extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Projects', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SectionLabel('Projects'),
           for (final project in rows) _ProjectTile(project),
         ],
       ),
@@ -50,13 +51,8 @@ class _ProjectTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final detail = [
-      if (project.agent.isNotEmpty) project.agent,
-      if (project.model.isNotEmpty) project.model,
-    ].join(' · ');
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
+    AppTheme.watch(context);
+    return GridListRow(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => ChatListScreen(
@@ -65,45 +61,31 @@ class _ProjectTile extends StatelessWidget {
           ),
         ),
       ),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    project.name.isEmpty ? 'Untitled project' : project.name,
-                    style: theme.textTheme.bodyLarge,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (detail.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      style: theme.textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
+      child: Row(
+        children: [
+          Icon(Icons.folder_outlined, size: 16, color: AppPalette.textFaint),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  project.name.isEmpty ? 'Untitled project' : project.name,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                RowDetail([project.agent, project.model]),
+              ],
             ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: theme.textTheme.bodySmall?.color,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: AppPalette.textFaint,
+          ),
+        ],
       ),
     );
   }

@@ -17,6 +17,10 @@ dependencies:
   # handshake, the key schedule and the frame layout are ONE implementation.
   grid_pairing:
     path: ../packages/grid_pairing
+  # The same design system the desktop resolves against, so a colour or a
+  # corner radius cannot differ between the two apps.
+  grid_theme:
+    path: ../packages/grid_theme
   # The pairing token is a bearer credential for someone's computer. It belongs
   # in the Keychain, not in shared_preferences where a backup or a jailbroken
   # device reads it as plain text.

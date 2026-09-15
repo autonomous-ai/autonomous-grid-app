@@ -6,9 +6,11 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/chat_when.dart';
 import '../logic/phone_chats.dart';
+import 'parts.dart';
 
 /// A tappable conversation row.
 class ChatTile extends StatelessWidget {
@@ -30,55 +32,32 @@ class ChatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final when = chatWhen(chat.updatedAt);
-    final detail = [
-      if (projectName.isNotEmpty) projectName,
-      if (chat.model.isNotEmpty) chat.model,
-      if (when.isNotEmpty) when,
-    ].join(' · ');
-    return InkWell(
+    AppTheme.watch(context);
+    return GridListRow(
       onTap: onOpen,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    chat.title.isEmpty ? 'Untitled chat' : chat.title,
-                    style: theme.textTheme.bodyLarge,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (detail.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      style: theme.textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  chat.title.isEmpty ? 'Untitled chat' : chat.title,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                RowDetail([projectName, chat.model, chatWhen(chat.updatedAt)]),
+              ],
             ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: theme.textTheme.bodySmall?.color,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: AppPalette.textFaint,
+          ),
+        ],
       ),
     );
   }

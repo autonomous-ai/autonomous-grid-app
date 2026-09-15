@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_link_controller.dart';
 
@@ -45,16 +46,20 @@ class _PairFormState extends ConsumerState<PairForm> {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
+    final radius = BorderRadius.circular(AppCard.radius);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Connect to your computer', style: theme.textTheme.headlineSmall),
-        const SizedBox(height: 8),
+        Text('Connect to your computer', style: theme.textTheme.titleLarge),
+        const SizedBox(height: 4),
         Text(
           'Open Grid on your computer and it will show a pairing code. '
           'Paste the whole line here.',
-          style: theme.textTheme.bodyMedium,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: AppPalette.textSecondary,
+          ),
         ),
         const SizedBox(height: 20),
         TextField(
@@ -63,14 +68,41 @@ class _PairFormState extends ConsumerState<PairForm> {
           maxLines: 4,
           autocorrect: false,
           enableSuggestions: false,
-          style: const TextStyle(fontFamily: 'Menlo', fontSize: 12),
+          // Mono because this is a string being *copied*, not read — the rule
+          // the style guide draws the line on. Via AppFont, since the literal
+          // 'Menlo' skips the real SF Mono this app resolves to.
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontFamily: AppFont.mono,
+            fontFamilyFallback: AppFont.monoFallback,
+          ),
           decoration: InputDecoration(
             hintText: 'grid://pair?code=...',
-            border: const OutlineInputBorder(),
+            hintStyle: theme.textTheme.bodySmall?.copyWith(
+              color: AppPalette.textFaint,
+              fontFamily: AppFont.mono,
+              fontFamilyFallback: AppFont.monoFallback,
+            ),
+            filled: true,
+            fillColor: AppPalette.cardBg,
+            contentPadding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+            border: OutlineInputBorder(
+              borderRadius: radius,
+              borderSide: BorderSide(color: AppGlass.hair),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: radius,
+              borderSide: BorderSide(color: AppGlass.hair),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: radius,
+              borderSide: BorderSide(color: AppPalette.accentOnSurface),
+            ),
             suffixIcon: IconButton(
               tooltip: 'Paste',
               onPressed: _paste,
-              icon: const Icon(Icons.content_paste),
+              iconSize: 18,
+              color: AppPalette.textSecondary,
+              icon: const Icon(Icons.content_paste_rounded),
             ),
           ),
         ),
@@ -80,13 +112,13 @@ class _PairFormState extends ConsumerState<PairForm> {
         ],
         const SizedBox(height: 20),
         FilledButton(
+          // 46 rather than the shared 32: that height is a pointer target, and
+          // this is the one button the whole app depends on being hit.
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(46)),
           onPressed: _canSubmit
               ? () => ref.read(phoneLinkProvider.notifier).pair(_field.text)
               : null,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('Connect'),
-          ),
+          child: const Text('Connect'),
         ),
       ],
     );
@@ -100,23 +132,28 @@ class _Problem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    AppTheme.watch(context);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
       decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(10),
+        // A quiet inset with a danger-coloured mark, not a slab of red: the
+        // app separates surfaces with a rim, and a filled error block is the
+        // densest thing on a screen that is mostly calm.
+        color: AppCard.inset,
+        borderRadius: BorderRadius.circular(AppCard.insetRadius),
+        border: Border.all(color: AppCard.insetHair),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
+          Icon(
+            Icons.error_outline_rounded,
+            size: 17,
+            color: AppPalette.dangerFill,
+          ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: scheme.onErrorContainer, height: 1.35),
-            ),
+            child: Text(message, style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
       ),

@@ -7,10 +7,12 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_chats.dart';
 import 'chat_list_screen.dart';
 import 'new_chat_screen.dart';
+import 'parts.dart';
 import 'chat_tile.dart';
 
 /// How many conversations the connected screen shows before handing over.
@@ -22,25 +24,22 @@ class ChatsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    AppTheme.watch(context);
     final chats = ref.watch(chatListProvider);
     final projects = ref.watch(projectsProvider).value ?? const {};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(child: Text('Chats', style: theme.textTheme.titleMedium)),
-            TextButton.icon(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const NewChatScreen()),
-              ),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('New'),
+        SectionLabel(
+          'Chats',
+          trailing: TextButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const NewChatScreen()),
             ),
-          ],
+            icon: const Icon(Icons.add_rounded, size: 16),
+            label: const Text('New'),
+          ),
         ),
-        const SizedBox(height: 4),
         chats.when(
           loading: () => const _Loading(),
           // Short and specific: the connected screen above this one already
@@ -82,24 +81,35 @@ class _Loading extends StatelessWidget {
   const _Loading();
 
   @override
-  Widget build(BuildContext context) => const Padding(
-    padding: EdgeInsets.symmetric(vertical: 12),
-    child: SizedBox(
-      height: 20,
-      width: 20,
-      child: CircularProgressIndicator(strokeWidth: 2),
-    ),
-  );
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: SizedBox(
+        height: 18,
+        width: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: AppPalette.textFaint,
+        ),
+      ),
+    );
+  }
 }
 
 class _Empty extends StatelessWidget {
   const _Empty();
 
   @override
-  Widget build(BuildContext context) => Text(
-    'No chats on your computer yet.',
-    style: Theme.of(context).textTheme.bodyMedium,
-  );
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Text(
+      'No chats on your computer yet.',
+      style: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
+    );
+  }
 }
 
 class _Problem extends StatelessWidget {
@@ -108,15 +118,20 @@ class _Problem extends StatelessWidget {
   final VoidCallback onRetry;
 
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Expanded(
-        child: Text(
-          "Couldn't read your chats.",
-          style: Theme.of(context).textTheme.bodyMedium,
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            "Couldn't read your chats.",
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
+          ),
         ),
-      ),
-      TextButton(onPressed: onRetry, child: const Text('Try again')),
-    ],
-  );
+        TextButton(onPressed: onRetry, child: const Text('Try again')),
+      ],
+    );
+  }
 }

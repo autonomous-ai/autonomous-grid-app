@@ -7,6 +7,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_chat_options.dart';
 
@@ -47,35 +48,44 @@ class ComposerPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
+    // 34 tall at radius 11 — the toolbar pill from the style guide, not a
+    // stadium. The whole row has to read as one bar, so the height is fixed
+    // rather than grown by its content.
     return InkWell(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(11),
       onTap: enabled ? () => _open(context) : null,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
+        height: 34,
+        padding: const EdgeInsets.fromLTRB(10, 0, 6, 0),
+        alignment: Alignment.centerLeft,
         decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(20),
+          color: AppGlass.surfaceFill,
+          border: Border.all(color: AppGlass.hair),
+          borderRadius: BorderRadius.circular(11),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 14, color: theme.textTheme.bodySmall?.color),
+            Icon(icon, size: 13, color: AppPalette.textSecondary),
             const SizedBox(width: 6),
             // Flexible, not fixed: a model id can be long and three pills share
             // one phone-width row, so each has to be able to give way.
             Flexible(
               child: Text(
                 _label,
-                style: theme.textTheme.bodySmall,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: AppPalette.textSecondary,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             Icon(
-              Icons.expand_more,
+              Icons.expand_more_rounded,
               size: 14,
-              color: theme.textTheme.bodySmall?.color,
+              color: AppPalette.textFaint,
             ),
           ],
         ),
@@ -114,6 +124,7 @@ class _PickSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     return SafeArea(
       child: ConstrainedBox(
@@ -126,7 +137,7 @@ class _PickSheet extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text(title, style: theme.textTheme.titleMedium),
+              child: Text(title, style: theme.textTheme.titleSmall),
             ),
             Flexible(
               child: ListView.builder(
@@ -138,9 +149,12 @@ class _PickSheet extends StatelessWidget {
                     enabled: option.enabled,
                     leading: Icon(
                       option.id == picker.selected
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 20,
+                          ? Icons.check_circle_rounded
+                          : Icons.circle_outlined,
+                      size: 19,
+                      color: option.id == picker.selected
+                          ? AppPalette.accentOnSurface
+                          : AppPalette.textFaint,
                     ),
                     title: Text(option.label),
                     // The reason sits under the row it disables. A greyed row

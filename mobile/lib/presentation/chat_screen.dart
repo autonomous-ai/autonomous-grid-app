@@ -3,11 +3,13 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/chat_watch.dart';
 import '../logic/phone_chats.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
+import 'grid_app_bar.dart';
 
 /// The transcript of one chat, a page at a time, with a box to answer in.
 ///
@@ -46,14 +48,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ? ref.watch(chatWatchProvider(widget.id))
         : (total: 0, streaming: '');
     final transcript = ref.watch(transcriptProvider(request));
+    AppTheme.watch(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.title.isEmpty ? 'Chat' : widget.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
+      backgroundColor: AppPalette.windowBg,
+      appBar: GridAppBar(title: widget.title.isEmpty ? 'Chat' : widget.title),
       body: Column(
         children: [
           Expanded(
@@ -125,7 +123,7 @@ class _Transcript extends StatelessWidget {
     final live = streaming.isEmpty ? 0 : 1;
     return ListView.builder(
       reverse: true,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
       // The live bubble sits at index 0 — the bottom, with the list reversed —
       // and the earlier-messages bar at the very end, which is the top.
       itemCount: count + live + 1,
@@ -156,6 +154,7 @@ class _EarlierBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     if (onTap == null) {
       // The start of the conversation, said plainly — otherwise a reader who
@@ -189,7 +188,9 @@ class _TranscriptEmpty extends StatelessWidget {
       child: Text(
         'Nothing has been said in this chat yet. Send the first message.',
         textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodyMedium,
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
       ),
     ),
   );
@@ -211,7 +212,9 @@ class _TranscriptProblem extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
           ),
           const SizedBox(height: 16),
           FilledButton(onPressed: onRetry, child: const Text('Try again')),
