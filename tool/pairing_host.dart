@@ -12,8 +12,10 @@
 //   # here
 //   dart run tool/pairing_host.dart
 //
-// Wiring this into the desktop UI — a pairing screen with a QR — is the piece
-// that is still missing; until then this is how a phone gets a code.
+// The desktop app has its own pairing screen now (Settings > Phone), so this is
+// no longer the only way to get a code. It is still the way to get one *without*
+// the app: this runs headless, which is what makes the link testable from a
+// terminal.
 import 'dart:io';
 
 import 'package:grid_app/infrastructure/pairing_host/device_registry.dart';

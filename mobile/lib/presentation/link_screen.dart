@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../logic/pairing_links.dart';
+import '../logic/phone_chats.dart';
 import '../logic/phone_link_controller.dart';
 import 'connected_view.dart';
 import 'pair_form.dart';
@@ -43,6 +44,20 @@ class _LinkScreenState extends ConsumerState<LinkScreen> {
     });
   }
 
+  /// Re-asks the computer everything this screen shows.
+  ///
+  /// The chats are their own providers rather than part of the link's state, so
+  /// refreshing the link alone would leave the list on screen exactly as stale
+  /// as it was — the one thing a refresh button must not do. Invalidating is
+  /// what re-asks them; it happens here rather than in the controller because
+  /// the chat providers read *it*, and a controller reaching back into them
+  /// would be a cycle.
+  void _refresh(WidgetRef ref) {
+    ref.read(phoneLinkProvider.notifier).refresh();
+    ref.invalidate(chatListProvider);
+    ref.invalidate(projectsProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
     final link = ref.watch(phoneLinkProvider);
@@ -53,7 +68,7 @@ class _LinkScreenState extends ConsumerState<LinkScreen> {
           if (link is PhoneLinkConnected)
             IconButton(
               tooltip: 'Refresh',
-              onPressed: () => ref.read(phoneLinkProvider.notifier).refresh(),
+              onPressed: () => _refresh(ref),
               icon: const Icon(Icons.refresh),
             ),
         ],

@@ -1,0 +1,446 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_app/core/grid_paths.dart';
+import 'package:grid_app/infrastructure/pairing_host/mobile_chat_reader.dart';
+import 'package:grid_app/infrastructure/pairing_host/mobile_rpc_service.dart';
+import 'package:grid_pairing/grid_pairing.dart';
+
+/// What the phone is served when it asks about chats and projects.
+///
+/// This is a wire format, not a screen: the projection is what a separately
+/// shipped binary decodes, and the fields left *out* of it are a security
+/// property rather than an omission (§8).
+void main() {
+  late Directory root;
+  late Directory chats;
+
+  setUp(() {
+    root = Directory.systemTemp.createTempSync('grid-phone-projection');
+    chats = Directory('${root.path}/chats')..createSync();
+  });
+
+  tearDown(() => root.deleteSync(recursive: true));
+
+  void writeIndex(List<Map<String, Object?>> headers) {
+    File(
+      '${chats.path}/$kChatIndexName',
+    ).writeAsStringSync(jsonEncode({'chats': headers}));
+  }
+
+  void writeChat(String id, List<Map<String, Object?>> messages) {
+    File(
+      '${chats.path}/$id.json',
+    ).writeAsStringSync(jsonEncode({'id': id, 'messages': messages}));
+  }
+
+  group('the chat list', () {
+    test(
+      'comes back newest first, so the phone shows recent work at the top',
+      () {
+        writeIndex([
+          {'id': 'a', 'title': 'older', 'updatedAt': '2026-09-01T00:00:00Z'},
+          {'id': 'b', 'title': 'newest', 'updatedAt': '2026-09-14T00:00:00Z'},
+          {'id': 'c', 'title': 'middle', 'updatedAt': '2026-09-07T00:00:00Z'},
+        ]);
+
+        final headers = readChatHeaders(chatsDir: chats);
+
+        expect(headers.map((h) => h.title), ['newest', 'middle', 'older']);
+      },
+    );
+
+    test('reads archived from the presence of archivedAt, which most chats '
+        'do not carry at all', () {
+      writeIndex([
+        {'id': 'a', 'updatedAt': '2026-09-01T00:00:00Z'},
+        {
+          'id': 'b',
+          'updatedAt': '2026-09-02T00:00:00Z',
+          'archivedAt': '2026-09-03T00:00:00Z',
+        },
+      ]);
+
+      final headers = readChatHeaders(chatsDir: chats);
+
+      expect(headers.firstWhere((h) => h.id == 'a').archived, isFalse);
+      expect(headers.firstWhere((h) => h.id == 'b').archived, isTrue);
+    });
+
+    test('is empty rather than throwing when Chat has never been opened, '
+        'because a computer with no history is a normal state', () {
+      expect(readChatHeaders(chatsDir: chats), isEmpty);
+    });
+
+    test(
+      'survives a corrupt index instead of taking the channel down with it',
+      () {
+        File('${chats.path}/$kChatIndexName').writeAsStringSync('{not json');
+
+        expect(readChatHeaders(chatsDir: chats), isEmpty);
+      },
+    );
+  });
+
+  group('a transcript page', () {
+    List<Map<String, Object?>> turns(int count) => [
+      for (var i = 0; i < count; i++)
+        {'role': i.isEven ? 'user' : 'assistant', 'text': 'turn $i'},
+    ];
+
+    test(
+      'ends at the newest turn, because that is what the phone opens on',
+      () {
+        writeChat('a', turns(100));
+
+        final page = readChatPage('a', chatsDir: chats)!;
+
+        expect(page.total, 100);
+        expect(page.lines.last.text, 'turn 99');
+        expect(page.lines.length, kMobileChatPageTurns);
+        expect(page.offset, 100 - kMobileChatPageTurns);
+      },
+    );
+
+    test('walks backwards by offset, so the phone can reach the start of a '
+        'conversation the relay would refuse to send whole', () {
+      writeChat('a', turns(100));
+
+      final page = readChatPage('a', chatsDir: chats, offset: 0, limit: 10)!;
+
+      expect(page.lines.first.text, 'turn 0');
+      expect(page.lines.length, 10);
+      expect(page.offset, 0);
+    });
+
+    test('stops on bytes as well as turns, since the frame limit is measured '
+        'in bytes and ending a connection is how the relay enforces it', () {
+      final long = 'x' * (kMobileChatPageBytes ~/ 4);
+      writeChat('a', [
+        for (var i = 0; i < 10; i++) {'role': 'assistant', 'text': long},
+      ]);
+
+      final page = readChatPage('a', chatsDir: chats, offset: 0)!;
+
+      expect(page.lines.length, lessThan(10));
+      expect(
+        page.lines.fold<int>(0, (sum, line) => sum + line.text.length),
+        lessThanOrEqualTo(kMobileChatPageBytes + long.length),
+      );
+    });
+
+    test('still returns a single turn longer than the whole byte budget, '
+        'because a page that stops before it holds anything never renders', () {
+      writeChat('a', [
+        {'role': 'assistant', 'text': 'y' * (kMobileChatPageBytes * 2)},
+      ]);
+
+      final page = readChatPage('a', chatsDir: chats)!;
+
+      expect(page.lines, hasLength(1));
+    });
+
+    test('drops a turn that carried only a picture rather than showing an '
+        'empty bubble that claims nothing was said', () {
+      writeChat('a', [
+        {
+          'role': 'user',
+          'text': '',
+          'media': const [<String, Object?>{}],
+        },
+        {'role': 'assistant', 'text': 'here it is'},
+      ]);
+
+      final page = readChatPage('a', chatsDir: chats)!;
+
+      expect(page.lines, hasLength(1));
+      expect(page.lines.single.text, 'here it is');
+    });
+
+    test('is null for a chat this computer does not have, so the phone can '
+        'say so instead of offering to send into a missing file', () {
+      expect(readChatPage('nope', chatsDir: chats), isNull);
+    });
+
+    test('refuses an id that is a path, which is the one field the caller '
+        'picks and the only way out of the chats folder', () {
+      File(
+        '${root.path}/secret.json',
+      ).writeAsStringSync(jsonEncode({'messages': turns(1)}));
+
+      expect(readChatPage('../secret', chatsDir: chats), isNull);
+      expect(readChatPage('/etc/passwd', chatsDir: chats), isNull);
+    });
+  });
+
+  group('the project list', () {
+    test('never carries a project path: the phone picks projects by name, and '
+        'the path is this computer filesystem layout', () {
+      final file = File('${root.path}/projects.json')
+        ..writeAsStringSync(
+          jsonEncode([
+            {
+              'id': '1',
+              'name': 'GroupMe',
+              'path': '/Users/someone/WorkPlace/GroupMe',
+              'model': 'auto',
+              'agent': 'claude',
+            },
+          ]),
+        );
+
+      final projects = readProjectSummaries(file: file);
+
+      expect(projects.single.name, 'GroupMe');
+      expect(projects.single.toString(), isNot(contains('WorkPlace')));
+    });
+
+    test(
+      'skips an entry with no id, since the phone addresses projects by it',
+      () {
+        final file = File('${root.path}/projects.json')
+          ..writeAsStringSync(
+            jsonEncode([
+              {'name': 'nameless'},
+              {'id': '2', 'name': 'real'},
+            ]),
+          );
+
+        expect(readProjectSummaries(file: file).map((p) => p.name), ['real']);
+      },
+    );
+  });
+
+  group('what the service answers', () {
+    MobileRpcService serviceOver({
+      List<ChatHeader> chats = const [],
+      List<ProjectSummary> projects = const [],
+      ChatPage? page,
+    }) => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      readChats: () => chats,
+      readProjects: () => projects,
+      readChat: (id, {int? limit, int? offset}) => page,
+    );
+
+    Future<MobileRpcResponse> ask(
+      MobileRpcService service,
+      String method, [
+      Map<String, Object?> params = const {},
+    ]) => service.handle(
+      MobileRpcRequest(id: 'r1', method: method, params: params),
+      deviceId: 'device-1',
+    );
+
+    test('refuses a method that is not on the allowlist, which is the security '
+        'boundary rather than whatever the phone happens to render', () async {
+      final answer = await ask(serviceOver(), 'files.read');
+
+      expect(answer, isA<MobileRpcFailed>());
+      expect((answer as MobileRpcFailed).code, 'forbidden');
+    });
+
+    test('says not_found for a chat this computer does not have, so the phone '
+        'never opens a composer onto a missing conversation', () async {
+      final answer = await ask(serviceOver(), 'chats.get', {'id': 'gone'});
+
+      expect((answer as MobileRpcFailed).code, 'not_found');
+    });
+
+    test('says bad_request when no chat was named, which is a caller bug and '
+        'not a missing chat', () async {
+      final answer = await ask(serviceOver(), 'chats.get');
+
+      expect((answer as MobileRpcFailed).code, 'bad_request');
+    });
+
+    test('carries total and offset back with a page, because they are how the '
+        'phone knows there is more history to ask for', () async {
+      final service = serviceOver(
+        page: (lines: [(role: 'user', text: 'hello')], total: 500, offset: 460),
+      );
+
+      final answer = await ask(service, 'chats.get', {'id': 'c1'});
+
+      expect(answer, isA<MobileRpcOk>());
+      final result = (answer as MobileRpcOk).result;
+      expect(result['total'], 500);
+      expect(result['offset'], 460);
+      expect(result['messages'], [
+        {'role': 'user', 'text': 'hello'},
+      ]);
+    });
+
+    test(
+      'lists chats and projects with exactly the fields the phone is meant '
+      'to see, so a field added upstream cannot leak by being forwarded',
+      () async {
+        final service = serviceOver(
+          chats: [
+            (
+              id: 'c1',
+              title: 'a chat',
+              model: 'auto',
+              agent: 'claude',
+              projectId: 'p1',
+              updatedAt: '2026-09-14T00:00:00Z',
+              archived: false,
+            ),
+          ],
+          projects: [
+            (id: 'p1', name: 'GroupMe', model: 'auto', agent: 'claude'),
+          ],
+        );
+
+        final chats = (await ask(service, 'chats.list') as MobileRpcOk).result;
+        final projects =
+            (await ask(service, 'projects.list') as MobileRpcOk).result;
+
+        expect((chats['chats']! as List).single, {
+          'id': 'c1',
+          'title': 'a chat',
+          'model': 'auto',
+          'agent': 'claude',
+          'projectId': 'p1',
+          'updatedAt': '2026-09-14T00:00:00Z',
+          'archived': false,
+        });
+        expect((projects['projects']! as List).single, {
+          'id': 'p1',
+          'name': 'GroupMe',
+          'model': 'auto',
+          'agent': 'claude',
+        });
+      },
+    );
+  });
+
+  group('the gate on sending', () {
+    final page = (
+      lines: <ChatLine>[(role: 'user', text: 'hi')],
+      total: 1,
+      offset: 0,
+    );
+    var sent = <String>[];
+
+    MobileRpcService hostThatCanSend() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      readChat: (id, {int? limit, int? offset}) => page,
+      sendToChat: (chatId, text) async {
+        sent.add('$chatId:$text');
+        return null;
+      },
+    );
+
+    Future<MobileRpcResponse> send(
+      MobileRpcService service, {
+      required bool allowed,
+      String text = 'do the thing',
+    }) => service.handle(
+      MobileRpcRequest(
+        id: 'r1',
+        method: 'chats.send',
+        params: {'id': 'c1', 'text': text},
+      ),
+      deviceId: 'device-1',
+      mayAct: () async => allowed,
+    );
+
+    setUp(() => sent = <String>[]);
+
+    test('refuses a phone that has not been granted it, and nothing reaches '
+        'the chat — this is the whole point of the switch', () async {
+      final answer = await send(hostThatCanSend(), allowed: false);
+
+      expect((answer as MobileRpcFailed).code, 'forbidden');
+      expect(sent, isEmpty);
+    });
+
+    test('refuses when the caller never says whether the phone may act, so a '
+        'host wired without thinking about it grants nothing', () async {
+      final answer = await hostThatCanSend().handle(
+        MobileRpcRequest(
+          id: 'r1',
+          method: 'chats.send',
+          params: {'id': 'c1', 'text': 'do the thing'},
+        ),
+        deviceId: 'device-1',
+      );
+
+      expect((answer as MobileRpcFailed).code, 'forbidden');
+      expect(sent, isEmpty);
+    });
+
+    test('says unavailable — not forbidden — on a host with no app behind it, '
+        'because that is a different thing to go and fix', () async {
+      final headless = MobileRpcService(
+        hostName: 'test-host',
+        appVersion: '0.0.0',
+        readGrids: () => const [],
+        readChat: (id, {int? limit, int? offset}) => page,
+      );
+
+      final answer = await send(headless, allowed: true);
+
+      expect((answer as MobileRpcFailed).code, 'unavailable');
+    });
+
+    test('passes the message through once the switch is on', () async {
+      final answer = await send(hostThatCanSend(), allowed: true);
+
+      expect(answer, isA<MobileRpcOk>());
+      expect((answer as MobileRpcOk).result['accepted'], true);
+      expect(sent, ['c1:do the thing']);
+    });
+
+    test('refuses a message with nothing in it before the gate is even asked, '
+        'so whitespace cannot start a turn', () async {
+      final answer = await send(hostThatCanSend(), allowed: true, text: '   ');
+
+      expect((answer as MobileRpcFailed).code, 'bad_request');
+      expect(sent, isEmpty);
+    });
+
+    test('hands back the reason the computer could not start the turn, since '
+        '"no grid signed in" is something the person can go and fix', () async {
+      final service = MobileRpcService(
+        hostName: 'test-host',
+        appVersion: '0.0.0',
+        readGrids: () => const [],
+        readChat: (id, {int? limit, int? offset}) => page,
+        sendToChat: (chatId, text) async => 'No model is running.',
+      );
+
+      final answer = await send(service, allowed: true);
+
+      expect((answer as MobileRpcFailed).message, 'No model is running.');
+    });
+
+    test(
+      'will not send into a chat this computer does not have, which would '
+      'create the conversation the phone thought it was continuing',
+      () async {
+        final service = MobileRpcService(
+          hostName: 'test-host',
+          appVersion: '0.0.0',
+          readGrids: () => const [],
+          readChat: (id, {int? limit, int? offset}) => null,
+          sendToChat: (chatId, text) async {
+            sent.add(chatId);
+            return null;
+          },
+        );
+
+        final answer = await send(service, allowed: true);
+
+        expect((answer as MobileRpcFailed).code, 'not_found');
+        expect(sent, isEmpty);
+      },
+    );
+  });
+}

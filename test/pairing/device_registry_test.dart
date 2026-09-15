@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -109,5 +110,77 @@ void main() {
     // write rather than wedging pairing forever.
     final phone = await registry.register('My phone');
     expect(await registry.authenticate(phone.token), isNotNull);
+  });
+
+  group('whether a phone may make this computer act', () {
+    test('is off for a phone that has just paired, because a pairing code '
+        'proves which device is calling and not who is holding it', () async {
+      final phone = await registry.register('My phone');
+
+      expect(phone.mayAct, isFalse);
+      expect((await registry.load()).single.mayAct, isFalse);
+    });
+
+    test('survives being written and read back, so the grant is a decision '
+        'made once rather than one that quietly lapses', () async {
+      final phone = await registry.register('My phone');
+
+      await registry.setMayAct(phone.deviceId, true);
+      expect((await registry.load()).single.mayAct, isTrue);
+
+      await registry.setMayAct(phone.deviceId, false);
+      expect((await registry.load()).single.mayAct, isFalse);
+    });
+
+    test('is not granted by a registry written before the flag existed — an '
+        'older file must not read as permission', () async {
+      File('${home.path}/paired_devices.json').writeAsStringSync(
+        jsonEncode({
+          'v': 1,
+          'devices': [
+            {
+              'deviceId': 'old',
+              'name': 'An older phone',
+              'token': 'a' * 48,
+              'pairedAt': 1,
+              'lastSeenAt': 2,
+            },
+          ],
+        }),
+      );
+
+      expect((await registry.load()).single.mayAct, isFalse);
+    });
+
+    test('granting one phone leaves the others alone, which is the reason '
+        'each device has its own record at all', () async {
+      final first = await registry.register('Mine');
+      await registry.register('Someone else\'s');
+
+      await registry.setMayAct(first.deviceId, true);
+
+      final devices = await registry.load();
+      expect(
+        devices.firstWhere((d) => d.deviceId == first.deviceId).mayAct,
+        isTrue,
+      );
+      expect(
+        devices.where((d) => d.deviceId != first.deviceId).single.mayAct,
+        isFalse,
+      );
+    });
+
+    test(
+      'a revoked phone is not allowed to act, whatever its record said',
+      () async {
+        final phone = await registry.register('My phone');
+        await registry.setMayAct(phone.deviceId, true);
+
+        await registry.revoke(phone.deviceId);
+
+        expect(await registry.load(), isEmpty);
+        expect(await registry.authenticate(phone.token), isNull);
+      },
+    );
   });
 }

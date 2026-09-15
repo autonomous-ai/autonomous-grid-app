@@ -18,6 +18,8 @@ import 'package:grid_pairing/grid_pairing.dart';
 import 'package:toml/toml.dart';
 
 import '../../core/grid_paths.dart';
+import 'mobile_chat_reader.dart';
+import 'mobile_chat_rpc.dart';
 
 /// One grid, as much of it as a phone is shown.
 typedef GridSummary = ({String id, String name, String type, String email});
@@ -28,8 +30,20 @@ class MobileRpcService {
     required this.hostName,
     required this.appVersion,
     List<GridSummary> Function()? readGrids,
+    List<ChatHeader> Function()? readChats,
+    List<ProjectSummary> Function()? readProjects,
+    ChatPage? Function(String id, {int? limit, int? offset})? readChat,
     Future<PairingRelayEndpoint> Function(String deviceId)? renewInvite,
+    Future<String?> Function(String chatId, String text)? sendToChat,
+    bool Function(String chatId)? chatIsBusy,
   }) : _readGrids = readGrids ?? readGridSummaries,
+       _chats = MobileChatRpc(
+         readChats: readChats,
+         readProjects: readProjects,
+         readChat: readChat,
+         sendToChat: sendToChat,
+         chatIsBusy: chatIsBusy,
+       ),
        _renewInvite = renewInvite;
 
   /// What this computer calls itself on the phone's screen.
@@ -40,15 +54,24 @@ class MobileRpcService {
   final String appVersion;
 
   final List<GridSummary> Function() _readGrids;
+  final MobileChatRpc _chats;
   final Future<PairingRelayEndpoint> Function(String deviceId)? _renewInvite;
 
   /// The reply to [request], asked by the phone registered as [deviceId].
   ///
   /// The identity comes from the channel, never from the request: a caller that
   /// could name itself could name somebody else.
+  /// [mayAct] is asked only by the methods that make this computer do
+  /// something, and asked *per call* rather than once per session: revoking a
+  /// phone's permission at the computer has to reach a phone that is connected
+  /// right now, not the next time it dials in.
+  ///
+  /// Null means no, which is what makes the default safe. A caller that has not
+  /// thought about the question has not granted anything.
   Future<MobileRpcResponse> handle(
     MobileRpcRequest request, {
     required String deviceId,
+    Future<bool> Function()? mayAct,
   }) async {
     // Checked before the method is looked at, so an unknown name and a
     // known-but-forbidden one are answered identically.
@@ -63,6 +86,10 @@ class MobileRpcService {
       return switch (request.method) {
         'status.get' => MobileRpcOk(request.id, _status()),
         'grids.list' => MobileRpcOk(request.id, _grids()),
+        'projects.list' => MobileRpcOk(request.id, _chats.projects()),
+        'chats.list' => MobileRpcOk(request.id, _chats.list()),
+        'chats.get' => _chats.page(request),
+        'chats.send' => await _chats.send(request, mayAct),
         'pairing.renew' => await _renew(request, deviceId),
         _ => MobileRpcFailed(
           request.id,

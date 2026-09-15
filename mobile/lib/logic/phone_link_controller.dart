@@ -137,6 +137,23 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
     }
   }
 
+  /// Asks the computer something over the open channel.
+  ///
+  /// The client is private on purpose — one connection, owned here — so
+  /// everything else that needs the computer goes through this. Throws
+  /// [RelayPhoneFailure] when there is no link, which is the same thing every
+  /// caller already has to handle.
+  Future<Map<String, Object?>> call(
+    String method, [
+    Map<String, Object?> params = const {},
+  ]) {
+    final client = _client;
+    if (client == null || !client.isOpen) {
+      throw const RelayPhoneFailure('Not connected to your computer.');
+    }
+    return client.call(method, params);
+  }
+
   /// Forgets the computer.
   Future<void> unpair() async {
     await _client?.close();

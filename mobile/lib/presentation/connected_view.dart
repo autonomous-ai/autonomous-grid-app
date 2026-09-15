@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../logic/phone_link_controller.dart';
+import 'chats_section.dart';
+import 'projects_section.dart';
 
 /// The connected screen.
 class ConnectedView extends ConsumerWidget {
@@ -20,6 +22,12 @@ class ConnectedView extends ConsumerWidget {
       padding: const EdgeInsets.all(20),
       children: [
         _HostCard(link),
+        const SizedBox(height: 24),
+        // Above the grids on purpose: the grids say what the computer is signed
+        // in to, which changes about once a month; the chats are the thing
+        // somebody opens this app to look at.
+        const ChatsSection(),
+        const ProjectsSection(),
         const SizedBox(height: 24),
         Text('Grids', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),

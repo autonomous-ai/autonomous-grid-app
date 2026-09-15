@@ -16,6 +16,19 @@ library;
 const kMobileRpcMethods = <String>{
   'status.get',
   'grids.list',
+  'projects.list',
+  // Headers only. The transcripts are not in this answer and are not in one
+  // reply either: the largest conversation on this machine's history is 9.37 MB
+  // and the relay ends a connection that frames more than 8 MB, so reading a
+  // chat is paged rather than fetched.
+  'chats.list',
+  'chats.get',
+  // The one method here that makes this computer *do* something rather than
+  // say what it has already done, and the only one gated by a second check: a
+  // per-device switch that is off until somebody turns it on at the computer.
+  // A pairing code proves which phone is calling. It cannot prove who is
+  // holding it, which is the question this method actually raises.
+  'chats.send',
   // The phone's stand-in for a resume credential. An invite opens exactly one
   // connection and is then spent, so without this a phone that is closed and
   // reopened has to be paired by hand every time. Asking for the next one
@@ -113,7 +126,8 @@ final class MobileRpcOk extends MobileRpcResponse {
 final class MobileRpcFailed extends MobileRpcResponse {
   const MobileRpcFailed(super.id, {required this.code, required this.message});
 
-  /// Machine-readable: `forbidden`, `bad_request`, `unavailable`, `failed`.
+  /// Machine-readable: `forbidden`, `bad_request`, `not_found`,
+  /// `unavailable`, `failed`.
   final String code;
 
   /// Something a person could be shown. Never a raw exception: what the phone

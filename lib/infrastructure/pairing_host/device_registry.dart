@@ -29,6 +29,7 @@ class PairedDevice {
     required this.token,
     required this.pairedAtMs,
     required this.lastSeenAtMs,
+    this.mayAct = false,
   });
 
   /// Stable id, so a rename does not look like a new device.
@@ -46,6 +47,17 @@ class PairedDevice {
   /// When it last authenticated, or 0 if it never has.
   final int lastSeenAtMs;
 
+  /// Whether this phone may make the computer *do* something, rather than only
+  /// read what it has already done.
+  ///
+  /// **Default false, and it stays false until a person turns it on for this
+  /// one device, at the computer.** Reading a chat is a phone that knows what
+  /// happened; sending one is a phone that starts an agent with this machine's
+  /// filesystem and keys behind it. A phone is a thing somebody can pick up, so
+  /// that second power is not something a pairing code should hand out — the
+  /// code proves which device, not what the person holding it may do.
+  final bool mayAct;
+
   /// Whether this device has ever completed a connection.
   ///
   /// A code that was generated and never scanned leaves one of these behind;
@@ -59,6 +71,7 @@ class PairedDevice {
     'token': token,
     'pairedAt': pairedAtMs,
     'lastSeenAt': lastSeenAtMs,
+    'mayAct': mayAct,
   };
 
   /// The device [value] describes, or null when the record is unusable.
@@ -76,16 +89,25 @@ class PairedDevice {
       lastSeenAtMs: value['lastSeenAt'] is int
           ? value['lastSeenAt']! as int
           : 0,
+      // Anything but a stored `true` is false, so a registry written by a build
+      // that predates this field grants nothing.
+      mayAct: value['mayAct'] == true,
     );
   }
 
   /// A copy that has just been seen.
-  PairedDevice seenAt(int nowMs) => PairedDevice(
+  PairedDevice seenAt(int nowMs) => _with(lastSeenAtMs: nowMs);
+
+  /// A copy allowed — or no longer allowed — to make this computer act.
+  PairedDevice actingAllowed(bool allowed) => _with(mayAct: allowed);
+
+  PairedDevice _with({int? lastSeenAtMs, bool? mayAct}) => PairedDevice(
     deviceId: deviceId,
     name: name,
     token: token,
     pairedAtMs: pairedAtMs,
-    lastSeenAtMs: nowMs,
+    lastSeenAtMs: lastSeenAtMs ?? this.lastSeenAtMs,
+    mayAct: mayAct ?? this.mayAct,
   );
 }
 
@@ -155,6 +177,20 @@ class DeviceRegistry {
     await _save([
       for (final device in devices)
         device.deviceId == deviceId ? device.seenAt(now) : device,
+    ]);
+  }
+
+  /// Lets [deviceId] send messages to the agents, or stops it.
+  ///
+  /// Takes effect on the phone's next call: the flag is read per request rather
+  /// than held for the life of a session, so turning this off reaches a phone
+  /// that is connected right now instead of the next time it dials in.
+  Future<void> setMayAct(String deviceId, bool allowed) async {
+    final devices = await load();
+    if (!devices.any((device) => device.deviceId == deviceId)) return;
+    await _save([
+      for (final device in devices)
+        device.deviceId == deviceId ? device.actingAllowed(allowed) : device,
     ]);
   }
 

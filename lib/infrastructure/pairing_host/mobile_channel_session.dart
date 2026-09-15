@@ -148,8 +148,30 @@ class MobileChannelSession {
     final request = MobileRpcRequest.fromJson(_decode(plaintext));
     if (request == null) return _refuse('that was not a request');
     final device = _device!;
-    _send((await _rpc.handle(request, deviceId: device.deviceId)).toJson());
+    _send(
+      (await _rpc.handle(
+        request,
+        deviceId: device.deviceId,
+        mayAct: () => _mayActNow(device.deviceId),
+      )).toJson(),
+    );
     return true;
+  }
+
+  /// Whether this phone is allowed to make the computer act, **right now**.
+  ///
+  /// Re-read from the registry rather than taken from the record cached at
+  /// authentication: turning the switch off at the computer has to reach a
+  /// phone that is connected at that moment, and a session can stay open for
+  /// hours. It costs one read of a small file, and only on the calls that act.
+  ///
+  /// A device that has since been revoked reads as not allowed, which is the
+  /// same answer as never having been granted.
+  Future<bool> _mayActNow(String deviceId) async {
+    for (final device in await _registry.load()) {
+      if (device.deviceId == deviceId) return device.mayAct;
+    }
+    return false;
   }
 
   void _send(Map<String, Object?> message) =>

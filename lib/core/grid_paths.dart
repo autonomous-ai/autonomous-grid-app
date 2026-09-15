@@ -336,3 +336,10 @@ class GridPaths {
   static File engineRunLogFile(String gridId, String engineId) =>
       File('${engineRunDir(gridId).path}/$engineId.log');
 }
+
+/// The chat index's filename inside whichever folder holds the conversations.
+///
+/// Lives here rather than in `ChatStore` because it is now read by two
+/// libraries — the store, and the projection a paired phone is served — and the
+/// second cannot import the first without pulling Flutter in.
+const String kChatIndexName = 'index.json';

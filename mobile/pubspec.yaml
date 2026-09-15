@@ -21,6 +21,10 @@ dependencies:
   # in the Keychain, not in shared_preferences where a backup or a jailbroken
   # device reads it as plain text.
   flutter_secure_storage: ^9.2.4
+  # The same renderer the desktop uses for agent output, pinned to the same
+  # major. Two apps showing one assistant's words must not disagree about what
+  # a fenced code block or a table looks like.
+  flutter_markdown_plus: ^1.0.12
 
 dev_dependencies:
   flutter_lints: ^6.0.0

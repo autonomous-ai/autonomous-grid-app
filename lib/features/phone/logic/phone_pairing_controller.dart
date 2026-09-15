@@ -18,6 +18,7 @@ import '../../../infrastructure/pairing_host/host_identity_store.dart';
 import '../../../infrastructure/pairing_host/mobile_rpc_service.dart';
 import '../../../infrastructure/pairing_host/relay_host_connection.dart';
 import '../../../shared/app_info.dart';
+import 'phone_turns.dart';
 
 /// Where to find a relay cell, unless `GRID_PAIRING_RELAY` says otherwise.
 ///
@@ -148,6 +149,12 @@ class PhonePairingController extends Notifier<PhonePairingState> {
           hostName: Platform.localHostname,
           appVersion: version,
           renewInvite: (deviceId) => connection.mintInvite(deviceId),
+          // The seam where the phone reaches into the running app. The service
+          // itself stays Flutter-free so `tool/` can run it; these two closures
+          // are the only part that needs the window to exist.
+          sendToChat: (chatId, text) =>
+              startPhoneTurn(ref, chatId: chatId, text: text),
+          chatIsBusy: (chatId) => phoneChatIsBusy(ref, chatId),
         ),
         onEvent: _record,
       );
@@ -203,6 +210,16 @@ class PhonePairingController extends Notifier<PhonePairingState> {
   }
 
   /// Revokes [deviceId]. That phone stops working at its next request.
+  /// Lets [deviceId] send messages to the agents, or stops it.
+  ///
+  /// Off for every phone until this is called. Pairing proves which device is
+  /// on the other end; it says nothing about who is holding it, and sending is
+  /// the power to make this computer run an agent over its own files.
+  Future<void> setMayAct(String deviceId, bool allowed) async {
+    await _registry.setMayAct(deviceId, allowed);
+    await _reloadDevices();
+  }
+
   Future<void> revoke(String deviceId) async {
     await _registry.revoke(deviceId);
     await _reloadDevices();

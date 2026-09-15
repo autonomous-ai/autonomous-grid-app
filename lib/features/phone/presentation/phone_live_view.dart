@@ -192,6 +192,7 @@ class _PhoneRow extends ConsumerWidget {
               ],
             ),
           ),
+          _MayActSwitch(device),
           TextButton(
             // Says what it does to the phone, not what it does to the row:
             // "Remove" would read as tidying a list, and this stops a device
@@ -199,6 +200,41 @@ class _PhoneRow extends ConsumerWidget {
             onPressed: () =>
                 ref.read(phonePairingProvider.notifier).revoke(device.deviceId),
             child: const Text('Revoke'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The switch that decides whether a phone can only look, or can also ask.
+///
+/// Its own widget so the label and the tooltip live next to the switch they
+/// explain — this is the one control on this screen that grants a power rather
+/// than showing a fact, and it must read that way.
+class _MayActSwitch extends ConsumerWidget {
+  const _MayActSwitch(this.device);
+
+  final PairedDevice device;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: device.mayAct
+          ? 'This phone can send messages to your agents, which run on this '
+                'computer.'
+          : 'This phone can read your chats. It cannot send anything.',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Can send', style: theme.textTheme.bodySmall),
+          const SizedBox(width: 6),
+          Switch(
+            value: device.mayAct,
+            onChanged: (allowed) => ref
+                .read(phonePairingProvider.notifier)
+                .setMayAct(device.deviceId, allowed),
           ),
         ],
       ),
