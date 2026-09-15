@@ -20,6 +20,8 @@ import '../../../infrastructure/pairing_host/relay_host_connection.dart';
 import '../../../shared/app_info.dart';
 import 'phone_chat_options.dart';
 import 'phone_turns.dart';
+import '../../../core/grid_paths.dart';
+import '../../../infrastructure/pairing_host/mobile_upload_store.dart';
 
 /// Where to find a relay cell, unless `GRID_PAIRING_RELAY` says otherwise.
 ///
@@ -153,8 +155,8 @@ class PhonePairingController extends Notifier<PhonePairingState> {
           // The seam where the phone reaches into the running app. The service
           // itself stays Flutter-free so `tool/` can run it; these two closures
           // are the only part that needs the window to exist.
-          sendToChat: (chatId, text) =>
-              startPhoneTurn(ref, chatId: chatId, text: text),
+          sendToChat: (chatId, text, files) =>
+              startPhoneTurn(ref, chatId: chatId, text: text, files: files),
           chatIsBusy: (chatId) => phoneChatIsBusy(ref, chatId),
           readOptions: (chatId) => phoneChatOptions(ref, chatId),
           setOption: (chatId, field, value) => setPhoneChatOption(
@@ -163,8 +165,17 @@ class PhonePairingController extends Notifier<PhonePairingState> {
             field: field,
             value: value,
           ),
-          createChat: (text, projectId) =>
-              startPhoneChat(ref, text: text, projectId: projectId),
+          createChat: (text, projectId, files) => startPhoneChat(
+            ref,
+            text: text,
+            projectId: projectId,
+            files: files,
+          ),
+          // Under the grid home, beside the other app-owned state, so it is
+          // cleared by the same hand that clears everything else.
+          uploads: MobileUploadStore(
+            directory: Directory('${GridPaths.home.path}/app/phone-uploads'),
+          ),
         ),
         onEvent: _record,
       );

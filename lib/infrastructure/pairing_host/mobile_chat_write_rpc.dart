@@ -15,7 +15,7 @@ extension MobileChatWrites on MobileChatRpc {
   /// serves tells a phone nothing it cannot already see in the chat list, and a
   /// composer that cannot draw its own pickers until somebody grants it
   /// permission is a screen that looks broken rather than locked.
-  MobileRpcResponse options(MobileRpcRequest request) {
+  Future<MobileRpcResponse> options(MobileRpcRequest request) async {
     final read = readOptions;
     if (read == null) {
       return MobileRpcFailed(
@@ -32,7 +32,7 @@ extension MobileChatWrites on MobileChatRpc {
         message: 'Which chat?',
       );
     }
-    return MobileRpcOk(request.id, read(id));
+    return MobileRpcOk(request.id, await read(id));
   }
 
   /// Changes a chat's model, assistant or access.
@@ -60,7 +60,7 @@ extension MobileChatWrites on MobileChatRpc {
         message: 'That change is missing something.',
       );
     }
-    final refused = change(id, field, value);
+    final refused = await change(id, field, value);
     return refused == null
         ? MobileRpcOk(request.id, {'ok': true})
         : MobileRpcFailed(request.id, code: 'unavailable', message: refused);
@@ -85,9 +85,18 @@ extension MobileChatWrites on MobileChatRpc {
       );
     }
     final project = request.params['projectId'];
+    final attached = _takeUploads(request);
+    if (attached.problem != null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'unavailable',
+        message: attached.problem!,
+      );
+    }
     final started = await start(
       text.trim(),
       project is String && project.isNotEmpty ? project : null,
+      attached.files,
     );
     final id = started.id;
     if (id == null) {
@@ -98,6 +107,100 @@ extension MobileChatWrites on MobileChatRpc {
       );
     }
     return MobileRpcOk(request.id, {'id': id});
+  }
+
+  /// Starts a file on its way in, and says how big a piece may be.
+  ///
+  /// The chunk size is sent rather than agreed in advance: it is the computer's
+  /// limit to set, and a phone that hardcoded its own guess would either waste
+  /// round trips or lose the channel to a frame the relay refuses.
+  Future<MobileRpcResponse> beginUpload(
+    MobileRpcRequest request,
+    Future<bool> Function()? mayAct,
+  ) async {
+    final store = uploads;
+    if (store == null) return _noApp(request);
+    if (mayAct == null || !await mayAct()) {
+      return _notAllowed(request, 'send files');
+    }
+    final name = request.params['name'];
+    final size = request.params['size'];
+    if (name is! String || name.isEmpty || size is! int) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'That file is missing a name or a size.',
+      );
+    }
+    final begun = store.begin(name: name, sizeBytes: size);
+    final id = begun.id;
+    if (id == null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'unavailable',
+        message: begun.problem ?? 'That file cannot be sent.',
+      );
+    }
+    return MobileRpcOk(request.id, {
+      'uploadId': id,
+      'chunkBytes': maxChunkBytes,
+    });
+  }
+
+  /// Adds one piece of a file already begun.
+  Future<MobileRpcResponse> uploadChunk(
+    MobileRpcRequest request,
+    Future<bool> Function()? mayAct,
+  ) async {
+    final store = uploads;
+    if (store == null) return _noApp(request);
+    if (mayAct == null || !await mayAct()) {
+      return _notAllowed(request, 'send files');
+    }
+    final id = request.params['uploadId'];
+    final data = request.params['data'];
+    if (id is! String || data is! String) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'That piece of the file is missing something.',
+      );
+    }
+    final refused = store.addChunk(id, data);
+    return refused == null
+        ? MobileRpcOk(request.id, const {'ok': true})
+        : MobileRpcFailed(request.id, code: 'unavailable', message: refused);
+  }
+
+  /// The finished files a request names, or the reason one of them is not.
+  ///
+  /// Taken here rather than in the app: the store is what knows an upload is
+  /// whole, and handing half a file to a turn is how a question gets answered
+  /// about a truncated picture.
+  ({List<PhoneAttachment> files, String? problem}) _takeUploads(
+    MobileRpcRequest request,
+  ) {
+    final ids = request.params['uploads'];
+    final wanted = [
+      for (final id in ids is List ? ids : const [])
+        if (id is String && id.isNotEmpty) id,
+    ];
+    if (wanted.isEmpty) return (files: const [], problem: null);
+    final store = uploads;
+    if (store == null) {
+      return (files: const [], problem: 'This computer cannot take files.');
+    }
+    final taken = store.take(wanted);
+    final files = taken.files;
+    if (files == null) {
+      return (files: const [], problem: taken.problem);
+    }
+    return (
+      files: [
+        for (final upload in files) (path: upload.file.path, name: upload.name),
+      ],
+      problem: null,
+    );
   }
 
   MobileRpcFailed _noApp(MobileRpcRequest request) => MobileRpcFailed(
@@ -145,7 +248,15 @@ extension MobileChatWrites on MobileChatRpc {
     // otherwise be created by the act of answering it, and the phone would have
     // started a conversation it thought it was continuing.
     if (_readChat(id, limit: 1) == null) return _gone(request);
-    final refused = await start(id, text.trim());
+    final attached = _takeUploads(request);
+    if (attached.problem != null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'unavailable',
+        message: attached.problem!,
+      );
+    }
+    final refused = await start(id, text.trim(), attached.files);
     if (refused != null) {
       return MobileRpcFailed(request.id, code: 'unavailable', message: refused);
     }

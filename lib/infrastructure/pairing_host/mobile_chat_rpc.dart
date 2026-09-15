@@ -12,6 +12,7 @@ library;
 import 'package:grid_pairing/grid_pairing.dart';
 
 import 'mobile_chat_reader.dart';
+import 'mobile_upload_store.dart';
 
 part 'mobile_chat_write_rpc.dart';
 
@@ -26,6 +27,7 @@ class MobileChatRpc {
     this.readOptions,
     this.setOption,
     this.createChat,
+    this.uploads,
   }) : _readChats = readChats ?? readChatHeaders,
        _readProjects = readProjects ?? readProjectSummaries,
        _readChat = readChat ?? readChatPage;
@@ -39,24 +41,35 @@ class MobileChatRpc {
   /// error because these are refusals somebody can act on — no grid signed in,
   /// no model running — and the catch-all below deliberately replaces exception
   /// text with a generic line, which would hide exactly the part that helps.
-  final Future<String?> Function(String chatId, String text)? sendToChat;
+  final Future<String?> Function(
+    String chatId,
+    String text,
+    List<PhoneAttachment> files,
+  )?
+  sendToChat;
 
   /// Whether an answer is still being written in a chat, so the phone knows
   /// whether to keep looking.
   final bool Function(String chatId)? chatIsBusy;
 
   /// The picks the phone's composer offers for a chat, worked out here.
-  final Map<String, Object?> Function(String chatId)? readOptions;
+  final Future<Map<String, Object?>> Function(String chatId)? readOptions;
 
   /// Changes one of them. Null on success, else a sentence to show.
-  final String? Function(String chatId, String field, String value)? setOption;
+  final Future<String?> Function(String chatId, String field, String value)?
+  setOption;
 
   /// Starts a chat carrying its first message. Returns the new id, or a reason.
   final Future<({String? id, String? problem})> Function(
     String text,
     String? projectId,
+    List<PhoneAttachment> files,
   )?
   createChat;
+
+  /// Where a phone's pictures and documents land on the way in, or null on a
+  /// host that has nothing to attach them to.
+  final MobileUploadStore? uploads;
 
   final List<ChatHeader> Function() _readChats;
   final List<ProjectSummary> Function() _readProjects;
@@ -141,3 +154,10 @@ int? _asInt(Object? value) => switch (value) {
   final double number => number.toInt(),
   _ => null,
 };
+
+/// A file a phone sent, once it is whole and on disk.
+///
+/// A path and a name rather than the store's own record: what the chat does
+/// with it — read it as a picture, extract its text — is the app's business,
+/// and nothing above this layer should have to know how it arrived.
+typedef PhoneAttachment = ({String path, String name});

@@ -40,6 +40,12 @@ const kMobileRpcMethods = <String>{
   // Starting a conversation, message and all. Without it a phone can only
   // continue something that was begun at the computer.
   'chats.create',
+  // Putting a picture or a document on the computer, a piece at a time. The
+  // only methods here that write bytes rather than text, which is why the store
+  // behind them caps the size, the count and the age of what it holds — and why
+  // both are behind the same switch as sending.
+  'uploads.begin',
+  'uploads.chunk',
   // The phone's stand-in for a resume credential. An invite opens exactly one
   // connection and is then spent, so without this a phone that is closed and
   // reopened has to be paired by hand every time. Asking for the next one

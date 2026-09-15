@@ -10,6 +10,7 @@ import 'package:grid_app/features/playground/logic/playground_request.dart';
 import 'package:grid_app/infrastructure/api/models/grid_overview.dart';
 import 'package:grid_app/infrastructure/state/models/credentials_file.dart';
 import 'package:grid_app/infrastructure/state/models/network_credential.dart';
+import 'package:grid_app/features/playground/logic/grid_served_models.dart';
 
 PlaygroundModelOption _option(
   String id, {
@@ -35,14 +36,14 @@ NetworkCredential _grid() => NetworkCredential(
 );
 
 /// The bot reads the grid's models from a Notifier of its own, outside any
-/// build — the shape [telegramGridModels] actually runs in.
+/// build — the shape [gridServedModels] actually runs in.
 final _botProvider = NotifierProvider<_Bot, int>(_Bot.new);
 
 class _Bot extends Notifier<int> {
   @override
   int build() => 0;
 
-  Future<List<PlaygroundModelOption>> models() => telegramGridModels(ref);
+  Future<List<PlaygroundModelOption>> models() => gridServedModels(ref);
 }
 
 /// A container where the grid answers `/models` after [delay] — the request in

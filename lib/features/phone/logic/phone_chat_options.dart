@@ -12,17 +12,18 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
+import '../../agents/logic/agent_catalog.dart';
 import '../../agents/logic/agent_model_support.dart';
 import '../../agents/logic/agent_status.dart';
-import '../../agents/logic/agent_catalog.dart';
 import '../../chat/logic/chat_approval.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../chat/logic/conversation.dart';
 import '../../chat/logic/grid_model_catalog.dart';
+import '../../playground/logic/grid_served_models.dart';
 import '../../playground/logic/playground_models.dart';
+import '../../playground/logic/playground_request.dart';
 
 /// The one mode a phone is never allowed to switch on.
 ///
@@ -42,9 +43,19 @@ bool phoneMaySetApproval(AgentApprovalMode mode) =>
     mode != kApprovalPhoneMayNotSet;
 
 /// Everything the phone's composer needs to draw its pickers for one chat.
-Map<String, Object?> phoneChatOptions(Ref ref, String chatId) {
+///
+/// Asynchronous for one reason, and it is the reason the model pill first
+/// shipped showing a single row called "subscription": the grid's list is a
+/// *request*, not a value lying around. Read on the spot from a window that
+/// need not even be on the Chat tab, [playgroundModelsProvider] hands back the
+/// empty list it starts from — and what survives `chatModelOptions` on an empty
+/// list is the subscription row, which is the one option that is not a model
+/// this grid serves. [gridServedModels] waits for the answer and keeps the
+/// provider alive across the wait; the Telegram bot's `/model` had the same bug
+/// first, which is why that function is shared rather than copied.
+Future<Map<String, Object?>> phoneChatOptions(Ref ref, String chatId) async {
   final chat = _find(ref, chatId);
-  final served = ref.read(playgroundModelsProvider);
+  final served = await gridServedModels(ref);
   final models = chatModelOptions(
     served,
     agentInstalled: ref.read(anyAgentInstalledProvider),
@@ -56,7 +67,15 @@ Map<String, Object?> phoneChatOptions(Ref ref, String chatId) {
     'model': {
       'selected': currentModel,
       'options': [
-        for (final option in models) {'id': option.id, 'label': option.id},
+        // The name a person picked it by, not the id it is sent as: the pill
+        // shows the label while `chats.set` carries the id, so a routed row
+        // reads as "Fastest" and travels as the routing id it really is.
+        //
+        // Text only — this composer sends text, and a media model offered here
+        // would be a pick that answers nothing.
+        for (final option in models)
+          if (option.modality == PlaygroundModality.text)
+            {'id': option.id, 'label': option.label},
       ],
     },
     'agent': {
@@ -100,32 +119,35 @@ Map<String, Object?> phoneChatOptions(Ref ref, String chatId) {
 /// Returns null on success or **a sentence to show the person**, for the same
 /// reason [startPhoneTurn] does: every refusal here is something they can go
 /// and fix, and a generic failure would hide which.
-String? setPhoneChatOption(
+Future<String?> setPhoneChatOption(
   Ref ref, {
   required String chatId,
   required String field,
   required String value,
-}) {
+}) async {
   final sessions = ref.read(chatSessionsProvider.notifier);
   if (_find(ref, chatId) == null) {
     return 'That chat is not on this computer any more.';
   }
   return switch (field) {
-    'model' => _setModel(ref, sessions, chatId, value),
+    'model' => await _setModel(ref, sessions, chatId, value),
     'agent' => _setAgent(ref, sessions, chatId, value),
     'approval' => _setApproval(ref, sessions, chatId, value),
     _ => 'That is not something this phone can change.',
   };
 }
 
-String? _setModel(
+Future<String?> _setModel(
   Ref ref,
   ChatSessionsController sessions,
   String chatId,
   String model,
-) {
+) async {
+  // Waited for, like the list the phone was offered. Validating against the
+  // read-on-the-spot value would refuse every model on a grid whose answer has
+  // not landed yet — including the one this phone was just shown.
   final served = chatModelOptions(
-    ref.read(playgroundModelsProvider),
+    await gridServedModels(ref),
     agentInstalled: ref.read(anyAgentInstalledProvider),
   );
   // Checked against the list the phone was given rather than accepted as typed:

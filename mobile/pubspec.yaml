@@ -25,6 +25,11 @@ dependencies:
   # major. Two apps showing one assistant's words must not disagree about what
   # a fenced code block or a table looks like.
   flutter_markdown_plus: ^1.0.12
+  # Photos and documents, the two ways a phone has of picking a file. Both are
+  # the platform's own sheets: an app that browsed the filesystem itself would
+  # need permissions iOS does not hand out, and these ask for none.
+  image_picker: ^1.1.2
+  file_selector: ^1.0.3
 
 dev_dependencies:
   flutter_lints: ^6.0.0

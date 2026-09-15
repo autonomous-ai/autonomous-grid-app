@@ -333,7 +333,7 @@ void main() {
       appVersion: '0.0.0',
       readGrids: () => const [],
       readChat: (id, {int? limit, int? offset}) => page,
-      sendToChat: (chatId, text) async {
+      sendToChat: (chatId, text, files) async {
         sent.add('$chatId:$text');
         return null;
       },
@@ -415,7 +415,7 @@ void main() {
         appVersion: '0.0.0',
         readGrids: () => const [],
         readChat: (id, {int? limit, int? offset}) => page,
-        sendToChat: (chatId, text) async => 'No model is running.',
+        sendToChat: (chatId, text, files) async => 'No model is running.',
       );
 
       final answer = await send(service, allowed: true);
@@ -432,7 +432,7 @@ void main() {
           appVersion: '0.0.0',
           readGrids: () => const [],
           readChat: (id, {int? limit, int? offset}) => null,
-          sendToChat: (chatId, text) async {
+          sendToChat: (chatId, text, files) async {
             sent.add(chatId);
             return null;
           },
@@ -456,14 +456,14 @@ void main() {
       readGrids: () => const [],
       readChat: (id, {int? limit, int? offset}) =>
           (lines: const <ChatLine>[], total: 0, offset: 0),
-      readOptions: (chatId) => {
+      readOptions: (chatId) async => {
         'model': {'selected': 'auto', 'options': []},
       },
-      setOption: (chatId, field, value) {
+      setOption: (chatId, field, value) async {
         changes.add('$chatId/$field=$value');
         return null;
       },
-      createChat: (text, projectId) async {
+      createChat: (text, projectId, files) async {
         created.add('$projectId:$text');
         return (id: 'new-chat', problem: null);
       },

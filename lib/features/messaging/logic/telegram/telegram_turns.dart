@@ -11,11 +11,11 @@ import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../../chat/logic/chat_settled.dart';
 import '../../../chat/logic/conversation.dart';
 import '../../../chat/logic/turn_model.dart';
+import '../../../playground/logic/grid_served_models.dart';
 import '../../../playground/logic/playground_models.dart';
 import '../../../projects/logic/project.dart';
 import 'telegram_bot_store.dart';
 import 'telegram_markup.dart';
-import 'telegram_models.dart';
 import 'telegram_rules.dart';
 import 'telegram_stream.dart';
 
@@ -57,7 +57,7 @@ Future<void> telegramQuietly(AppLog log, Future<void> work) async {
 /// the grid serves first — see [firstModelChoice].
 ///
 /// The last of those is *asked for* rather than read, which is why this waits:
-/// see [telegramGridModels]. [served] lets a caller that already has the grid's
+/// see [gridServedModels]. [served] lets a caller that already has the grid's
 /// list — the `/model` menu, which is built from it — spend one request instead
 /// of two.
 Future<String> telegramModelFor(
@@ -74,7 +74,7 @@ Future<String> telegramModelFor(
     ref.read(chatPrefsProvider).model,
   ]);
   if (picked.isNotEmpty) return picked;
-  return (served ?? await telegramGridModels(ref)).firstOrNull?.id ?? '';
+  return (served ?? await gridServedModels(ref)).firstOrNull?.id ?? '';
 }
 
 /// Turns a Telegram message into a turn in a Grid chat, and the answer back
