@@ -85,7 +85,30 @@ class RelayHostConnection {
   }
 
   /// A fresh pairing code's relay half, tied to [relayDeviceId].
-  Future<PairingRelayEndpoint> mintInvite(String relayDeviceId) async {
+  ///
+  /// One connection's worth of authority, ten minutes long: it is a code on a
+  /// screen and nobody has proved anything yet.
+  Future<PairingRelayEndpoint> mintInvite(String relayDeviceId) =>
+      _mint('invite-create', relayDeviceId, 'a pairing code');
+
+  /// A way back in for a phone that has **already** proved itself.
+  ///
+  /// Reusable, long-lived, and — the part that matters — kept by the relay on
+  /// this computer's host id rather than on its current session. An invite dies
+  /// the moment somebody quits Grid here, because it hangs off the session that
+  /// goes with it; that is why a phone closed for a while used to need a code
+  /// copied by hand every single time.
+  ///
+  /// Only ever handed to a phone inside the sealed channel it authenticated on,
+  /// which is what makes a longer life reasonable.
+  Future<PairingRelayEndpoint> mintResume(String relayDeviceId) =>
+      _mint('resume-create', relayDeviceId, 'a way back in');
+
+  Future<PairingRelayEndpoint> _mint(
+    String type,
+    String relayDeviceId,
+    String what,
+  ) async {
     final socket = _control;
     if (socket == null) throw StateError('not registered with a relay');
     final reqId = 'invite-${++_inviteCounter}';
@@ -93,7 +116,7 @@ class RelayHostConnection {
     _pendingInvites[reqId] = pending;
     socket.add(
       jsonEncode({
-        'type': 'invite-create',
+        'type': type,
         'reqId': reqId,
         'relayDeviceId': relayDeviceId,
       }),
@@ -102,7 +125,7 @@ class RelayHostConnection {
       _connectTimeout,
       onTimeout: () {
         _pendingInvites.remove(reqId);
-        throw StateError('the relay did not mint a pairing code in time');
+        throw StateError('the relay did not mint $what in time');
       },
     );
     return PairingRelayEndpoint(
@@ -138,7 +161,10 @@ class RelayHostConnection {
         _registered?.complete();
       case 'ping':
         _control?.add(jsonEncode({'type': 'pong', 't': value['t']}));
+      // One waiter map for both, because the request id is what correlates
+      // them and a resume is minted exactly the way an invite is.
       case 'invite-created':
+      case 'resume-created':
         _pendingInvites.remove(value['reqId'])?.complete(value);
       case 'conn-open':
         unawaited(_attach(value));

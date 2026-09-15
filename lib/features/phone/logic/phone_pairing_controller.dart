@@ -151,7 +151,9 @@ class PhonePairingController extends Notifier<PhonePairingState> {
         rpc: MobileRpcService(
           hostName: Platform.localHostname,
           appVersion: version,
-          renewInvite: (deviceId) => connection.mintInvite(deviceId),
+          // A *resume*, not another invite. `pairing.renew` is the phone
+          // asking for its way back in, and an invite dies with this session.
+          renewInvite: (deviceId) => connection.mintResume(deviceId),
           // The seam where the phone reaches into the running app. The service
           // itself stays Flutter-free so `tool/` can run it; these two closures
           // are the only part that needs the window to exist.
