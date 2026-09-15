@@ -263,7 +263,11 @@ void main() {
     test('carries total and offset back with a page, because they are how the '
         'phone knows there is more history to ask for', () async {
       final service = serviceOver(
-        page: (lines: [(role: 'user', text: 'hello')], total: 500, offset: 460),
+        page: (
+          lines: [(role: 'user', text: 'hello', index: 0, media: const [])],
+          total: 500,
+          offset: 460,
+        ),
       );
 
       final answer = await ask(service, 'chats.get', {'id': 'c1'});
@@ -272,8 +276,12 @@ void main() {
       final result = (answer as MobileRpcOk).result;
       expect(result['total'], 500);
       expect(result['offset'], 460);
+      // `index` rides along now: it is how the phone asks for a picture on this
+      // turn, and it is the turn's place in the whole chat rather than in the
+      // page — asserted here so a page that started numbering from its own
+      // first row would fail loudly instead of fetching the wrong photo.
       expect(result['messages'], [
-        {'role': 'user', 'text': 'hello'},
+        {'role': 'user', 'text': 'hello', 'index': 0},
       ]);
     });
 
@@ -323,7 +331,7 @@ void main() {
 
   group('the gate on sending', () {
     final page = (
-      lines: <ChatLine>[(role: 'user', text: 'hi')],
+      lines: <ChatLine>[(role: 'user', text: 'hi', index: 0, media: const [])],
       total: 1,
       offset: 0,
     );
@@ -674,6 +682,136 @@ void main() {
 
       expect(sent, isA<MobileRpcFailed>());
       expect(attached, isEmpty);
+    });
+  });
+
+  group('a picture attached to a turn', () {
+    late Directory root;
+    late Directory chats;
+    late File picture;
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('grid-media');
+      chats = Directory('${root.path}/chats')..createSync();
+      picture = File('${root.path}/photo.jpg')
+        ..writeAsBytesSync(List.generate(5000, (i) => i % 256));
+      File('${chats.path}/c1.json').writeAsStringSync(
+        jsonEncode({
+          'id': 'c1',
+          'messages': [
+            {
+              'role': 'user',
+              'text': 'look at this',
+              'media': [
+                {'path': picture.path, 'kind': 'image'},
+              ],
+            },
+          ],
+        }),
+      );
+    });
+
+    tearDown(() => root.deleteSync(recursive: true));
+
+    test('is described in the transcript without its bytes, because one photo '
+        'can be bigger than a frame is allowed to be', () {
+      final page = readChatPage('c1', chatsDir: chats)!;
+
+      expect(page.lines.single.media.single.kind, 'image');
+      expect(page.lines.single.media.single.name, 'photo.jpg');
+    });
+
+    test('comes back in slices that can be stitched into the whole file', () {
+      final whole = <int>[];
+      var offset = 0;
+      while (true) {
+        final slice = readChatMedia(
+          'c1',
+          messageIndex: 0,
+          mediaIndex: 0,
+          offset: offset,
+          length: 1500,
+          chatsDir: chats,
+        )!;
+        if (slice.bytes.isEmpty) break;
+        whole.addAll(slice.bytes);
+        offset += slice.bytes.length;
+        if (offset >= slice.size) break;
+      }
+
+      expect(whole, picture.readAsBytesSync());
+    });
+
+    test('reports the whole file size on every slice, which is how the phone '
+        'knows whether to ask again', () {
+      final slice = readChatMedia(
+        'c1',
+        messageIndex: 0,
+        mediaIndex: 0,
+        length: 10,
+        chatsDir: chats,
+      )!;
+
+      expect(slice.bytes, hasLength(10));
+      expect(slice.size, 5000);
+    });
+
+    test('is null for a turn or an attachment that is not there, rather than '
+        'reading whatever is at index zero', () {
+      expect(
+        readChatMedia('c1', messageIndex: 9, mediaIndex: 0, chatsDir: chats),
+        isNull,
+      );
+      expect(
+        readChatMedia('c1', messageIndex: 0, mediaIndex: 9, chatsDir: chats),
+        isNull,
+      );
+    });
+
+    test('is null when the file behind it has been cleared, since ~/.grid/'
+        'outputs is emptied by hand and by the app', () {
+      picture.deleteSync();
+
+      expect(
+        readChatMedia('c1', messageIndex: 0, mediaIndex: 0, chatsDir: chats),
+        isNull,
+      );
+    });
+
+    test('still refuses a chat id that is a path, the same field guarded on '
+        'every other read', () {
+      expect(
+        readChatMedia(
+          '../secret',
+          messageIndex: 0,
+          mediaIndex: 0,
+          chatsDir: chats,
+        ),
+        isNull,
+      );
+    });
+
+    test('keeps a turn that is only a picture, which used to vanish — a photo '
+        'sent with no words was simply missing from the phone', () {
+      File('${chats.path}/c2.json').writeAsStringSync(
+        jsonEncode({
+          'id': 'c2',
+          'messages': [
+            {
+              'role': 'user',
+              'text': '',
+              'media': [
+                {'path': picture.path, 'kind': 'image'},
+              ],
+            },
+          ],
+        }),
+      );
+
+      final page = readChatPage('c2', chatsDir: chats)!;
+
+      expect(page.lines, hasLength(1));
+      expect(page.lines.single.media, hasLength(1));
     });
   });
 }

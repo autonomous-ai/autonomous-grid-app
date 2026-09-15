@@ -109,6 +109,8 @@ class MobileRpcService {
         'projects.list' => MobileRpcOk(request.id, _chats.projects()),
         'chats.list' => MobileRpcOk(request.id, _chats.list()),
         'chats.get' => _chats.page(request),
+        'chats.head' => _chats.head(request),
+        'chats.media' => _chats.media(request),
         'chats.send' => await _chats.send(request, mayAct),
         'chats.options' => await _chats.options(request),
         'chats.set' => await _chats.set(request, mayAct),

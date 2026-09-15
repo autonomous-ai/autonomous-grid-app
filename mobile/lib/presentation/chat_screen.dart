@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../logic/chat_watch.dart';
 import '../logic/phone_chats.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
@@ -34,6 +35,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final request = (id: widget.id, offset: _offset);
+    // Watched, not just read. Without this the screen shows whatever the chat
+    // looked like when it opened — a message typed at the computer never
+    // appears, and the phone looks finished rather than stale.
+    //
+    // Only while the newest page is on screen: somebody who has paged back into
+    // last week does not want the view yanked forward by an answer arriving at
+    // the bottom.
+    if (_offset == null) ref.watch(chatWatchProvider(widget.id));
     final transcript = ref.watch(transcriptProvider(request));
     return Scaffold(
       appBar: AppBar(
@@ -106,7 +115,7 @@ class _Transcript extends StatelessWidget {
       itemCount: count + 1,
       itemBuilder: (context, index) => index == count
           ? _EarlierBar(page: page, onTap: onEarlier)
-          : ChatBubble(page.lines[count - 1 - index]),
+          : ChatBubble(page.lines[count - 1 - index], chatId: page.id),
     );
   }
 }

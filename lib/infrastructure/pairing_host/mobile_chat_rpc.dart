@@ -9,6 +9,8 @@
 /// the app reaches in, and where `tool/` simply does not.
 library;
 
+import 'dart:convert';
+
 import 'package:grid_pairing/grid_pairing.dart';
 
 import 'mobile_chat_reader.dart';
@@ -22,6 +24,14 @@ class MobileChatRpc {
     List<ChatHeader> Function()? readChats,
     List<ProjectSummary> Function()? readProjects,
     ChatPage? Function(String id, {int? limit, int? offset})? readChat,
+    ChatMediaSlice? Function(
+      String id, {
+      required int messageIndex,
+      required int mediaIndex,
+      int offset,
+      int? length,
+    })?
+    readMedia,
     this.sendToChat,
     this.chatIsBusy,
     this.readOptions,
@@ -30,7 +40,8 @@ class MobileChatRpc {
     this.uploads,
   }) : _readChats = readChats ?? readChatHeaders,
        _readProjects = readProjects ?? readProjectSummaries,
-       _readChat = readChat ?? readChatPage;
+       _readChat = readChat ?? readChatPage,
+       _readMedia = readMedia ?? readChatMedia;
 
   /// Puts a turn into a chat, or null where nothing can — `tool/` runs the host
   /// without the app around it, and a host with no Chat tab behind it must
@@ -74,6 +85,14 @@ class MobileChatRpc {
   final List<ChatHeader> Function() _readChats;
   final List<ProjectSummary> Function() _readProjects;
   final ChatPage? Function(String id, {int? limit, int? offset}) _readChat;
+  final ChatMediaSlice? Function(
+    String id, {
+    required int messageIndex,
+    required int mediaIndex,
+    int offset,
+    int? length,
+  })
+  _readMedia;
 
   /// Every conversation's header.
   Map<String, Object?> list() => {
@@ -104,6 +123,29 @@ class MobileChatRpc {
     ],
   };
 
+  /// Whether a chat has moved, in as few bytes as that can be said.
+  ///
+  /// `total` and `busy`, and nothing else. A phone polls this while a chat is
+  /// open; answering with the page instead would send forty turns over the
+  /// channel every few seconds to report a number that usually has not changed.
+  MobileRpcResponse head(MobileRpcRequest request) {
+    final id = request.params['id'];
+    if (id is! String || id.isEmpty) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'Which chat?',
+      );
+    }
+    final page = _readChat(id, limit: 1);
+    if (page == null) return _gone(request);
+    return MobileRpcOk(request.id, {
+      'id': id,
+      'total': page.total,
+      'busy': chatIsBusy?.call(id) ?? false,
+    });
+  }
+
   /// One page of a transcript. `offset` and `limit` page *backwards*: the
   /// default page ends at the newest turn, and the phone asks for a smaller
   /// offset to walk into the history.
@@ -132,8 +174,62 @@ class MobileChatRpc {
       // while a turn runs, and without it there is no moment it can stop.
       'busy': chatIsBusy?.call(id) ?? false,
       'messages': [
-        for (final line in page.lines) {'role': line.role, 'text': line.text},
+        for (final line in page.lines)
+          {
+            'role': line.role,
+            'text': line.text,
+            'index': line.index,
+            // Described, never carried: the bytes come back through
+            // `chats.media` in slices, because one photo can be bigger than a
+            // frame is allowed to be.
+            if (line.media.isNotEmpty)
+              'media': [
+                for (final item in line.media)
+                  {'kind': item.kind, 'name': item.name},
+              ],
+          },
       ],
+    });
+  }
+
+  /// A slice of a picture attached to a turn.
+  ///
+  /// A read, so it needs no switch: it returns what is already inside a chat
+  /// this phone may open, and refusing it would leave a grey box on the phone
+  /// where the computer shows a photo.
+  MobileRpcResponse media(MobileRpcRequest request) {
+    final id = request.params['id'];
+    final message = _asInt(request.params['message']);
+    if (id is! String || id.isEmpty || message == null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'Which picture?',
+      );
+    }
+    final from = _asInt(request.params['offset']) ?? 0;
+    final slice = _readMedia(
+      id,
+      messageIndex: message,
+      mediaIndex: _asInt(request.params['media']) ?? 0,
+      offset: from,
+      length: _asInt(request.params['length']),
+    );
+    if (slice == null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'not_found',
+        message: 'That picture is not on this computer any more.',
+      );
+    }
+    return MobileRpcOk(request.id, {
+      'name': slice.name,
+      'kind': slice.kind,
+      // The whole file's size, not this slice's: it is how the phone knows
+      // whether to ask again.
+      'size': slice.size,
+      'offset': from,
+      'data': base64Encode(slice.bytes),
     });
   }
 

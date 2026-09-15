@@ -23,6 +23,15 @@ const kMobileRpcMethods = <String>{
   // chat is paged rather than fetched.
   'chats.list',
   'chats.get',
+  // How many turns a chat has and whether one is being written — the two facts
+  // a phone needs to know it is out of date. Its own method because it is asked
+  // on a timer while a chat is open, and asking `chats.get` for that would
+  // re-send the whole page to learn one number.
+  'chats.head',
+  // The bytes of a picture already attached to a chat this phone can read,
+  // asked for a slice at a time. The phone names a *turn*, never a path: the
+  // only files reachable this way are ones the computer itself attached.
+  'chats.media',
   // The one method here that makes this computer *do* something rather than
   // say what it has already done, and the only one gated by a second check: a
   // per-device switch that is off until somebody turns it on at the computer.

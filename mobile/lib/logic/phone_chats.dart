@@ -26,7 +26,19 @@ typedef ChatRow = ({
 typedef ProjectRow = ({String id, String name, String model, String agent});
 
 /// One turn of a conversation.
-typedef ChatLine = ({String role, String text});
+///
+/// [index] is the turn's place in the whole chat, which is how a picture on it
+/// is asked for. [media] describes attachments without carrying them: a photo
+/// is measured in megabytes and the channel cannot frame one.
+typedef ChatLine = ({
+  String role,
+  String text,
+  int index,
+  List<ChatMediaRef> media,
+});
+
+/// A picture attached to a turn, named but not yet fetched.
+typedef ChatMediaRef = ({String kind, String name});
 
 /// A page of one conversation, newest last.
 ///
@@ -120,6 +132,18 @@ final transcriptProvider =
               (
                 role: '${message['role'] ?? ''}',
                 text: '${message['text'] ?? ''}',
+                index: _asInt(message['index']) ?? 0,
+                media: [
+                  for (final item
+                      in message['media'] is List
+                          ? message['media']! as List
+                          : const [])
+                    if (item is Map)
+                      (
+                        kind: '${item['kind'] ?? 'file'}',
+                        name: '${item['name'] ?? ''}',
+                      ),
+                ],
               ),
         ],
         total: _asInt(result['total']) ?? 0,
