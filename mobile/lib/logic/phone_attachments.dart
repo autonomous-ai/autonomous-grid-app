@@ -12,12 +12,12 @@ import 'phone_uploads.dart';
 
 /// What is attached to one chat's next message.
 final attachmentsProvider =
-    NotifierProvider.family<AttachmentsController, List<PickedFile>, String>(
+    NotifierProvider.family<AttachmentsController, List<OutgoingFile>, String>(
       AttachmentsController.new,
     );
 
 /// Holds what has been picked for one chat.
-class AttachmentsController extends Notifier<List<PickedFile>> {
+class AttachmentsController extends Notifier<List<OutgoingFile>> {
   AttachmentsController(this.chatId);
 
   /// The conversation these belong to — the family argument, so one chat's
@@ -25,13 +25,13 @@ class AttachmentsController extends Notifier<List<PickedFile>> {
   final String chatId;
 
   @override
-  List<PickedFile> build() => const [];
+  List<OutgoingFile> build() => const [];
 
   /// Stages [file], unless the composer is already full.
   ///
   /// Returns false when it was not added, so the caller can say why rather than
   /// dropping it silently.
-  bool add(PickedFile file) {
+  bool add(OutgoingFile file) {
     if (state.length >= kMaxAttachments) return false;
     state = [...state, file];
     return true;

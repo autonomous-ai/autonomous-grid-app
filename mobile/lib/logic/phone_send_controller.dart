@@ -85,7 +85,7 @@ class PhoneSendController extends Notifier<PhoneSendState> {
   /// state machine that has to stay readable.
   Future<void> send(
     String text, {
-    required Future<List<String>> Function(List<PickedFile>) uploadEach,
+    required Future<List<String>> Function(List<OutgoingFile>) uploadEach,
   }) async {
     final staged = ref.read(attachmentsProvider(chatId));
     if (text.trim().isEmpty && staged.isEmpty) return;

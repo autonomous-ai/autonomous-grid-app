@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/core/grid_paths.dart';
 import 'package:grid_app/infrastructure/pairing_host/mobile_chat_reader.dart';
 import 'package:grid_app/infrastructure/pairing_host/mobile_rpc_service.dart';
+import 'package:grid_app/infrastructure/pairing_host/mobile_upload_store.dart';
 import 'package:grid_app/features/phone/logic/phone_chat_options.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_pairing/grid_pairing.dart';
@@ -571,5 +572,108 @@ void main() {
         expect(AgentApprovalMode.values, contains(AgentApprovalMode.full));
       },
     );
+  });
+
+  group('files a phone attaches', () {
+    late Directory uploadRoot;
+    var attached = <String>[];
+
+    setUp(() {
+      uploadRoot = Directory.systemTemp.createTempSync('grid-rpc-uploads');
+      attached = <String>[];
+    });
+
+    tearDown(() => uploadRoot.deleteSync(recursive: true));
+
+    MobileRpcService host() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      readChat: (id, {int? limit, int? offset}) =>
+          (lines: const <ChatLine>[], total: 0, offset: 0),
+      uploads: MobileUploadStore(directory: uploadRoot),
+      sendToChat: (chatId, text, files) async {
+        attached.addAll(files.map((file) => file.name));
+        return null;
+      },
+    );
+
+    Future<MobileRpcResponse> ask(
+      MobileRpcService service,
+      String method,
+      Map<String, Object?> params, {
+      required bool allowed,
+    }) => service.handle(
+      MobileRpcRequest(id: 'r1', method: method, params: params),
+      deviceId: 'device-1',
+      mayAct: () async => allowed,
+    );
+
+    test('will not begin an upload without the switch — this is the one place '
+        'a phone writes bytes to the computer', () async {
+      final answer = await ask(host(), 'uploads.begin', {
+        'name': 'photo.jpg',
+        'size': 10,
+      }, allowed: false);
+
+      expect((answer as MobileRpcFailed).code, 'forbidden');
+    });
+
+    test('tells the phone how big a piece may be rather than letting it guess, '
+        'because a frame too large ends the connection', () async {
+      final answer = await ask(host(), 'uploads.begin', {
+        'name': 'photo.jpg',
+        'size': 10,
+      }, allowed: true);
+
+      final result = (answer as MobileRpcOk).result;
+      expect(result['uploadId'], isA<String>());
+      expect(result['chunkBytes'], maxChunkBytes);
+    });
+
+    test('carries a finished file into the turn it was sent with', () async {
+      final service = host();
+      final begun =
+          (await ask(service, 'uploads.begin', {
+                    'name': 'holiday.png',
+                    'size': 3,
+                  }, allowed: true)
+                  as MobileRpcOk)
+              .result['uploadId']!;
+      await ask(service, 'uploads.chunk', {
+        'uploadId': begun,
+        'data': base64Encode(const [1, 2, 3]),
+      }, allowed: true);
+
+      final sent = await ask(service, 'chats.send', {
+        'id': 'c1',
+        'text': 'what is this',
+        'uploads': [begun],
+      }, allowed: true);
+
+      expect(sent, isA<MobileRpcOk>());
+      expect(attached.single, endsWith('.png'));
+    });
+
+    test('refuses the whole turn when a named file never finished, rather than '
+        'answering about an attachment that is half there', () async {
+      final service = host();
+      final begun =
+          (await ask(service, 'uploads.begin', {
+                    'name': 'big.png',
+                    'size': 100,
+                  }, allowed: true)
+                  as MobileRpcOk)
+              .result['uploadId']!;
+
+      final sent = await ask(service, 'chats.send', {
+        'id': 'c1',
+        'text': 'look',
+        'uploads': [begun],
+      }, allowed: true);
+
+      expect(sent, isA<MobileRpcFailed>());
+      expect(attached, isEmpty);
+    });
   });
 }

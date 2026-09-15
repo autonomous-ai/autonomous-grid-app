@@ -4,8 +4,11 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../logic/phone_attachments.dart';
 import '../logic/phone_chat_options.dart';
 import '../logic/phone_send_controller.dart';
+import '../logic/phone_uploads.dart';
+import 'attachment_row.dart';
 import 'composer_pill.dart';
 
 /// Types and sends into one chat.
@@ -30,11 +33,26 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
 
   void _send() {
     final message = _text.text;
-    if (message.trim().isEmpty) return;
+    final staged = ref.read(attachmentsProvider(widget.chatId));
+    if (message.trim().isEmpty && staged.isEmpty) return;
     // Cleared before the answer, not after: the message is the computer's now,
     // and a box that stays full reads as a send that did not happen.
     _text.clear();
-    ref.read(phoneSendProvider(widget.chatId).notifier).send(message);
+    ref
+        .read(phoneSendProvider(widget.chatId).notifier)
+        .send(message, uploadEach: _upload);
+  }
+
+  /// Puts each staged file on the computer and returns their ids, in order.
+  ///
+  /// One at a time on purpose: they share one channel, and starting five at
+  /// once would interleave their chunks into a single socket for no gain.
+  Future<List<String>> _upload(List<OutgoingFile> files) async {
+    final ids = <String>[];
+    for (final file in files) {
+      ids.add(await uploadFile(ref, file));
+    }
+    return ids;
   }
 
   @override
@@ -54,6 +72,7 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
           children: [
             _Pickers(widget.chatId),
             const SizedBox(height: 8),
+            AttachmentChips(widget.chatId),
             if (send case PhoneSendFailed(:final message)) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
@@ -68,6 +87,8 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                AttachButton(widget.chatId),
+                const SizedBox(width: 4),
                 Expanded(
                   child: TextField(
                     controller: _text,

@@ -20,7 +20,11 @@ import 'phone_link_controller.dart';
 import 'relay_phone_client.dart';
 
 /// A file chosen on the phone, before it has been sent anywhere.
-typedef PickedFile = ({String name, Uint8List bytes});
+///
+/// Not `PickedFile`: `image_picker` exports a deprecated class by that name, and
+/// two types with one name in the same file is a compile error at best and the
+/// wrong one silently at worst.
+typedef OutgoingFile = ({String name, Uint8List bytes});
 
 /// The most files one message may carry.
 ///
@@ -33,7 +37,7 @@ const int kMaxAttachments = 5;
 ///
 /// Throws [RelayPhoneFailure] carrying the computer's own sentence: it is the
 /// side that knows whether the file was too big, too many, or simply refused.
-Future<String> uploadFile(WidgetRef ref, PickedFile file) async {
+Future<String> uploadFile(WidgetRef ref, OutgoingFile file) async {
   final link = ref.read(phoneLinkProvider.notifier);
   final begun = await link.call('uploads.begin', {
     'name': file.name,
@@ -62,7 +66,7 @@ Future<String> uploadFile(WidgetRef ref, PickedFile file) async {
 
 /// Reads the file at [path] for sending, keeping the name a person would know
 /// it by.
-Future<PickedFile> readForUpload(String path, String name) async =>
+Future<OutgoingFile> readForUpload(String path, String name) async =>
     (name: name, bytes: await File(path).readAsBytes());
 
 String _encode(Uint8List bytes) => base64Encode(bytes);
