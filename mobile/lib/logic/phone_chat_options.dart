@@ -115,3 +115,23 @@ Picker _picker(Object? value) {
     ],
   );
 }
+
+/// Starts a project called [name] and returns its id.
+///
+/// The phone sends a name and nothing else. Where the folder goes is the
+/// computer's decision — see the host side for why a path never crosses.
+///
+/// Throws [RelayPhoneFailure] carrying the computer's own sentence: a name it
+/// cannot use, or a folder it could not make, are its facts to report.
+Future<String> startProject(WidgetRef ref, String name) async {
+  final result = await ref.read(phoneLinkProvider.notifier).call(
+    'projects.create',
+    {'name': name},
+  );
+  final id = result['id'];
+  if (id is! String || id.isEmpty) {
+    throw const RelayPhoneFailure('The project could not be started.');
+  }
+  ref.invalidate(projectsProvider);
+  return id;
+}

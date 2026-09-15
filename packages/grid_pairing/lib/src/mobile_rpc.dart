@@ -21,6 +21,10 @@ const kMobileRpcMethods = <String>{
   // the projection behind this reads four fields and stops.
   'grids.get',
   'projects.list',
+  // Starting one. The phone sends a *name*, never a path: the computer decides
+  // where the folder goes, because a phone that could name a path would be a
+  // phone that can make a folder anywhere on somebody's machine.
+  'projects.create',
   // Headers only. The transcripts are not in this answer and are not in one
   // reply either: the largest conversation on this machine's history is 9.37 MB
   // and the relay ends a connection that frames more than 8 MB, so reading a

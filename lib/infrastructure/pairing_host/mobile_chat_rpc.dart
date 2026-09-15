@@ -38,6 +38,7 @@ class MobileChatRpc {
     this.readOptions,
     this.setOption,
     this.createChat,
+    this.createProject,
     this.uploads,
   }) : _readChats = readChats ?? readChatHeaders,
        _readProjects = readProjects ?? readProjectSummaries,
@@ -88,6 +89,10 @@ class MobileChatRpc {
   /// Where a phone's pictures and documents land on the way in, or null on a
   /// host that has nothing to attach them to.
   final MobileUploadStore? uploads;
+
+  /// Starts a project by name and returns its id, or a reason. Null on a host
+  /// with no window behind it to hold the list.
+  final ({String? id, String? problem}) Function(String name)? createProject;
 
   final List<ChatHeader> Function() _readChats;
   final List<ProjectSummary> Function() _readProjects;

@@ -55,6 +55,7 @@ class MobileRpcService {
       List<PhoneAttachment> files,
     )?
     createChat,
+    ({String? id, String? problem}) Function(String name)? createProject,
     MobileUploadStore? uploads,
   }) : _readGrids = readGrids ?? readGridSummaries,
        _readEngines = readEngines ?? readGridEngines,
@@ -69,6 +70,7 @@ class MobileRpcService {
          readOptions: readOptions,
          setOption: setOption,
          createChat: createChat,
+         createProject: createProject,
          uploads: uploads,
        ),
        _renewInvite = renewInvite;
@@ -128,6 +130,7 @@ class MobileRpcService {
         'chats.options' => await _chats.options(request),
         'chats.set' => await _chats.set(request, mayAct),
         'chats.create' => await _chats.create(request, mayAct),
+        'projects.create' => await _chats.newProject(request, mayAct),
         'uploads.begin' => await _chats.beginUpload(request, mayAct),
         'uploads.chunk' => await _chats.uploadChunk(request, mayAct),
         'pairing.renew' => await _renew(request, deviceId),

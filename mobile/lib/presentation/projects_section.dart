@@ -13,6 +13,7 @@ import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_chats.dart';
 import 'chat_list_screen.dart';
+import 'new_project_sheet.dart';
 import 'parts.dart';
 
 /// The project list.
@@ -27,7 +28,10 @@ class ProjectsSection extends ConsumerWidget {
     // is a normal computer, and a "Projects" title over blank space reads as
     // something that failed to load.
     final rows = projects.value?.values.toList() ?? const <ProjectRow>[];
-    if (rows.isEmpty) return const SizedBox.shrink();
+    // The heading stays even with nothing under it now, because it carries the
+    // only way to make the first one. An empty section with a New button is a
+    // place to start; an absent section is a feature nobody can find.
+    if (projects.isLoading) return const SizedBox.shrink();
     // Owns the gap above it, because it is allowed to disappear entirely: a
     // spacer left behind by the caller would open a hole on every computer that
     // has no projects.
@@ -36,8 +40,18 @@ class ProjectsSection extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionLabel('Projects'),
-          for (final project in rows) _ProjectTile(project),
+          SectionLabel(
+            'Projects',
+            trailing: TextButton.icon(
+              onPressed: () => showNewProjectSheet(context),
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('New'),
+            ),
+          ),
+          if (rows.isEmpty)
+            const _NoProjects()
+          else
+            for (final project in rows) _ProjectTile(project),
         ],
       ),
     );
@@ -87,6 +101,21 @@ class _ProjectTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _NoProjects extends StatelessWidget {
+  const _NoProjects();
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Text(
+      'No projects yet. Start one and your computer makes the folder for it.',
+      style: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
     );
   }
 }

@@ -66,6 +66,39 @@ extension MobileChatWrites on MobileChatRpc {
         : MobileRpcFailed(request.id, code: 'unavailable', message: refused);
   }
 
+  /// Starts a project.
+  ///
+  /// Behind the switch like every other write. A name is all that crosses: see
+  /// the allowlist entry for why a path never does.
+  Future<MobileRpcResponse> newProject(
+    MobileRpcRequest request,
+    Future<bool> Function()? mayAct,
+  ) async {
+    final start = createProject;
+    if (start == null) return _noApp(request);
+    if (mayAct == null || !await mayAct()) {
+      return _notAllowed(request, 'start projects');
+    }
+    final name = request.params['name'];
+    if (name is! String || name.trim().isEmpty) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'A project needs a name.',
+      );
+    }
+    final made = start(name);
+    final id = made.id;
+    if (id == null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'unavailable',
+        message: made.problem ?? 'The project could not be started.',
+      );
+    }
+    return MobileRpcOk(request.id, {'id': id});
+  }
+
   /// Starts a chat with its first message in it.
   Future<MobileRpcResponse> create(
     MobileRpcRequest request,

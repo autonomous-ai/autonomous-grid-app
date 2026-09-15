@@ -19,6 +19,7 @@ import '../../../infrastructure/pairing_host/mobile_rpc_service.dart';
 import '../../../infrastructure/pairing_host/relay_host_connection.dart';
 import '../../../shared/app_info.dart';
 import 'phone_chat_options.dart';
+import 'phone_projects.dart';
 import 'phone_turns.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/pairing_host/mobile_upload_store.dart';
@@ -196,6 +197,7 @@ class PhonePairingController extends Notifier<PhonePairingState> {
             field: field,
             value: value,
           ),
+          createProject: (name) => createPhoneProject(ref, name),
           createChat: (text, projectId, files) => startPhoneChat(
             ref,
             text: text,

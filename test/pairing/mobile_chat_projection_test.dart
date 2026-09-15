@@ -1034,4 +1034,81 @@ void main() {
       expect((answer as MobileRpcFailed).code, 'bad_request');
     });
   });
+
+  group('starting a project from a phone', () {
+    var asked = <String>[];
+
+    MobileRpcService host() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      createProject: (name) {
+        asked.add(name);
+        return (id: 'p-new', problem: null);
+      },
+    );
+
+    Future<MobileRpcResponse> make(
+      Map<String, Object?> params, {
+      required bool allowed,
+    }) => host().handle(
+      MobileRpcRequest(id: 'r1', method: 'projects.create', params: params),
+      deviceId: 'device-1',
+      mayAct: () async => allowed,
+    );
+
+    setUp(() => asked = <String>[]);
+
+    test('carries a name and only a name — a path from a phone would be a '
+        'phone that can make a folder anywhere on the computer', () async {
+      final answer = await make({
+        'name': 'Holiday Site',
+        // Sent and ignored: an older or hostile client may try, and the host
+        // must not start honouring it by accident.
+        'path': '/Users/someone/.ssh',
+      }, allowed: true);
+
+      expect((answer as MobileRpcOk).result['id'], 'p-new');
+      expect(asked, ['Holiday Site']);
+    });
+
+    test('is refused without the switch, like every other write', () async {
+      expect(
+        (await make({'name': 'Nope'}, allowed: false) as MobileRpcFailed).code,
+        'forbidden',
+      );
+      expect(asked, isEmpty);
+    });
+
+    test('refuses a nameless project rather than inventing one', () async {
+      expect(
+        (await make({'name': '   '}, allowed: true) as MobileRpcFailed).code,
+        'bad_request',
+      );
+      expect(asked, isEmpty);
+    });
+
+    test('hands back the computer own reason when the name cannot be used, '
+        'since "letters, numbers, spaces or dashes" is something the person '
+        'can act on', () async {
+      final service = MobileRpcService(
+        hostName: 'test-host',
+        appVersion: '0.0.0',
+        readGrids: () => const [],
+        createProject: (name) => (id: null, problem: 'Give it a real name.'),
+      );
+
+      final answer = await service.handle(
+        MobileRpcRequest(
+          id: 'r1',
+          method: 'projects.create',
+          params: {'name': '###'},
+        ),
+        deviceId: 'device-1',
+        mayAct: () async => true,
+      );
+
+      expect((answer as MobileRpcFailed).message, 'Give it a real name.');
+    });
+  });
 }
