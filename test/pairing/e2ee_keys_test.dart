@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_keys.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 /// The desktop's key is the one the pairing code pins, so it has to survive a
 /// restart byte for byte; the phone's is thrown away with the socket.

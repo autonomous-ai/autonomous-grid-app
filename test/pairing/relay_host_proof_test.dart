@@ -2,8 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_keys.dart';
-import 'package:grid_app/infrastructure/pairing/relay_host_proof.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 import 'e2ee_test_bytes.dart';
 

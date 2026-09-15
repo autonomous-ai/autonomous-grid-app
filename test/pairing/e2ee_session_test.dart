@@ -4,10 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'e2ee_test_bytes.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_frame.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_key_schedule.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_session.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_wire.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 /// Two sessions built from one schedule are the desktop and the phone. What
 /// matters here is that they stay in step: the counters are the only thing

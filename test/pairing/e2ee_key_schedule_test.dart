@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'e2ee_test_bytes.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_key_schedule.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 /// HKDF is written out in this repo rather than taken from a package, so it is
 /// pinned to the RFC's own answers. A wrong HKDF is invisible: both peers

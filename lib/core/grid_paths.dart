@@ -106,6 +106,21 @@ class GridPaths {
   /// the app restores them. App-owned — the CLI never touches it.
   static File get chatPrefsFile => File('${home.path}/app/chat_prefs.json');
 
+  /// This computer's long-lived X25519 identity for the phone link
+  /// (`~/.grid/app/pairing_identity.json`, `0o600`).
+  ///
+  /// Every phone that has ever scanned a pairing code pinned the public half,
+  /// so replacing this file un-pairs all of them at once. `HostIdentityStore`
+  /// therefore refuses to regenerate it when a read *fails* — an unreadable
+  /// file says nothing about its contents.
+  static File get pairingIdentityFile =>
+      File('${home.path}/app/pairing_identity.json');
+
+  /// The phones paired with this computer and their per-device tokens
+  /// (`~/.grid/app/paired_devices.json`, `0o600`).
+  static File get pairedDevicesFile =>
+      File('${home.path}/app/paired_devices.json');
+
   /// The folders the user added as projects — the ones a chat can be opened
   /// "inside", so the assistant may read them. App-owned.
   static File get projectsFile => File('${home.path}/app/projects.json');

@@ -3,8 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'e2ee_test_bytes.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_frame.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_wire.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 /// The frame layout is the whole defence on a link whose transport is plain
 /// `ws://` on the LAN and an untrusted relay off it. Each of these is an

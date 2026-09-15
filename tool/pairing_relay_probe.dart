@@ -20,13 +20,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:grid_app/infrastructure/pairing/e2ee_handshake.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_key_schedule.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_keys.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_session.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_transcript.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_wire.dart';
-import 'package:grid_app/infrastructure/pairing/relay_host_proof.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 const _protocolVersion = 1;
 
@@ -155,7 +149,7 @@ Future<(E2eeSession phone, E2eeSession desktop)> _handshakeThroughSplice({
   );
   final hello = E2eeHello(
     clientPublicKey: phoneKeys.publicKey,
-    clientNonce: _randomKey(),
+    clientNonce: randomE2eeNonce(),
     context: context,
   );
   await phone.sendJson(hello.toJson());
@@ -166,7 +160,7 @@ Future<(E2eeSession phone, E2eeSession desktop)> _handshakeThroughSplice({
   final ready = E2eeReady(
     desktopPublicKey: desktopKeys.publicKey,
     clientNonce: heard!.clientNonce,
-    desktopNonce: _randomKey(),
+    desktopNonce: randomE2eeNonce(),
     context: heard.context,
   );
   await desktop.sendJson(ready.toJson());
@@ -318,16 +312,6 @@ class _Peer {
   }
 
   Future<void> close() async => _socket.close();
-}
-
-Uint8List _randomKey() {
-  final random = Uint8List(kE2eeKeyLength);
-  final source = DateTime.now().microsecondsSinceEpoch;
-  for (var i = 0; i < random.length; i++) {
-    // A probe, not a peer: this only has to be distinct per run.
-    random[i] = (source >> (i % 8 * 8) ^ i * 31) & 0xff;
-  }
-  return random;
 }
 
 String? _argument(List<String> args, String name) {

@@ -15,6 +15,7 @@
 /// nothing downstream catches it. The store must refuse and surface the error.
 library;
 
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
@@ -71,4 +72,19 @@ class E2eeKeyPair {
       Uint8List.fromList(await keyPair.extractPrivateKeyBytes()),
     );
   }
+}
+
+/// 32 random bytes for a handshake nonce.
+///
+/// `Random.secure()` is the platform's own CSPRNG — `/dev/urandom` and its
+/// equivalents — not the seeded generator `Random()` gives you. The difference
+/// matters here: these nonces go into the HKDF salt, so a predictable one lets
+/// an observer who knows the shared secret reproduce a session's keys.
+Uint8List randomE2eeNonce() {
+  final random = Random.secure();
+  final nonce = Uint8List(kE2eeKeyLength);
+  for (var i = 0; i < nonce.length; i++) {
+    nonce[i] = random.nextInt(256);
+  }
+  return nonce;
 }

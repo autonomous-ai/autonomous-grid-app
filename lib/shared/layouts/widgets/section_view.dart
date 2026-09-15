@@ -15,6 +15,7 @@ import '../../../features/messaging/presentation/messages_view.dart';
 import '../../../features/network/presentation/how_to_use_view.dart';
 import '../../../features/network/presentation/networks_pane.dart';
 import '../../../features/office/presentation/office_docs_view.dart';
+import '../../../features/phone/presentation/phone_view.dart';
 import '../../../features/plugins/presentation/plugins_view.dart';
 import '../../../features/projects/presentation/projects_view.dart';
 import '../../../features/provider_node/presentation/provider_view.dart';
@@ -55,6 +56,7 @@ class SectionView extends StatelessWidget {
       ShellSection.appearance => const AppearanceView(),
       ShellSection.browser => const BrowserSettingsView(),
       ShellSection.dataSync => const DataSyncView(),
+      ShellSection.phone => const PhoneView(),
       ShellSection.importChats => const ImportSessionsView(),
       ShellSection.archived => const ArchivedChatsView(),
       ShellSection.debug => const DebugView(),

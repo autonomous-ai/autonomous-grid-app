@@ -4,9 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'e2ee_test_bytes.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_handshake.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_suite.dart';
-import 'package:grid_app/infrastructure/pairing/e2ee_wire.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 /// Every field of these two messages is hashed into the key schedule, so
 /// parsing has to be exact rather than forgiving. A field this side skips is a
