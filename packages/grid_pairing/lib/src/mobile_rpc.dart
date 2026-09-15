@@ -16,6 +16,10 @@ library;
 const kMobileRpcMethods = <String>{
   'status.get',
   'grids.list',
+  // One grid, with what this computer is actually serving to it. Never its
+  // tokens: `credentials.toml` holds a bearer credential for every grid, and
+  // the projection behind this reads four fields and stops.
+  'grids.get',
   'projects.list',
   // Headers only. The transcripts are not in this answer and are not in one
   // reply either: the largest conversation on this machine's history is 9.37 MB

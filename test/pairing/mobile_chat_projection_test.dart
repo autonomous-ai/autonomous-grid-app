@@ -966,4 +966,72 @@ void main() {
       expect(rows.map((row) => (row! as Map)['archived']), [false, true]);
     });
   });
+
+  group('opening one grid', () {
+    MobileRpcService host({bool current = false}) => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [
+        (
+          id: 'g1',
+          name: 'macOS',
+          type: 'os-community',
+          email: 'me@example.com',
+        ),
+      ],
+      readEngines: (gridId) => const [
+        (id: 'llama', models: ['qwen3-8b'], running: true),
+      ],
+      gridIsCurrent: (gridId) => current,
+    );
+
+    Future<MobileRpcResponse> open(String id, {bool current = false}) =>
+        host(current: current).handle(
+          MobileRpcRequest(id: 'r1', method: 'grids.get', params: {'id': id}),
+          deviceId: 'device-1',
+        );
+
+    test('is a read, so any paired phone may open a grid it can already see in '
+        'the list', () async {
+      expect(await open('g1'), isA<MobileRpcOk>());
+    });
+
+    test('carries only the four fields a grid is described by, plus what this '
+        'computer is serving — never the token that would let a phone act as '
+        'the account', () async {
+      final result = (await open('g1') as MobileRpcOk).result;
+
+      expect(result.keys.toSet(), {
+        'id',
+        'name',
+        'type',
+        'email',
+        'current',
+        'engines',
+      });
+    });
+
+    test('says which grid the computer is actually working in, so three signed '
+        'in grids do not all read as live', () async {
+      expect(((await open('g1') as MobileRpcOk).result)['current'], isFalse);
+      expect(
+        ((await open('g1', current: true) as MobileRpcOk).result)['current'],
+        isTrue,
+      );
+    });
+
+    test('says not_found for a grid the computer has left, rather than a blank '
+        'screen about nothing', () async {
+      expect((await open('gone') as MobileRpcFailed).code, 'not_found');
+    });
+
+    test('says bad_request when no grid was named', () async {
+      final answer = await host().handle(
+        MobileRpcRequest(id: 'r1', method: 'grids.get'),
+        deviceId: 'device-1',
+      );
+
+      expect((answer as MobileRpcFailed).code, 'bad_request');
+    });
+  });
 }

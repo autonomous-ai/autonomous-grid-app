@@ -8,6 +8,7 @@ import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_link_controller.dart';
 import 'chats_section.dart';
+import 'grid_detail_screen.dart';
 import 'parts.dart';
 import 'projects_section.dart';
 
@@ -95,14 +96,34 @@ class _GridTile extends StatelessWidget {
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return GridListRow(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            grid.name.isEmpty ? grid.id : grid.name,
-            style: Theme.of(context).textTheme.bodyMedium,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GridDetailScreen(
+            gridId: grid.id,
+            title: grid.name.isEmpty ? grid.id : grid.name,
           ),
-          RowDetail([grid.type, grid.email]),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  grid.name.isEmpty ? grid.id : grid.name,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                RowDetail([grid.type, grid.email]),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: AppPalette.textFaint,
+          ),
         ],
       ),
     );

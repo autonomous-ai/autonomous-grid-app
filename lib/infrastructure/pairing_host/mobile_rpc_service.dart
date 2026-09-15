@@ -20,6 +20,7 @@ import 'package:toml/toml.dart';
 import '../../core/grid_paths.dart';
 import 'mobile_chat_reader.dart';
 import 'mobile_chat_rpc.dart';
+import 'mobile_grid_reader.dart';
 import 'mobile_upload_store.dart';
 
 /// One grid, as much of it as a phone is shown.
@@ -31,6 +32,8 @@ class MobileRpcService {
     required this.hostName,
     required this.appVersion,
     List<GridSummary> Function()? readGrids,
+    List<GridEngine> Function(String gridId)? readEngines,
+    bool Function(String gridId)? gridIsCurrent,
     List<ChatHeader> Function()? readChats,
     List<ProjectSummary> Function()? readProjects,
     ChatPage? Function(String id, {int? limit, int? offset})? readChat,
@@ -54,6 +57,8 @@ class MobileRpcService {
     createChat,
     MobileUploadStore? uploads,
   }) : _readGrids = readGrids ?? readGridSummaries,
+       _readEngines = readEngines ?? readGridEngines,
+       _gridIsCurrent = gridIsCurrent,
        _chats = MobileChatRpc(
          readChats: readChats,
          readProjects: readProjects,
@@ -76,6 +81,11 @@ class MobileRpcService {
   final String appVersion;
 
   final List<GridSummary> Function() _readGrids;
+  final List<GridEngine> Function(String gridId) _readEngines;
+
+  /// Whether a grid is the one the computer is working in, or null on a host
+  /// with no window behind it to ask.
+  final bool Function(String gridId)? _gridIsCurrent;
   final MobileChatRpc _chats;
   final Future<PairingRelayEndpoint> Function(String deviceId)? _renewInvite;
 
@@ -108,6 +118,7 @@ class MobileRpcService {
       return switch (request.method) {
         'status.get' => MobileRpcOk(request.id, _status()),
         'grids.list' => MobileRpcOk(request.id, _grids()),
+        'grids.get' => _grid(request),
         'projects.list' => MobileRpcOk(request.id, _chats.projects()),
         'chats.list' => MobileRpcOk(request.id, _chats.list()),
         'chats.get' => _chats.page(request),
@@ -161,6 +172,43 @@ class MobileRpcService {
     'appVersion': appVersion,
     'gridCount': _readGrids().length,
   };
+
+  /// One grid, and what this computer is doing on it.
+  ///
+  /// A read, so no switch: it says nothing the list does not already say plus
+  /// what is being served, and a phone that could list grids but not open one
+  /// is a list of dead rows.
+  MobileRpcResponse _grid(MobileRpcRequest request) {
+    final id = request.params['id'];
+    if (id is! String || id.isEmpty) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'Which grid?',
+      );
+    }
+    final grid = _readGrids().where((row) => row.id == id).firstOrNull;
+    // Not an empty grid: a phone shown a blank detail for a grid this computer
+    // has left would be reading a screen about nothing.
+    if (grid == null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'not_found',
+        message: 'Your computer is not signed in to that grid any more.',
+      );
+    }
+    return MobileRpcOk(request.id, {
+      'id': grid.id,
+      'name': grid.name,
+      'type': grid.type,
+      'email': grid.email,
+      'current': _gridIsCurrent?.call(grid.id) ?? false,
+      'engines': [
+        for (final engine in _readEngines(grid.id))
+          {'id': engine.id, 'models': engine.models, 'running': engine.running},
+      ],
+    });
+  }
 
   Map<String, Object?> _grids() => {
     'grids': [

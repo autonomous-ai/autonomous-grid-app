@@ -23,6 +23,7 @@ import 'phone_turns.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/pairing_host/mobile_upload_store.dart';
 import '../../../infrastructure/pairing_host/phone_link_prefs.dart';
+import '../../auth/logic/session_controller.dart';
 
 /// Where to find a relay cell, unless `GRID_PAIRING_RELAY` says otherwise.
 ///
@@ -176,6 +177,11 @@ class PhonePairingController extends Notifier<PhonePairingState> {
           // A *resume*, not another invite. `pairing.renew` is the phone
           // asking for its way back in, and an invite dies with this session.
           renewInvite: (deviceId) => connection.mintResume(deviceId),
+          // Which grid the computer is actually working in. Read through a
+          // closure for the same reason as the chat hooks: the service stays
+          // Flutter-free, and only this side knows what the window has open.
+          gridIsCurrent: (gridId) =>
+              ref.read(selectedNetworkProvider)?.networkId == gridId,
           // The seam where the phone reaches into the running app. The service
           // itself stays Flutter-free so `tool/` can run it; these two closures
           // are the only part that needs the window to exist.
