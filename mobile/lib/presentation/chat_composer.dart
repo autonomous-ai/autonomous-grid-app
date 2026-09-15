@@ -4,7 +4,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../logic/phone_chat_options.dart';
 import '../logic/phone_send_controller.dart';
+import 'composer_pill.dart';
 
 /// Types and sends into one chat.
 class ChatComposer extends ConsumerStatefulWidget {
@@ -50,6 +52,8 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _Pickers(widget.chatId),
+            const SizedBox(height: 8),
             if (send case PhoneSendFailed(:final message)) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
@@ -133,5 +137,77 @@ class _SendButton extends StatelessWidget {
         child: CircularProgressIndicator(strokeWidth: 2),
       ),
     );
+  }
+}
+
+/// The model, the assistant and the access level, for this chat.
+///
+/// A row of its own above the text field rather than crammed beside the send
+/// button: on a phone there is no room for six controls on one line, and the
+/// desktop's own layout note says that row is already at its floor.
+class _Pickers extends ConsumerWidget {
+  const _Pickers(this.chatId);
+
+  final String chatId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(chatOptionsProvider(chatId));
+    // Nothing at all while it loads or if it fails. The pills describe what a
+    // message would do; drawn from a guess they would describe something else,
+    // and the composer still sends without them.
+    final picks = options.value;
+    if (picks == null) return const SizedBox.shrink();
+    return Row(
+      children: [
+        Expanded(
+          child: ComposerPill(
+            icon: Icons.memory,
+            title: 'Model',
+            picker: picks.model,
+            onPick: (id) => _pick(context, ref, 'model', id),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: ComposerPill(
+            icon: Icons.smart_toy_outlined,
+            title: 'Assistant',
+            picker: picks.agent,
+            onPick: (id) => _pick(context, ref, 'agent', id),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: ComposerPill(
+            icon: Icons.bolt,
+            title: 'Access',
+            picker: picks.approval,
+            onPick: (id) => _pick(context, ref, 'approval', id),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pick(
+    BuildContext context,
+    WidgetRef ref,
+    String field,
+    String value,
+  ) async {
+    final refused = await pickChatOption(
+      ref,
+      chatId: chatId,
+      field: field,
+      value: value,
+    );
+    if (refused == null || !context.mounted) return;
+    // The computer's own sentence, shown where the tap happened. A pick that
+    // silently does not take is how somebody sends a turn believing it will run
+    // under a setting it never got.
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(refused)));
   }
 }

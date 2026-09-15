@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../logic/phone_chats.dart';
 import 'chat_list_screen.dart';
+import 'new_chat_screen.dart';
 import 'chat_tile.dart';
 
 /// How many conversations the connected screen shows before handing over.
@@ -27,8 +28,19 @@ class ChatsSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Chats', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: Text('Chats', style: theme.textTheme.titleMedium)),
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const NewChatScreen()),
+              ),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('New'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
         chats.when(
           loading: () => const _Loading(),
           // Short and specific: the connected screen above this one already

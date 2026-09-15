@@ -13,6 +13,8 @@ import 'package:grid_pairing/grid_pairing.dart';
 
 import 'mobile_chat_reader.dart';
 
+part 'mobile_chat_write_rpc.dart';
+
 /// Answers the phone about chats and projects.
 class MobileChatRpc {
   MobileChatRpc({
@@ -21,6 +23,9 @@ class MobileChatRpc {
     ChatPage? Function(String id, {int? limit, int? offset})? readChat,
     this.sendToChat,
     this.chatIsBusy,
+    this.readOptions,
+    this.setOption,
+    this.createChat,
   }) : _readChats = readChats ?? readChatHeaders,
        _readProjects = readProjects ?? readProjectSummaries,
        _readChat = readChat ?? readChatPage;
@@ -39,6 +44,19 @@ class MobileChatRpc {
   /// Whether an answer is still being written in a chat, so the phone knows
   /// whether to keep looking.
   final bool Function(String chatId)? chatIsBusy;
+
+  /// The picks the phone's composer offers for a chat, worked out here.
+  final Map<String, Object?> Function(String chatId)? readOptions;
+
+  /// Changes one of them. Null on success, else a sentence to show.
+  final String? Function(String chatId, String field, String value)? setOption;
+
+  /// Starts a chat carrying its first message. Returns the new id, or a reason.
+  final Future<({String? id, String? problem})> Function(
+    String text,
+    String? projectId,
+  )?
+  createChat;
 
   final List<ChatHeader> Function() _readChats;
   final List<ProjectSummary> Function() _readProjects;
@@ -104,53 +122,6 @@ class MobileChatRpc {
         for (final line in page.lines) {'role': line.role, 'text': line.text},
       ],
     });
-  }
-
-  /// Puts one message from the phone into a chat on this computer.
-  ///
-  /// Three refusals before anything runs, and they are deliberately different
-  /// answers: the computer cannot do this at all, this phone is not allowed to,
-  /// or that chat is not here. A single "no" would leave the person guessing
-  /// which of the three to go and fix.
-  Future<MobileRpcResponse> send(
-    MobileRpcRequest request,
-    Future<bool> Function()? mayAct,
-  ) async {
-    final start = sendToChat;
-    if (start == null) {
-      return MobileRpcFailed(
-        request.id,
-        code: 'unavailable',
-        message: 'Grid on the computer cannot take messages right now.',
-      );
-    }
-    if (mayAct == null || !await mayAct()) {
-      return MobileRpcFailed(
-        request.id,
-        code: 'forbidden',
-        message:
-            'This phone can read your chats but not send. Turn on "Let this '
-            'phone send messages" in Grid on your computer.',
-      );
-    }
-    final id = request.params['id'];
-    final text = request.params['text'];
-    if (id is! String || id.isEmpty || text is! String || text.trim().isEmpty) {
-      return MobileRpcFailed(
-        request.id,
-        code: 'bad_request',
-        message: 'A message needs a chat and something to say.',
-      );
-    }
-    // Checked here rather than left to the send: a chat that is gone would
-    // otherwise be created by the act of answering it, and the phone would have
-    // started a conversation it thought it was continuing.
-    if (_readChat(id, limit: 1) == null) return _gone(request);
-    final refused = await start(id, text.trim());
-    if (refused != null) {
-      return MobileRpcFailed(request.id, code: 'unavailable', message: refused);
-    }
-    return MobileRpcOk(request.id, {'accepted': true});
   }
 
   MobileRpcFailed _gone(MobileRpcRequest request) => MobileRpcFailed(

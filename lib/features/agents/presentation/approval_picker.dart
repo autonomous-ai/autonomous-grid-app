@@ -8,6 +8,7 @@ import '../../../shared/theme/app_theme.dart';
 import '../../../shared/widgets/anchored_menu_position.dart';
 import '../../../shared/widgets/composer_trigger.dart';
 import '../../../shared/widgets/labeled_field.dart';
+import '../../chat/logic/chat_approval.dart';
 
 /// The composer's control for how much the assistant may do to this computer.
 ///
@@ -499,14 +500,6 @@ Color approvalColor(AgentApprovalMode mode) => switch (mode) {
   ),
   AgentApprovalMode.ask => AppPalette.accent,
   AgentApprovalMode.full => AppPalette.warn,
-};
-
-/// The name of a mode, as the user reads it in the composer.
-String approvalLabel(AgentApprovalMode mode) => switch (mode) {
-  AgentApprovalMode.readOnly => 'Read only',
-  AgentApprovalMode.plan => 'Plan first',
-  AgentApprovalMode.ask => 'Ask before acting',
-  AgentApprovalMode.full => 'Full access',
 };
 
 /// What the mode actually means — no euphemisms for the one that stops asking.

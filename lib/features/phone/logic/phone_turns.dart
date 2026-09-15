@@ -59,6 +59,47 @@ Future<String?> startPhoneTurn(
   return null;
 }
 
+/// Starts a new chat carrying [text], and returns its id.
+///
+/// Created **and sent into** in one step on purpose. A chat with no messages is
+/// not written to disk, so a phone that made an empty one and then sent to it
+/// would be answered "that chat is not on this computer" by the very computer
+/// that had just made it.
+///
+/// Returns the new chat's id, or null with a sentence in [problem] — the record
+/// rather than an exception, for the reason [startPhoneTurn] returns a string.
+Future<({String? id, String? problem})> startPhoneChat(
+  Ref ref, {
+  required String text,
+  String? projectId,
+}) async {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return (id: null, problem: 'Say something first.');
+  final id = '${DateTime.now().microsecondsSinceEpoch}';
+  ref
+      .read(chatSessionsProvider.notifier)
+      .ensureBackgroundChat(
+        id: id,
+        title: _titleFrom(trimmed),
+        // The computer's standing choice, never a mode the phone picked: a new
+        // chat is exactly where an escalation would be easiest to slip in.
+        approval: ref.read(chatPrefsProvider).approval,
+        projectId: projectId,
+      );
+  final problem = await startPhoneTurn(ref, chatId: id, text: trimmed);
+  return (id: problem == null ? id : null, problem: problem);
+}
+
+/// A chat's name, taken from the message that started it.
+///
+/// One line and short: the whole message would be a sidebar row the width of a
+/// paragraph, and a chat named after its first question is how the desktop's
+/// own untitled chats read before a model renames them.
+String _titleFrom(String text) {
+  final line = text.split('\n').first.trim();
+  return line.length <= 60 ? line : '${line.substring(0, 57)}…';
+}
+
 /// Whether an answer is still being written in [chatId].
 ///
 /// Synchronous because the phone asks for it with every page of the transcript,

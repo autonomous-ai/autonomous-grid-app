@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../logic/phone_chats.dart';
 import 'chat_screen.dart';
 import 'chat_tile.dart';
+import 'new_chat_screen.dart';
 
 /// Pushes the transcript of [chat].
 ///
@@ -41,6 +42,18 @@ class ChatListScreen extends ConsumerWidget {
     final projects = ref.watch(projectsProvider).value ?? const {};
     return Scaffold(
       appBar: AppBar(title: Text(title ?? 'Chats')),
+      // Carries the project through, so starting a chat from inside one lands
+      // it there instead of making somebody pick the project they are looking
+      // at.
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'New chat',
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => NewChatScreen(projectId: projectId),
+          ),
+        ),
+        child: const Icon(Icons.add),
+      ),
       body: chats.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ListProblem(

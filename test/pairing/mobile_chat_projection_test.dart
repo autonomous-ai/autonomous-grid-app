@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/core/grid_paths.dart';
 import 'package:grid_app/infrastructure/pairing_host/mobile_chat_reader.dart';
 import 'package:grid_app/infrastructure/pairing_host/mobile_rpc_service.dart';
+import 'package:grid_app/features/phone/logic/phone_chat_options.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_pairing/grid_pairing.dart';
 
 /// What the phone is served when it asks about chats and projects.
@@ -440,6 +442,133 @@ void main() {
 
         expect((answer as MobileRpcFailed).code, 'not_found');
         expect(sent, isEmpty);
+      },
+    );
+  });
+
+  group('the composer the phone is served', () {
+    var changes = <String>[];
+    var created = <String>[];
+
+    MobileRpcService host() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      readChat: (id, {int? limit, int? offset}) =>
+          (lines: const <ChatLine>[], total: 0, offset: 0),
+      readOptions: (chatId) => {
+        'model': {'selected': 'auto', 'options': []},
+      },
+      setOption: (chatId, field, value) {
+        changes.add('$chatId/$field=$value');
+        return null;
+      },
+      createChat: (text, projectId) async {
+        created.add('$projectId:$text');
+        return (id: 'new-chat', problem: null);
+      },
+    );
+
+    Future<MobileRpcResponse> ask(
+      String method,
+      Map<String, Object?> params, {
+      required bool allowed,
+    }) => host().handle(
+      MobileRpcRequest(id: 'r1', method: method, params: params),
+      deviceId: 'device-1',
+      mayAct: () async => allowed,
+    );
+
+    setUp(() {
+      changes = <String>[];
+      created = <String>[];
+    });
+
+    test('lets any paired phone read the picks, because a composer that cannot '
+        'draw its own pickers looks broken rather than locked', () async {
+      final answer = await ask('chats.options', {'id': 'c1'}, allowed: false);
+
+      expect(answer, isA<MobileRpcOk>());
+    });
+
+    test(
+      'refuses to change a chat without the switch, since choosing the '
+      'model and the access is arranging what the next turn may do',
+      () async {
+        final answer = await ask('chats.set', {
+          'id': 'c1',
+          'field': 'model',
+          'value': 'auto',
+        }, allowed: false);
+
+        expect((answer as MobileRpcFailed).code, 'forbidden');
+        expect(changes, isEmpty);
+      },
+    );
+
+    test('refuses to start a chat without the switch', () async {
+      final answer = await ask('chats.create', {
+        'text': 'hello',
+      }, allowed: false);
+
+      expect((answer as MobileRpcFailed).code, 'forbidden');
+      expect(created, isEmpty);
+    });
+
+    test('passes a change through once the switch is on', () async {
+      final answer = await ask('chats.set', {
+        'id': 'c1',
+        'field': 'approval',
+        'value': 'ask',
+      }, allowed: true);
+
+      expect(answer, isA<MobileRpcOk>());
+      expect(changes, ['c1/approval=ask']);
+    });
+
+    test(
+      'hands back the new chat id so the phone can open what it started',
+      () async {
+        final answer = await ask('chats.create', {
+          'text': 'hello',
+          'projectId': 'p1',
+        }, allowed: true);
+
+        expect((answer as MobileRpcOk).result['id'], 'new-chat');
+        expect(created, ['p1:hello']);
+      },
+    );
+
+    test('refuses a change with a field the phone made up, rather than '
+        'forwarding it and hoping', () async {
+      final answer = await ask('chats.set', {
+        'id': 'c1',
+        'value': 'auto',
+      }, allowed: true);
+
+      expect((answer as MobileRpcFailed).code, 'bad_request');
+      expect(changes, isEmpty);
+    });
+  });
+
+  group('which access levels a phone may set', () {
+    test('every mode except full, which is the one that runs commands and '
+        'changes files without asking', () {
+      expect(phoneMaySetApproval(AgentApprovalMode.readOnly), isTrue);
+      expect(phoneMaySetApproval(AgentApprovalMode.plan), isTrue);
+      expect(phoneMaySetApproval(AgentApprovalMode.ask), isTrue);
+      expect(phoneMaySetApproval(AgentApprovalMode.full), isFalse);
+    });
+
+    test(
+      'the refusal is about the phone, not about the mode — a chat already '
+      'on full still runs on it, the phone just cannot be what turned it on',
+      () {
+        // Stated as a test because the distinction is the whole design: this is
+        // a rule against escalation from a pocket device, not a claim that full
+        // access is unavailable.
+        expect(kApprovalPhoneMayNotSet, AgentApprovalMode.full);
+        expect(AgentApprovalMode.values, contains(AgentApprovalMode.full));
       },
     );
   });

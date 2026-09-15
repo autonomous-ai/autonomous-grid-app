@@ -18,6 +18,7 @@ import '../../../infrastructure/pairing_host/host_identity_store.dart';
 import '../../../infrastructure/pairing_host/mobile_rpc_service.dart';
 import '../../../infrastructure/pairing_host/relay_host_connection.dart';
 import '../../../shared/app_info.dart';
+import 'phone_chat_options.dart';
 import 'phone_turns.dart';
 
 /// Where to find a relay cell, unless `GRID_PAIRING_RELAY` says otherwise.
@@ -155,6 +156,15 @@ class PhonePairingController extends Notifier<PhonePairingState> {
           sendToChat: (chatId, text) =>
               startPhoneTurn(ref, chatId: chatId, text: text),
           chatIsBusy: (chatId) => phoneChatIsBusy(ref, chatId),
+          readOptions: (chatId) => phoneChatOptions(ref, chatId),
+          setOption: (chatId, field, value) => setPhoneChatOption(
+            ref,
+            chatId: chatId,
+            field: field,
+            value: value,
+          ),
+          createChat: (text, projectId) =>
+              startPhoneChat(ref, text: text, projectId: projectId),
         ),
         onEvent: _record,
       );

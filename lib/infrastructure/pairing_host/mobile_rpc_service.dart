@@ -36,6 +36,13 @@ class MobileRpcService {
     Future<PairingRelayEndpoint> Function(String deviceId)? renewInvite,
     Future<String?> Function(String chatId, String text)? sendToChat,
     bool Function(String chatId)? chatIsBusy,
+    Map<String, Object?> Function(String chatId)? readOptions,
+    String? Function(String chatId, String field, String value)? setOption,
+    Future<({String? id, String? problem})> Function(
+      String text,
+      String? projectId,
+    )?
+    createChat,
   }) : _readGrids = readGrids ?? readGridSummaries,
        _chats = MobileChatRpc(
          readChats: readChats,
@@ -43,6 +50,9 @@ class MobileRpcService {
          readChat: readChat,
          sendToChat: sendToChat,
          chatIsBusy: chatIsBusy,
+         readOptions: readOptions,
+         setOption: setOption,
+         createChat: createChat,
        ),
        _renewInvite = renewInvite;
 
@@ -90,6 +100,9 @@ class MobileRpcService {
         'chats.list' => MobileRpcOk(request.id, _chats.list()),
         'chats.get' => _chats.page(request),
         'chats.send' => await _chats.send(request, mayAct),
+        'chats.options' => _chats.options(request),
+        'chats.set' => await _chats.set(request, mayAct),
+        'chats.create' => await _chats.create(request, mayAct),
         'pairing.renew' => await _renew(request, deviceId),
         _ => MobileRpcFailed(
           request.id,

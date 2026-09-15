@@ -20,3 +20,17 @@ final chatApprovalModeProvider = Provider<AgentApprovalMode>(
       ref.watch(chatSessionsProvider.select((s) => s.active?.approval)) ??
       ref.watch(chatPrefsProvider).approval,
 );
+
+/// What each mode is called, everywhere it is named.
+///
+/// In logic rather than beside the picker that used to own it, because the
+/// composer is no longer the only thing that shows these: a paired phone is
+/// sent the same list, and two places wording "Full access" differently would
+/// be two apps describing the same power in different words (§5).
+/// The name of a mode, as the user reads it in the composer.
+String approvalLabel(AgentApprovalMode mode) => switch (mode) {
+  AgentApprovalMode.readOnly => 'Read only',
+  AgentApprovalMode.plan => 'Plan first',
+  AgentApprovalMode.ask => 'Ask before acting',
+  AgentApprovalMode.full => 'Full access',
+};

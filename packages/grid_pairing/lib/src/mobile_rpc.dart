@@ -29,6 +29,17 @@ const kMobileRpcMethods = <String>{
   // A pairing code proves which phone is calling. It cannot prove who is
   // holding it, which is the question this method actually raises.
   'chats.send',
+  // What the composer's pickers are drawn from. A read, and the answer is
+  // built by the computer rather than derived on the phone: which agent can
+  // answer with which model is a rule that has changed as agents changed, and
+  // a phone shipping an old copy of it would offer a pick that answers nothing.
+  'chats.options',
+  // Changing a chat's model, assistant or access. Gated exactly like sending:
+  // the rule is read freely, change nothing, unless the switch is on.
+  'chats.set',
+  // Starting a conversation, message and all. Without it a phone can only
+  // continue something that was begun at the computer.
+  'chats.create',
   // The phone's stand-in for a resume credential. An invite opens exactly one
   // connection and is then spent, so without this a phone that is closed and
   // reopened has to be paired by hand every time. Asking for the next one
