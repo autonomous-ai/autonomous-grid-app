@@ -34,6 +34,7 @@ class MobileChatRpc {
     readMedia,
     this.sendToChat,
     this.chatIsBusy,
+    this.chatStreaming,
     this.readOptions,
     this.setOption,
     this.createChat,
@@ -62,6 +63,12 @@ class MobileChatRpc {
   /// Whether an answer is still being written in a chat, so the phone knows
   /// whether to keep looking.
   final bool Function(String chatId)? chatIsBusy;
+
+  /// The answer being written right now, as far as it has got — empty when
+  /// none is. The transcript on disk does not have it: a turn lands there when
+  /// it finishes, so without this the phone shows a spinner for the whole
+  /// minute the computer is working and then the answer all at once.
+  final String Function(String chatId)? chatStreaming;
 
   /// The picks the phone's composer offers for a chat, worked out here.
   final Future<Map<String, Object?>> Function(String chatId)? readOptions;
@@ -139,10 +146,14 @@ class MobileChatRpc {
     }
     final page = _readChat(id, limit: 1);
     if (page == null) return _gone(request);
+    final streaming = chatStreaming?.call(id) ?? '';
     return MobileRpcOk(request.id, {
       'id': id,
       'total': page.total,
       'busy': chatIsBusy?.call(id) ?? false,
+      // Only when there is something: an empty key on every poll is bytes spent
+      // to say nothing, and this one is asked for every second or so.
+      if (streaming.isNotEmpty) 'streaming': streaming,
     });
   }
 

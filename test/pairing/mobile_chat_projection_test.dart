@@ -814,4 +814,63 @@ void main() {
       expect(page.lines.single.media, hasLength(1));
     });
   });
+
+  group('what a chat says while an answer is being written', () {
+    MobileRpcService hostThatIsWriting(String streaming, {bool busy = true}) =>
+        MobileRpcService(
+          hostName: 'test-host',
+          appVersion: '0.0.0',
+          readGrids: () => const [],
+          readChat: (id, {int? limit, int? offset}) =>
+              (lines: const <ChatLine>[], total: 4, offset: 0),
+          chatIsBusy: (id) => busy,
+          chatStreaming: (id) => streaming,
+        );
+
+    Future<Map<String, Object?>> head(MobileRpcService service) async {
+      final answer = await service.handle(
+        MobileRpcRequest(id: 'r1', method: 'chats.head', params: {'id': 'c1'}),
+        deviceId: 'device-1',
+      );
+      return (answer as MobileRpcOk).result;
+    }
+
+    test(
+      'carries the reply as far as it has been written, because a turn is '
+      'not on disk until it finishes and the phone reads disk — that gap is '
+      'the whole minute the phone showed a spinner and nothing else',
+      () async {
+        final result = await head(hostThatIsWriting('Looking at the folder'));
+
+        expect(result['busy'], isTrue);
+        expect(result['streaming'], 'Looking at the folder');
+      },
+    );
+
+    test('leaves the key out entirely when nothing is being written, since '
+        'this is asked about once a second and an empty key is bytes spent to '
+        'say nothing', () async {
+      final result = await head(hostThatIsWriting('', busy: false));
+
+      expect(result.containsKey('streaming'), isFalse);
+      expect(result['busy'], isFalse);
+    });
+
+    test('is busy with no text yet on a turn that has started but produced '
+        'nothing — the phone has a spinner for that, and an empty bubble says '
+        'less', () async {
+      final result = await head(hostThatIsWriting(''));
+
+      expect(result['busy'], isTrue);
+      expect(result.containsKey('streaming'), isFalse);
+    });
+
+    test('answers the head of a chat without sending its forty turns, which '
+        'is the reason it is a method of its own', () async {
+      final result = await head(hostThatIsWriting('half an answer'));
+
+      expect(result['total'], 4);
+      expect(result.containsKey('messages'), isFalse);
+    });
+  });
 }

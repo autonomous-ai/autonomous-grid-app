@@ -42,7 +42,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // Only while the newest page is on screen: somebody who has paged back into
     // last week does not want the view yanked forward by an answer arriving at
     // the bottom.
-    if (_offset == null) ref.watch(chatWatchProvider(widget.id));
+    final live = _offset == null
+        ? ref.watch(chatWatchProvider(widget.id))
+        : (total: 0, streaming: '');
     final transcript = ref.watch(transcriptProvider(request));
     return Scaffold(
       appBar: AppBar(
@@ -63,6 +65,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
               data: (page) => _Transcript(
                 page: page,
+                streaming: live.streaming,
                 onEarlier: page.offset > 0
                     ? () => setState(() {
                         _offset = (page.offset - kTurnsPerPage).clamp(
@@ -98,24 +101,48 @@ const int kTurnsPerPage = 40;
 /// came for. It also means new turns land at the anchored end, so an arriving
 /// answer does not shove the page around under a thumb.
 class _Transcript extends StatelessWidget {
-  const _Transcript({required this.page, required this.onEarlier});
+  const _Transcript({
+    required this.page,
+    required this.streaming,
+    required this.onEarlier,
+  });
 
   final ChatTranscript page;
+
+  /// The answer being written right now, or empty. Drawn as a bubble below the
+  /// transcript rather than inside it: it is not a saved turn yet, and it is
+  /// replaced by the real one the moment the computer writes it down.
+  final String streaming;
+
   final VoidCallback? onEarlier;
 
   @override
   Widget build(BuildContext context) {
-    if (page.lines.isEmpty) return const _TranscriptEmpty();
+    if (page.lines.isEmpty && streaming.isEmpty) {
+      return const _TranscriptEmpty();
+    }
     final count = page.lines.length;
+    final live = streaming.isEmpty ? 0 : 1;
     return ListView.builder(
       reverse: true,
       padding: const EdgeInsets.all(16),
-      // One past the turns: the last row built is the first one seen, and with
-      // the list reversed that is the top of the screen.
-      itemCount: count + 1,
-      itemBuilder: (context, index) => index == count
-          ? _EarlierBar(page: page, onTap: onEarlier)
-          : ChatBubble(page.lines[count - 1 - index], chatId: page.id),
+      // The live bubble sits at index 0 — the bottom, with the list reversed —
+      // and the earlier-messages bar at the very end, which is the top.
+      itemCount: count + live + 1,
+      itemBuilder: (context, index) {
+        if (live == 1 && index == 0) {
+          return ChatBubble((
+            role: 'assistant',
+            text: streaming,
+            index: -1,
+            media: const [],
+          ), chatId: page.id);
+        }
+        final row = index - live;
+        return row == count
+            ? _EarlierBar(page: page, onTap: onEarlier)
+            : ChatBubble(page.lines[count - 1 - row], chatId: page.id);
+      },
     );
   }
 }

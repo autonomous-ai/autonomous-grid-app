@@ -22,6 +22,7 @@ import 'phone_chat_options.dart';
 import 'phone_turns.dart';
 import '../../../core/grid_paths.dart';
 import '../../../infrastructure/pairing_host/mobile_upload_store.dart';
+import '../../../infrastructure/pairing_host/phone_link_prefs.dart';
 
 /// Where to find a relay cell, unless `GRID_PAIRING_RELAY` says otherwise.
 ///
@@ -122,6 +123,11 @@ final phonePairingProvider =
 class PhonePairingController extends Notifier<PhonePairingState> {
   RelayHostConnection? _connection;
   var _disposed = false;
+  final _prefs = const PhoneLinkPrefs();
+
+  /// The relay this computer is registered with, kept so stopping can record
+  /// *which* link was turned off — the connection holds it privately.
+  String _cellUrl = '';
 
   DeviceRegistry get _registry => ref.read(deviceRegistryProvider);
 
@@ -132,6 +138,22 @@ class PhonePairingController extends Notifier<PhonePairingState> {
       unawaited(_connection?.stop());
     });
     return const PhonePairingOff();
+  }
+
+  /// Starts again if somebody had this on when the app last closed.
+  ///
+  /// Only then. The file does not exist until a person connects, so a computer
+  /// that has never shared with a phone announces nothing — this restores a
+  /// choice rather than making one.
+  ///
+  /// A failure here is left in [PhonePairingFailed] and not retried: the relay
+  /// being down at launch is a thing to show on the screen, not a thing to
+  /// keep dialling in the background.
+  Future<void> resume() async {
+    if (state is! PhonePairingOff) return;
+    final choice = await _prefs.read();
+    if (choice == null || !choice.on) return;
+    await start(choice.cellUrl);
   }
 
   /// Registers this computer with the relay at [cellUrl].
@@ -160,6 +182,7 @@ class PhonePairingController extends Notifier<PhonePairingState> {
           sendToChat: (chatId, text, files) =>
               startPhoneTurn(ref, chatId: chatId, text: text, files: files),
           chatIsBusy: (chatId) => phoneChatIsBusy(ref, chatId),
+          chatStreaming: (chatId) => phoneChatStreaming(ref, chatId),
           readOptions: (chatId) => phoneChatOptions(ref, chatId),
           setOption: (chatId, field, value) => setPhoneChatOption(
             ref,
@@ -187,6 +210,11 @@ class PhonePairingController extends Notifier<PhonePairingState> {
         return;
       }
       _connection = connection;
+      _cellUrl = cellUrl.trim();
+      // Written only once the relay has actually accepted this computer. A
+      // failed attempt must not be remembered as a choice, or every launch
+      // would re-dial a relay that was never reachable.
+      await _prefs.writeOn(_cellUrl);
       state = PhonePairingLive(
         relayHostId: connection.relayHostId,
         devices: await _registry.load(),
@@ -252,6 +280,9 @@ class PhonePairingController extends Notifier<PhonePairingState> {
   Future<void> stop() async {
     final connection = _connection;
     _connection = null;
+    // Remembered before the socket closes, so a crash between the two leaves
+    // the file saying "off" rather than bringing the link back on next launch.
+    await _prefs.writeOff(_cellUrl);
     await connection?.stop();
     if (!_disposed) state = const PhonePairingOff();
   }

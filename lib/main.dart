@@ -9,6 +9,7 @@ import 'app/grid_app.dart';
 import 'app/notification_scope.dart';
 import 'app/panel_scope.dart';
 import 'app/single_instance.dart';
+import 'app/phone_link_scope.dart';
 import 'app/telegram_bot_scope.dart';
 import 'core/agent_homes.dart';
 import 'infrastructure/mcp/grid_browser_automation.dart';
@@ -157,13 +158,22 @@ Future<void> main() async {
       // whether or not the Scheduled screen was ever opened.
       // And the Telegram bot: a message from a phone is answered by the
       // computer, whichever screen the window is on.
+      // And the phone link, which had exactly the bug that list describes: it
+      // came back off on every launch, so a paired phone standing next to an
+      // open Grid was told the computer was offline.
       child: const ConnectorRefreshScope(
         child: GridSkillsScope(
           child: ChromeConnectScope(
             child: HermesGridScope(
               child: PanelScope(
                 child: TelegramBotScope(
-                  child: NotificationScope(child: GridApp()),
+                  // And the phone link, for the same reason as the bot above:
+                  // a paired phone reaches this computer whichever screen the
+                  // window is on, and it must not have to wait for somebody to
+                  // open Settings ▸ Phone first.
+                  child: PhoneLinkScope(
+                    child: NotificationScope(child: GridApp()),
+                  ),
                 ),
               ),
             ),

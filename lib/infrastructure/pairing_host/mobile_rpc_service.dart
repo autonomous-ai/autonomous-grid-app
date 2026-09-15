@@ -42,6 +42,7 @@ class MobileRpcService {
     )?
     sendToChat,
     bool Function(String chatId)? chatIsBusy,
+    String Function(String chatId)? chatStreaming,
     Future<Map<String, Object?>> Function(String chatId)? readOptions,
     Future<String?> Function(String chatId, String field, String value)?
     setOption,
@@ -59,6 +60,7 @@ class MobileRpcService {
          readChat: readChat,
          sendToChat: sendToChat,
          chatIsBusy: chatIsBusy,
+         chatStreaming: chatStreaming,
          readOptions: readOptions,
          setOption: setOption,
          createChat: createChat,

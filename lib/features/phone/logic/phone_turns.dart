@@ -25,7 +25,7 @@ import '../../chat/logic/chat_settled.dart';
 import '../../chat/logic/conversation.dart';
 import '../../chat/logic/file_attachments.dart';
 import '../../chat/logic/turn_model.dart';
-import '../../playground/logic/chat_file.dart';
+import '../../playground/logic/chat_message.dart';
 import '../../playground/logic/playground_request.dart';
 import '../../projects/logic/project.dart';
 
@@ -118,6 +118,24 @@ String _titleFrom(String text) {
 /// and it is one field of state the window already keeps.
 bool phoneChatIsBusy(Ref ref, String chatId) =>
     ref.read(chatSessionsProvider).sendingFor(chatId);
+
+/// The answer being written in [chatId] right now, as far as it has got.
+///
+/// **This is why the phone showed a spinner and nothing else while the computer
+/// worked.** A turn is not written to disk until it finishes, and the phone
+/// reads the transcript from disk — so for the thirty seconds an agent spends
+/// on a question there was, from the phone's side, nothing to read. The window
+/// was not reading a file: it holds the reply so far in [SendStreaming].
+///
+/// Empty when nothing is streaming, which the phone shows as no bubble rather
+/// than an empty one.
+String phoneChatStreaming(Ref ref, String chatId) =>
+    switch (ref.read(chatSessionsProvider).phaseFor(chatId)) {
+      SendStreaming(:final text) => text,
+      // A turn that has started but produced no token yet. The phone already
+      // has `busy` for that, and an empty bubble says less than a spinner.
+      _ => '',
+    };
 
 Future<void> _run(
   Ref ref, {
