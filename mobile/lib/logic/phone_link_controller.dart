@@ -75,6 +75,15 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
   final _store = const PairedHostStore();
   RelayPhoneClient? _client;
 
+  /// The re-dial in progress, shared by everyone who noticed the link was gone.
+  ///
+  /// The chat list, the projects and the open transcript all ask the computer
+  /// at the same moment, so three of them find a dead socket at once. Without
+  /// this they would dial three times over — and each dial spends a relay
+  /// session, so the second and third would be racing the first for the link
+  /// they are trying to restore.
+  Future<void>? _redial;
+
   @override
   PhoneLinkState build() {
     ref.onDispose(() => _client?.close());
@@ -146,12 +155,34 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
   Future<Map<String, Object?>> call(
     String method, [
     Map<String, Object?> params = const {},
-  ]) {
+  ]) async {
+    final client = await _liveClient();
+    return client.call(method, params);
+  }
+
+  /// The open connection, re-dialling once if the last one went away.
+  ///
+  /// A phone is put down for an hour and the computer sleeps, or the relay is
+  /// restarted; either way the next thing the person taps must not simply fail.
+  /// The stored offer is renewed on every connection ([_storeRenewedOffer]), so
+  /// there is a way back in without anybody typing a code.
+  Future<RelayPhoneClient> _liveClient() async {
+    final open = _client;
+    if (open != null && open.isOpen) return open;
+    await (_redial ??= _reconnectOnce());
     final client = _client;
     if (client == null || !client.isOpen) {
       throw const RelayPhoneFailure('Not connected to your computer.');
     }
-    return client.call(method, params);
+    return client;
+  }
+
+  Future<void> _reconnectOnce() async {
+    try {
+      await restore();
+    } finally {
+      _redial = null;
+    }
   }
 
   /// Forgets the computer.
@@ -168,6 +199,7 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
     try {
       final client = await RelayPhoneClient.connect(
         offer,
+        onLost: (_) => _linkLost(),
         onLog: (step) {
           // Only while still connecting: a log line arriving after the link is
           // up must not knock the screen back to a spinner.
@@ -202,6 +234,24 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
         stillPaired: await _isPaired(),
       );
     }
+  }
+
+  /// The channel went away by itself.
+  ///
+  /// Says so rather than leaving "Connected" on screen over a dead socket — the
+  /// screen offers Reconnect, and the next thing the person taps re-dials on
+  /// its own anyway ([_liveClient]). Only from a connected state: a drop that
+  /// arrives while already failed or unpaired has nothing to add.
+  ///
+  /// The reason the client reports is discarded on purpose: "the connection
+  /// closed" and "the connection dropped" are the same event to the person
+  /// holding the phone, and neither is a thing they can act on.
+  void _linkLost() {
+    if (state is! PhoneLinkConnected) return;
+    state = const PhoneLinkFailed(
+      'The link to your computer dropped.',
+      stillPaired: true,
+    );
   }
 
   Future<void> _storeRenewedOffer(

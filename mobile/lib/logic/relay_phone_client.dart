@@ -37,9 +37,15 @@ class RelayPhoneFailure implements Exception {
 
 /// A live connection to one computer.
 class RelayPhoneClient {
-  RelayPhoneClient._(this._socket);
+  RelayPhoneClient._(this._socket, this._onLost);
 
   final WebSocket _socket;
+
+  /// Told when the channel goes away on its own, which is the only way anyone
+  /// finds out. A relay restart, a computer going to sleep and a network change
+  /// all end the socket silently; without this the phone keeps a green dot and
+  /// the word "Connected" over a link that is gone (§5).
+  final void Function(String reason)? _onLost;
   final _inbox = <Object?>[];
   final _waiting = <Completer<Object?>>[];
 
@@ -58,6 +64,7 @@ class RelayPhoneClient {
   static Future<RelayPhoneClient> connect(
     PairingOffer offer, {
     void Function(String message)? onLog,
+    void Function(String reason)? onLost,
   }) async {
     final log = onLog ?? (String _) {};
     final url =
@@ -75,7 +82,7 @@ class RelayPhoneClient {
       );
     }
 
-    final client = RelayPhoneClient._(socket);
+    final client = RelayPhoneClient._(socket, onLost);
     socket.listen(
       client._deliver,
       onDone: () => client._abandon('The connection closed.'),
@@ -112,7 +119,7 @@ class RelayPhoneClient {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    _abandon('Disconnected.');
+    _abandon('Disconnected.', onPurpose: true);
     await _socket.close();
   }
 
@@ -266,7 +273,8 @@ class RelayPhoneClient {
     _waiting.removeAt(0).complete(message);
   }
 
-  void _abandon(String why) {
+  void _abandon(String why, {bool onPurpose = false}) {
+    final wasOpen = !_closed;
     _closed = true;
     for (final completer in _waiting) {
       if (!completer.isCompleted) {
@@ -274,5 +282,9 @@ class RelayPhoneClient {
       }
     }
     _waiting.clear();
+    // Only for a link that was up and went away by itself. Closing on purpose
+    // is not news, and reporting it would make "Forget this computer" announce
+    // a connection problem.
+    if (wasOpen && !onPurpose) _onLost?.call(why);
   }
 }
