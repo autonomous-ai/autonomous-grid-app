@@ -26,7 +26,19 @@ void openChat(BuildContext context, ChatRow chat) {
 
 /// The full, scrollable list of chats, or of one project's chats.
 class ChatListScreen extends ConsumerWidget {
-  const ChatListScreen({this.projectId, this.title, super.key});
+  const ChatListScreen({
+    this.projectId,
+    this.title,
+    this.archived = false,
+    super.key,
+  });
+
+  /// Show the chats that have been put away instead of the ones in play.
+  ///
+  /// The same screen rather than a second one: an archived chat is the same row
+  /// with the same tap, and the swipe on it means "put back" instead of "put
+  /// away". Two screens would be two places for that row to drift.
+  final bool archived;
 
   /// Show only this project's chats, or every chat when null.
   ///
@@ -45,27 +57,31 @@ class ChatListScreen extends ConsumerWidget {
     final projects = ref.watch(projectsProvider).value ?? const {};
     return Scaffold(
       backgroundColor: AppPalette.windowBg,
-      appBar: GridAppBar(title: title ?? 'Chats'),
+      appBar: GridAppBar(title: title ?? (archived ? 'Archived' : 'Chats')),
       // Carries the project through, so starting a chat from inside one lands
       // it there instead of making somebody pick the project they are looking
       // at.
-      floatingActionButton: FloatingActionButton(
-        tooltip: 'New chat',
-        backgroundColor: AppPalette.accent,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        // The app's card rounding rather than a circle: nothing else here is a
-        // stadium, and a floating circle reads as another product's button.
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppCard.radius),
-        ),
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => NewChatScreen(projectId: projectId),
-          ),
-        ),
-        child: const Icon(Icons.add_rounded, size: 20),
-      ),
+      // No way to start a chat from the archive: that screen is about what
+      // has been put away, and a new chat would immediately leave it.
+      floatingActionButton: archived
+          ? null
+          : FloatingActionButton(
+              tooltip: 'New chat',
+              backgroundColor: AppPalette.accent,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              // The app's card rounding rather than a circle: nothing else here is a
+              // stadium, and a floating circle reads as another product's button.
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppCard.radius),
+              ),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => NewChatScreen(projectId: projectId),
+                ),
+              ),
+              child: const Icon(Icons.add_rounded, size: 20),
+            ),
       body: chats.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ListProblem(
@@ -77,12 +93,14 @@ class ChatListScreen extends ConsumerWidget {
     );
   }
 
-  List<ChatRow> _visible(List<ChatRow> all) => projectId == null
-      ? all
-      : [
-          for (final chat in all)
-            if (chat.projectId == projectId) chat,
-        ];
+  List<ChatRow> _visible(List<ChatRow> all) {
+    final half = archived ? archivedChats(all) : liveChats(all);
+    if (projectId == null) return half;
+    return [
+      for (final chat in half)
+        if (chat.projectId == projectId) chat,
+    ];
+  }
 
   Widget _body(
     BuildContext context,

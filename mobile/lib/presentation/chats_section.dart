@@ -47,34 +47,29 @@ class ChatsSection extends ConsumerWidget {
           // chats and must not read as the link being down.
           error: (error, _) =>
               _Problem(onRetry: () => ref.invalidate(chatListProvider)),
-          data: (rows) => rows.isEmpty
-              ? const _Empty()
-              : Column(
-                  children: [
-                    for (final chat in rows.take(kRecentChats))
-                      ChatTile(
-                        chat: chat,
-                        projectName: projects[chat.projectId]?.name ?? '',
-                        onOpen: () => openChat(context, chat),
-                      ),
-                    if (rows.length > kRecentChats)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const ChatListScreen(),
-                            ),
-                          ),
-                          child: Text('All ${rows.length} chats'),
-                        ),
-                      ),
-                  ],
-                ),
+          data: (all) => _body(context, liveChats(all), projects),
         ),
       ],
     );
   }
+
+  Widget _body(
+    BuildContext context,
+    List<ChatRow> rows,
+    Map<String, ProjectRow> projects,
+  ) => rows.isEmpty
+      ? const _Empty()
+      : Column(
+          children: [
+            for (final chat in rows.take(kRecentChats))
+              ChatTile(
+                chat: chat,
+                projectName: projects[chat.projectId]?.name ?? '',
+                onOpen: () => openChat(context, chat),
+              ),
+            _Links(live: rows.length),
+          ],
+        );
 }
 
 class _Loading extends StatelessWidget {
@@ -131,6 +126,47 @@ class _Problem extends StatelessWidget {
           ),
         ),
         TextButton(onPressed: onRetry, child: const Text('Try again')),
+      ],
+    );
+  }
+}
+
+/// The two ways out of the short list: the rest of the chats, and the archive.
+///
+/// The archive is named here rather than left to a swipe to discover. A gesture
+/// is how a chat gets put away; it is not how somebody finds out where it went.
+class _Links extends ConsumerWidget {
+  const _Links({required this.live});
+
+  /// How many chats are in play, for the "All N" label.
+  final int live;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    final all = ref.watch(chatListProvider).value ?? const <ChatRow>[];
+    final away = archivedChats(all).length;
+    return Row(
+      children: [
+        if (live > kRecentChats)
+          TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ChatListScreen()),
+            ),
+            child: Text('All $live chats'),
+          ),
+        const Spacer(),
+        // Only when there is something in it: an "Archived (0)" row is a door
+        // onto an empty room.
+        if (away > 0)
+          TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ChatListScreen(archived: true),
+              ),
+            ),
+            child: Text('Archived ($away)'),
+          ),
       ],
     );
   }

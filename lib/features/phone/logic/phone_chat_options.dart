@@ -133,6 +133,7 @@ Future<String?> setPhoneChatOption(
     'model' => await _setModel(ref, sessions, chatId, value),
     'agent' => _setAgent(ref, sessions, chatId, value),
     'approval' => _setApproval(ref, sessions, chatId, value),
+    'archived' => _setArchived(ref, sessions, chatId, value),
     _ => 'That is not something this phone can change.',
   };
 }
@@ -194,6 +195,33 @@ String? _setApproval(
     return 'Full access has to be turned on at the computer.';
   }
   sessions.setChatApproval(chatId, mode);
+  return null;
+}
+
+/// Puts a chat away, or takes it back out.
+///
+/// Behind the same switch as every other change, and not because archiving is
+/// dangerous — it is reversible and destroys nothing. It is behind it because
+/// the rule is the one worth having: **a phone reads freely and changes
+/// nothing unless somebody said it may.** An exception for the harmless-looking
+/// case is how that rule stops being a rule.
+String? _setArchived(
+  Ref ref,
+  ChatSessionsController sessions,
+  String chatId,
+  String value,
+) {
+  final away = value == 'true';
+  // Mirrors the window's own refusal: archiving a chat mid-answer hides the
+  // conversation the reply is about to land in.
+  if (away && ref.read(chatSessionsProvider).sendingFor(chatId)) {
+    return 'That chat is being answered right now.';
+  }
+  if (away) {
+    sessions.archiveConversation(chatId);
+  } else {
+    sessions.unarchiveConversation(chatId);
+  }
   return null;
 }
 

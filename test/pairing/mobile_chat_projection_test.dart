@@ -873,4 +873,97 @@ void main() {
       expect(result.containsKey('messages'), isFalse);
     });
   });
+
+  group('putting a chat away', () {
+    var changes = <String>[];
+
+    MobileRpcService host() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      readChat: (id, {int? limit, int? offset}) =>
+          (lines: const <ChatLine>[], total: 0, offset: 0),
+      setOption: (chatId, field, value) async {
+        changes.add('$chatId/$field=$value');
+        return null;
+      },
+    );
+
+    Future<MobileRpcResponse> archive(String value, {required bool allowed}) =>
+        host().handle(
+          MobileRpcRequest(
+            id: 'r1',
+            method: 'chats.set',
+            params: {'id': 'c1', 'field': 'archived', 'value': value},
+          ),
+          deviceId: 'device-1',
+          mayAct: () async => allowed,
+        );
+
+    setUp(() => changes = <String>[]);
+
+    test(
+      'travels as an ordinary change rather than a method of its own, so it '
+      'is behind the same switch as everything else a phone changes',
+      () async {
+        expect(await archive('true', allowed: true), isA<MobileRpcOk>());
+        expect(changes, ['c1/archived=true']);
+      },
+    );
+
+    test(
+      'is refused without the switch — the rule is that a phone reads '
+      'freely and changes nothing unless somebody said it may, and an '
+      'exception for the harmless case is how that stops being a rule',
+      () async {
+        expect(
+          (await archive('true', allowed: false) as MobileRpcFailed).code,
+          'forbidden',
+        );
+        expect(changes, isEmpty);
+      },
+    );
+
+    test('carries the un-archive the same way, so one field covers both '
+        'directions', () async {
+      await archive('false', allowed: true);
+
+      expect(changes, ['c1/archived=false']);
+    });
+  });
+
+  group('which chats a screen shows', () {
+    ChatHeader header(String id, {required bool archived}) => (
+      id: id,
+      title: id,
+      model: '',
+      agent: '',
+      projectId: '',
+      updatedAt: '2026-09-15T00:00:00Z',
+      archived: archived,
+    );
+
+    test('the list carries archived chats rather than dropping them, because '
+        'a phone that never receives them has no archive at all — not a '
+        'hidden one', () async {
+      final service = MobileRpcService(
+        hostName: 'test-host',
+        appVersion: '0.0.0',
+        readGrids: () => const [],
+        readChats: () => [
+          header('live', archived: false),
+          header('away', archived: true),
+        ],
+      );
+
+      final answer = await service.handle(
+        MobileRpcRequest(id: 'r1', method: 'chats.list'),
+        deviceId: 'device-1',
+      );
+
+      final rows = (answer as MobileRpcOk).result['chats']! as List;
+      expect(rows, hasLength(2));
+      expect(rows.map((row) => (row! as Map)['archived']), [false, true]);
+    });
+  });
 }
