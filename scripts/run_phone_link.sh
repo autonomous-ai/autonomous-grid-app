@@ -5,6 +5,11 @@
 #   scripts/run_phone_link.sh --no-mobile   # just the relay and the desktop app
 #   scripts/run_phone_link.sh --no-desktop  # just the relay and the phone
 #   scripts/run_phone_link.sh pair          # send the copied pairing code to the phone
+#   scripts/run_phone_link.sh --no-relay    # just the apps, for work the relay isn't in
+#
+#   While it is running:
+#     r  hot reload every app      s  which apps are still up
+#     R  hot restart every app     q  quit (stops everything it started)
 #
 # Three processes have to agree about one string, and it is what breaks first.
 # The relay signs every challenge with the address it was *started* on, so a
@@ -35,6 +40,7 @@ LOGS="${LOGS%/}/grid-phone-link"
 
 WANT_DESKTOP=1
 WANT_MOBILE=1
+WANT_RELAY=1
 RELAY_PID=""
 DESKTOP_PID=""
 MOBILE_PID=""
@@ -174,7 +180,8 @@ start_desktop() {
     say "  the one you end up looking at."
   fi
   say "flutter run -d macos   (first build takes a few minutes)"
-  ( cd "$REPO" && GRID_PAIRING_RELAY="$RELAY_URL" exec "$FLUTTER" run -d macos ) \
+  ( cd "$REPO" && GRID_PAIRING_RELAY="$RELAY_URL" \
+      exec "$FLUTTER" run -d macos --pid-file "$LOGS/desktop.pid" ) \
     >"$LOGS/desktop.log" 2>&1 &
   DESKTOP_PID=$!
 }
@@ -183,9 +190,113 @@ start_mobile() {
   local udid="$1"
   step "Grid on the phone"
   say "flutter run -d $udid"
-  ( cd "$REPO/mobile" && exec "$FLUTTER" run -d "$udid" ) \
+  ( cd "$REPO/mobile" \
+      && exec "$FLUTTER" run -d "$udid" --pid-file "$LOGS/mobile.pid" ) \
     >"$LOGS/mobile.log" 2>&1 &
   MOBILE_PID=$!
+}
+
+# --- reloading ----------------------------------------------------------------
+
+# The pid of an app, as `flutter run` wrote it into its --pid-file, or empty
+# while it is still building.
+app_pid() { cat "$LOGS/$1.pid" 2>/dev/null || true; }
+
+# A pid file is written the moment `flutter run` has its signal handlers up,
+# which is the first moment `r` can do anything. Waiting on it also catches the
+# build that died: the reason is in the log's last lines, said here rather than
+# left in a file nobody thought to open.
+wait_ready() {
+  local name="$1" pid="$2" deadline
+  deadline=$(( $(date +%s) + 600 ))
+  while :; do
+    if [ -n "$(app_pid "$name")" ]; then
+      say "$name is up"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      say "$name stopped while building. Last lines of $LOGS/$name.log:"
+      tail -8 "$LOGS/$name.log" | sed 's/^/    /' >&2 || true
+      return 0
+    fi
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      say "$name is still building after ten minutes — leaving it to finish."
+      return 0
+    fi
+    sleep 1
+  done
+}
+
+# `flutter run` hot-reloads on SIGUSR1 and hot-restarts on SIGUSR2, at the pid
+# in its --pid-file. That is what those files are for: both apps have their
+# stdin at /dev/null so they can share this one terminal, which also means
+# neither of them can read the `r` you would otherwise type at it.
+signal_apps() {
+  local signal="$1" label="$2" name pid count=0
+  for name in desktop mobile; do
+    pid="$(app_pid "$name")"
+    if [ -n "$pid" ] && kill -"$signal" "$pid" 2>/dev/null; then
+      count=$(( count + 1 ))
+    fi
+  done
+  printf '  %s → %d app(s)\n' "$label" "$count"
+}
+
+# The pid of the `flutter run` this script started, which outlives the app's own
+# pid file and is therefore what "is it still up" has to ask about.
+named_pid() {
+  case "$1" in
+    desktop) printf '%s\n' "$DESKTOP_PID" ;;
+    mobile) printf '%s\n' "$MOBILE_PID" ;;
+  esac
+}
+
+status_apps() {
+  local name pid
+  for name in desktop mobile; do
+    pid="$(named_pid "$name")"
+    if [ -z "$pid" ]; then
+      continue
+    fi
+    if kill -0 "$pid" 2>/dev/null; then
+      say "$name running"
+    else
+      say "$name stopped (log: $LOGS/$name.log)"
+    fi
+  done
+}
+
+apps_alive() {
+  local name pid
+  for name in desktop mobile; do
+    pid="$(named_pid "$name")"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Wait for the apps, answering the keyboard while they run. Without a terminal
+# — a CI job, a background run — there is nobody to type, so it just waits.
+watch_apps() {
+  if [ ! -t 0 ]; then
+    say 'No terminal here, so no reload keys — running until the apps stop.'
+    wait
+    return
+  fi
+  printf '\n  r = hot reload all · R = hot restart · s = status · q = quit\n\n'
+  local key
+  while apps_alive; do
+    if read -r -s -n 1 -t 1 key; then
+      case "$key" in
+        r) signal_apps USR1 'Hot reload' ;;
+        R) signal_apps USR2 'Hot restart' ;;
+        s) status_apps ;;
+        q) return ;;
+      esac
+    fi
+  done
 }
 
 # --- pairing ------------------------------------------------------------------
@@ -243,6 +354,9 @@ cleanup() {
   elif [ -n "${RELAY_PID:-}" ] || relay_is_up; then
     say "Relay left running — it was up before this script was."
   fi
+  # A pid file outlives the app that wrote it, and the next run would signal
+  # whatever process the system has since given that number to.
+  rm -f "$LOGS/desktop.pid" "$LOGS/mobile.pid"
   wait 2>/dev/null || true
 }
 
@@ -252,7 +366,8 @@ main() {
       pair) send_pairing_code; exit 0 ;;
       --no-desktop) WANT_DESKTOP=0 ;;
       --no-mobile) WANT_MOBILE=0 ;;
-      -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      --no-relay) WANT_RELAY=0 ;;
+      -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
       *) die "Unknown argument: $argument" ;;
     esac
   done
@@ -263,10 +378,14 @@ main() {
   fi
 
   mkdir -p "$LOGS"
+  # Anything left by a run that was killed rather than stopped: see cleanup().
+  rm -f "$LOGS/desktop.pid" "$LOGS/mobile.pid"
   FLUTTER="$(resolve_flutter)"
   trap cleanup EXIT INT TERM
 
-  start_relay
+  if [ "$WANT_RELAY" -eq 1 ]; then
+    start_relay
+  fi
 
   if [ "$WANT_MOBILE" -eq 1 ]; then
     boot_simulator
@@ -280,6 +399,14 @@ main() {
     start_mobile "$SIM_UDID"
   fi
 
+  step 'Building'
+  if [ -n "$DESKTOP_PID" ]; then
+    wait_ready desktop "$DESKTOP_PID"
+  fi
+  if [ -n "$MOBILE_PID" ]; then
+    wait_ready mobile "$MOBILE_PID"
+  fi
+
   printf '\n▸ Running. Logs in %s\n' "$LOGS"
   if [ -n "$DESKTOP_PID" ]; then
     say "desktop   tail -f $LOGS/desktop.log"
@@ -289,8 +416,8 @@ main() {
   fi
   printf '\n  To pair: Settings ▸ Phone ▸ Connect to relay ▸ Create code ▸ Copy\n'
   printf '           then, in another terminal:  %s pair\n' "$0"
-  printf '\n  Ctrl-C stops everything.\n\n'
-  wait
+  printf '\n  Ctrl-C stops everything.\n'
+  watch_apps
 }
 
 main "$@"
