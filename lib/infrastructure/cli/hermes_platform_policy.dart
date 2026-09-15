@@ -1,7 +1,8 @@
 import 'hermes_config_file.dart';
 
-/// What a message from a chat platform (Telegram, Discord, Slack) is allowed to
-/// do to this computer: **whatever Hermes itself allows**.
+/// What a message to a bot Hermes runs (a Telegram bot connected before Grid
+/// answered Telegram itself) is allowed to do to this computer: **whatever
+/// Hermes itself allows**.
 ///
 /// The app used to pin each platform to a read-and-answer toolset list — no
 /// terminal, no code execution — because these are *remote* surfaces: whoever is

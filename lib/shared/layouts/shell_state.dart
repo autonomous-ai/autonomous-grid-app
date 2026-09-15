@@ -204,6 +204,18 @@ enum ShellSection {
   // own rows there instead.
   browser(LucideIcons.globe, 'Browser', thinIcon: LucideIcons.globe300),
   dataSync(LucideIcons.cloud, 'Sync & Backup', thinIcon: LucideIcons.cloud300),
+  // Pairing a phone with this computer.
+  //
+  // Developer-only for the same reason [ShellMode.code] is: the screen works,
+  // but the relay it needs is `pairing_relay/` in the CLI repo, run by hand.
+  // Shipping the row would offer a setup flow whose first button asks for the
+  // address of a server no user has.
+  phone(
+    LucideIcons.smartphone,
+    'Phone',
+    thinIcon: LucideIcons.smartphone300,
+    devOnly: true,
+  ),
   // The arrow-into-a-tray, not a cloud: nothing is downloaded here. The chats
   // are already on this computer, in another tool's folder.
   importChats(
@@ -357,6 +369,10 @@ const kSettingsGroups = [
     // a Grid you talk to (Developer) nor something that shapes an answer
     // (Customize).
     ShellSection.dataSync,
+    // Under Sync & Backup: both are this user's own things reaching another
+    // device of theirs. Sync moves their data between their computers; this
+    // puts the app itself on their phone.
+    ShellSection.phone,
     // Beside Sync & Backup because it is the same kind of thing — this user's
     // own chat history, moving. Sync carries it between their machines; this
     // brings it in from the tools they were using before this app existed.

@@ -106,6 +106,21 @@ class GridPaths {
   /// the app restores them. App-owned — the CLI never touches it.
   static File get chatPrefsFile => File('${home.path}/app/chat_prefs.json');
 
+  /// This computer's long-lived X25519 identity for the phone link
+  /// (`~/.grid/app/pairing_identity.json`, `0o600`).
+  ///
+  /// Every phone that has ever scanned a pairing code pinned the public half,
+  /// so replacing this file un-pairs all of them at once. `HostIdentityStore`
+  /// therefore refuses to regenerate it when a read *fails* — an unreadable
+  /// file says nothing about its contents.
+  static File get pairingIdentityFile =>
+      File('${home.path}/app/pairing_identity.json');
+
+  /// The phones paired with this computer and their per-device tokens
+  /// (`~/.grid/app/paired_devices.json`, `0o600`).
+  static File get pairedDevicesFile =>
+      File('${home.path}/app/paired_devices.json');
+
   /// The folders the user added as projects — the ones a chat can be opened
   /// "inside", so the assistant may read them. App-owned.
   static File get projectsFile => File('${home.path}/app/projects.json');
@@ -204,6 +219,13 @@ class GridPaths {
   /// run is delivered once and not again on every launch. App-owned.
   static File get taskDeliveryFile =>
       File('${home.path}/app/task_delivery.json');
+
+  /// The Telegram bot Grid answers as — its token, who may message it, and which
+  /// chat each Telegram conversation carries on (`~/.grid/app/telegram_bot.json`,
+  /// mode `600`). App-owned; the CLI never touches it, and Sync & Backup leaves it
+  /// behind on purpose: the token is a password, and two computers polling one
+  /// bot take turns stealing each other's messages.
+  static File get telegramBotFile => File('${home.path}/app/telegram_bot.json');
 
   /// The scheduled tasks whose latest result the user hasn't opened yet (a plain
   /// list of job ids) — what the sidebar and the Scheduled list badge, so an
@@ -314,3 +336,10 @@ class GridPaths {
   static File engineRunLogFile(String gridId, String engineId) =>
       File('${engineRunDir(gridId).path}/$engineId.log');
 }
+
+/// The chat index's filename inside whichever folder holds the conversations.
+///
+/// Lives here rather than in `ChatStore` because it is now read by two
+/// libraries — the store, and the projection a paired phone is served — and the
+/// second cannot import the first without pulling Flutter in.
+const String kChatIndexName = 'index.json';

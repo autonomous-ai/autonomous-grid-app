@@ -1,12 +1,25 @@
-/// What a chat platform is on this computer, and whether it is really answering.
+/// What the Telegram bot is on this computer, and whether it is really
+/// answering.
 ///
-/// Kept apart from the controller because the honesty lives here: "a bot is
+/// Kept apart from the controllers because the honesty lives here: "a bot is
 /// connected" and "a bot answers you" are different facts, and the mapping
-/// between the gateway's raw signals and the word the screen shows is pure, so
-/// it can be tested rather than guessed at in a widget.
+/// between Hermes's raw signals and the word the screen shows is pure, so it
+/// can be tested rather than guessed at in a widget.
 library;
 
-/// What a platform is on this computer.
+/// What runs the bot — which decides what the screen promises about when it
+/// answers.
+enum MessagingHost {
+  /// Grid itself: it answers while Grid is open.
+  grid,
+
+  /// Hermes's background gateway, for a bot set up before Grid answered
+  /// Telegram itself: it starts with the computer and answers whether or not
+  /// Grid is open.
+  hermes,
+}
+
+/// What the bot is on this computer.
 sealed class MessagingState {
   const MessagingState();
 }
@@ -17,39 +30,51 @@ class MessagingDisconnected extends MessagingState {
 }
 
 /// Whether a connected bot is actually answering right now — the honest half,
-/// read from Hermes's own gateway state, not guessed from a heartbeat. A bot
-/// being set up and the bot *answering* are different things.
+/// read from what runs it (Grid's own poll, or Hermes's gateway state), not
+/// guessed from a heartbeat. A bot being set up and the bot *answering* are
+/// different things.
 enum MessagingLink {
-  /// The gateway loaded the credentials and the platform is connected — messages
-  /// get answered.
+  /// The bot is connected — messages get answered.
   answering,
 
-  /// The gateway is bringing the bot up (connecting, or retrying after a blip).
+  /// The bot is coming up (connecting, or retrying after a blip).
   connecting,
 
-  /// The gateway is off, or up but the bot didn't connect — see
+  /// Nothing is answering, or the bot didn't connect — see
   /// [MessagingConnected.detail] for which.
   notAnswering,
 }
 
 /// A bot is connected (its credentials are set). [link] is the honest half:
-/// connected and *answering* are different things, and a bot whose gateway is
-/// down — or whose token another process is polling — answers nobody.
+/// connected and *answering* are different things, and a bot whose poll or
+/// gateway is down — or whose token another program is polling — answers
+/// nobody.
 class MessagingConnected extends MessagingState {
   const MessagingConnected({
     required this.allowedUsers,
     required this.link,
+    required this.host,
     this.detail,
+    this.handle,
+    this.note,
   });
 
   /// Who may message it. Never empty — the app won't connect a bot without one.
   final List<String> allowedUsers;
   final MessagingLink link;
+  final MessagingHost host;
 
   /// Why it isn't answering, when [link] is [MessagingLink.notAnswering] — the
-  /// gateway's own reason (a bad token, another process on the same bot) or the
-  /// gateway simply being off. Null otherwise.
+  /// reason from whatever runs it (a bad token, another program on the same
+  /// bot) or that thing simply being off. Null otherwise.
   final String? detail;
+
+  /// What a person searches for to find the bot (`@grid_helper_bot`), when
+  /// known.
+  final String? handle;
+
+  /// One more thing the screen should say about this bot, if any.
+  final String? note;
 }
 
 /// Map the gateway's raw signals to the honest UI link. [gatewayAlive] is the

@@ -9,6 +9,7 @@ import 'app/grid_app.dart';
 import 'app/notification_scope.dart';
 import 'app/panel_scope.dart';
 import 'app/single_instance.dart';
+import 'app/telegram_bot_scope.dart';
 import 'core/agent_homes.dart';
 import 'infrastructure/mcp/grid_browser_automation.dart';
 import 'infrastructure/mcp/grid_agent_scripts.dart';
@@ -154,11 +155,17 @@ Future<void> main() async {
       // And the grid the assistant runs unattended work on: a task fires at 8am
       // out of Hermes's own config, so that config has to follow the app's grid
       // whether or not the Scheduled screen was ever opened.
+      // And the Telegram bot: a message from a phone is answered by the
+      // computer, whichever screen the window is on.
       child: const ConnectorRefreshScope(
         child: GridSkillsScope(
           child: ChromeConnectScope(
             child: HermesGridScope(
-              child: PanelScope(child: NotificationScope(child: GridApp())),
+              child: PanelScope(
+                child: TelegramBotScope(
+                  child: NotificationScope(child: GridApp()),
+                ),
+              ),
             ),
           ),
         ),

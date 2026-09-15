@@ -5,6 +5,8 @@ import 'dart:isolate';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
+// Re-exported because this file is where callers have always found it.
+export '../../../core/grid_paths.dart' show kChatIndexName;
 import 'conversation.dart';
 
 /// Persists Chat conversations as one JSON file per conversation under
@@ -362,7 +364,6 @@ class ChatStore {
 /// The sidebar's index, beside the conversations it lists. Not a chat id — every
 /// id this app writes is a timestamp or `task-<hex>` — so it can share the
 /// folder without ever colliding with one.
-const String kChatIndexName = 'index.json';
 
 /// The chat store, overridden in tests with a temp-dir-backed instance.
 final chatStoreProvider = Provider<ChatStore>((ref) => ChatStore());

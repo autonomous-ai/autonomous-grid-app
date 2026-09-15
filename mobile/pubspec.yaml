@@ -1,0 +1,35 @@
+name: grid_mobile
+description: >-
+  Grid on a phone: a remote control for the copy of Grid running on your
+  computer. It holds no engines, runs no agents and drives no CLI — everything
+  it shows, it asked the desktop for over an end-to-end encrypted channel.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.2
+  # The phone's half of the link. The same package the desktop uses, so the
+  # handshake, the key schedule and the frame layout are ONE implementation.
+  grid_pairing:
+    path: ../packages/grid_pairing
+  # The pairing token is a bearer credential for someone's computer. It belongs
+  # in the Keychain, not in shared_preferences where a backup or a jailbroken
+  # device reads it as plain text.
+  flutter_secure_storage: ^9.2.4
+  # The same renderer the desktop uses for agent output, pinned to the same
+  # major. Two apps showing one assistant's words must not disagree about what
+  # a fenced code block or a table looks like.
+  flutter_markdown_plus: ^1.0.12
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

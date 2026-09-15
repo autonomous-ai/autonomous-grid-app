@@ -780,6 +780,17 @@ class ChatSessionsController extends _ChatSessions
     _saveAndReplace(updated);
   }
 
+  /// Point chat [id] at [model] without opening it — a model picked from
+  /// outside the window (Telegram's `/model`). The same rules as
+  /// [setActiveModel]: a no-op while that chat's reply is streaming, and
+  /// `updatedAt` is left alone.
+  void setChatModel(String id, String model) {
+    if (model.isEmpty || state.sendingFor(id)) return;
+    final chat = _find(id);
+    if (chat == null || chat.model == model) return;
+    _saveAndReplace(chat.copyWith(model: model));
+  }
+
   /// Point the open chat at [model] from **outside the composer** — the rail's
   /// target menu, which can name a model the composer is not showing.
   ///
@@ -1058,6 +1069,42 @@ class ChatSessionsController extends _ChatSessions
           if (c.id == id) conversation else c,
       ]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
     );
+  }
+
+  /// Chat [id], started here if this computer doesn't have it yet — for turns
+  /// that arrive from outside the composer (a Telegram message), which
+  /// [send]'s `into` needs to land in a chat that already exists.
+  ///
+  /// Never opens it: whatever the window shows stays put, the same promise
+  /// [deliverFromAgent] makes. The agent, [approval] and the surface are
+  /// written down at birth, as [_activeOrNew] does for a chat started in the
+  /// composer — the surface always the message list, since a terminal needs
+  /// somebody at the keyboard. [title] is kept for good: the agent renaming the
+  /// chat after its topic would lose the one thing that says where it came
+  /// from.
+  Conversation ensureBackgroundChat({
+    required String id,
+    required String title,
+    required AgentApprovalMode approval,
+    String? projectId,
+  }) {
+    final existing = _find(id);
+    if (existing != null) return existing;
+    final now = DateTime.now();
+    final started = Conversation(
+      id: id,
+      title: title,
+      model: '',
+      createdAt: now,
+      updatedAt: now,
+      projectId: projectId,
+      agent: ref.read(chatAgentChoiceProvider(projectId)),
+      surface: AgentChatSurface.list,
+      approval: approval,
+      titleLocked: true,
+    );
+    _commit(started, phase: const SendIdle());
+    return started;
   }
 
   /// Put an already-saved chat under [projectId] when it isn't there yet — used

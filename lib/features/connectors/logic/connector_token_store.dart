@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../../core/owner_only_file.dart';
 import '../../agents/logic/connector_token.dart';
 
 /// The master token store: `~/.grid/connectors/tokens.json`, mode `600`.
@@ -73,7 +74,7 @@ class ConnectorTokenStore {
       const JsonEncoder.withIndent('  ').convert(payload),
       flush: true,
     );
-    await _restrictPermissions();
+    await restrictToOwner(file);
   }
 
   /// Add or replace one connector's token, leaving the others untouched.
@@ -113,22 +114,6 @@ class ConnectorTokenStore {
     final tokens = await read();
     if (tokens.remove(connector) == null) return;
     await write(tokens);
-  }
-
-  /// Make the file readable only by its owner.
-  ///
-  /// Best-effort by design: on Windows there is no `chmod` and the file's ACL
-  /// already follows the user profile, and a sandbox may refuse to spawn a
-  /// process at all. Failing the *write* over this would be worse than the
-  /// weaker mode — the token is already on a single-user machine's home
-  /// directory, and losing it means the connector silently stops working.
-  Future<void> _restrictPermissions() async {
-    if (Platform.isWindows) return;
-    try {
-      await Process.run('chmod', ['600', file.path]);
-    } on Object {
-      // Nothing to do and nothing to say: see above.
-    }
   }
 }
 

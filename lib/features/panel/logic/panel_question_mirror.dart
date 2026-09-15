@@ -1,43 +1,17 @@
 import '../../../infrastructure/cli/agent_event.dart';
-import '../../../infrastructure/cli/hermes_permission_policy.dart';
 import '../../../infrastructure/panel/panel_message.dart';
+import '../../agents/logic/agent_permission_answers.dart';
 import '../../chat/logic/chat_sessions_controller.dart';
 import '../../projects/logic/project.dart';
 import 'panel_turn_mirror.dart';
 
-/// What each answer is called, in the window's own words.
-///
-/// The panel and the desktop are two screens asking one question, so they say
-/// it the same way (§5) — a card that reads "Allow once" in the window and
-/// "Yes" on the panel is two questions as far as the person answering is
-/// concerned.
-const Map<AgentPermissionChoice, String> kPanelAnswerLabels = {
-  AgentPermissionChoice.refuse: "Don't allow",
-  AgentPermissionChoice.allowForChat: 'Allow in this chat',
-  AgentPermissionChoice.allowOnce: 'Allow once',
-};
-
-/// The answers the panel may offer for [request], in the order to draw them.
-///
-/// Built from the agent's own options rather than a fixed pair: what it offers
-/// varies, and a panel that assumes two would draw a button for an answer that
-/// was never on the table. Each entry is one the app can *deliver* —
-/// [optionIdForChoice] resolved it against this very request — so no button
-/// here can turn into a silent no on the way back. That is also why the list is
-/// not simply [AgentPermission.options] copied out: the agent's
-/// `allow_always` is one this app never picks (it would outlive the setting
-/// that allowed it), and offering it would put a button on the panel whose only
-/// possible outcome is a refusal.
-List<PanelQuestionOption> panelAnswersFor(AgentPermission request) {
-  final answers = <PanelQuestionOption>[];
-  final seen = <String>{};
-  for (final entry in kPanelAnswerLabels.entries) {
-    final optionId = optionIdForChoice(entry.key, request.options);
-    if (optionId == null || !seen.add(optionId)) continue;
-    answers.add(PanelQuestionOption(id: optionId, label: entry.value));
-  }
-  return answers;
-}
+/// The answers the panel may offer for [request], in the order to draw them —
+/// the same ones, in the same words, as every other surface that asks (see
+/// [permissionAnswersFor]).
+List<PanelQuestionOption> panelAnswersFor(AgentPermission request) => [
+  for (final answer in permissionAnswersFor(request))
+    PanelQuestionOption(id: answer.optionId, label: answer.label),
+];
 
 /// Which answer an echoed [optionId] stands for, or null when it names nothing
 /// this request offered — a card the panel drew before the question moved on.
@@ -49,8 +23,8 @@ AgentPermissionChoice? panelChoiceForAnswer(
   String optionId,
   AgentPermission request,
 ) {
-  for (final choice in kPanelAnswerLabels.keys) {
-    if (optionIdForChoice(choice, request.options) == optionId) return choice;
+  for (final answer in permissionAnswersFor(request)) {
+    if (answer.optionId == optionId) return answer.choice;
   }
   return null;
 }

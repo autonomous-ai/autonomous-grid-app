@@ -1,0 +1,29 @@
+name: grid_pairing
+description: >-
+  The encrypted channel between Grid on a computer and Grid on a phone: the
+  handshake, the key schedule, the frame codec, and the proof a desktop gives a
+  relay that it owns the host id it is claiming.
+version: 0.1.0
+publish_to: 'none'
+
+# Pure Dart on purpose — no Flutter, no dart:io, no plugin.
+#
+# This package exists so the two halves of the phone link share ONE copy of the
+# codec. The desktop app cannot be that shared copy: it depends on
+# window_manager, tray_manager, auto_updater and desktop_drop, none of which
+# build for iOS, so a mobile app that path-depended on it would not compile.
+#
+# A second copy was the alternative, and it is the thing `test/vectors/` exists
+# to prevent: two implementations of a byte format drift, and both keep passing
+# their own tests while the link dies at frame one.
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  crypto: ^3.0.6
+  cryptography: ^2.9.0
+
+dev_dependencies:
+  # Only so the repo-root analysis_options.yaml resolves when this package is
+  # analysed on its own. Same rules as the app, no second opinion about style.
+  flutter_lints: ^6.0.0

@@ -6,15 +6,11 @@ class PlatformConnectedPanel extends ConsumerWidget {
   const PlatformConnectedPanel({
     super.key,
     required this.platform,
-    required this.allowedUsers,
-    required this.link,
-    this.detail,
+    required this.connected,
   });
 
   final MessagingPlatform platform;
-  final List<String> allowedUsers;
-  final MessagingLink link;
-  final String? detail;
+  final MessagingConnected connected;
 
   Future<void> _act(
     BuildContext context,
@@ -31,8 +27,9 @@ class PlatformConnectedPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
-    final controller = ref.read(messagingProvider(platform).notifier);
+    final actions = ref.read(telegramMessagingProvider.notifier);
     final theme = Theme.of(context);
+    final note = connected.note;
 
     return SingleChildScrollView(
       child: ConstrainedBox(
@@ -41,10 +38,20 @@ class PlatformConnectedPanel extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _Status(
-              link: link,
-              detail: detail,
-              onStart: () => _act(context, controller.start),
+              connected: connected,
+              platform: platform,
+              onStart: () => _act(context, actions.start),
             ),
+            if (note != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                note,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             Text(
               'Who can message it',
@@ -68,7 +75,7 @@ class PlatformConnectedPanel extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final id in allowedUsers)
+                  for (final id in connected.allowedUsers)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
@@ -97,7 +104,7 @@ class PlatformConnectedPanel extends ConsumerWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton.icon(
-                onPressed: () => _act(context, controller.disconnect),
+                onPressed: () => _act(context, actions.disconnect),
                 icon: const Icon(Icons.link_off_rounded, size: 17),
                 label: const Text('Disconnect this bot'),
               ),
@@ -109,19 +116,21 @@ class PlatformConnectedPanel extends ConsumerWidget {
   }
 }
 
-/// Connected and *answering* are different things — a bot whose gateway is down,
-/// or whose token another process is polling, answers nobody. This reads the
-/// real link state from Hermes, so it never says "Answering" when it isn't.
+/// Connected and *answering* are different things — a bot whose poll or
+/// gateway is down, or whose token another program is polling, answers nobody.
+/// This reads the real link state, so it never says "Answering" when it isn't.
 class _Status extends StatelessWidget {
   const _Status({
-    required this.link,
-    required this.detail,
+    required this.connected,
+    required this.platform,
     required this.onStart,
   });
 
-  final MessagingLink link;
-  final String? detail;
+  final MessagingConnected connected;
+  final MessagingPlatform platform;
   final VoidCallback onStart;
+
+  MessagingLink get link => connected.link;
 
   @override
   Widget build(BuildContext context) {
@@ -186,7 +195,7 @@ class _Status extends StatelessWidget {
         color: AppPalette.online,
         icon: Icons.check_circle_rounded,
         title: 'Answering your messages',
-        body: 'It stops when this computer sleeps or shuts down.',
+        body: _answeringBody(),
       ),
       MessagingLink.connecting => (
         color: AppPalette.textSecondary,
@@ -198,8 +207,24 @@ class _Status extends StatelessWidget {
         color: AppPalette.warn,
         icon: Icons.pause_circle_outline_rounded,
         title: 'Not answering',
-        body: detail ?? 'The bot is set up, but nothing is listening yet.',
+        body:
+            connected.detail ??
+            'The bot is set up, but nothing is listening yet.',
       ),
+    };
+  }
+
+  /// Where to find the bot, then when it stops — which depends on what runs it.
+  String _answeringBody() {
+    final handle = connected.handle;
+    final find = handle == null ? '' : 'Message $handle on ${platform.label}. ';
+    return switch (connected.host) {
+      MessagingHost.grid =>
+        '${find}It stops when Grid closes or this computer '
+            'sleeps.',
+      MessagingHost.hermes =>
+        '${find}It stops when this computer sleeps or '
+            'shuts down.',
     };
   }
 }

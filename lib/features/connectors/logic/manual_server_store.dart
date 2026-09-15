@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/grid_paths.dart';
+import '../../../core/owner_only_file.dart';
 import '../../agents/logic/mcp_server.dart';
 
 /// The MCP servers the user configured by hand: `~/.grid/connectors/manual.json`,
@@ -61,7 +62,7 @@ class ManualServerStore {
       const JsonEncoder.withIndent('  ').convert(payload),
       flush: true,
     );
-    await _restrictPermissions();
+    await restrictToOwner(file);
   }
 
   /// Add or replace one server, leaving the others untouched.
@@ -81,17 +82,6 @@ class ManualServerStore {
     final servers = await read();
     if (servers.remove(name) == null) return;
     await write(servers);
-  }
-
-  /// Owner-only, best-effort — same reasoning as the token store: a weaker mode
-  /// beats an abandoned write, and a manual entry can hold an API key.
-  Future<void> _restrictPermissions() async {
-    if (Platform.isWindows) return;
-    try {
-      await Process.run('chmod', ['600', file.path]);
-    } on Object {
-      // Nothing to do and nothing to say.
-    }
   }
 }
 
