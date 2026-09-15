@@ -15,6 +15,7 @@ import '../../../playground/logic/playground_models.dart';
 import '../../../projects/logic/project.dart';
 import 'telegram_bot_store.dart';
 import 'telegram_markup.dart';
+import 'telegram_models.dart';
 import 'telegram_rules.dart';
 import 'telegram_stream.dart';
 
@@ -54,15 +55,26 @@ Future<void> telegramQuietly(AppLog log, Future<void> work) async {
 /// The model a Telegram turn answers with: the chat's own, else the one picked
 /// for it before it started, else its project's, else the app's, else whatever
 /// the grid serves first — see [firstModelChoice].
-String telegramModelFor(Ref ref, {Conversation? chat, TelegramDraft? draft}) {
+///
+/// The last of those is *asked for* rather than read, which is why this waits:
+/// see [telegramGridModels]. [served] lets a caller that already has the grid's
+/// list — the `/model` menu, which is built from it — spend one request instead
+/// of two.
+Future<String> telegramModelFor(
+  Ref ref, {
+  Conversation? chat,
+  TelegramDraft? draft,
+  List<PlaygroundModelOption>? served,
+}) async {
   final projectId = chat?.projectId ?? draft?.projectId;
-  return firstModelChoice([
+  final picked = firstModelChoice([
     chat?.model,
     draft?.model,
     ref.read(projectByIdProvider(projectId))?.model,
     ref.read(chatPrefsProvider).model,
-    ref.read(playgroundModelsProvider).firstOrNull?.id,
   ]);
+  if (picked.isNotEmpty) return picked;
+  return (served ?? await telegramGridModels(ref)).firstOrNull?.id ?? '';
 }
 
 /// Turns a Telegram message into a turn in a Grid chat, and the answer back
@@ -84,6 +96,11 @@ class TelegramTurns {
 
   /// Bumped by [stop], so messages queued behind the stopped one are dropped.
   final Map<int, int> _generation = {};
+
+  /// Telegram chats whose answer was stopped by hand, so the report that
+  /// follows says the answer was stopped rather than leaving it to be guessed
+  /// from an answer that simply ends.
+  final Set<int> _stopped = {};
 
   AppLog get _log => _ref.read(appLogProvider);
 
@@ -111,10 +128,21 @@ class TelegramTurns {
 
   /// Stop the answer being written in Telegram chat [chatId], and drop what it
   /// had queued behind it — Stop means stop.
+  ///
+  /// A command that does its job in silence reads as a command that didn't run,
+  /// so it always says which of the two happened. When something *was* running,
+  /// the turn's own [_report] is what says so — one message, after the answer
+  /// stops growing, rather than two racing it.
   void stop(int chatId) {
+    final running = busy(chatId);
     _generation[chatId] = (_generation[chatId] ?? 0) + 1;
     final id = threads.current(chatId);
     if (id != null) _ref.read(chatSessionsProvider.notifier).stopChat(id);
+    if (running) {
+      _stopped.add(chatId);
+      return;
+    }
+    note(chatId, 'Nothing is being written right now.');
   }
 
   /// Send [markdown] to [chatId] without waiting, a failure only logged.
@@ -152,6 +180,9 @@ class TelegramTurns {
   }
 
   Future<void> _answer(TelegramText message) async {
+    // A /stop that landed in the breath after the last turn reported has
+    // nothing left to stop; it must not be read as stopping this one.
+    _stopped.remove(message.chatId);
     final sessions = _ref.read(chatSessionsProvider.notifier);
     await sessions.restored;
     final network = _ref.read(selectedNetworkProvider);
@@ -172,7 +203,7 @@ class TelegramTurns {
       approval: telegramApprovalMode(_ref.read(chatPrefsProvider).approval),
       projectId: draft?.projectId,
     );
-    final model = telegramModelFor(_ref, chat: chat, draft: draft);
+    final model = await telegramModelFor(_ref, chat: chat, draft: draft);
     if (draft != null) await threads.started(id);
     if (model.isEmpty) {
       return reply(
@@ -229,8 +260,10 @@ class TelegramTurns {
     for (final answer in answers) {
       await reply(chatId, answer);
     }
+    final stopped = _stopped.remove(chatId);
     final error = _ref.read(chatSessionsProvider).errorFor(id);
     if (error != null) return reply(chatId, "Couldn't finish: $error");
+    if (stopped) return reply(chatId, 'Stopped. Send anything to carry on.');
     if (answers.isEmpty && streamed == 0) {
       await reply(chatId, 'Stopped before it answered.');
     }

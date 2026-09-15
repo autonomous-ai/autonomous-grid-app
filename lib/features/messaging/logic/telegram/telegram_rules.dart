@@ -74,6 +74,14 @@ TelegramCommand? parseTelegramCommand(String text) {
   };
 }
 
+/// What was typed after the command word, trimmed — `/model gpt-5` → `gpt-5`,
+/// and `''` for a command on its own.
+String telegramCommandArgument(String text) {
+  final line = text.trim();
+  final space = line.indexOf(RegExp(r'\s'));
+  return space < 0 ? '' : line.substring(space + 1).trim();
+}
+
 /// The id of a new Grid chat carrying on Telegram chat [chatId].
 ///
 /// The Telegram chat is in the id so a permission request raised in the Grid

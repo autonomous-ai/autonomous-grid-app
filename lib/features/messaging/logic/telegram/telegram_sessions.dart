@@ -8,17 +8,16 @@ import '../../../../infrastructure/cli/agent_event.dart';
 import '../../../agents/logic/active_chat_agent.dart';
 import '../../../agents/logic/agent_catalog.dart';
 import '../../../agents/logic/agent_chat_surface.dart';
-import '../../../agents/logic/agent_model_support.dart';
 import '../../../agents/logic/agent_status.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../../chat/logic/conversation.dart';
 import '../../../chat/logic/grid_model_catalog.dart';
 import '../../../playground/logic/playground_models.dart';
-import '../../../playground/logic/playground_request.dart';
 import '../../../projects/logic/project.dart';
 import '../../../scheduled/logic/task_conversation_id.dart';
 import 'telegram_markup.dart';
 import 'telegram_menus.dart';
+import 'telegram_models.dart';
 import 'telegram_turns.dart';
 
 part 'telegram_model_menu.dart';
@@ -100,12 +99,17 @@ abstract class _MenuBase {
     ),
   );
 
-  /// The model [target] answers with, as shown.
-  String _modelOf(String? target) {
-    final model = telegramModelFor(
+  /// The model [target] answers with, as shown. [served] is the grid's list
+  /// where the caller already has it — see [telegramModelFor].
+  Future<String> _modelOf(
+    String? target, {
+    List<PlaygroundModelOption>? served,
+  }) async {
+    final model = await telegramModelFor(
       _ref,
       chat: _chat(target),
       draft: target == null ? null : _threads.draftFor(target),
+      served: served,
     );
     return model.isEmpty ? '(none)' : model;
   }

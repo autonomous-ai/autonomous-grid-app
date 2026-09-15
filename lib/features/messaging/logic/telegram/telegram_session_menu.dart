@@ -27,6 +27,10 @@ mixin _SessionMenu on _MenuBase {
 
   /// `/new`: a new chat where the current one is — its project, or none.
   Future<void> fresh(int chatId) async {
+    // Which project the current chat is in is read off the restored chats; a
+    // moment after launch there are none, and the answer would be "no project"
+    // for every chat there is.
+    await _ref.read(chatSessionsProvider.notifier).restored;
     final place = _placeOf(chatId);
     await _threads.startNew(chatId, projectId: place.projectId);
     await _api.sendMessage(
@@ -57,7 +61,7 @@ mixin _SessionMenu on _MenuBase {
         return _finish(
           chatId,
           menu,
-          '<b>Switched chat.</b>\n\n${_info(picked)}',
+          '<b>Switched chat.</b>\n\n${await _info(picked)}',
         );
       case TelegramNewHereTap():
         await _threads.startNew(chatId, projectId: menu.place.projectId);
@@ -170,11 +174,12 @@ mixin _SessionMenu on _MenuBase {
 
   /// Chat [id] as a switch confirms it: its title, where it lives, and what
   /// answers it.
-  String _info(String id) {
+  Future<String> _info(String id) async {
     final project = _ref.read(projectByIdProvider(_projectOf(id)));
+    final model = await _modelOf(id);
     return '<b>${telegramEscape(_chat(id)?.title ?? 'Chat')}</b>\n'
         'Project: ${telegramEscape(project?.name ?? 'none')}\n'
         'Assistant: ${_agentOf(id).name}\n'
-        'Model: <code>${telegramEscape(_modelOf(id))}</code>';
+        'Model: <code>${telegramEscape(model)}</code>';
   }
 }

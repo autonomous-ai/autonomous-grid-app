@@ -147,6 +147,13 @@ void main() {
       expect(parseTelegramCommand('/compact'), isNull);
       expect(parseTelegramCommand('new'), isNull);
     });
+
+    test('what was typed after the command is kept, so /model gpt-5 names a '
+        'model instead of quietly opening the menu', () {
+      expect(telegramCommandArgument('/model  gpt-5 '), 'gpt-5');
+      expect(telegramCommandArgument('/model@grid_bot gpt-5'), 'gpt-5');
+      expect(telegramCommandArgument('/model'), '');
+    });
   });
 
   group('chats and answers', () {

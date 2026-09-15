@@ -333,7 +333,9 @@ class TelegramBotController extends Notifier<TelegramBotState>
       case TelegramCommand.sessions:
         _quietly(menus.sessions(chatId));
       case TelegramCommand.model:
-        _quietly(menus.model(chatId));
+        _quietly(
+          menus.model(chatId, named: telegramCommandArgument(message.text)),
+        );
       case TelegramCommand.stop:
         turns.stop(chatId);
       case null:
