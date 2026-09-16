@@ -1,12 +1,14 @@
 /// One grid, as the phone is shown it.
 ///
 /// What the list carries plus the part worth opening a screen for: whether this
-/// is the grid the computer is actually working in, and what it is serving to
-/// it right now.
+/// is the grid the computer is actually working in, what it is serving to it
+/// right now, and the grid's own live state — models, machines, pooled hardware
+/// — which the computer fetched from the relay on this phone's behalf.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'grid_overview_view.dart';
 import 'phone_link_controller.dart';
 
 /// One engine this computer serves to a grid.
@@ -24,6 +26,7 @@ typedef GridDetail = ({
   String email,
   bool current,
   List<GridEngineRow> engines,
+  GridOverviewView? overview,
 });
 
 /// What the computer says about one grid.
@@ -60,5 +63,9 @@ final gridDetailProvider = FutureProvider.family<GridDetail, String>((
             running: engine['running'] == true,
           ),
     ],
+    // Null on a computer too old to send one, and on a grid whose relay would
+    // not answer. Both mean the same thing here: show the half that came off
+    // the computer's own disk, and no live figures.
+    overview: gridOverviewFrom(result['overview']),
   );
 }, retry: null);

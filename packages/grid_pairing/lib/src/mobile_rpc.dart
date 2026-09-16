@@ -16,9 +16,17 @@ library;
 const kMobileRpcMethods = <String>{
   'status.get',
   'grids.list',
-  // One grid, with what this computer is actually serving to it. Never its
-  // tokens: `credentials.toml` holds a bearer credential for every grid, and
-  // the projection behind this reads four fields and stops.
+  // One grid: what this computer is signed in as, what it is serving to that
+  // grid, and the grid's own live state — models, machines, pooled hardware.
+  // Never its tokens: `credentials.toml` holds a bearer credential for every
+  // grid, and the projection behind this reads four fields and stops.
+  //
+  // The live half is this computer calling the grid's relay on the phone's
+  // behalf, because the phone holds no credential to call it with, and it is
+  // sent as finished words rather than the relay's payload — one app formats
+  // "829.1 GB" and "~513 tok/s", the other prints it. An older desktop simply
+  // omits the `overview` key, which is what a phone must read as "no live
+  // state", never as a grid that is empty.
   'grids.get',
   'projects.list',
   // Starting one. The phone sends a *name*, never a path: the computer decides

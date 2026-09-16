@@ -381,15 +381,7 @@ class NodeTile extends StatelessWidget {
     // (Appearance) nothing else rebuilds it, so the flip never lands.
     AppTheme.watch(context);
     final media = nodeIsMedia(node);
-    final vram = nodeVramLabel(node);
-    final specs = <String>[
-      nodeEngineLabel(node.engine),
-      if ((node.deviceClass ?? '').isNotEmpty) node.deviceClass!.toUpperCase(),
-      ?vram,
-      nodeRoleSummary(node),
-      if ((node.maxConcurrency ?? 0) > 1) '${node.maxConcurrency} parallel',
-      if (node.throughputTokS != null) '~${node.throughputTokS!.round()} tok/s',
-    ].where((s) => s.isNotEmpty).toList();
+    final specs = nodeOverviewSpecs(node);
     // A row inside [TileGroup], like [ModelTile] — the card is the group's.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),

@@ -19,6 +19,7 @@ import '../../../infrastructure/pairing_host/mobile_rpc_service.dart';
 import '../../../infrastructure/pairing_host/relay_host_connection.dart';
 import '../../../shared/app_info.dart';
 import 'phone_chat_options.dart';
+import 'phone_grid_overview.dart';
 import 'phone_projects.dart';
 import 'phone_turns.dart';
 import '../../../core/grid_paths.dart';
@@ -183,6 +184,9 @@ class PhonePairingController extends Notifier<PhonePairingState> {
           // Flutter-free, and only this side knows what the window has open.
           gridIsCurrent: (gridId) =>
               ref.read(selectedNetworkProvider)?.networkId == gridId,
+          // The grid's live state, fetched here because the token that
+          // authorizes it lives on this side and must stay here.
+          readOverview: (gridId) => phoneGridOverview(ref, gridId),
           // The seam where the phone reaches into the running app. The service
           // itself stays Flutter-free so `tool/` can run it; these two closures
           // are the only part that needs the window to exist.

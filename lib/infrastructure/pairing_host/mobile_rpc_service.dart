@@ -34,6 +34,7 @@ class MobileRpcService {
     List<GridSummary> Function()? readGrids,
     List<GridEngine> Function(String gridId)? readEngines,
     bool Function(String gridId)? gridIsCurrent,
+    Future<Map<String, Object?>?> Function(String gridId)? readOverview,
     List<ChatHeader> Function()? readChats,
     List<ProjectSummary> Function()? readProjects,
     ChatPage? Function(String id, {int? limit, int? offset})? readChat,
@@ -60,6 +61,7 @@ class MobileRpcService {
   }) : _readGrids = readGrids ?? readGridSummaries,
        _readEngines = readEngines ?? readGridEngines,
        _gridIsCurrent = gridIsCurrent,
+       _readOverview = readOverview,
        _chats = MobileChatRpc(
          readChats: readChats,
          readProjects: readProjects,
@@ -88,6 +90,16 @@ class MobileRpcService {
   /// Whether a grid is the one the computer is working in, or null on a host
   /// with no window behind it to ask.
   final bool Function(String gridId)? _gridIsCurrent;
+
+  /// The grid's live state from its relay — models, machines, pooled hardware —
+  /// already projected to what a phone may see, or null on a host that cannot
+  /// ask (no window behind it) or a relay that would not answer.
+  ///
+  /// A closure for the same reason [_gridIsCurrent] is: the call needs that
+  /// grid's access token and the app's HTTP client, and this class holds
+  /// neither. It reads four fields of `credentials.toml` and stops, which is
+  /// what keeps a token it never holds out of anything it sends.
+  final Future<Map<String, Object?>?> Function(String gridId)? _readOverview;
   final MobileChatRpc _chats;
   final Future<PairingRelayEndpoint> Function(String deviceId)? _renewInvite;
 
@@ -120,7 +132,7 @@ class MobileRpcService {
       return switch (request.method) {
         'status.get' => MobileRpcOk(request.id, _status()),
         'grids.list' => MobileRpcOk(request.id, _grids()),
-        'grids.get' => _grid(request),
+        'grids.get' => await _grid(request),
         'projects.list' => MobileRpcOk(request.id, _chats.projects()),
         'chats.list' => MobileRpcOk(request.id, _chats.list()),
         'chats.get' => _chats.page(request),
@@ -181,7 +193,12 @@ class MobileRpcService {
   /// A read, so no switch: it says nothing the list does not already say plus
   /// what is being served, and a phone that could list grids but not open one
   /// is a list of dead rows.
-  MobileRpcResponse _grid(MobileRpcRequest request) {
+  ///
+  /// Two halves, and only one of them can fail. The grid and its engines come
+  /// off this computer's disk; the live overview is a call to that grid's relay,
+  /// bounded by the client's own deadline and dropped from the reply when it
+  /// does not answer.
+  Future<MobileRpcResponse> _grid(MobileRpcRequest request) async {
     final id = request.params['id'];
     if (id is! String || id.isEmpty) {
       return MobileRpcFailed(
@@ -200,6 +217,10 @@ class MobileRpcService {
         message: 'Your computer is not signed in to that grid any more.',
       );
     }
+    // Omitted rather than sent empty when the relay is unreachable: everything
+    // else here is read off this computer's disk and is still true, and the
+    // phone draws the live half only when there is one.
+    final overview = await _readOverview?.call(grid.id);
     return MobileRpcOk(request.id, {
       'id': grid.id,
       'name': grid.name,
@@ -210,6 +231,7 @@ class MobileRpcService {
         for (final engine in _readEngines(grid.id))
           {'id': engine.id, 'models': engine.models, 'running': engine.running},
       ],
+      'overview': ?overview,
     });
   }
 

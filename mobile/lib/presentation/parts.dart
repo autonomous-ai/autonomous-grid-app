@@ -84,12 +84,20 @@ class GridListRow extends StatelessWidget {
   }
 }
 
-/// The small, quiet label that names a group of rows.
+/// The small, quiet label that names a group of rows, with an optional line
+/// explaining what the group is.
+///
+/// The explanation is what lets a section keep the word the desktop uses for the
+/// same thing — "Nodes" is the app's word for a machine on a grid, and a phone
+/// that renamed it would leave two screens describing one thing twice.
 class SectionLabel extends StatelessWidget {
-  const SectionLabel(this.text, {this.trailing, super.key});
+  const SectionLabel(this.text, {this.subtitle = '', this.trailing, super.key});
 
   /// What the group is called.
   final String text;
+
+  /// One line saying what it is, or empty when the name is enough.
+  final String subtitle;
 
   /// An action belonging to the group, drawn at its right.
   final Widget? trailing;
@@ -97,21 +105,71 @@ class SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              text,
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(color: AppPalette.textFaint),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  text,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: AppPalette.textFaint,
+                  ),
+                ),
+              ),
+              ?trailing,
+            ],
           ),
-          ?trailing,
+          // Omitted rather than drawn empty: an empty Text still takes its line
+          // box, so a section with nothing to add would push its rows down by a
+          // line it never used.
+          if (subtitle.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                subtitle,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppPalette.textFaint,
+                ),
+              ),
+            ),
         ],
       ),
+    );
+  }
+}
+
+/// The one floating action button this app has: the way to start the thing the
+/// screen under it lists.
+///
+/// The app's card rounding rather than a circle, because nothing else here is a
+/// stadium and a floating circle reads as another product's button.
+class GridFab extends StatelessWidget {
+  const GridFab({required this.tooltip, required this.onPressed, super.key});
+
+  /// What it starts.
+  final String tooltip;
+
+  /// Starting it.
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return FloatingActionButton(
+      tooltip: tooltip,
+      backgroundColor: AppPalette.accent,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppCard.radius),
+      ),
+      onPressed: onPressed,
+      child: const Icon(Icons.add_rounded, size: 20),
     );
   }
 }
@@ -139,11 +197,16 @@ class GridDot extends StatelessWidget {
 
 /// A line of secondary detail under a title — model, project, when.
 class RowDetail extends StatelessWidget {
-  const RowDetail(this.parts, {super.key});
+  const RowDetail(this.parts, {this.maxLines = 1, super.key});
 
   /// The pieces, joined with the separator this app uses everywhere. Empty
   /// pieces are dropped rather than leaving a stray dot.
   final List<String> parts;
+
+  /// How many lines it may take. One for a chat's model and when, two for a
+  /// machine's specs — six facts about a laptop do not fit a phone's width, and
+  /// the first three are not the useful ones.
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -157,7 +220,7 @@ class RowDetail extends StatelessWidget {
         style: Theme.of(
           context,
         ).textTheme.bodySmall?.copyWith(color: AppPalette.textFaint),
-        maxLines: 1,
+        maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
       ),
     );

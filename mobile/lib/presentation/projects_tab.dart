@@ -1,4 +1,4 @@
-/// The projects on the computer, shown on the connected screen.
+/// The projects on the computer.
 ///
 /// A project is where a chat's work happens — its folder, its model, its agent
 /// — so listing them is how somebody finds the conversation they want without
@@ -13,47 +13,30 @@ import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_chats.dart';
 import 'chat_list_screen.dart';
-import 'new_project_sheet.dart';
 import 'parts.dart';
 
-/// The project list.
-class ProjectsSection extends ConsumerWidget {
-  const ProjectsSection({super.key});
+/// Every project, and the way to start one.
+class ProjectsTab extends ConsumerWidget {
+  const ProjectsTab({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     AppTheme.watch(context);
     final projects = ref.watch(projectsProvider);
-    // Nothing at all rather than an empty heading: a computer with no projects
-    // is a normal computer, and a "Projects" title over blank space reads as
-    // something that failed to load.
-    final rows = projects.value?.values.toList() ?? const <ProjectRow>[];
-    // The heading stays even with nothing under it now, because it carries the
-    // only way to make the first one. An empty section with a New button is a
-    // place to start; an absent section is a feature nobody can find.
-    if (projects.isLoading) return const SizedBox.shrink();
-    // Owns the gap above it, because it is allowed to disappear entirely: a
-    // spacer left behind by the caller would open a hole on every computer that
-    // has no projects.
-    return Padding(
-      padding: const EdgeInsets.only(top: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SectionLabel(
-            'Projects',
-            trailing: TextButton.icon(
-              onPressed: () => showNewProjectSheet(context),
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('New'),
-            ),
-          ),
-          if (rows.isEmpty)
-            const _NoProjects()
-          else
-            for (final project in rows) _ProjectTile(project),
-        ],
+    return projects.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => _Problem(
+        message: '$error',
+        onRetry: () => ref.invalidate(projectsProvider),
       ),
+      data: (rows) => rows.isEmpty
+          ? const _NoProjects()
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+              children: [
+                for (final project in rows.values) _ProjectTile(project),
+              ],
+            ),
     );
   }
 }
@@ -111,11 +94,49 @@ class _NoProjects extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    return Text(
-      'No projects yet. Start one and your computer makes the folder for it.',
-      style: Theme.of(
-        context,
-      ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Text(
+          'No projects yet. Start one and your computer makes the folder for '
+          'it.',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
+        ),
+      ),
+    );
+  }
+}
+
+class _Problem extends StatelessWidget {
+  const _Problem({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(onPressed: onRetry, child: const Text('Try again')),
+          ],
+        ),
+      ),
     );
   }
 }

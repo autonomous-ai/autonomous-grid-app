@@ -10,10 +10,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/pairing_links.dart';
-import '../logic/phone_chats.dart';
 import '../logic/phone_link_controller.dart';
-import 'connected_view.dart';
 import 'grid_app_bar.dart';
+import 'home_shell.dart';
 import 'pair_form.dart';
 
 /// Grid's only screen.
@@ -46,50 +45,31 @@ class _LinkScreenState extends ConsumerState<LinkScreen> {
     });
   }
 
-  /// Re-asks the computer everything this screen shows.
-  ///
-  /// The chats are their own providers rather than part of the link's state, so
-  /// refreshing the link alone would leave the list on screen exactly as stale
-  /// as it was — the one thing a refresh button must not do. Invalidating is
-  /// what re-asks them; it happens here rather than in the controller because
-  /// the chat providers read *it*, and a controller reaching back into them
-  /// would be a cycle.
-  void _refresh(WidgetRef ref) {
-    ref.read(phoneLinkProvider.notifier).refresh();
-    ref.invalidate(chatListProvider);
-    ref.invalidate(projectsProvider);
-  }
-
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final link = ref.watch(phoneLinkProvider);
-    return Scaffold(
-      backgroundColor: AppPalette.windowBg,
-      appBar: GridAppBar(
-        title: 'Grid',
-        actions: [
-          if (link is PhoneLinkConnected)
-            GridBarButton(
-              tooltip: 'Refresh',
-              icon: Icons.refresh_rounded,
-              onPressed: () => _refresh(ref),
-            ),
-        ],
+    return switch (ref.watch(phoneLinkProvider)) {
+      // Connected is the whole app, frame and all — four tabs, a bar, and a
+      // title that changes with them — so it brings its own [Scaffold] rather
+      // than being poured into the one the other three states share.
+      final PhoneLinkConnected connected => HomeShell(connected),
+      PhoneLinkUnpaired() => _frame(const _Padded(PairForm())),
+      PhoneLinkConnecting(:final step) => _frame(_Working(step)),
+      PhoneLinkFailed(:final message, :final stillPaired) => _frame(
+        stillPaired
+            ? _Padded(_Stuck(message))
+            : _Padded(PairForm(problem: message)),
       ),
-      body: SafeArea(
-        child: switch (link) {
-          PhoneLinkUnpaired() => const _Padded(PairForm()),
-          PhoneLinkConnecting(:final step) => _Working(step),
-          PhoneLinkConnected() => ConnectedView(link),
-          PhoneLinkFailed(:final message, :final stillPaired) =>
-            stillPaired
-                ? _Padded(_Stuck(message))
-                : _Padded(PairForm(problem: message)),
-        },
-      ),
-    );
+    };
   }
+
+  /// The plain screen the three unconnected states share: the app's name, and
+  /// whatever it has to say about not being through yet.
+  Widget _frame(Widget child) => Scaffold(
+    backgroundColor: AppPalette.windowBg,
+    appBar: const GridAppBar(title: 'Grid'),
+    body: SafeArea(child: child),
+  );
 }
 
 class _Padded extends StatelessWidget {

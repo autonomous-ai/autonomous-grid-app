@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+/// The stacked share bar both apps draw the grid's memory split with, and the
+/// palette that gives each machine its colour.
+export 'src/split_bar.dart';
+
 /// The app's live brightness — the single source of truth the color tokens below
 /// resolve against. It is *not* read from the platform directly: [_BrightnessSync]
 /// (in `grid_app.dart`) sets it from `Theme.of(context).brightness`, i.e. the

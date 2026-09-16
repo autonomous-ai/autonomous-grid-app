@@ -9,6 +9,7 @@ import '../logic/phone_chats.dart';
 import 'chat_screen.dart';
 import 'chat_tile.dart';
 import 'grid_app_bar.dart';
+import 'parts.dart';
 import 'new_chat_screen.dart';
 
 /// Pushes the transcript of [chat].
@@ -25,7 +26,11 @@ void openChat(BuildContext context, ChatRow chat) {
 }
 
 /// The full, scrollable list of chats, or of one project's chats.
-class ChatListScreen extends ConsumerWidget {
+///
+/// A screen when it is pushed — from a project, or from the archive. The tab at
+/// the root of the app shows the same [ChatListBody] without this frame, so the
+/// two are one list rather than two that drift.
+class ChatListScreen extends StatelessWidget {
   const ChatListScreen({
     this.projectId,
     this.title,
@@ -51,10 +56,8 @@ class ChatListScreen extends ConsumerWidget {
   final String? title;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     AppTheme.watch(context);
-    final chats = ref.watch(chatListProvider);
-    final projects = ref.watch(projectsProvider).value ?? const {};
     return Scaffold(
       backgroundColor: AppPalette.windowBg,
       appBar: GridAppBar(title: title ?? (archived ? 'Archived' : 'Chats')),
@@ -65,31 +68,34 @@ class ChatListScreen extends ConsumerWidget {
       // has been put away, and a new chat would immediately leave it.
       floatingActionButton: archived
           ? null
-          : FloatingActionButton(
-              tooltip: 'New chat',
-              backgroundColor: AppPalette.accent,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              // The app's card rounding rather than a circle: nothing else here is a
-              // stadium, and a floating circle reads as another product's button.
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppCard.radius),
-              ),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => NewChatScreen(projectId: projectId),
-                ),
-              ),
-              child: const Icon(Icons.add_rounded, size: 20),
-            ),
-      body: chats.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _ListProblem(
-          message: '$error',
-          onRetry: () => ref.invalidate(chatListProvider),
-        ),
-        data: (all) => _body(context, _visible(all), projects),
+          : NewChatButton(projectId: projectId),
+      body: ChatListBody(projectId: projectId, archived: archived),
+    );
+  }
+}
+
+/// The list itself: every conversation, or one project's, or the archive.
+class ChatListBody extends ConsumerWidget {
+  const ChatListBody({this.projectId, this.archived = false, super.key});
+
+  /// Show what has been put away instead of what is in play.
+  final bool archived;
+
+  /// Narrow to one project, or every chat when null.
+  final String? projectId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    final chats = ref.watch(chatListProvider);
+    final projects = ref.watch(projectsProvider).value ?? const {};
+    return chats.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => _ListProblem(
+        message: '$error',
+        onRetry: () => ref.invalidate(chatListProvider),
       ),
+      data: (all) => _body(context, _visible(all), projects),
     );
   }
 
@@ -119,6 +125,24 @@ class ChatListScreen extends ConsumerWidget {
             onOpen: () => openChat(context, rows[index]),
           ),
         );
+}
+
+/// The one way to start a conversation, wherever the list is shown.
+class NewChatButton extends StatelessWidget {
+  const NewChatButton({this.projectId, super.key});
+
+  /// The project a new chat should land in, or null for none.
+  final String? projectId;
+
+  @override
+  Widget build(BuildContext context) => GridFab(
+    tooltip: 'New chat',
+    onPressed: () => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NewChatScreen(projectId: projectId),
+      ),
+    ),
+  );
 }
 
 /// Nothing to list, and what to do about it.
