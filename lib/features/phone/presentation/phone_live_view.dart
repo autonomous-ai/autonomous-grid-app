@@ -28,7 +28,15 @@ class PhoneLiveView extends ConsumerWidget {
       DetailSection(
         title: 'THIS COMPUTER',
         children: [
-          AddressRow(label: 'Address on the relay', value: state.relayHostId),
+          // Says what it is *not*, because the only other copyable string on
+          // this screen is the pairing code and this one sits above it with its
+          // own copy button. A relay restart leaves the code half missing — and
+          // then this is the only thing there is to copy, so it gets pasted
+          // into the phone, which refuses it and blames the person.
+          AddressRow(
+            label: 'Address on the relay — not the code to paste',
+            value: state.relayHostId,
+          ),
         ],
       ),
       const SizedBox(height: 20),

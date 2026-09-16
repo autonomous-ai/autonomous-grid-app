@@ -32,11 +32,13 @@ class RelayHostConnection {
     required DeviceRegistry registry,
     required MobileRpcService rpc,
     required void Function(String message) onEvent,
+    void Function(Object error)? onLost,
   }) : _cellUrl = cellUrl,
        _keyPair = keyPair,
        _registry = registry,
        _rpc = rpc,
        _onEvent = onEvent,
+       _onLost = onLost,
        relayHostId = deriveRelayHostId(keyPair.publicKey);
 
   /// The id this computer's key owns. Also the path a phone dials.
@@ -47,6 +49,15 @@ class RelayHostConnection {
   final DeviceRegistry _registry;
   final MobileRpcService _rpc;
   final void Function(String message) _onEvent;
+
+  /// The registration is gone and this object is finished — the relay closed
+  /// the channel, restarted, or refused a challenge mid-session.
+  ///
+  /// Separate from [_onEvent] because a line in an activity log is not a state
+  /// change, and this is one. Everything this class can still be asked to do
+  /// goes through a socket that is now closed, so a caller that kept showing a
+  /// live screen would offer buttons that can only time out.
+  final void Function(Object error)? _onLost;
 
   WebSocket? _control;
   int _generation = 0;
@@ -242,6 +253,20 @@ class RelayHostConnection {
       registered.completeError(error);
       return;
     }
+    // Nothing to lose: [stop] clears this before it closes the socket, and the
+    // `onDone` that follows is the disconnect somebody asked for.
+    if (_control == null) return;
+    // Dropped, so anything asked of this connection now fails saying it is not
+    // registered instead of writing into a closed socket and waiting out the
+    // timeout. That wait is what a relay restart used to look like from the
+    // screen: a live-looking Create code that answered "the relay did not mint
+    // a pairing code in time" fifteen seconds later, every time, forever.
+    _control = null;
+    for (final pending in _pendingInvites.values) {
+      if (!pending.isCompleted) pending.completeError(error);
+    }
+    _pendingInvites.clear();
     _onEvent('relay connection lost: $error');
+    _onLost?.call(error);
   }
 }

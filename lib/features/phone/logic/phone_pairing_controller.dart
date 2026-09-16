@@ -215,6 +215,12 @@ class PhonePairingController extends Notifier<PhonePairingState> {
           ),
         ),
         onEvent: _record,
+        // A relay that restarts closes every control channel it was holding.
+        // Without this the screen stayed on its live state over a dead socket,
+        // so "Create code" was a button that could only ever time out — and the
+        // timeout blamed the relay for being slow rather than saying the link
+        // was gone.
+        onLost: _lost,
       );
       await connection.start();
       if (_disposed) {
@@ -297,6 +303,21 @@ class PhonePairingController extends Notifier<PhonePairingState> {
     await _prefs.writeOff(_cellUrl);
     await connection?.stop();
     if (!_disposed) state = const PhonePairingOff();
+  }
+
+  /// The relay dropped us. Says so, and offers the way back — [PhonePairingFailed]
+  /// draws a Try again, which is the whole fix when a relay has restarted.
+  ///
+  /// The stored choice is left switched **on**: somebody who turned the phone
+  /// link on still wants it on, and a relay going away for a minute is not them
+  /// changing their mind. It comes back by itself at the next launch.
+  void _lost(Object error) {
+    if (_disposed || state is! PhonePairingLive) return;
+    _connection = null;
+    state = PhonePairingFailed(
+      'Lost the connection to the relay at $_cellUrl. It was probably '
+      'restarted. Connect again to get a new pairing code.',
+    );
   }
 
   Future<void> _reloadDevices() async {
