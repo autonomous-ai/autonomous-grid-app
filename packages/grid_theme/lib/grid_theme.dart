@@ -4,6 +4,12 @@ import 'package:flutter/material.dart';
 /// palette that gives each machine its colour.
 export 'src/split_bar.dart';
 
+/// What each theme choice is called and which glyph says so.
+export 'src/theme_mode_labels.dart';
+
+/// How a platform's font list becomes the rows a picker offers.
+export 'src/font_choices.dart';
+
 /// The app's live brightness — the single source of truth the color tokens below
 /// resolve against. It is *not* read from the platform directly: [_BrightnessSync]
 /// (in `grid_app.dart`) sets it from `Theme.of(context).brightness`, i.e. the
@@ -1384,6 +1390,22 @@ abstract final class AppFont {
   /// multiplied by [uiScale] would apply it twice. Code surfaces wrap themselves
   /// in `MediaQuery.withNoTextScaling` and use this number as-is.
   static double get codeSize => _codeSize;
+
+  /// [codeSize] pre-divided by [uiScale], for a code surface sitting inside
+  /// text the app scale is already being applied to.
+  ///
+  /// The Mac opts its code surfaces out with `MediaQuery.withNoTextScaling` and
+  /// uses [codeSize] raw, which works there because macOS has no text scaling of
+  /// its own to preserve. A phone does, it is an accessibility setting, and
+  /// opting out of the scaler would throw away the user's Dynamic Type along
+  /// with the app's own scale. Asking for the size divided means the scaler
+  /// multiplies it back to exactly [codeSize] — with the *platform's* share
+  /// still on top, which is the half that must survive.
+  ///
+  /// Without this the two size settings are not independent: a larger app drags
+  /// every code block with it, and the sentence promising otherwise is a bug
+  /// rather than wording.
+  static double get codeSizeDescaled => _codeSize / _uiScale;
 
   /// Apply the user's type settings. Returns true when something actually
   /// changed, so the caller only fires listeners on a real change.

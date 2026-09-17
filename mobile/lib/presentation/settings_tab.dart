@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_theme/grid_theme.dart';
 
 import '../logic/phone_link_controller.dart';
+import 'appearance_section.dart';
 import 'parts.dart';
 
 /// Which computer, and the one thing there is to change about it.
@@ -23,6 +24,8 @@ class SettingsTab extends ConsumerWidget {
       children: [
         const SectionLabel('Paired computer'),
         _HostCard(link),
+        const SizedBox(height: 28),
+        const AppearanceSection(),
         const SizedBox(height: 28),
         OutlinedButton(
           style: OutlinedButton.styleFrom(

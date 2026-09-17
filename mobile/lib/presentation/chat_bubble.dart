@@ -92,6 +92,9 @@ MarkdownStyleSheet _sheet(ThemeData theme) {
   final mono = theme.textTheme.bodySmall?.copyWith(
     fontFamily: AppFont.mono,
     fontFamilyFallback: AppFont.monoFallback,
+    // The chosen code size, and only it: see [AppFont.codeSizeDescaled] for why
+    // it is divided here rather than opted out of the scaler.
+    fontSize: AppFont.codeSizeDescaled,
   );
   return MarkdownStyleSheet.fromTheme(theme).copyWith(
     p: theme.textTheme.bodyMedium,
