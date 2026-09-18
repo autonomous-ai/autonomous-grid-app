@@ -8,8 +8,8 @@ mixin _ModelMenu on _MenuBase {
     if (turns.busy(chatId)) return _busy(chatId, 'change the model');
     final target = _threads.current(chatId);
     // Waited for, not read: the bot answers with the Chat tab closed, and the
-    // grid's list is a request in flight (see [telegramGridModels]).
-    final served = await telegramGridModels(_ref);
+    // grid's list is a request in flight (see [gridServedModels]).
+    final served = await gridServedModels(_ref);
     final current = await _modelOf(target, served: served);
     final items = telegramModelItems(
       options: chatModelOptions(

@@ -5,6 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/core/grid_paths.dart';
 import 'package:grid_app/infrastructure/pairing_host/mobile_chat_reader.dart';
 import 'package:grid_app/infrastructure/pairing_host/mobile_rpc_service.dart';
+import 'package:grid_app/infrastructure/pairing_host/mobile_upload_store.dart';
+import 'package:grid_app/features/phone/logic/phone_chat_options.dart';
+import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_pairing/grid_pairing.dart';
 
 /// What the phone is served when it asks about chats and projects.
@@ -260,7 +263,11 @@ void main() {
     test('carries total and offset back with a page, because they are how the '
         'phone knows there is more history to ask for', () async {
       final service = serviceOver(
-        page: (lines: [(role: 'user', text: 'hello')], total: 500, offset: 460),
+        page: (
+          lines: [(role: 'user', text: 'hello', index: 0, media: const [])],
+          total: 500,
+          offset: 460,
+        ),
       );
 
       final answer = await ask(service, 'chats.get', {'id': 'c1'});
@@ -269,8 +276,12 @@ void main() {
       final result = (answer as MobileRpcOk).result;
       expect(result['total'], 500);
       expect(result['offset'], 460);
+      // `index` rides along now: it is how the phone asks for a picture on this
+      // turn, and it is the turn's place in the whole chat rather than in the
+      // page — asserted here so a page that started numbering from its own
+      // first row would fail loudly instead of fetching the wrong photo.
       expect(result['messages'], [
-        {'role': 'user', 'text': 'hello'},
+        {'role': 'user', 'text': 'hello', 'index': 0},
       ]);
     });
 
@@ -320,7 +331,7 @@ void main() {
 
   group('the gate on sending', () {
     final page = (
-      lines: <ChatLine>[(role: 'user', text: 'hi')],
+      lines: <ChatLine>[(role: 'user', text: 'hi', index: 0, media: const [])],
       total: 1,
       offset: 0,
     );
@@ -331,7 +342,7 @@ void main() {
       appVersion: '0.0.0',
       readGrids: () => const [],
       readChat: (id, {int? limit, int? offset}) => page,
-      sendToChat: (chatId, text) async {
+      sendToChat: (chatId, text, files) async {
         sent.add('$chatId:$text');
         return null;
       },
@@ -413,7 +424,7 @@ void main() {
         appVersion: '0.0.0',
         readGrids: () => const [],
         readChat: (id, {int? limit, int? offset}) => page,
-        sendToChat: (chatId, text) async => 'No model is running.',
+        sendToChat: (chatId, text, files) async => 'No model is running.',
       );
 
       final answer = await send(service, allowed: true);
@@ -430,7 +441,7 @@ void main() {
           appVersion: '0.0.0',
           readGrids: () => const [],
           readChat: (id, {int? limit, int? offset}) => null,
-          sendToChat: (chatId, text) async {
+          sendToChat: (chatId, text, files) async {
             sent.add(chatId);
             return null;
           },
@@ -442,5 +453,662 @@ void main() {
         expect(sent, isEmpty);
       },
     );
+  });
+
+  group('the composer the phone is served', () {
+    var changes = <String>[];
+    var created = <String>[];
+
+    MobileRpcService host() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      readChat: (id, {int? limit, int? offset}) =>
+          (lines: const <ChatLine>[], total: 0, offset: 0),
+      readOptions: (chatId) async => {
+        'model': {'selected': 'auto', 'options': []},
+      },
+      setOption: (chatId, field, value) async {
+        changes.add('$chatId/$field=$value');
+        return null;
+      },
+      createChat: (text, projectId, files) async {
+        created.add('$projectId:$text');
+        return (id: 'new-chat', problem: null);
+      },
+    );
+
+    Future<MobileRpcResponse> ask(
+      String method,
+      Map<String, Object?> params, {
+      required bool allowed,
+    }) => host().handle(
+      MobileRpcRequest(id: 'r1', method: method, params: params),
+      deviceId: 'device-1',
+      mayAct: () async => allowed,
+    );
+
+    setUp(() {
+      changes = <String>[];
+      created = <String>[];
+    });
+
+    test('lets any paired phone read the picks, because a composer that cannot '
+        'draw its own pickers looks broken rather than locked', () async {
+      final answer = await ask('chats.options', {'id': 'c1'}, allowed: false);
+
+      expect(answer, isA<MobileRpcOk>());
+    });
+
+    test(
+      'refuses to change a chat without the switch, since choosing the '
+      'model and the access is arranging what the next turn may do',
+      () async {
+        final answer = await ask('chats.set', {
+          'id': 'c1',
+          'field': 'model',
+          'value': 'auto',
+        }, allowed: false);
+
+        expect((answer as MobileRpcFailed).code, 'forbidden');
+        expect(changes, isEmpty);
+      },
+    );
+
+    test('refuses to start a chat without the switch', () async {
+      final answer = await ask('chats.create', {
+        'text': 'hello',
+      }, allowed: false);
+
+      expect((answer as MobileRpcFailed).code, 'forbidden');
+      expect(created, isEmpty);
+    });
+
+    test('passes a change through once the switch is on', () async {
+      final answer = await ask('chats.set', {
+        'id': 'c1',
+        'field': 'approval',
+        'value': 'ask',
+      }, allowed: true);
+
+      expect(answer, isA<MobileRpcOk>());
+      expect(changes, ['c1/approval=ask']);
+    });
+
+    test(
+      'hands back the new chat id so the phone can open what it started',
+      () async {
+        final answer = await ask('chats.create', {
+          'text': 'hello',
+          'projectId': 'p1',
+        }, allowed: true);
+
+        expect((answer as MobileRpcOk).result['id'], 'new-chat');
+        expect(created, ['p1:hello']);
+      },
+    );
+
+    test('refuses a change with a field the phone made up, rather than '
+        'forwarding it and hoping', () async {
+      final answer = await ask('chats.set', {
+        'id': 'c1',
+        'value': 'auto',
+      }, allowed: true);
+
+      expect((answer as MobileRpcFailed).code, 'bad_request');
+      expect(changes, isEmpty);
+    });
+  });
+
+  group('which access levels a phone may set', () {
+    test('every mode except full, which is the one that runs commands and '
+        'changes files without asking', () {
+      expect(phoneMaySetApproval(AgentApprovalMode.readOnly), isTrue);
+      expect(phoneMaySetApproval(AgentApprovalMode.plan), isTrue);
+      expect(phoneMaySetApproval(AgentApprovalMode.ask), isTrue);
+      expect(phoneMaySetApproval(AgentApprovalMode.full), isFalse);
+    });
+
+    test(
+      'the refusal is about the phone, not about the mode — a chat already '
+      'on full still runs on it, the phone just cannot be what turned it on',
+      () {
+        // Stated as a test because the distinction is the whole design: this is
+        // a rule against escalation from a pocket device, not a claim that full
+        // access is unavailable.
+        expect(kApprovalPhoneMayNotSet, AgentApprovalMode.full);
+        expect(AgentApprovalMode.values, contains(AgentApprovalMode.full));
+      },
+    );
+  });
+
+  group('files a phone attaches', () {
+    late Directory uploadRoot;
+    var attached = <String>[];
+
+    setUp(() {
+      uploadRoot = Directory.systemTemp.createTempSync('grid-rpc-uploads');
+      attached = <String>[];
+    });
+
+    tearDown(() => uploadRoot.deleteSync(recursive: true));
+
+    MobileRpcService host() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      readChat: (id, {int? limit, int? offset}) =>
+          (lines: const <ChatLine>[], total: 0, offset: 0),
+      uploads: MobileUploadStore(directory: uploadRoot),
+      sendToChat: (chatId, text, files) async {
+        attached.addAll(files.map((file) => file.name));
+        return null;
+      },
+    );
+
+    Future<MobileRpcResponse> ask(
+      MobileRpcService service,
+      String method,
+      Map<String, Object?> params, {
+      required bool allowed,
+    }) => service.handle(
+      MobileRpcRequest(id: 'r1', method: method, params: params),
+      deviceId: 'device-1',
+      mayAct: () async => allowed,
+    );
+
+    test('will not begin an upload without the switch — this is the one place '
+        'a phone writes bytes to the computer', () async {
+      final answer = await ask(host(), 'uploads.begin', {
+        'name': 'photo.jpg',
+        'size': 10,
+      }, allowed: false);
+
+      expect((answer as MobileRpcFailed).code, 'forbidden');
+    });
+
+    test('tells the phone how big a piece may be rather than letting it guess, '
+        'because a frame too large ends the connection', () async {
+      final answer = await ask(host(), 'uploads.begin', {
+        'name': 'photo.jpg',
+        'size': 10,
+      }, allowed: true);
+
+      final result = (answer as MobileRpcOk).result;
+      expect(result['uploadId'], isA<String>());
+      expect(result['chunkBytes'], maxChunkBytes);
+    });
+
+    test('carries a finished file into the turn it was sent with', () async {
+      final service = host();
+      final begun =
+          (await ask(service, 'uploads.begin', {
+                    'name': 'holiday.png',
+                    'size': 3,
+                  }, allowed: true)
+                  as MobileRpcOk)
+              .result['uploadId']!;
+      await ask(service, 'uploads.chunk', {
+        'uploadId': begun,
+        'data': base64Encode(const [1, 2, 3]),
+      }, allowed: true);
+
+      final sent = await ask(service, 'chats.send', {
+        'id': 'c1',
+        'text': 'what is this',
+        'uploads': [begun],
+      }, allowed: true);
+
+      expect(sent, isA<MobileRpcOk>());
+      expect(attached.single, endsWith('.png'));
+    });
+
+    test('refuses the whole turn when a named file never finished, rather than '
+        'answering about an attachment that is half there', () async {
+      final service = host();
+      final begun =
+          (await ask(service, 'uploads.begin', {
+                    'name': 'big.png',
+                    'size': 100,
+                  }, allowed: true)
+                  as MobileRpcOk)
+              .result['uploadId']!;
+
+      final sent = await ask(service, 'chats.send', {
+        'id': 'c1',
+        'text': 'look',
+        'uploads': [begun],
+      }, allowed: true);
+
+      expect(sent, isA<MobileRpcFailed>());
+      expect(attached, isEmpty);
+    });
+  });
+
+  group('a picture attached to a turn', () {
+    late Directory root;
+    late Directory chats;
+    late File picture;
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('grid-media');
+      chats = Directory('${root.path}/chats')..createSync();
+      picture = File('${root.path}/photo.jpg')
+        ..writeAsBytesSync(List.generate(5000, (i) => i % 256));
+      File('${chats.path}/c1.json').writeAsStringSync(
+        jsonEncode({
+          'id': 'c1',
+          'messages': [
+            {
+              'role': 'user',
+              'text': 'look at this',
+              'media': [
+                {'path': picture.path, 'kind': 'image'},
+              ],
+            },
+          ],
+        }),
+      );
+    });
+
+    tearDown(() => root.deleteSync(recursive: true));
+
+    test('is described in the transcript without its bytes, because one photo '
+        'can be bigger than a frame is allowed to be', () {
+      final page = readChatPage('c1', chatsDir: chats)!;
+
+      expect(page.lines.single.media.single.kind, 'image');
+      expect(page.lines.single.media.single.name, 'photo.jpg');
+    });
+
+    test('comes back in slices that can be stitched into the whole file', () {
+      final whole = <int>[];
+      var offset = 0;
+      while (true) {
+        final slice = readChatMedia(
+          'c1',
+          messageIndex: 0,
+          mediaIndex: 0,
+          offset: offset,
+          length: 1500,
+          chatsDir: chats,
+        )!;
+        if (slice.bytes.isEmpty) break;
+        whole.addAll(slice.bytes);
+        offset += slice.bytes.length;
+        if (offset >= slice.size) break;
+      }
+
+      expect(whole, picture.readAsBytesSync());
+    });
+
+    test('reports the whole file size on every slice, which is how the phone '
+        'knows whether to ask again', () {
+      final slice = readChatMedia(
+        'c1',
+        messageIndex: 0,
+        mediaIndex: 0,
+        length: 10,
+        chatsDir: chats,
+      )!;
+
+      expect(slice.bytes, hasLength(10));
+      expect(slice.size, 5000);
+    });
+
+    test('is null for a turn or an attachment that is not there, rather than '
+        'reading whatever is at index zero', () {
+      expect(
+        readChatMedia('c1', messageIndex: 9, mediaIndex: 0, chatsDir: chats),
+        isNull,
+      );
+      expect(
+        readChatMedia('c1', messageIndex: 0, mediaIndex: 9, chatsDir: chats),
+        isNull,
+      );
+    });
+
+    test('is null when the file behind it has been cleared, since ~/.grid/'
+        'outputs is emptied by hand and by the app', () {
+      picture.deleteSync();
+
+      expect(
+        readChatMedia('c1', messageIndex: 0, mediaIndex: 0, chatsDir: chats),
+        isNull,
+      );
+    });
+
+    test('still refuses a chat id that is a path, the same field guarded on '
+        'every other read', () {
+      expect(
+        readChatMedia(
+          '../secret',
+          messageIndex: 0,
+          mediaIndex: 0,
+          chatsDir: chats,
+        ),
+        isNull,
+      );
+    });
+
+    test('keeps a turn that is only a picture, which used to vanish — a photo '
+        'sent with no words was simply missing from the phone', () {
+      File('${chats.path}/c2.json').writeAsStringSync(
+        jsonEncode({
+          'id': 'c2',
+          'messages': [
+            {
+              'role': 'user',
+              'text': '',
+              'media': [
+                {'path': picture.path, 'kind': 'image'},
+              ],
+            },
+          ],
+        }),
+      );
+
+      final page = readChatPage('c2', chatsDir: chats)!;
+
+      expect(page.lines, hasLength(1));
+      expect(page.lines.single.media, hasLength(1));
+    });
+  });
+
+  group('what a chat says while an answer is being written', () {
+    MobileRpcService hostThatIsWriting(String streaming, {bool busy = true}) =>
+        MobileRpcService(
+          hostName: 'test-host',
+          appVersion: '0.0.0',
+          readGrids: () => const [],
+          readChat: (id, {int? limit, int? offset}) =>
+              (lines: const <ChatLine>[], total: 4, offset: 0),
+          chatIsBusy: (id) => busy,
+          chatStreaming: (id) => streaming,
+        );
+
+    Future<Map<String, Object?>> head(MobileRpcService service) async {
+      final answer = await service.handle(
+        MobileRpcRequest(id: 'r1', method: 'chats.head', params: {'id': 'c1'}),
+        deviceId: 'device-1',
+      );
+      return (answer as MobileRpcOk).result;
+    }
+
+    test(
+      'carries the reply as far as it has been written, because a turn is '
+      'not on disk until it finishes and the phone reads disk — that gap is '
+      'the whole minute the phone showed a spinner and nothing else',
+      () async {
+        final result = await head(hostThatIsWriting('Looking at the folder'));
+
+        expect(result['busy'], isTrue);
+        expect(result['streaming'], 'Looking at the folder');
+      },
+    );
+
+    test('leaves the key out entirely when nothing is being written, since '
+        'this is asked about once a second and an empty key is bytes spent to '
+        'say nothing', () async {
+      final result = await head(hostThatIsWriting('', busy: false));
+
+      expect(result.containsKey('streaming'), isFalse);
+      expect(result['busy'], isFalse);
+    });
+
+    test('is busy with no text yet on a turn that has started but produced '
+        'nothing — the phone has a spinner for that, and an empty bubble says '
+        'less', () async {
+      final result = await head(hostThatIsWriting(''));
+
+      expect(result['busy'], isTrue);
+      expect(result.containsKey('streaming'), isFalse);
+    });
+
+    test('answers the head of a chat without sending its forty turns, which '
+        'is the reason it is a method of its own', () async {
+      final result = await head(hostThatIsWriting('half an answer'));
+
+      expect(result['total'], 4);
+      expect(result.containsKey('messages'), isFalse);
+    });
+  });
+
+  group('putting a chat away', () {
+    var changes = <String>[];
+
+    MobileRpcService host() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      readChat: (id, {int? limit, int? offset}) =>
+          (lines: const <ChatLine>[], total: 0, offset: 0),
+      setOption: (chatId, field, value) async {
+        changes.add('$chatId/$field=$value');
+        return null;
+      },
+    );
+
+    Future<MobileRpcResponse> archive(String value, {required bool allowed}) =>
+        host().handle(
+          MobileRpcRequest(
+            id: 'r1',
+            method: 'chats.set',
+            params: {'id': 'c1', 'field': 'archived', 'value': value},
+          ),
+          deviceId: 'device-1',
+          mayAct: () async => allowed,
+        );
+
+    setUp(() => changes = <String>[]);
+
+    test(
+      'travels as an ordinary change rather than a method of its own, so it '
+      'is behind the same switch as everything else a phone changes',
+      () async {
+        expect(await archive('true', allowed: true), isA<MobileRpcOk>());
+        expect(changes, ['c1/archived=true']);
+      },
+    );
+
+    test(
+      'is refused without the switch — the rule is that a phone reads '
+      'freely and changes nothing unless somebody said it may, and an '
+      'exception for the harmless case is how that stops being a rule',
+      () async {
+        expect(
+          (await archive('true', allowed: false) as MobileRpcFailed).code,
+          'forbidden',
+        );
+        expect(changes, isEmpty);
+      },
+    );
+
+    test('carries the un-archive the same way, so one field covers both '
+        'directions', () async {
+      await archive('false', allowed: true);
+
+      expect(changes, ['c1/archived=false']);
+    });
+  });
+
+  group('which chats a screen shows', () {
+    ChatHeader header(String id, {required bool archived}) => (
+      id: id,
+      title: id,
+      model: '',
+      agent: '',
+      projectId: '',
+      updatedAt: '2026-09-15T00:00:00Z',
+      archived: archived,
+    );
+
+    test('the list carries archived chats rather than dropping them, because '
+        'a phone that never receives them has no archive at all — not a '
+        'hidden one', () async {
+      final service = MobileRpcService(
+        hostName: 'test-host',
+        appVersion: '0.0.0',
+        readGrids: () => const [],
+        readChats: () => [
+          header('live', archived: false),
+          header('away', archived: true),
+        ],
+      );
+
+      final answer = await service.handle(
+        MobileRpcRequest(id: 'r1', method: 'chats.list'),
+        deviceId: 'device-1',
+      );
+
+      final rows = (answer as MobileRpcOk).result['chats']! as List;
+      expect(rows, hasLength(2));
+      expect(rows.map((row) => (row! as Map)['archived']), [false, true]);
+    });
+  });
+
+  group('opening one grid', () {
+    MobileRpcService host({bool current = false}) => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [
+        (
+          id: 'g1',
+          name: 'macOS',
+          type: 'os-community',
+          email: 'me@example.com',
+        ),
+      ],
+      readEngines: (gridId) => const [
+        (id: 'llama', models: ['qwen3-8b'], running: true),
+      ],
+      gridIsCurrent: (gridId) => current,
+    );
+
+    Future<MobileRpcResponse> open(String id, {bool current = false}) =>
+        host(current: current).handle(
+          MobileRpcRequest(id: 'r1', method: 'grids.get', params: {'id': id}),
+          deviceId: 'device-1',
+        );
+
+    test('is a read, so any paired phone may open a grid it can already see in '
+        'the list', () async {
+      expect(await open('g1'), isA<MobileRpcOk>());
+    });
+
+    test('carries only the four fields a grid is described by, plus what this '
+        'computer is serving — never the token that would let a phone act as '
+        'the account', () async {
+      final result = (await open('g1') as MobileRpcOk).result;
+
+      expect(result.keys.toSet(), {
+        'id',
+        'name',
+        'type',
+        'email',
+        'current',
+        'engines',
+      });
+    });
+
+    test('says which grid the computer is actually working in, so three signed '
+        'in grids do not all read as live', () async {
+      expect(((await open('g1') as MobileRpcOk).result)['current'], isFalse);
+      expect(
+        ((await open('g1', current: true) as MobileRpcOk).result)['current'],
+        isTrue,
+      );
+    });
+
+    test('says not_found for a grid the computer has left, rather than a blank '
+        'screen about nothing', () async {
+      expect((await open('gone') as MobileRpcFailed).code, 'not_found');
+    });
+
+    test('says bad_request when no grid was named', () async {
+      final answer = await host().handle(
+        MobileRpcRequest(id: 'r1', method: 'grids.get'),
+        deviceId: 'device-1',
+      );
+
+      expect((answer as MobileRpcFailed).code, 'bad_request');
+    });
+  });
+
+  group('starting a project from a phone', () {
+    var asked = <String>[];
+
+    MobileRpcService host() => MobileRpcService(
+      hostName: 'test-host',
+      appVersion: '0.0.0',
+      readGrids: () => const [],
+      createProject: (name) {
+        asked.add(name);
+        return (id: 'p-new', problem: null);
+      },
+    );
+
+    Future<MobileRpcResponse> make(
+      Map<String, Object?> params, {
+      required bool allowed,
+    }) => host().handle(
+      MobileRpcRequest(id: 'r1', method: 'projects.create', params: params),
+      deviceId: 'device-1',
+      mayAct: () async => allowed,
+    );
+
+    setUp(() => asked = <String>[]);
+
+    test('carries a name and only a name — a path from a phone would be a '
+        'phone that can make a folder anywhere on the computer', () async {
+      final answer = await make({
+        'name': 'Holiday Site',
+        // Sent and ignored: an older or hostile client may try, and the host
+        // must not start honouring it by accident.
+        'path': '/Users/someone/.ssh',
+      }, allowed: true);
+
+      expect((answer as MobileRpcOk).result['id'], 'p-new');
+      expect(asked, ['Holiday Site']);
+    });
+
+    test('is refused without the switch, like every other write', () async {
+      expect(
+        (await make({'name': 'Nope'}, allowed: false) as MobileRpcFailed).code,
+        'forbidden',
+      );
+      expect(asked, isEmpty);
+    });
+
+    test('refuses a nameless project rather than inventing one', () async {
+      expect(
+        (await make({'name': '   '}, allowed: true) as MobileRpcFailed).code,
+        'bad_request',
+      );
+      expect(asked, isEmpty);
+    });
+
+    test('hands back the computer own reason when the name cannot be used, '
+        'since "letters, numbers, spaces or dashes" is something the person '
+        'can act on', () async {
+      final service = MobileRpcService(
+        hostName: 'test-host',
+        appVersion: '0.0.0',
+        readGrids: () => const [],
+        createProject: (name) => (id: null, problem: 'Give it a real name.'),
+      );
+
+      final answer = await service.handle(
+        MobileRpcRequest(
+          id: 'r1',
+          method: 'projects.create',
+          params: {'name': '###'},
+        ),
+        deviceId: 'device-1',
+        mayAct: () async => true,
+      );
+
+      expect((answer as MobileRpcFailed).message, 'Give it a real name.');
+    });
   });
 }

@@ -75,6 +75,23 @@ String? nodePlanLabel(OverviewNode node) {
   return '${plan[0].toUpperCase()}${plan.substring(1)} plan';
 }
 
+/// Everything one node's row says about itself, as short facts in reading
+/// order: engine, device class, memory, what it serves, how much at once, how
+/// fast. Empty facts are dropped rather than left as stray separators.
+///
+/// Extracted from the node tile because the phone prints the same line. It has
+/// no overview of its own — it is shown what this computer projects for it — so
+/// a second copy of this list would be two apps quietly disagreeing about the
+/// same machine.
+List<String> nodeOverviewSpecs(OverviewNode node) => [
+  nodeEngineLabel(node.engine),
+  if ((node.deviceClass ?? '').isNotEmpty) node.deviceClass!.toUpperCase(),
+  ?nodeVramLabel(node),
+  nodeRoleSummary(node),
+  if ((node.maxConcurrency ?? 0) > 1) '${node.maxConcurrency} parallel',
+  if (node.throughputTokS != null) '~${node.throughputTokS!.round()} tok/s',
+].where((fact) => fact.isNotEmpty).toList(growable: false);
+
 /// A short spec line for a node whose VRAM is unknown: engine and device class,
 /// whichever of them says something ("doggi · GPU", "GPU", or empty).
 ///

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/theme/theme_mode_labels.dart';
 
 /// A compact Light / Dark / System switch for the sign-in screen's corner. Reads
 /// and writes the same persisted [themeModeProvider] / [chatPrefsProvider] the

@@ -38,6 +38,10 @@ dependencies:
   # plugins do not build for iOS. See packages/grid_pairing/pubspec.yaml.
   grid_pairing:
     path: packages/grid_pairing
+  # The design system, shared with the phone app so the two cannot drift
+  # apart on a colour or a corner radius.
+  grid_theme:
+    path: packages/grid_theme
   flutter_svg: ^2.3.0
   lucide_icons_flutter: ^3.1.15
   markdown: ^7.3.1

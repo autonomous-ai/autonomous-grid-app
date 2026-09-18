@@ -6,12 +6,22 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
+import '../logic/chat_archive.dart';
 import '../logic/chat_when.dart';
 import '../logic/phone_chats.dart';
+import 'parts.dart';
 
-/// A tappable conversation row.
-class ChatTile extends StatelessWidget {
+/// A tappable conversation row, swiped left to put away.
+///
+/// Swipe rather than a menu, because it is the gesture this list is shaped for
+/// and the one every other iOS list uses for the same job. The swipe is
+/// confirmed by the *computer*, not by the animation: [confirmDismiss] does the
+/// work and refuses the dismissal when the computer does, so a row never slides
+/// away over a chat that is still in the list.
+class ChatTile extends ConsumerWidget {
   const ChatTile({
     required this.chat,
     required this.projectName,
@@ -29,53 +39,93 @@ class ChatTile extends StatelessWidget {
   final VoidCallback onOpen;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final when = chatWhen(chat.updatedAt);
-    final detail = [
-      if (projectName.isNotEmpty) projectName,
-      if (chat.model.isNotEmpty) chat.model,
-      if (when.isNotEmpty) when,
-    ].join(' · ');
-    return InkWell(
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppTheme.watch(context);
+    return Dismissible(
+      key: ValueKey(chat.id),
+      direction: DismissDirection.endToStart,
+      background: _SwipeAction(away: !chat.archived),
+      confirmDismiss: (_) async {
+        final refused = await archiveChat(
+          ref,
+          chatId: chat.id,
+          away: !chat.archived,
+        );
+        if (refused == null) return true;
+        if (!context.mounted) return false;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(refused)));
+        return false;
+      },
+      child: _row(context),
+    );
+  }
+
+  Widget _row(BuildContext context) {
+    return GridListRow(
       onTap: onOpen,
-      borderRadius: BorderRadius.circular(12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  chat.title.isEmpty ? 'Untitled chat' : chat.title,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                RowDetail([projectName, chat.model, chatWhen(chat.updatedAt)]),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: AppPalette.textFaint,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What shows behind a row as it is swiped.
+class _SwipeAction extends StatelessWidget {
+  const _SwipeAction({required this.away});
+
+  /// Whether this swipe puts the chat away or brings it back.
+  final bool away;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 18),
         decoration: BoxDecoration(
-          border: Border.all(color: theme.dividerColor),
-          borderRadius: BorderRadius.circular(12),
+          color: AppCard.inset,
+          borderRadius: BorderRadius.circular(AppCard.radius),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    chat.title.isEmpty ? 'Untitled chat' : chat.title,
-                    style: theme.textTheme.bodyLarge,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (detail.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      style: theme.textTheme.bodySmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
+            Icon(
+              away ? Icons.archive_outlined : Icons.unarchive_outlined,
+              size: 16,
+              color: AppPalette.textSecondary,
             ),
             const SizedBox(width: 8),
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: theme.textTheme.bodySmall?.color,
+            Text(
+              away ? 'Archive' : 'Put back',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: AppPalette.textSecondary,
+              ),
             ),
           ],
         ),

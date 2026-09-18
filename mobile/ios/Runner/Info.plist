@@ -4,6 +4,12 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- Required by image_picker. iOS does not refuse a photo request without
+	     one of these, it terminates the app — so the absence of this key is a
+	     crash on the first tap of Attach, not a permission prompt that never
+	     appears. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Grid needs your photo library so you can send a picture to the assistant running on your computer.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

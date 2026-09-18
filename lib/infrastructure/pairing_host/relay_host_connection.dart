@@ -32,11 +32,13 @@ class RelayHostConnection {
     required DeviceRegistry registry,
     required MobileRpcService rpc,
     required void Function(String message) onEvent,
+    void Function(Object error)? onLost,
   }) : _cellUrl = cellUrl,
        _keyPair = keyPair,
        _registry = registry,
        _rpc = rpc,
        _onEvent = onEvent,
+       _onLost = onLost,
        relayHostId = deriveRelayHostId(keyPair.publicKey);
 
   /// The id this computer's key owns. Also the path a phone dials.
@@ -47,6 +49,15 @@ class RelayHostConnection {
   final DeviceRegistry _registry;
   final MobileRpcService _rpc;
   final void Function(String message) _onEvent;
+
+  /// The registration is gone and this object is finished — the relay closed
+  /// the channel, restarted, or refused a challenge mid-session.
+  ///
+  /// Separate from [_onEvent] because a line in an activity log is not a state
+  /// change, and this is one. Everything this class can still be asked to do
+  /// goes through a socket that is now closed, so a caller that kept showing a
+  /// live screen would offer buttons that can only time out.
+  final void Function(Object error)? _onLost;
 
   WebSocket? _control;
   int _generation = 0;
@@ -85,7 +96,30 @@ class RelayHostConnection {
   }
 
   /// A fresh pairing code's relay half, tied to [relayDeviceId].
-  Future<PairingRelayEndpoint> mintInvite(String relayDeviceId) async {
+  ///
+  /// One connection's worth of authority, ten minutes long: it is a code on a
+  /// screen and nobody has proved anything yet.
+  Future<PairingRelayEndpoint> mintInvite(String relayDeviceId) =>
+      _mint('invite-create', relayDeviceId, 'a pairing code');
+
+  /// A way back in for a phone that has **already** proved itself.
+  ///
+  /// Reusable, long-lived, and — the part that matters — kept by the relay on
+  /// this computer's host id rather than on its current session. An invite dies
+  /// the moment somebody quits Grid here, because it hangs off the session that
+  /// goes with it; that is why a phone closed for a while used to need a code
+  /// copied by hand every single time.
+  ///
+  /// Only ever handed to a phone inside the sealed channel it authenticated on,
+  /// which is what makes a longer life reasonable.
+  Future<PairingRelayEndpoint> mintResume(String relayDeviceId) =>
+      _mint('resume-create', relayDeviceId, 'a way back in');
+
+  Future<PairingRelayEndpoint> _mint(
+    String type,
+    String relayDeviceId,
+    String what,
+  ) async {
     final socket = _control;
     if (socket == null) throw StateError('not registered with a relay');
     final reqId = 'invite-${++_inviteCounter}';
@@ -93,7 +127,7 @@ class RelayHostConnection {
     _pendingInvites[reqId] = pending;
     socket.add(
       jsonEncode({
-        'type': 'invite-create',
+        'type': type,
         'reqId': reqId,
         'relayDeviceId': relayDeviceId,
       }),
@@ -102,7 +136,7 @@ class RelayHostConnection {
       _connectTimeout,
       onTimeout: () {
         _pendingInvites.remove(reqId);
-        throw StateError('the relay did not mint a pairing code in time');
+        throw StateError('the relay did not mint $what in time');
       },
     );
     return PairingRelayEndpoint(
@@ -138,7 +172,10 @@ class RelayHostConnection {
         _registered?.complete();
       case 'ping':
         _control?.add(jsonEncode({'type': 'pong', 't': value['t']}));
+      // One waiter map for both, because the request id is what correlates
+      // them and a resume is minted exactly the way an invite is.
       case 'invite-created':
+      case 'resume-created':
         _pendingInvites.remove(value['reqId'])?.complete(value);
       case 'conn-open':
         unawaited(_attach(value));
@@ -216,6 +253,20 @@ class RelayHostConnection {
       registered.completeError(error);
       return;
     }
+    // Nothing to lose: [stop] clears this before it closes the socket, and the
+    // `onDone` that follows is the disconnect somebody asked for.
+    if (_control == null) return;
+    // Dropped, so anything asked of this connection now fails saying it is not
+    // registered instead of writing into a closed socket and waiting out the
+    // timeout. That wait is what a relay restart used to look like from the
+    // screen: a live-looking Create code that answered "the relay did not mint
+    // a pairing code in time" fifteen seconds later, every time, forever.
+    _control = null;
+    for (final pending in _pendingInvites.values) {
+      if (!pending.isCompleted) pending.completeError(error);
+    }
+    _pendingInvites.clear();
     _onEvent('relay connection lost: $error');
+    _onLost?.call(error);
   }
 }

@@ -15,7 +15,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'phone_attachments.dart';
 import 'phone_chats.dart';
+import 'phone_uploads.dart';
 import 'phone_link_controller.dart';
 import 'relay_phone_client.dart';
 
@@ -75,15 +77,29 @@ class PhoneSendController extends Notifier<PhoneSendState> {
     return const PhoneSendIdle();
   }
 
-  /// Sends [text], then waits for the computer to finish answering it.
-  Future<void> send(String text) async {
-    if (text.trim().isEmpty) return;
+  /// Sends [text] with whatever is attached, then waits for the answer.
+  ///
+  /// [uploadEach] does the actual putting-on-the-computer. It is passed in
+  /// because it needs a [WidgetRef] and this is a notifier — and because it
+  /// keeps the part that can take a minute over a phone connection out of the
+  /// state machine that has to stay readable.
+  Future<void> send(
+    String text, {
+    required Future<List<String>> Function(List<OutgoingFile>) uploadEach,
+  }) async {
+    final staged = ref.read(attachmentsProvider(chatId));
+    if (text.trim().isEmpty && staged.isEmpty) return;
     state = const PhoneSendWorking();
     try {
+      // Files first: the message names them, so a send that went before them
+      // would arrive asking about pictures that are not there yet.
+      final uploads = await uploadEach(staged);
       await ref.read(phoneLinkProvider.notifier).call('chats.send', {
         'id': chatId,
         'text': text.trim(),
+        if (uploads.isNotEmpty) 'uploads': uploads,
       });
+      ref.read(attachmentsProvider(chatId).notifier).clear();
     } on RelayPhoneFailure catch (failure) {
       state = PhoneSendFailed(failure.message);
       return;

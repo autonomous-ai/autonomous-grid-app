@@ -791,6 +791,30 @@ class ChatSessionsController extends _ChatSessions
     _saveAndReplace(chat.copyWith(model: model));
   }
 
+  /// Which assistant answers **one** chat, named rather than taken from the
+  /// open one.
+  ///
+  /// The sibling of [setChatModel], and it exists for the same reason: a remote
+  /// surface changes a chat it is not standing in. [setApproval] writes to
+  /// whichever chat is open, which is right for the composer and wrong for a
+  /// phone holding a conversation the window has never shown.
+  void setChatAgent(String id, String agent) {
+    final chat = _find(id);
+    if (chat == null || chat.agent == agent) return;
+    // Leaves `updatedAt` alone, like [setChatModel]: choosing who answers is
+    // not talking, and must not re-sort the sidebar.
+    _saveAndReplace(chat.copyWith(agent: agent));
+  }
+
+  /// What the assistant may do without asking in **one** chat, named.
+  ///
+  /// See [setChatAgent] for why this is separate from [setApproval].
+  void setChatApproval(String id, AgentApprovalMode approval) {
+    final chat = _find(id);
+    if (chat == null || chat.approval == approval) return;
+    _saveAndReplace(chat.copyWith(approval: approval));
+  }
+
   /// Point the open chat at [model] from **outside the composer** — the rail's
   /// target menu, which can name a model the composer is not showing.
   ///

@@ -203,7 +203,14 @@ class RelayPhoneClient {
     throw RelayPhoneFailure(
       switch (code) {
         // The two codes that name a cause somebody can act on.
-        4404 => 'Your computer is offline. Open Grid on it, then try again.',
+        // Two causes, one code, and the old wording only covered one of them:
+        // it said "open Grid on it" to somebody looking straight at an open
+        // Grid, because the *link* was off rather than the app. Which is right
+        // is something only the person standing at the computer can see, so
+        // this names both rather than guessing (§5).
+        4404 =>
+          "Grid on your computer isn't sharing with this phone. Open it — and "
+              "if it's already open, switch on Settings ▸ Phone.",
         4408 => "Your computer is running but didn't pick up. Try again.",
         4401 =>
           'This pairing code was already used, or it expired. Create a new one '

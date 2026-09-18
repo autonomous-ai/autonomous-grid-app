@@ -26,7 +26,19 @@ typedef ChatRow = ({
 typedef ProjectRow = ({String id, String name, String model, String agent});
 
 /// One turn of a conversation.
-typedef ChatLine = ({String role, String text});
+///
+/// [index] is the turn's place in the whole chat, which is how a picture on it
+/// is asked for. [media] describes attachments without carrying them: a photo
+/// is measured in megabytes and the channel cannot frame one.
+typedef ChatLine = ({
+  String role,
+  String text,
+  int index,
+  List<ChatMediaRef> media,
+});
+
+/// A picture attached to a turn, named but not yet fetched.
+typedef ChatMediaRef = ({String kind, String name});
 
 /// A page of one conversation, newest last.
 ///
@@ -51,10 +63,13 @@ typedef ChatTranscript = ({
 /// another.
 typedef TranscriptRequest = ({String id, int? offset});
 
-/// Every conversation on the computer, newest activity first.
+/// Every conversation on the computer, newest activity first — **archived ones
+/// included**.
 ///
-/// Archived chats are left out: they are hidden on the computer too, and a
-/// phone list is the wrong place to bring 93 of them back.
+/// They used to be dropped here, which quietly meant the phone had no archive
+/// at all: not "hidden by default" but *absent*, with no screen able to show
+/// them and no way to put one away. Filtering is the screen's job, and each
+/// screen says which half it wants ([liveChats], [archivedChats]).
 ///
 /// `retry: null` because Riverpod 3 otherwise retries a failed provider ten
 /// times — and a failure here is usually the channel being down, so retrying
@@ -65,7 +80,7 @@ final chatListProvider = FutureProvider<List<ChatRow>>((ref) async {
   if (rows is! List) return const [];
   return [
     for (final row in rows)
-      if (row is Map && row['archived'] != true)
+      if (row is Map)
         (
           id: '${row['id'] ?? ''}',
           title: '${row['title'] ?? ''}',
@@ -73,10 +88,22 @@ final chatListProvider = FutureProvider<List<ChatRow>>((ref) async {
           agent: '${row['agent'] ?? ''}',
           projectId: '${row['projectId'] ?? ''}',
           updatedAt: '${row['updatedAt'] ?? ''}',
-          archived: false,
+          archived: row['archived'] == true,
         ),
   ];
 }, retry: null);
+
+/// The chats still in play.
+List<ChatRow> liveChats(List<ChatRow> all) => [
+  for (final chat in all)
+    if (!chat.archived) chat,
+];
+
+/// The chats put away.
+List<ChatRow> archivedChats(List<ChatRow> all) => [
+  for (final chat in all)
+    if (chat.archived) chat,
+];
 
 /// The computer's projects, keyed by id, so a chat row can name the project it
 /// belongs to instead of showing a number.
@@ -120,6 +147,18 @@ final transcriptProvider =
               (
                 role: '${message['role'] ?? ''}',
                 text: '${message['text'] ?? ''}',
+                index: _asInt(message['index']) ?? 0,
+                media: [
+                  for (final item
+                      in message['media'] is List
+                          ? message['media']! as List
+                          : const [])
+                    if (item is Map)
+                      (
+                        kind: '${item['kind'] ?? 'file'}',
+                        name: '${item['name'] ?? ''}',
+                      ),
+                ],
               ),
         ],
         total: _asInt(result['total']) ?? 0,

@@ -16,19 +16,61 @@ library;
 const kMobileRpcMethods = <String>{
   'status.get',
   'grids.list',
+  // One grid: what this computer is signed in as, what it is serving to that
+  // grid, and the grid's own live state — models, machines, pooled hardware.
+  // Never its tokens: `credentials.toml` holds a bearer credential for every
+  // grid, and the projection behind this reads four fields and stops.
+  //
+  // The live half is this computer calling the grid's relay on the phone's
+  // behalf, because the phone holds no credential to call it with, and it is
+  // sent as finished words rather than the relay's payload — one app formats
+  // "829.1 GB" and "~513 tok/s", the other prints it. An older desktop simply
+  // omits the `overview` key, which is what a phone must read as "no live
+  // state", never as a grid that is empty.
+  'grids.get',
   'projects.list',
+  // Starting one. The phone sends a *name*, never a path: the computer decides
+  // where the folder goes, because a phone that could name a path would be a
+  // phone that can make a folder anywhere on somebody's machine.
+  'projects.create',
   // Headers only. The transcripts are not in this answer and are not in one
   // reply either: the largest conversation on this machine's history is 9.37 MB
   // and the relay ends a connection that frames more than 8 MB, so reading a
   // chat is paged rather than fetched.
   'chats.list',
   'chats.get',
+  // How many turns a chat has and whether one is being written — the two facts
+  // a phone needs to know it is out of date. Its own method because it is asked
+  // on a timer while a chat is open, and asking `chats.get` for that would
+  // re-send the whole page to learn one number.
+  'chats.head',
+  // The bytes of a picture already attached to a chat this phone can read,
+  // asked for a slice at a time. The phone names a *turn*, never a path: the
+  // only files reachable this way are ones the computer itself attached.
+  'chats.media',
   // The one method here that makes this computer *do* something rather than
   // say what it has already done, and the only one gated by a second check: a
   // per-device switch that is off until somebody turns it on at the computer.
   // A pairing code proves which phone is calling. It cannot prove who is
   // holding it, which is the question this method actually raises.
   'chats.send',
+  // What the composer's pickers are drawn from. A read, and the answer is
+  // built by the computer rather than derived on the phone: which agent can
+  // answer with which model is a rule that has changed as agents changed, and
+  // a phone shipping an old copy of it would offer a pick that answers nothing.
+  'chats.options',
+  // Changing a chat's model, assistant or access. Gated exactly like sending:
+  // the rule is read freely, change nothing, unless the switch is on.
+  'chats.set',
+  // Starting a conversation, message and all. Without it a phone can only
+  // continue something that was begun at the computer.
+  'chats.create',
+  // Putting a picture or a document on the computer, a piece at a time. The
+  // only methods here that write bytes rather than text, which is why the store
+  // behind them caps the size, the count and the age of what it holds — and why
+  // both are behind the same switch as sending.
+  'uploads.begin',
+  'uploads.chunk',
   // The phone's stand-in for a resume credential. An invite opens exactly one
   // connection and is then spent, so without this a phone that is closed and
   // reopened has to be paired by hand every time. Asking for the next one

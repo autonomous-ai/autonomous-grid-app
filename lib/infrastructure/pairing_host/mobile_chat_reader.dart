@@ -37,7 +37,31 @@ typedef ChatHeader = ({
 typedef ProjectSummary = ({String id, String name, String model, String agent});
 
 /// One turn in a transcript.
-typedef ChatLine = ({String role, String text});
+///
+/// [index] is the turn's position in the whole conversation, not in the page —
+/// it is how the phone asks for a picture attached to *this* turn, and a page
+/// number would name a different turn on the next page.
+typedef ChatLine = ({
+  String role,
+  String text,
+  int index,
+  List<ChatMedia> media,
+});
+
+/// A picture or file attached to a turn, described but not carried.
+///
+/// The bytes are fetched separately and in ranges: the relay ends a connection
+/// that frames more than 8 MB, and the photo that prompted this was 3.78 MB
+/// before base64 grew it by a third.
+typedef ChatMedia = ({String kind, String name});
+
+/// A slice of one attachment's bytes.
+typedef ChatMediaSlice = ({
+  String name,
+  String kind,
+  int size,
+  List<int> bytes,
+});
 
 /// A page of a transcript, newest last, and whether older turns exist.
 typedef ChatPage = ({List<ChatLine> lines, int total, int offset});
@@ -110,7 +134,7 @@ ChatPage? readChatPage(
   final lines = <ChatLine>[];
   var bytes = 0;
   for (var index = start; index < total && lines.length < want; index++) {
-    final line = _lineOf(messages[index]);
+    final line = _lineOf(messages[index], index);
     if (line == null) continue;
     bytes += line.text.length;
     // Checked *after* the first line is taken: a page that stops before it
@@ -167,17 +191,41 @@ ChatHeader? _headerOf(Object? value) {
   );
 }
 
-/// The turn [value] describes, or null when it carries no text.
+/// The turn [value] describes, or null when there is nothing to show at all.
 ///
-/// A turn whose only content was a picture comes back as null rather than as an
-/// empty bubble: the phone is not shown media (see the library comment), and a
-/// blank row claims the assistant said nothing when it did.
-ChatLine? _lineOf(Object? value) {
+/// A turn with no text but a picture is kept — it used to be dropped, and that
+/// is why a message sent from the computer with an image and no words simply
+/// was not on the phone. What is still dropped is a turn that is empty of both.
+ChatLine? _lineOf(Object? value, int index) {
   if (value is! Map) return null;
   final role = value['role'];
   final text = value['text'];
-  if (role is! String || text is! String || text.trim().isEmpty) return null;
-  return (role: role, text: text);
+  if (role is! String) return null;
+  final media = _mediaOf(value['media']);
+  final body = text is String ? text : '';
+  if (body.trim().isEmpty && media.isEmpty) return null;
+  return (role: role, text: body, index: index, media: media);
+}
+
+/// What a turn carries, named but not read.
+///
+/// The name is the file's, so the phone can say "photo.jpg" while it loads, and
+/// the path it came from never leaves this computer.
+List<ChatMedia> _mediaOf(Object? value) {
+  if (value is! List) return const [];
+  return [
+    for (final item in value)
+      if (item is Map && item['path'] is String)
+        (
+          kind: '${item['kind'] ?? 'file'}',
+          name: _fileNameOf(item['path']! as String),
+        ),
+  ];
+}
+
+String _fileNameOf(String path) {
+  final slash = path.lastIndexOf('/');
+  return slash < 0 ? path : path.substring(slash + 1);
 }
 
 /// Whether [id] is a conversation id and not a path.
@@ -193,5 +241,80 @@ Object? _readJson(File file) {
     return jsonDecode(file.readAsStringSync());
   } on Object {
     return null;
+  }
+}
+
+/// The most bytes one request for a picture may carry back.
+///
+/// The same reasoning as [kMobileChatPageBytes] and the upload chunk: the relay
+/// ends a connection over 8 MB and base64 grows what it carries by a third, so
+/// this leaves room for both.
+const int kMobileMediaSliceBytes = 1024 * 1024;
+
+/// [length] bytes of the attachment on turn [messageIndex], from [offset].
+///
+/// Ranged rather than whole because an iPhone photo is measured in megabytes
+/// and one frame cannot hold an arbitrary one. Null when there is no such chat,
+/// turn, attachment or file.
+///
+/// The path is taken from the conversation the desktop itself wrote, never from
+/// the phone: the phone picks *which turn*, and the only files reachable that
+/// way are ones already attached to a chat it is allowed to read.
+ChatMediaSlice? readChatMedia(
+  String chatId, {
+  required int messageIndex,
+  required int mediaIndex,
+  int offset = 0,
+  int? length,
+  Directory? chatsDir,
+}) {
+  if (!_isChatId(chatId)) return null;
+  final file = chatsDir == null
+      ? GridPaths.chatFile(chatId)
+      : File('${chatsDir.path}/$chatId.json');
+  final document = _readJson(file);
+  if (document is! Map) return null;
+  final messages = document['messages'];
+  if (messages is! List) return null;
+  if (messageIndex < 0 || messageIndex >= messages.length) return null;
+  final message = messages[messageIndex];
+  if (message is! Map) return null;
+  final media = message['media'];
+  if (media is! List || mediaIndex < 0 || mediaIndex >= media.length) {
+    return null;
+  }
+  final entry = media[mediaIndex];
+  if (entry is! Map || entry['path'] is! String) return null;
+
+  final source = File(entry['path']! as String);
+  final int size;
+  try {
+    size = source.lengthSync();
+  } on FileSystemException {
+    // The output was cleared, or the file moved since the chat was written.
+    return null;
+  }
+  final start = offset.clamp(0, size);
+  final want = (length ?? kMobileMediaSliceBytes).clamp(
+    1,
+    kMobileMediaSliceBytes,
+  );
+  final end = (start + want).clamp(start, size);
+  final RandomAccessFile handle;
+  try {
+    handle = source.openSync();
+  } on FileSystemException {
+    return null;
+  }
+  try {
+    handle.setPositionSync(start);
+    return (
+      name: _fileNameOf(source.path),
+      kind: '${entry['kind'] ?? 'file'}',
+      size: size,
+      bytes: handle.readSync(end - start),
+    );
+  } finally {
+    handle.closeSync();
   }
 }

@@ -3,10 +3,13 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_theme/grid_theme.dart';
 
+import '../logic/chat_watch.dart';
 import '../logic/phone_chats.dart';
 import 'chat_bubble.dart';
 import 'chat_composer.dart';
+import 'grid_app_bar.dart';
 
 /// The transcript of one chat, a page at a time, with a box to answer in.
 ///
@@ -34,15 +37,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final request = (id: widget.id, offset: _offset);
+    // Watched, not just read. Without this the screen shows whatever the chat
+    // looked like when it opened — a message typed at the computer never
+    // appears, and the phone looks finished rather than stale.
+    //
+    // Only while the newest page is on screen: somebody who has paged back into
+    // last week does not want the view yanked forward by an answer arriving at
+    // the bottom.
+    final live = _offset == null
+        ? ref.watch(chatWatchProvider(widget.id))
+        : (total: 0, streaming: '');
     final transcript = ref.watch(transcriptProvider(request));
+    AppTheme.watch(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.title.isEmpty ? 'Chat' : widget.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
+      backgroundColor: AppPalette.windowBg,
+      appBar: GridAppBar(title: widget.title.isEmpty ? 'Chat' : widget.title),
       body: Column(
         children: [
           Expanded(
@@ -54,6 +63,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
               data: (page) => _Transcript(
                 page: page,
+                streaming: live.streaming,
                 onEarlier: page.offset > 0
                     ? () => setState(() {
                         _offset = (page.offset - kTurnsPerPage).clamp(
@@ -89,24 +99,48 @@ const int kTurnsPerPage = 40;
 /// came for. It also means new turns land at the anchored end, so an arriving
 /// answer does not shove the page around under a thumb.
 class _Transcript extends StatelessWidget {
-  const _Transcript({required this.page, required this.onEarlier});
+  const _Transcript({
+    required this.page,
+    required this.streaming,
+    required this.onEarlier,
+  });
 
   final ChatTranscript page;
+
+  /// The answer being written right now, or empty. Drawn as a bubble below the
+  /// transcript rather than inside it: it is not a saved turn yet, and it is
+  /// replaced by the real one the moment the computer writes it down.
+  final String streaming;
+
   final VoidCallback? onEarlier;
 
   @override
   Widget build(BuildContext context) {
-    if (page.lines.isEmpty) return const _TranscriptEmpty();
+    if (page.lines.isEmpty && streaming.isEmpty) {
+      return const _TranscriptEmpty();
+    }
     final count = page.lines.length;
+    final live = streaming.isEmpty ? 0 : 1;
     return ListView.builder(
       reverse: true,
-      padding: const EdgeInsets.all(16),
-      // One past the turns: the last row built is the first one seen, and with
-      // the list reversed that is the top of the screen.
-      itemCount: count + 1,
-      itemBuilder: (context, index) => index == count
-          ? _EarlierBar(page: page, onTap: onEarlier)
-          : ChatBubble(page.lines[count - 1 - index]),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      // The live bubble sits at index 0 — the bottom, with the list reversed —
+      // and the earlier-messages bar at the very end, which is the top.
+      itemCount: count + live + 1,
+      itemBuilder: (context, index) {
+        if (live == 1 && index == 0) {
+          return ChatBubble((
+            role: 'assistant',
+            text: streaming,
+            index: -1,
+            media: const [],
+          ), chatId: page.id);
+        }
+        final row = index - live;
+        return row == count
+            ? _EarlierBar(page: page, onTap: onEarlier)
+            : ChatBubble(page.lines[count - 1 - row], chatId: page.id);
+      },
     );
   }
 }
@@ -120,6 +154,7 @@ class _EarlierBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppTheme.watch(context);
     final theme = Theme.of(context);
     if (onTap == null) {
       // The start of the conversation, said plainly — otherwise a reader who
@@ -153,7 +188,9 @@ class _TranscriptEmpty extends StatelessWidget {
       child: Text(
         'Nothing has been said in this chat yet. Send the first message.',
         textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodyMedium,
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
       ),
     ),
   );
@@ -175,7 +212,9 @@ class _TranscriptProblem extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
           ),
           const SizedBox(height: 16),
           FilledButton(onPressed: onRetry, child: const Text('Try again')),

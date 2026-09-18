@@ -123,6 +123,10 @@ class GridPaths {
 
   /// The folders the user added as projects — the ones a chat can be opened
   /// "inside", so the assistant may read them. App-owned.
+  /// Whether this computer is sharing with a paired phone, and with which
+  /// relay (`~/.grid/app/phone_link.json`). App-owned; the CLI never reads it.
+  static File get phoneLinkFile => File('${home.path}/app/phone_link.json');
+
   static File get projectsFile => File('${home.path}/app/projects.json');
 
   /// Which scheduled task belongs to which project (`{"<jobId>": "<projectId>"}`),

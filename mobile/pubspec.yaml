@@ -17,14 +17,27 @@ dependencies:
   # handshake, the key schedule and the frame layout are ONE implementation.
   grid_pairing:
     path: ../packages/grid_pairing
+  # The same design system the desktop resolves against, so a colour or a
+  # corner radius cannot differ between the two apps.
+  grid_theme:
+    path: ../packages/grid_theme
   # The pairing token is a bearer credential for someone's computer. It belongs
   # in the Keychain, not in shared_preferences where a backup or a jailbroken
   # device reads it as plain text.
   flutter_secure_storage: ^9.2.4
+  # And the other half of that rule: a theme choice is a preference, not a
+  # secret. The Keychain outlives an uninstall and syncs where it is told to,
+  # which is right for a credential and wrong for "this person likes dark".
+  shared_preferences: ^2.3.3
   # The same renderer the desktop uses for agent output, pinned to the same
   # major. Two apps showing one assistant's words must not disagree about what
   # a fenced code block or a table looks like.
   flutter_markdown_plus: ^1.0.12
+  # Photos and documents, the two ways a phone has of picking a file. Both are
+  # the platform's own sheets: an app that browsed the filesystem itself would
+  # need permissions iOS does not hand out, and these ask for none.
+  image_picker: ^1.1.2
+  file_selector: ^1.0.3
 
 dev_dependencies:
   flutter_lints: ^6.0.0

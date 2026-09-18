@@ -208,11 +208,18 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
       );
       _client = client;
 
-      // First, before anything else this connection is for. An invite opens
-      // one connection and is then spent, so by now the code that got us here
-      // is already dead — and a link that drops before this runs strands the
-      // phone until somebody types a new code by hand. Securing the next way
-      // in is worth more than the screen being a second faster.
+      // Remembered before anything else can go wrong. This offer's credential
+      // may well be spent — an invite opens one connection — but it also
+      // carries the computer's name, its public key and this phone's own device
+      // token, none of which expire. Writing it means a phone that fails to
+      // renew still *knows which computer it belongs to*, instead of coming
+      // back to a blank "paste a code" screen as though it had never paired.
+      await _store.write(offer);
+
+      // Then the way back in. An invite dies with the desktop's relay session,
+      // so this asks for a resume token instead: kept by the relay on the
+      // computer's host id, good across restarts, and only ever handed over
+      // inside this sealed channel.
       state = const PhoneLinkConnecting('Saving this computer');
       await _storeRenewedOffer(offer, client);
 
@@ -271,9 +278,9 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
         ),
       );
     } on RelayPhoneFailure {
-      // An older computer has no `pairing.renew`. The link still works; this
-      // phone will just need a fresh code next time, so say nothing here and
-      // let the reconnect failure explain itself when it happens.
+      // An older computer has no `pairing.renew`. The link still works, and the
+      // offer written before this call means the computer is still remembered —
+      // this phone will just need a fresh code next time.
     }
   }
 

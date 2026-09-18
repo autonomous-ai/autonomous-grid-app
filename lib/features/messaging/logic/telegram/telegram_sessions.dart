@@ -12,6 +12,7 @@ import '../../../agents/logic/agent_status.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../../chat/logic/conversation.dart';
 import '../../../chat/logic/grid_model_catalog.dart';
+import '../../../playground/logic/grid_served_models.dart';
 import '../../../playground/logic/playground_models.dart';
 import '../../../projects/logic/project.dart';
 import '../../../scheduled/logic/task_conversation_id.dart';

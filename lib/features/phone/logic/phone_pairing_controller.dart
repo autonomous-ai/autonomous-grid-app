@@ -18,7 +18,14 @@ import '../../../infrastructure/pairing_host/host_identity_store.dart';
 import '../../../infrastructure/pairing_host/mobile_rpc_service.dart';
 import '../../../infrastructure/pairing_host/relay_host_connection.dart';
 import '../../../shared/app_info.dart';
+import 'phone_chat_options.dart';
+import 'phone_grid_overview.dart';
+import 'phone_projects.dart';
 import 'phone_turns.dart';
+import '../../../core/grid_paths.dart';
+import '../../../infrastructure/pairing_host/mobile_upload_store.dart';
+import '../../../infrastructure/pairing_host/phone_link_prefs.dart';
+import '../../auth/logic/session_controller.dart';
 
 /// Where to find a relay cell, unless `GRID_PAIRING_RELAY` says otherwise.
 ///
@@ -119,6 +126,11 @@ final phonePairingProvider =
 class PhonePairingController extends Notifier<PhonePairingState> {
   RelayHostConnection? _connection;
   var _disposed = false;
+  final _prefs = const PhoneLinkPrefs();
+
+  /// The relay this computer is registered with, kept so stopping can record
+  /// *which* link was turned off — the connection holds it privately.
+  String _cellUrl = '';
 
   DeviceRegistry get _registry => ref.read(deviceRegistryProvider);
 
@@ -129,6 +141,22 @@ class PhonePairingController extends Notifier<PhonePairingState> {
       unawaited(_connection?.stop());
     });
     return const PhonePairingOff();
+  }
+
+  /// Starts again if somebody had this on when the app last closed.
+  ///
+  /// Only then. The file does not exist until a person connects, so a computer
+  /// that has never shared with a phone announces nothing — this restores a
+  /// choice rather than making one.
+  ///
+  /// A failure here is left in [PhonePairingFailed] and not retried: the relay
+  /// being down at launch is a thing to show on the screen, not a thing to
+  /// keep dialling in the background.
+  Future<void> resume() async {
+    if (state is! PhonePairingOff) return;
+    final choice = await _prefs.read();
+    if (choice == null || !choice.on) return;
+    await start(choice.cellUrl);
   }
 
   /// Registers this computer with the relay at [cellUrl].
@@ -148,15 +176,51 @@ class PhonePairingController extends Notifier<PhonePairingState> {
         rpc: MobileRpcService(
           hostName: Platform.localHostname,
           appVersion: version,
-          renewInvite: (deviceId) => connection.mintInvite(deviceId),
+          // A *resume*, not another invite. `pairing.renew` is the phone
+          // asking for its way back in, and an invite dies with this session.
+          renewInvite: (deviceId) => connection.mintResume(deviceId),
+          // Which grid the computer is actually working in. Read through a
+          // closure for the same reason as the chat hooks: the service stays
+          // Flutter-free, and only this side knows what the window has open.
+          gridIsCurrent: (gridId) =>
+              ref.read(selectedNetworkProvider)?.networkId == gridId,
+          // The grid's live state, fetched here because the token that
+          // authorizes it lives on this side and must stay here.
+          readOverview: (gridId) => phoneGridOverview(ref, gridId),
           // The seam where the phone reaches into the running app. The service
           // itself stays Flutter-free so `tool/` can run it; these two closures
           // are the only part that needs the window to exist.
-          sendToChat: (chatId, text) =>
-              startPhoneTurn(ref, chatId: chatId, text: text),
+          sendToChat: (chatId, text, files) =>
+              startPhoneTurn(ref, chatId: chatId, text: text, files: files),
           chatIsBusy: (chatId) => phoneChatIsBusy(ref, chatId),
+          chatStreaming: (chatId) => phoneChatStreaming(ref, chatId),
+          readOptions: (chatId) => phoneChatOptions(ref, chatId),
+          setOption: (chatId, field, value) => setPhoneChatOption(
+            ref,
+            chatId: chatId,
+            field: field,
+            value: value,
+          ),
+          createProject: (name) => createPhoneProject(ref, name),
+          createChat: (text, projectId, files) => startPhoneChat(
+            ref,
+            text: text,
+            projectId: projectId,
+            files: files,
+          ),
+          // Under the grid home, beside the other app-owned state, so it is
+          // cleared by the same hand that clears everything else.
+          uploads: MobileUploadStore(
+            directory: Directory('${GridPaths.home.path}/app/phone-uploads'),
+          ),
         ),
         onEvent: _record,
+        // A relay that restarts closes every control channel it was holding.
+        // Without this the screen stayed on its live state over a dead socket,
+        // so "Create code" was a button that could only ever time out — and the
+        // timeout blamed the relay for being slow rather than saying the link
+        // was gone.
+        onLost: _lost,
       );
       await connection.start();
       if (_disposed) {
@@ -164,6 +228,11 @@ class PhonePairingController extends Notifier<PhonePairingState> {
         return;
       }
       _connection = connection;
+      _cellUrl = cellUrl.trim();
+      // Written only once the relay has actually accepted this computer. A
+      // failed attempt must not be remembered as a choice, or every launch
+      // would re-dial a relay that was never reachable.
+      await _prefs.writeOn(_cellUrl);
       state = PhonePairingLive(
         relayHostId: connection.relayHostId,
         devices: await _registry.load(),
@@ -229,8 +298,26 @@ class PhonePairingController extends Notifier<PhonePairingState> {
   Future<void> stop() async {
     final connection = _connection;
     _connection = null;
+    // Remembered before the socket closes, so a crash between the two leaves
+    // the file saying "off" rather than bringing the link back on next launch.
+    await _prefs.writeOff(_cellUrl);
     await connection?.stop();
     if (!_disposed) state = const PhonePairingOff();
+  }
+
+  /// The relay dropped us. Says so, and offers the way back — [PhonePairingFailed]
+  /// draws a Try again, which is the whole fix when a relay has restarted.
+  ///
+  /// The stored choice is left switched **on**: somebody who turned the phone
+  /// link on still wants it on, and a relay going away for a minute is not them
+  /// changing their mind. It comes back by itself at the next launch.
+  void _lost(Object error) {
+    if (_disposed || state is! PhonePairingLive) return;
+    _connection = null;
+    state = PhonePairingFailed(
+      'Lost the connection to the relay at $_cellUrl. It was probably '
+      'restarted. Connect again to get a new pairing code.',
+    );
   }
 
   Future<void> _reloadDevices() async {

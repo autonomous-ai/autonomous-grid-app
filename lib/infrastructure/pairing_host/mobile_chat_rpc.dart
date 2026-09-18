@@ -9,9 +9,14 @@
 /// the app reaches in, and where `tool/` simply does not.
 library;
 
+import 'dart:convert';
+
 import 'package:grid_pairing/grid_pairing.dart';
 
 import 'mobile_chat_reader.dart';
+import 'mobile_upload_store.dart';
+
+part 'mobile_chat_write_rpc.dart';
 
 /// Answers the phone about chats and projects.
 class MobileChatRpc {
@@ -19,11 +24,26 @@ class MobileChatRpc {
     List<ChatHeader> Function()? readChats,
     List<ProjectSummary> Function()? readProjects,
     ChatPage? Function(String id, {int? limit, int? offset})? readChat,
+    ChatMediaSlice? Function(
+      String id, {
+      required int messageIndex,
+      required int mediaIndex,
+      int offset,
+      int? length,
+    })?
+    readMedia,
     this.sendToChat,
     this.chatIsBusy,
+    this.chatStreaming,
+    this.readOptions,
+    this.setOption,
+    this.createChat,
+    this.createProject,
+    this.uploads,
   }) : _readChats = readChats ?? readChatHeaders,
        _readProjects = readProjects ?? readProjectSummaries,
-       _readChat = readChat ?? readChatPage;
+       _readChat = readChat ?? readChatPage,
+       _readMedia = readMedia ?? readChatMedia;
 
   /// Puts a turn into a chat, or null where nothing can — `tool/` runs the host
   /// without the app around it, and a host with no Chat tab behind it must
@@ -34,15 +54,57 @@ class MobileChatRpc {
   /// error because these are refusals somebody can act on — no grid signed in,
   /// no model running — and the catch-all below deliberately replaces exception
   /// text with a generic line, which would hide exactly the part that helps.
-  final Future<String?> Function(String chatId, String text)? sendToChat;
+  final Future<String?> Function(
+    String chatId,
+    String text,
+    List<PhoneAttachment> files,
+  )?
+  sendToChat;
 
   /// Whether an answer is still being written in a chat, so the phone knows
   /// whether to keep looking.
   final bool Function(String chatId)? chatIsBusy;
 
+  /// The answer being written right now, as far as it has got — empty when
+  /// none is. The transcript on disk does not have it: a turn lands there when
+  /// it finishes, so without this the phone shows a spinner for the whole
+  /// minute the computer is working and then the answer all at once.
+  final String Function(String chatId)? chatStreaming;
+
+  /// The picks the phone's composer offers for a chat, worked out here.
+  final Future<Map<String, Object?>> Function(String chatId)? readOptions;
+
+  /// Changes one of them. Null on success, else a sentence to show.
+  final Future<String?> Function(String chatId, String field, String value)?
+  setOption;
+
+  /// Starts a chat carrying its first message. Returns the new id, or a reason.
+  final Future<({String? id, String? problem})> Function(
+    String text,
+    String? projectId,
+    List<PhoneAttachment> files,
+  )?
+  createChat;
+
+  /// Where a phone's pictures and documents land on the way in, or null on a
+  /// host that has nothing to attach them to.
+  final MobileUploadStore? uploads;
+
+  /// Starts a project by name and returns its id, or a reason. Null on a host
+  /// with no window behind it to hold the list.
+  final ({String? id, String? problem}) Function(String name)? createProject;
+
   final List<ChatHeader> Function() _readChats;
   final List<ProjectSummary> Function() _readProjects;
   final ChatPage? Function(String id, {int? limit, int? offset}) _readChat;
+  final ChatMediaSlice? Function(
+    String id, {
+    required int messageIndex,
+    required int mediaIndex,
+    int offset,
+    int? length,
+  })
+  _readMedia;
 
   /// Every conversation's header.
   Map<String, Object?> list() => {
@@ -73,6 +135,33 @@ class MobileChatRpc {
     ],
   };
 
+  /// Whether a chat has moved, in as few bytes as that can be said.
+  ///
+  /// `total` and `busy`, and nothing else. A phone polls this while a chat is
+  /// open; answering with the page instead would send forty turns over the
+  /// channel every few seconds to report a number that usually has not changed.
+  MobileRpcResponse head(MobileRpcRequest request) {
+    final id = request.params['id'];
+    if (id is! String || id.isEmpty) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'Which chat?',
+      );
+    }
+    final page = _readChat(id, limit: 1);
+    if (page == null) return _gone(request);
+    final streaming = chatStreaming?.call(id) ?? '';
+    return MobileRpcOk(request.id, {
+      'id': id,
+      'total': page.total,
+      'busy': chatIsBusy?.call(id) ?? false,
+      // Only when there is something: an empty key on every poll is bytes spent
+      // to say nothing, and this one is asked for every second or so.
+      if (streaming.isNotEmpty) 'streaming': streaming,
+    });
+  }
+
   /// One page of a transcript. `offset` and `limit` page *backwards*: the
   /// default page ends at the newest turn, and the phone asks for a smaller
   /// offset to walk into the history.
@@ -101,56 +190,63 @@ class MobileChatRpc {
       // while a turn runs, and without it there is no moment it can stop.
       'busy': chatIsBusy?.call(id) ?? false,
       'messages': [
-        for (final line in page.lines) {'role': line.role, 'text': line.text},
+        for (final line in page.lines)
+          {
+            'role': line.role,
+            'text': line.text,
+            'index': line.index,
+            // Described, never carried: the bytes come back through
+            // `chats.media` in slices, because one photo can be bigger than a
+            // frame is allowed to be.
+            if (line.media.isNotEmpty)
+              'media': [
+                for (final item in line.media)
+                  {'kind': item.kind, 'name': item.name},
+              ],
+          },
       ],
     });
   }
 
-  /// Puts one message from the phone into a chat on this computer.
+  /// A slice of a picture attached to a turn.
   ///
-  /// Three refusals before anything runs, and they are deliberately different
-  /// answers: the computer cannot do this at all, this phone is not allowed to,
-  /// or that chat is not here. A single "no" would leave the person guessing
-  /// which of the three to go and fix.
-  Future<MobileRpcResponse> send(
-    MobileRpcRequest request,
-    Future<bool> Function()? mayAct,
-  ) async {
-    final start = sendToChat;
-    if (start == null) {
-      return MobileRpcFailed(
-        request.id,
-        code: 'unavailable',
-        message: 'Grid on the computer cannot take messages right now.',
-      );
-    }
-    if (mayAct == null || !await mayAct()) {
-      return MobileRpcFailed(
-        request.id,
-        code: 'forbidden',
-        message:
-            'This phone can read your chats but not send. Turn on "Let this '
-            'phone send messages" in Grid on your computer.',
-      );
-    }
+  /// A read, so it needs no switch: it returns what is already inside a chat
+  /// this phone may open, and refusing it would leave a grey box on the phone
+  /// where the computer shows a photo.
+  MobileRpcResponse media(MobileRpcRequest request) {
     final id = request.params['id'];
-    final text = request.params['text'];
-    if (id is! String || id.isEmpty || text is! String || text.trim().isEmpty) {
+    final message = _asInt(request.params['message']);
+    if (id is! String || id.isEmpty || message == null) {
       return MobileRpcFailed(
         request.id,
         code: 'bad_request',
-        message: 'A message needs a chat and something to say.',
+        message: 'Which picture?',
       );
     }
-    // Checked here rather than left to the send: a chat that is gone would
-    // otherwise be created by the act of answering it, and the phone would have
-    // started a conversation it thought it was continuing.
-    if (_readChat(id, limit: 1) == null) return _gone(request);
-    final refused = await start(id, text.trim());
-    if (refused != null) {
-      return MobileRpcFailed(request.id, code: 'unavailable', message: refused);
+    final from = _asInt(request.params['offset']) ?? 0;
+    final slice = _readMedia(
+      id,
+      messageIndex: message,
+      mediaIndex: _asInt(request.params['media']) ?? 0,
+      offset: from,
+      length: _asInt(request.params['length']),
+    );
+    if (slice == null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'not_found',
+        message: 'That picture is not on this computer any more.',
+      );
     }
-    return MobileRpcOk(request.id, {'accepted': true});
+    return MobileRpcOk(request.id, {
+      'name': slice.name,
+      'kind': slice.kind,
+      // The whole file's size, not this slice's: it is how the phone knows
+      // whether to ask again.
+      'size': slice.size,
+      'offset': from,
+      'data': base64Encode(slice.bytes),
+    });
   }
 
   MobileRpcFailed _gone(MobileRpcRequest request) => MobileRpcFailed(
@@ -170,3 +266,10 @@ int? _asInt(Object? value) => switch (value) {
   final double number => number.toInt(),
   _ => null,
 };
+
+/// A file a phone sent, once it is whole and on disk.
+///
+/// A path and a name rather than the store's own record: what the chat does
+/// with it — read it as a picture, extract its text — is the app's business,
+/// and nothing above this layer should have to know how it arrived.
+typedef PhoneAttachment = ({String path, String name});
