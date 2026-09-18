@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'telegram_wire.dart';
 
@@ -50,6 +51,10 @@ final class TelegramRefused extends TelegramFailure {
   /// with nothing changed, which is not a failure.
   bool get notModified =>
       status == 400 && description.toLowerCase().contains('not modified');
+
+  /// A file over the 20 MB Telegram lets a bot download.
+  bool get tooBig =>
+      status == 400 && description.toLowerCase().contains('too big');
 
   @override
   String get message => description;
@@ -102,6 +107,10 @@ abstract interface class TelegramBotApi {
   /// Telegram refuses long polling while a webhook is set.
   Future<void> deleteWebhook();
 
+  /// The file [fileId] names — a picture someone sent. Telegram hands a bot
+  /// files of up to 20 MB and refuses bigger ones ([TelegramRefused.tooBig]).
+  Future<TelegramFile> downloadFile(String fileId);
+
   /// Abort whatever is in flight — how a long poll is cut short on stop.
   void close();
 }
@@ -124,6 +133,10 @@ class HttpTelegramBotApi implements TelegramBotApi {
   /// Any other call. A message that takes longer than this is better retried
   /// than waited on.
   static const Duration _callTimeout = Duration(seconds: 20);
+
+  /// Each half of a download — the answer starting, then its bytes. A picture
+  /// is megabytes where a call is a few hundred bytes.
+  static const Duration _downloadTimeout = Duration(seconds: 60);
 
   @override
   Future<TelegramBotIdentity> getMe() async {
@@ -207,7 +220,36 @@ class HttpTelegramBotApi implements TelegramBotApi {
   Future<void> deleteWebhook() => _call('deleteWebhook', const {});
 
   @override
+  Future<TelegramFile> downloadFile(String fileId) async {
+    final file = await _call('getFile', {'file_id': fileId});
+    final path = file is Map ? file['file_path'] : null;
+    if (path is! String) {
+      throw const TelegramUnreachable(
+        "Telegram's answer about the file was unreadable.",
+      );
+    }
+    final bytes = await _reach(() => _fetch('/file/bot$_token/$path'));
+    return (name: path.split('/').last, bytes: bytes);
+  }
+
+  @override
   void close() => _client.close(force: true);
+
+  /// GET [path] on Telegram's file host and hand back the whole body.
+  Future<Uint8List> _fetch(String path) async {
+    final request = await _client.getUrl(Uri.https('api.telegram.org', path));
+    final response = await request.close().timeout(_downloadTimeout);
+    if (response.statusCode != HttpStatus.ok) {
+      await response.drain<void>();
+      throw TelegramRefused(
+        response.statusCode,
+        "Telegram wouldn't hand over the file.",
+      );
+    }
+    final body = BytesBuilder(copy: false);
+    await response.forEach(body.add).timeout(_downloadTimeout);
+    return body.takeBytes();
+  }
 
   /// POST [method] and hand back its `result`, or throw a [TelegramFailure]
   /// that never names the URL (see [TelegramFailure]).
@@ -216,15 +258,24 @@ class HttpTelegramBotApi implements TelegramBotApi {
     Map<String, Object?> body, {
     Duration timeout = _callTimeout,
   }) async {
-    final Object? decoded;
-    try {
+    final decoded = await _reach(() async {
       final request = await _client.postUrl(
         Uri.https('api.telegram.org', '/bot$_token/$method'),
       );
       request.headers.contentType = ContentType.json;
       request.write(jsonEncode(body));
       final response = await request.close().timeout(timeout);
-      decoded = jsonDecode(await response.transform(utf8.decoder).join());
+      return jsonDecode(await response.transform(utf8.decoder).join());
+    });
+    return _resultOf(decoded);
+  }
+
+  /// Run [send], turning every way of not reaching Telegram into a
+  /// [TelegramUnreachable] rebuilt from its message alone — `dart:io` errors
+  /// print the URI they failed on, and the token is in it.
+  Future<T> _reach<T>(Future<T> Function() send) async {
+    try {
+      return await send();
     } on TimeoutException {
       throw const TelegramUnreachable("Telegram didn't answer in time.");
     } on SocketException catch (error) {
@@ -238,7 +289,6 @@ class HttpTelegramBotApi implements TelegramBotApi {
     } on FormatException {
       throw const TelegramUnreachable("Telegram's answer was unreadable.");
     }
-    return _resultOf(decoded);
   }
 }
 

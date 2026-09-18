@@ -133,6 +133,10 @@ class _FakeApi implements TelegramBotApi {
   Future<void> deleteWebhook() async {}
 
   @override
+  Future<TelegramFile> downloadFile(String fileId) =>
+      throw const TelegramUnreachable('No files in these tests.');
+
+  @override
   void close() {
     final waiting = _waiting;
     if (waiting != null && !waiting.isCompleted) waiting.complete(const []);

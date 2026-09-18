@@ -16,6 +16,7 @@ import '../../../projects/logic/project.dart';
 import 'telegram_bot_store.dart';
 import 'telegram_markup.dart';
 import 'telegram_models.dart';
+import 'telegram_pictures.dart';
 import 'telegram_rules.dart';
 import 'telegram_stream.dart';
 
@@ -193,6 +194,12 @@ class TelegramTurns {
         'Open Grid on your computer and pick one.',
       );
     }
+    final (:pictures, :problem) = await telegramPicturesOf(
+      _api,
+      message,
+      log: _log,
+    );
+    if (problem != null) return reply(message.chatId, problem);
     final id =
         threads.current(message.chatId) ??
         await threads.startNew(message.chatId);
@@ -228,7 +235,8 @@ class TelegramTurns {
       await sessions.send(
         network: network,
         model: model,
-        message: message.text,
+        message: telegramTurnText(message),
+        attachments: pictures,
         into: id,
         // A plan waits on a bar only the window has; from a phone the
         // assistant asks before each action instead, as after an approval.

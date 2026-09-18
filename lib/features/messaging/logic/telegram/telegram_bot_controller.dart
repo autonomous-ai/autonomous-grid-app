@@ -17,8 +17,8 @@ import 'telegram_sessions.dart';
 import 'telegram_turns.dart';
 
 const String _kGreeting =
-    "Hi! I'm Grid, answering from your computer. Send a message and the "
-    'assistant there replies.\n\n'
+    "Hi! I'm Grid, answering from your computer. Send a message or a picture "
+    'and the assistant there replies.\n\n'
     '/sessions picks a project or a chat · /new starts a new chat · /model '
     'changes the model · /stop stops an answer.';
 
@@ -299,7 +299,13 @@ class TelegramBotController extends Notifier<TelegramBotState>
           privateChat: privateChat,
           allowed: allowed,
         );
-        if (ok) turns.note(chatId, 'I can only read text for now — type it?');
+        if (ok) {
+          turns.note(
+            chatId,
+            'I can read text and pictures, but not this kind of message yet '
+            '— type it?',
+          );
+        }
       case TelegramIgnored():
         return;
     }
@@ -325,7 +331,12 @@ class TelegramBotController extends Notifier<TelegramBotState>
         'if you still want it.',
       );
     }
-    switch (parseTelegramCommand(message.text)) {
+    // A caption is words about its picture, never a command: a picture that
+    // ran `/new` instead of reaching the assistant would simply be lost.
+    final command = message.pictureId == null
+        ? parseTelegramCommand(message.text)
+        : null;
+    switch (command) {
       case TelegramCommand.start:
         turns.note(chatId, _kGreeting);
       case TelegramCommand.fresh:
