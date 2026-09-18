@@ -6,6 +6,8 @@
 /// discovered on a phone.
 library;
 
+import 'dart:typed_data';
+
 /// Who the bot is, from `getMe` — [username] is what a person searches for.
 typedef TelegramBotIdentity = ({int id, String username, String name});
 
@@ -16,6 +18,10 @@ typedef TelegramButton = ({String label, String data});
 /// The buttons under a message, row by row.
 typedef TelegramKeyboard = List<List<TelegramButton>>;
 
+/// A file fetched from Telegram. [name] is the one Telegram stored it under,
+/// which keeps its extension — how the picture's format is told.
+typedef TelegramFile = ({String name, Uint8List bytes});
+
 /// One entry from `getUpdates`, reduced to what the bot acts on.
 sealed class TelegramUpdate {
   const TelegramUpdate(this.updateId);
@@ -25,7 +31,8 @@ sealed class TelegramUpdate {
   final int updateId;
 }
 
-/// A text message someone sent the bot.
+/// A message someone sent the bot: text, or a picture with an optional
+/// caption.
 final class TelegramText extends TelegramUpdate {
   const TelegramText({
     required int updateId,
@@ -35,6 +42,7 @@ final class TelegramText extends TelegramUpdate {
     required this.fromName,
     required this.text,
     required this.sentAt,
+    this.pictureId,
   }) : super(updateId);
 
   final int chatId;
@@ -45,12 +53,20 @@ final class TelegramText extends TelegramUpdate {
 
   /// The sender's first name, or their username when they set none.
   final String fromName;
+
+  /// What was typed — a picture's caption when [pictureId] is set, and then
+  /// possibly empty.
   final String text;
   final DateTime sentAt;
+
+  /// The picture sent with it, as the `file_id` Telegram fetches it by — see
+  /// `TelegramBotApi.downloadFile`. Null for plain text.
+  final String? pictureId;
 }
 
-/// A message with nothing Grid can hand the assistant: a photo, a voice note,
-/// a sticker. Kept apart from [TelegramIgnored] so the sender can be told.
+/// A message with nothing Grid can hand the assistant: a voice note, a
+/// sticker, a file that isn't a picture. Kept apart from [TelegramIgnored] so
+/// the sender can be told.
 final class TelegramOtherMessage extends TelegramUpdate {
   const TelegramOtherMessage({
     required int updateId,
@@ -135,8 +151,11 @@ TelegramUpdate _message(int updateId, Map<Object?, Object?> message) {
   final fromId = from['id'];
   if (chatId is! int || fromId is! int) return TelegramIgnored(updateId);
   final privateChat = chat['type'] == 'private';
-  final text = message['text'];
-  if (text is! String || text.trim().isEmpty) {
+  final pictureId = _pictureIdOf(message);
+  // A picture's words ride in `caption`; `text` is only set on plain text.
+  final typed = message[pictureId == null ? 'text' : 'caption'];
+  final text = typed is String ? typed : '';
+  if (pictureId == null && text.trim().isEmpty) {
     return TelegramOtherMessage(
       updateId: updateId,
       chatId: chatId,
@@ -155,7 +174,41 @@ TelegramUpdate _message(int updateId, Map<Object?, Object?> message) {
     sentAt: date is int
         ? DateTime.fromMillisecondsSinceEpoch(date * 1000)
         : DateTime.now(),
+    pictureId: pictureId,
   );
+}
+
+/// The `file_id` of the picture on [message], or null when it carries none.
+///
+/// A photo arrives as the same picture at several sizes; the largest is the
+/// one worth reading. A picture sent *as a file* — how a screenshot keeps its
+/// full resolution — arrives as a document with an image type instead.
+String? _pictureIdOf(Map<Object?, Object?> message) {
+  final sizes = message['photo'];
+  if (sizes is List) return _largestPhotoId(sizes);
+  final document = message['document'];
+  if (document is! Map) return null;
+  final type = document['mime_type'];
+  final id = document['file_id'];
+  if (type is! String || !type.startsWith('image/')) return null;
+  return id is String ? id : null;
+}
+
+/// The `file_id` of the biggest of a photo's [sizes], by pixel count.
+String? _largestPhotoId(List<Object?> sizes) {
+  String? largest;
+  var most = -1;
+  for (final size in sizes) {
+    if (size is! Map) continue;
+    final width = size['width'];
+    final height = size['height'];
+    final id = size['file_id'];
+    if (width is! int || height is! int || id is! String) continue;
+    if (width * height <= most) continue;
+    most = width * height;
+    largest = id;
+  }
+  return largest;
 }
 
 TelegramButtonPress? _buttonPress(int updateId, Map<Object?, Object?> raw) {

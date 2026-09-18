@@ -21,6 +21,16 @@ Map<String, Object?> _message({
   },
 };
 
+/// A message carrying [fields] — a photo or a document — and no `text`,
+/// which is how Telegram sends a picture.
+Map<String, Object?> _picture(Map<String, Object?> fields) {
+  final update = _message(text: null);
+  return {
+    ...update,
+    'message': {...update['message']! as Map<String, Object?>, ...fields},
+  };
+}
+
 void main() {
   group('reading Telegram updates', () {
     test('a private text keeps who sent it and when — what the gate and the '
@@ -43,12 +53,59 @@ void main() {
       expect((update as TelegramText).privateChat, isFalse);
     });
 
-    test('a photo with no text is told apart from updates to skip, so its '
-        'sender can be answered', () {
+    test('a message with nothing to read — a sticker, a voice note — is told '
+        'apart from updates to skip, so its sender can be answered', () {
       expect(
         parseTelegramUpdate(_message(text: null)),
         isA<TelegramOtherMessage>(),
       );
+    });
+
+    test('a photo reads as its largest size with its caption as the text — '
+        'the smaller sizes are thumbnails too small to read', () {
+      final update = parseTelegramUpdate(
+        _picture({
+          'photo': [
+            {'file_id': 'big', 'width': 1280, 'height': 960},
+            {'file_id': 'thumb', 'width': 90, 'height': 67},
+            {'file_id': 'mid', 'width': 320, 'height': 240},
+          ],
+          'caption': 'what is this error?',
+        }),
+      );
+
+      expect(update, isA<TelegramText>());
+      final message = update! as TelegramText;
+      expect(message.pictureId, 'big');
+      expect(message.text, 'what is this error?');
+    });
+
+    test('a photo with no caption is still a message to answer, not one to '
+        'turn away', () {
+      final message =
+          parseTelegramUpdate(
+                _picture({
+                  'photo': [
+                    {'file_id': 'p', 'width': 800, 'height': 600},
+                  ],
+                }),
+              )!
+              as TelegramText;
+
+      expect(message.pictureId, 'p');
+      expect(message.text, isEmpty);
+    });
+
+    test('a picture sent as a file is read too — how a screenshot keeps its '
+        'full size — but any other file is not', () {
+      TelegramUpdate? document(String type) => parseTelegramUpdate(
+        _picture({
+          'document': {'file_id': 'doc', 'mime_type': type},
+        }),
+      );
+
+      expect((document('image/png')! as TelegramText).pictureId, 'doc');
+      expect(document('application/pdf'), isA<TelegramOtherMessage>());
     });
 
     test('a button tap carries the data the bot wrote and where it was', () {
