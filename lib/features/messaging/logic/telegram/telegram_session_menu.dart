@@ -27,6 +27,10 @@ mixin _SessionMenu on _MenuBase {
 
   /// `/new`: a new chat where the current one is — its project, or none.
   Future<void> fresh(int chatId) async {
+    // A chat /new points elsewhere must not be answered while the old one is
+    // still writing: /stop would then stop the wrong (empty) chat, and this
+    // new one would never be stopped. Same guard as /sessions.
+    if (turns.busy(chatId)) return _busy(chatId, 'start a new chat');
     // Which project the current chat is in is read off the restored chats; a
     // moment after launch there are none, and the answer would be "no project"
     // for every chat there is.

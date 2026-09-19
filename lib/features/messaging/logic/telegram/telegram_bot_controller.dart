@@ -154,6 +154,16 @@ class TelegramBotController extends Notifier<TelegramBotState>
   String? current(int chatId) => _config?.threadFor(chatId);
 
   @override
+  int? chatIdOf(String conversationId) {
+    final threads = _config?.threads;
+    if (threads == null) return null;
+    for (final entry in threads.entries) {
+      if (entry.value == conversationId) return int.tryParse(entry.key);
+    }
+    return null;
+  }
+
+  @override
   TelegramDraft? draftFor(String conversationId) =>
       _config?.draftFor(conversationId);
 
@@ -232,6 +242,7 @@ class TelegramBotController extends Notifier<TelegramBotState>
     _menus = TelegramMenus(ref, api, turns: turns);
     final relay = _relay = TelegramPermissionRelay(
       api,
+      chatIdOf: chatIdOf,
       answer: (id, choice) =>
           ref.read(agentPermissionsProvider.notifier).answer(id, choice),
       log: _log,

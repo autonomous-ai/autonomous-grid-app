@@ -398,4 +398,23 @@ void main() {
 
     expect(bot.api.sent, isEmpty);
   });
+
+  test('a permission question in a chat /sessions pointed a phone at still '
+      'reaches that phone, because chatIdOf works the other way too', () async {
+    final bot = _bot(const []);
+
+    await _connect(bot.container);
+    // /sessions on a desktop chat leaves no telegram- prefix in its id; only
+    // the thread map knows it is a Telegram chat carrying on there.
+    await bot.container
+        .read(telegramBotProvider.notifier)
+        .point(_kChat, 'a-desktop-chat-id');
+
+    expect(
+      bot.container.read(telegramBotProvider.notifier).chatIdOf(
+        'a-desktop-chat-id',
+      ),
+      _kChat,
+    );
+  });
 }

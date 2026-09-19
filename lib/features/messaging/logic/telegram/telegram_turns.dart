@@ -26,6 +26,13 @@ abstract interface class TelegramThreads {
   /// The Grid chat Telegram chat [chatId] is carrying on, if any.
   String? current(int chatId);
 
+  /// The Telegram chat carrying on [conversationId], if any — the reverse of
+  /// [current]. A permission question raised in a *desktop* chat a Telegram
+  /// chat was pointed at (`/sessions`) still has to reach the phone that
+  /// asked it, and its id has no `telegram-` prefix for [telegramChatOf] to
+  /// read.
+  int? chatIdOf(String conversationId);
+
   /// The draft behind [conversationId], while that chat hasn't started.
   TelegramDraft? draftFor(String conversationId);
 
@@ -117,7 +124,7 @@ class TelegramTurns {
     final generation = _generation[chatId] ?? 0;
     final next = (_queue[chatId] ?? Future<void>.value()).then((_) async {
       if ((_generation[chatId] ?? 0) != generation) return;
-      await _guarded(message);
+      await _guarded(message, generation);
     });
     _queue[chatId] = next;
     unawaited(
@@ -126,6 +133,13 @@ class TelegramTurns {
       }),
     );
   }
+
+  /// Whether a /stop has left [generation] behind while its turn was still
+  /// preparing — loading a picture, waiting up to the desktop's carry-on, or
+  /// asking the grid which model answers. A /stop must stop the turn even
+  /// though it hasn't started streaming yet.
+  bool stopped(int chatId, int generation) =>
+      (_generation[chatId] ?? 0) != generation;
 
   /// Stop the answer being written in Telegram chat [chatId], and drop what it
   /// had queued behind it — Stop means stop.
@@ -162,9 +176,9 @@ class TelegramTurns {
     }
   }
 
-  Future<void> _guarded(TelegramText message) async {
+  Future<void> _guarded(TelegramText message, int generation) async {
     try {
-      await _answer(message);
+      await _answer(message, generation);
     } on Object catch (error, stack) {
       _log.failure(
         'telegram',
@@ -180,7 +194,7 @@ class TelegramTurns {
     }
   }
 
-  Future<void> _answer(TelegramText message) async {
+  Future<void> _answer(TelegramText message, int generation) async {
     // A /stop that landed in the breath after the last turn reported has
     // nothing left to stop; it must not be read as stopping this one.
     _stopped.remove(message.chatId);
@@ -194,12 +208,14 @@ class TelegramTurns {
         'Open Grid on your computer and pick one.',
       );
     }
+    if (stopped(message.chatId, generation)) return _stoppedEarly(message.chatId);
     final (:pictures, :problem) = await telegramPicturesOf(
       _api,
       message,
       log: _log,
     );
     if (problem != null) return reply(message.chatId, problem);
+    if (stopped(message.chatId, generation)) return _stoppedEarly(message.chatId);
     final id =
         threads.current(message.chatId) ??
         await threads.startNew(message.chatId);
@@ -221,6 +237,9 @@ class TelegramTurns {
     }
     // Someone may be typing in this chat on the computer; their turn first.
     await chatSettled(_ref, id);
+    // A /stop that arrived while we were waiting our turn (or the desktop's)
+    // stops this message before it ever reaches a model.
+    if (stopped(message.chatId, generation)) return _stoppedEarly(message.chatId);
     final before = _answersIn(id).length;
     final typing = _typing(message.chatId);
     // The answer goes out as it is written, not in one piece at the end.
@@ -243,16 +262,25 @@ class TelegramTurns {
         planFirst: false,
       );
       await chatSettled(_ref, id);
+      await _report(
+        message.chatId,
+        id,
+        before: before,
+        streamed: stream.delivered,
+      );
     } finally {
       typing.cancel();
       await stream.close();
     }
-    await _report(
-      message.chatId,
-      id,
-      before: before,
-      streamed: stream.delivered,
-    );
+  }
+
+  /// The answer was asked and then stopped before it reached a model — say so
+  /// once, rather than letting stop echo as "Stopped before it answered".
+  void _stoppedEarly(int chatId) {
+    if (_stopped.add(chatId)) {
+      _log.info('telegram', 'stopped a Telegram turn before it answered');
+      unawaited(telegramQuietly(_log, reply(chatId, 'Stopped before it answered.')));
+    }
   }
 
   /// Whatever the assistant said that the stream didn't already put on the
