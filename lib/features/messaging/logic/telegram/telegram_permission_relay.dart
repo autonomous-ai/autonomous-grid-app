@@ -21,9 +21,19 @@ const int _kShownCommand = 1500;
 /// window's card reads), so whichever side answers first wins and the other
 /// closes — the same arrangement the Grid Panel has.
 class TelegramPermissionRelay {
-  TelegramPermissionRelay(this._api, {required this.answer, required this.log});
+  TelegramPermissionRelay(
+    this._api, {
+    required this.chatIdOf,
+    required this.answer,
+    required this.log,
+  });
 
   final TelegramBotApi _api;
+
+  /// The Telegram chat carrying on a Grid chat, for a question raised there.
+  /// Lives in the controller so `/sessions` pointing a Telegram chat at a
+  /// desktop chat keeps letting that chat's questions reach the phone.
+  final int? Function(String conversationId) chatIdOf;
 
   /// Deliver a choice to the agent — `AgentPermissionController.answer`.
   final void Function(String conversationId, AgentPermissionChoice choice)
@@ -39,7 +49,7 @@ class TelegramPermissionRelay {
   /// the ones that went — answered anywhere, timed out, or their turn ended.
   void onPermissions(Map<String, AgentPermission> open) {
     for (final entry in open.entries) {
-      final chatId = telegramChatOf(entry.key);
+      final chatId = chatIdOf(entry.key);
       if (chatId == null) continue;
       final asked = _asked[entry.key];
       if (asked != null && asked.request.id == entry.value.id) continue;

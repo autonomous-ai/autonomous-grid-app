@@ -76,8 +76,10 @@ class TelegramStream {
   String _latest = '';
 
   /// The draws so far, in order — one at a time, so the last word in never
-  /// loses to a slower flush that started before it.
-  Future<void> _drawing = Future<void>.value();
+  /// loses to a slower flush that started before it. Carries whether the most
+  /// recent draw reached the phone whole, which [close]/[_land] turn into
+  /// whether the answer was delivered.
+  Future<bool> _drawing = Future<bool>.value(true);
 
   /// The landing in progress, if any: [close] waits for it, or the answer it
   /// is drawing would be sent a second time as an ordinary reply.
@@ -130,6 +132,10 @@ class TelegramStream {
 
   /// The turn landed (or was stopped): draw the answer as the transcript kept
   /// it — the whole thing, formatted — and start fresh for the next turn.
+  ///
+  /// [delivered] only climbs when the final draw reached the phone: a last edit
+  /// lost to a network blip must not read as "this chat has seen the answer",
+  /// or the report that follows would never send it.
   Future<void> _land() async {
     _timer?.cancel();
     _timer = null;
@@ -137,8 +143,7 @@ class TelegramStream {
     final landed = _before + delivered;
     if (answers.length > landed) {
       _latest = answers[landed];
-      await _flush();
-      delivered++;
+      if (await _flush()) delivered++;
     }
     _sent.clear();
     _shown.clear();
@@ -146,21 +151,23 @@ class TelegramStream {
   }
 
   /// Bring the phone up to date with [_latest], behind whatever draw is
-  /// already running.
-  Future<void> _flush() {
+  /// already running. Resolves whether that draw reached the phone whole.
+  Future<bool> _flush() {
     _drawing = _drawing.then((_) => _drawLatest());
     return _drawing;
   }
 
-  Future<void> _drawLatest() async {
+  Future<bool> _drawLatest() async {
     final text = _latest;
-    if (text.trim().isEmpty) return;
+    if (text.trim().isEmpty) return true;
     try {
       for (final edit in telegramStreamEdits(_shown, telegramChunks(text))) {
         await _draw(edit);
       }
+      return true;
     } on Object catch (error) {
       _log.warn('telegram', "couldn't draw the answer as it arrived: $error");
+      return false;
     }
   }
 
@@ -197,8 +204,13 @@ class TelegramStream {
         );
         return;
       }
-      // Too fast for Telegram: the next flush carries the same text anyway.
-      if (error.retryAfter == null) rethrow;
+      // Too fast for Telegram (429): wait out what it asked and try once more.
+      // A draw that *sent* little is not "delivered", so a linger lost to the
+      // blip is drawn again by the next flush rather than counted as shown.
+      final retryAfter = error.retryAfter;
+      if (retryAfter == null) rethrow;
+      await Future<void>.delayed(retryAfter);
+      await _edit(messageId, chunk);
     }
   }
 
