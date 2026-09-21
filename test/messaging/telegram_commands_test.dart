@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/agents/logic/adapters/claude_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/codex_tool.dart';
 import 'package:grid_app/features/agents/logic/adapters/hermes_tool.dart';
+import 'package:grid_app/features/agents/logic/agent_steering.dart';
 import 'package:grid_app/features/auth/logic/session_controller.dart';
 import 'package:grid_app/features/chat/logic/chat_store.dart';
 import 'package:grid_app/features/messaging/logic/telegram/telegram_bot_controller.dart';
@@ -36,6 +37,19 @@ TelegramText _text(String body, {int id = 1, int from = _kUser}) =>
       text: body,
       sentAt: DateTime.now(),
     );
+
+/// A picture someone sent the bot, which its turn has to fetch before it can
+/// do anything else with it.
+TelegramText _photo({int id = 1}) => TelegramText(
+  updateId: id,
+  chatId: _kChat,
+  privateChat: true,
+  fromId: _kUser,
+  fromName: 'Jacob',
+  text: '',
+  sentAt: DateTime.now(),
+  pictureId: 'pic-1',
+);
 
 /// A tap on the [row]th button of the menu the bot last drew.
 TelegramButtonPress _tap(String data, {int id = 2}) => TelegramButtonPress(
@@ -132,9 +146,21 @@ class _FakeApi implements TelegramBotApi {
   @override
   Future<void> deleteWebhook() async {}
 
+  /// Set to hold every picture download open — how a turn is kept in its
+  /// *preparing* phase, where it is neither queued nor streaming yet, for as
+  /// long as a test needs it there.
+  Completer<TelegramFile>? holdDownloads;
+
+  /// Every picture the bot has asked for — how a test tells "the turn reached
+  /// its download" from "the turn hasn't started yet".
+  final List<String> downloaded = [];
+
   @override
-  Future<TelegramFile> downloadFile(String fileId) =>
-      throw const TelegramUnreachable('No files in these tests.');
+  Future<TelegramFile> downloadFile(String fileId) {
+    downloaded.add(fileId);
+    return holdDownloads?.future ??
+        Future.error(const TelegramUnreachable('No files in these tests.'));
+  }
 
   @override
   void close() {
@@ -411,10 +437,115 @@ void main() {
         .point(_kChat, 'a-desktop-chat-id');
 
     expect(
-      bot.container.read(telegramBotProvider.notifier).chatIdOf(
-        'a-desktop-chat-id',
-      ),
+      bot.container
+          .read(telegramBotProvider.notifier)
+          .chatIdOf('a-desktop-chat-id'),
       _kChat,
+    );
+  });
+
+  test('/stop while the turn is still fetching a picture says it stopped — a '
+      'command answered with silence reads as one that never ran', () async {
+    final bot = _bot([_photo()]);
+    // The turn will sit in the download until this is completed, which is where
+    // a /stop has nothing streaming yet to stop.
+    bot.api.holdDownloads = Completer();
+
+    await _connect(bot.container);
+    await _until(
+      () => bot.api.downloaded.isNotEmpty,
+      api: bot.api,
+      what: 'a turn that reached its picture',
+    );
+    bot.api.deliver(_text('/stop', id: 2));
+    await _until(
+      () => bot.api.sent.any((m) => m.text.contains('Stopped')),
+      api: bot.api,
+      what: 'anything at all about the /stop',
+    );
+
+    expect(bot.api.sent.last.text, 'Stopped before it answered.');
+  });
+
+  test('a message sent while the assistant is still writing goes into that '
+      'answer, instead of waiting behind it', () async {
+    final bot = _bot(const []);
+    bot.api.holdDownloads = Completer();
+
+    await _connect(bot.container);
+    // A chat to carry on in, and a picture to hold the turn open while the
+    // second message arrives.
+    await bot.container.read(telegramBotProvider.notifier).startNew(_kChat);
+    final chat = bot.container
+        .read(telegramBotProvider.notifier)
+        .current(_kChat)!;
+    // The way into a running turn that an agent would have offered as its turn
+    // started — this harness installs no agent, so the test offers it.
+    final steered = <String>[];
+    bot.container.read(agentSteeringProvider.notifier).offer(chat, (
+      text,
+    ) async {
+      steered.add(text);
+      return null;
+    });
+    bot.api.deliver(_photo(id: 3));
+    await _until(
+      () => bot.api.downloaded.isNotEmpty,
+      api: bot.api,
+      what: 'a turn that reached its picture',
+    );
+
+    bot.api.deliver(_text('actually, just the main file', id: 4));
+    await _until(
+      () => steered.isNotEmpty,
+      api: bot.api,
+      what: 'a message handed to the running answer',
+    );
+
+    expect(steered.single, 'actually, just the main file');
+    expect(
+      bot.api.sent.last.text,
+      'The assistant will read that while it '
+      'works.',
+    );
+  });
+
+  test('a picture sent while the assistant is writing waits its turn — no '
+      'agent takes one mid-answer, so it must not read as delivered', () async {
+    final bot = _bot(const []);
+    bot.api.holdDownloads = Completer();
+
+    await _connect(bot.container);
+    await bot.container.read(telegramBotProvider.notifier).startNew(_kChat);
+    final chat = bot.container
+        .read(telegramBotProvider.notifier)
+        .current(_kChat)!;
+    final steered = <String>[];
+    bot.container.read(agentSteeringProvider.notifier).offer(chat, (
+      text,
+    ) async {
+      steered.add(text);
+      return null;
+    });
+    bot.api.deliver(_photo(id: 3));
+    await _until(
+      () => bot.api.downloaded.isNotEmpty,
+      api: bot.api,
+      what: 'a turn that reached its picture',
+    );
+
+    bot.api.deliver(_photo(id: 4));
+    await _until(
+      () => bot.api.sent.any((m) => m.text.contains('next')),
+      api: bot.api,
+      what: 'a picture told it was waiting',
+    );
+
+    expect(steered, isEmpty);
+    expect(
+      bot.api.sent.last.text,
+      'Still on your last message — this one is '
+      'next.',
     );
   });
 }

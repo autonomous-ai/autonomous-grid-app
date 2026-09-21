@@ -214,13 +214,13 @@ void main() {
   });
 
   group('chats and answers', () {
-    test('a Grid chat id leads back to the Telegram chat it carries on, so a '
-        'permission request reaches the right phone', () {
-      final id = telegramConversationId(42, DateTime(2026, 9, 11));
+    test('two chats started in the same Telegram chat get ids of their own, so '
+        '/new never lands back in the chat it was meant to leave', () {
+      final first = telegramConversationId(42, DateTime(2026, 9, 11));
+      final second = telegramConversationId(42, DateTime(2026, 9, 12));
 
-      expect(telegramChatOf(id), 42);
-      expect(telegramChatOf('1726000000'), isNull);
-      expect(telegramChatOf('telegram-abc'), isNull);
+      expect(first, isNot(second));
+      expect(first, startsWith(kTelegramChatPrefix));
     });
 
     test('a button answers the question it was drawn for and nothing else', () {

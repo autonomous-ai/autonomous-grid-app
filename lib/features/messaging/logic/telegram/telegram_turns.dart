@@ -28,9 +28,8 @@ abstract interface class TelegramThreads {
 
   /// The Telegram chat carrying on [conversationId], if any — the reverse of
   /// [current]. A permission question raised in a *desktop* chat a Telegram
-  /// chat was pointed at (`/sessions`) still has to reach the phone that
-  /// asked it, and its id has no `telegram-` prefix for [telegramChatOf] to
-  /// read.
+  /// chat was pointed at (`/sessions`) still has to reach the phone that asked
+  /// it, and that chat's id says nothing about which phone that is.
   int? chatIdOf(String conversationId);
 
   /// The draft behind [conversationId], while that chat hasn't started.
@@ -115,12 +114,55 @@ class TelegramTurns {
   /// Whether Telegram chat [chatId] has a message being answered or waiting.
   bool busy(int chatId) => _queue.containsKey(chatId);
 
-  /// Answer [message] after whatever this chat is already answering.
+  /// Answer [message] — or, when this chat is still writing an answer and the
+  /// assistant will take one, put it *into* that answer.
   void ask(TelegramText message) {
-    final chatId = message.chatId;
-    if (busy(chatId)) {
-      note(chatId, 'Still on your last message — this one is next.');
+    if (busy(message.chatId)) {
+      unawaited(_steerOrQueue(message));
+      return;
     }
+    _queueBehind(message);
+  }
+
+  /// A message sent while the answer was still being written.
+  ///
+  /// It goes into that answer wherever the assistant takes one — the same thing
+  /// typing in the window does ([ChatSessionsController.steerInto]), because an
+  /// answer can run for minutes and a correction that only lands after it has
+  /// finished is a correction to work already done. What can't be taken that
+  /// way waits its turn, and says so rather than looking ignored.
+  Future<void> _steerOrQueue(TelegramText message) async {
+    final chatId = message.chatId;
+    if (await _steered(message)) {
+      note(chatId, 'The assistant will read that while it works.');
+      return;
+    }
+    note(chatId, 'Still on your last message — this one is next.');
+    _queueBehind(message);
+  }
+
+  /// Whether the answer being written took [message].
+  ///
+  /// A picture never can — it is a request of another shape, and belongs to a
+  /// turn of its own — and neither can a turn no agent is driving, which is
+  /// every turn the grid answers by itself.
+  Future<bool> _steered(TelegramText message) async {
+    if (message.pictureId != null) return false;
+    final id = threads.current(message.chatId);
+    if (id == null) return false;
+    try {
+      return await _ref
+          .read(chatSessionsProvider.notifier)
+          .steerInto(id, message.text);
+    } on Object catch (error) {
+      _log.warn('telegram', "couldn't reach the running answer: $error");
+      return false;
+    }
+  }
+
+  /// Hold [message] until this chat has finished what it is answering.
+  void _queueBehind(TelegramText message) {
+    final chatId = message.chatId;
     final generation = _generation[chatId] ?? 0;
     final next = (_queue[chatId] ?? Future<void>.value()).then((_) async {
       if ((_generation[chatId] ?? 0) != generation) return;
@@ -208,14 +250,18 @@ class TelegramTurns {
         'Open Grid on your computer and pick one.',
       );
     }
-    if (stopped(message.chatId, generation)) return _stoppedEarly(message.chatId);
+    if (stopped(message.chatId, generation)) {
+      return _stoppedEarly(message.chatId);
+    }
     final (:pictures, :problem) = await telegramPicturesOf(
       _api,
       message,
       log: _log,
     );
     if (problem != null) return reply(message.chatId, problem);
-    if (stopped(message.chatId, generation)) return _stoppedEarly(message.chatId);
+    if (stopped(message.chatId, generation)) {
+      return _stoppedEarly(message.chatId);
+    }
     final id =
         threads.current(message.chatId) ??
         await threads.startNew(message.chatId);
@@ -239,7 +285,9 @@ class TelegramTurns {
     await chatSettled(_ref, id);
     // A /stop that arrived while we were waiting our turn (or the desktop's)
     // stops this message before it ever reaches a model.
-    if (stopped(message.chatId, generation)) return _stoppedEarly(message.chatId);
+    if (stopped(message.chatId, generation)) {
+      return _stoppedEarly(message.chatId);
+    }
     final before = _answersIn(id).length;
     final typing = _typing(message.chatId);
     // The answer goes out as it is written, not in one piece at the end.
@@ -281,13 +329,17 @@ class TelegramTurns {
     }
   }
 
-  /// The answer was asked and then stopped before it reached a model — say so
-  /// once, rather than letting stop echo as "Stopped before it answered".
+  /// The answer was asked and then stopped before it reached a model — say so,
+  /// because this turn returns without ever reaching [_report], and [stop]
+  /// stays silent on the understanding that [_report] speaks for it.
+  ///
+  /// The chat is taken off [_stopped] for the same reason: the message below is
+  /// the one telling, so leaving the mark set would have the *next* turn's
+  /// report claim it too.
   void _stoppedEarly(int chatId) {
-    if (_stopped.add(chatId)) {
-      _log.info('telegram', 'stopped a Telegram turn before it answered');
-      unawaited(telegramQuietly(_log, reply(chatId, 'Stopped before it answered.')));
-    }
+    _stopped.remove(chatId);
+    _log.info('telegram', 'stopped a Telegram turn before it answered');
+    note(chatId, 'Stopped before it answered.');
   }
 
   /// Whatever the assistant said that the stream didn't already put on the

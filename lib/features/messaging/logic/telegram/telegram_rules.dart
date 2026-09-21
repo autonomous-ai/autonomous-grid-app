@@ -84,20 +84,13 @@ String telegramCommandArgument(String text) {
 
 /// The id of a new Grid chat carrying on Telegram chat [chatId].
 ///
-/// The Telegram chat is in the id so a permission request raised in the Grid
-/// chat can be sent back to the right phone without a lookup; the start time
-/// is what lets `/new` begin another one.
+/// The prefix marks it as the bot's rather than something opened in the window,
+/// and the start time is what lets `/new` begin another one. Which phone a chat
+/// belongs to is *not* read back out of this: `/sessions` points a Telegram chat
+/// at a desktop chat whose id carries no prefix at all, so the bot keeps the
+/// pairing itself and answers it with `TelegramThreads.chatIdOf`.
 String telegramConversationId(int chatId, DateTime startedAt) =>
     '$kTelegramChatPrefix$chatId-${startedAt.microsecondsSinceEpoch}';
-
-/// The Telegram chat a Grid chat id carries on, or null for any other chat.
-int? telegramChatOf(String conversationId) {
-  if (!conversationId.startsWith(kTelegramChatPrefix)) return null;
-  final rest = conversationId.substring(kTelegramChatPrefix.length);
-  final dash = rest.lastIndexOf('-');
-  if (dash <= 0) return null;
-  return int.tryParse(rest.substring(0, dash));
-}
 
 /// How much a Telegram chat lets the assistant do, given the app's own mode.
 ///

@@ -337,6 +337,13 @@ abstract class _ChatSessions extends Notifier<ChatSessionsState> {
   /// Put a turn typed mid-answer into the answer itself — [_ChatQueue].
   Future<bool> _steerRunningTurn(String id, QueuedTurn turn);
 
+  /// Put [text] into the answer chat [id] is already writing — [_ChatQueue].
+  ///
+  /// Named, unlike the check [send] does for the open chat, because a message
+  /// can arrive for a chat nobody is looking at: the Telegram bot answers a
+  /// named chat, never the active one.
+  Future<bool> steerInto(String id, String text);
+
   /// Send the next held turn, if any — [_ChatQueue].
   bool _drainQueue(String id);
 
