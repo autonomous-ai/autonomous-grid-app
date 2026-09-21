@@ -13,16 +13,18 @@
 #   Ghi đè bằng biến môi trường: DEVICE, BUNDLE_ID
 #
 # CHỮ KÝ: app ký kiểu Development (CODE_SIGN_STYLE = Automatic, team
-# 2WTM2C3J46). Script KHÔNG đoán hạn — nó đọc thẳng embedded.mobileprovision
-# rồi in hạn thật sau khi cài. Hết hạn thì chạy lại script này là xong.
+# 54DJVWMJCC — Autonomous Inc., tài khoản trả phí). Script KHÔNG đoán hạn: nó
+# đọc thẳng embedded.mobileprovision rồi in hạn thật sau khi cài. Hết hạn thì
+# chạy lại script này là xong.
 #
-# Đo ngày 2026-09-21: team 2WTM2C3J46 cho profile sống **~7 ngày** (tài khoản
-# dev miễn phí), nên app chết sau một tuần. Cùng hôm đó, 4 app trong
-# ~/WorkPlace/GroupMe ký bằng team 54DJVWMJCC lại được **~364 ngày**. Muốn Grid
-# mobile sống cả năm thì đổi DEVELOPMENT_TEAM sang tài khoản trả phí đó trong
-# ios/Runner.xcodeproj — đây là việc của chữ ký, không phải của script này.
-# (Header script me-phim ghi ngược lại: bảo dùng 2WTM2C3J46 để KHỎI hết hạn.
-#  Số đo nói khác. Đo lại trước khi tin dòng nào trong hai dòng đó.)
+# Đo ngày 2026-09-21, sau khi đổi team, trên chính máy này:
+#   54DJVWMJCC → "iOS Team Provisioning Profile: *", hết hạn 2027-09-21 (~364 ngày)
+#   2WTM2C3J46 → profile riêng cho bundle này,      hết hạn 2026-09-28 (~7 ngày)
+# Team cũ là tài khoản dev miễn phí, nên app chết sau một tuần; đó là lý do
+# DEVELOPMENT_TEAM trong ios/Runner.xcodeproj đã đổi sang 54DJVWMJCC.
+#
+# Header của me-phim/scripts/build_to_iphone.sh nói ngược: bảo ký bằng
+# 2WTM2C3J46 để KHỎI hết hạn. Số đo ở trên bác điều đó. Đo lại trước khi tin.
 #
 # Grid mobile chỉ là điều khiển từ xa cho bản Grid chạy trên máy tính: cài xong
 # vẫn phải ghép đôi với desktop thì mới có gì để xem.
@@ -127,6 +129,13 @@ if ! xcrun devicectl device install app --device "$DEVICE" "$APP_PATH" >"$INSTAL
       echo "       -destination 'id=$DEVICE' -allowProvisioningDeviceRegistration build" >&2 ;;
     *"not paired"*|*"locked"*)
       echo "   → Mở khoá màn hình rồi bấm Tin cậy máy tính này." >&2 ;;
+    *"application-identifier"*)
+      # Gặp thật ngày 2026-09-21 khi đổi DEVELOPMENT_TEAM: iOS coi app đổi
+      # team là app KHÁC nên từ chối cài đè, dù bundle id y hệt. Gỡ rồi cài
+      # lại là hết — và đó là cách DUY NHẤT, không có đường nâng cấp tại chỗ.
+      echo "   → Đổi team ký thì phải gỡ app cũ trước (iOS không cho cài đè):" >&2
+      echo "     xcrun devicectl device uninstall app --device $DEVICE $BUNDLE_ID" >&2
+      echo "     Gỡ là mất dữ liệu trong app + phải ghép đôi lại với desktop." >&2 ;;
   esac
   echo "   (log đầy đủ: $INSTALL_LOG)" >&2
   exit 1
