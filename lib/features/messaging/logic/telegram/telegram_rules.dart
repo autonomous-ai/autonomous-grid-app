@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../../../../infrastructure/api/telegram_wire.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
 
 /// A message older than this when Grid first sees it was sent while Grid was
@@ -118,6 +119,29 @@ String telegramAnswerData(int ask, AgentPermissionChoice choice) =>
     if (choice.name == parts[2]) return (ask: ask, choice: choice);
   }
   return null;
+}
+
+/// The Stop button under an answer as it is being written.
+///
+/// One button, on the message the answer is currently growing into, so it is
+/// at the bottom of the chat where the answer is — reaching for `/stop` on a
+/// phone means leaving the answer to find the keyboard.
+TelegramKeyboard telegramStopRows(int turn) => [
+  [(label: '⏹ Stop', data: 'stop:$turn')],
+];
+
+/// Which answer a Stop button was drawn under, or null for other data.
+///
+/// The *chat* is deliberately not in here: it is read off the tap itself, so a
+/// listed user cannot hand-craft a tap that stops an answer running in someone
+/// else's chat. The turn number only says *which* answer, and a tap naming one
+/// that has since finished is refused rather than stopping whatever replaced it
+/// — a button left behind by a clear that never reached Telegram must not stop
+/// the next answer instead.
+int? parseTelegramStopData(String data) {
+  final parts = data.split(':');
+  if (parts.length != 2 || parts.first != 'stop') return null;
+  return int.tryParse(parts[1]);
 }
 
 /// How long to wait before polling again after [failures] failures in a row:

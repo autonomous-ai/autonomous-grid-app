@@ -99,6 +99,48 @@ void main() {
     });
   });
 
+  group('where the Stop button sits while an answer is written', () {
+    test('an answer still inside its first message owes nothing: the draw that '
+        'wrote the words carried the button with them', () {
+      expect(telegramStopMoves(was: 0, wanted: 0, redrawn: const {0}), (
+        clear: null,
+        set: null,
+      ));
+    });
+
+    test('a message whose words did not change this flush still needs the '
+        'button put on it by hand', () {
+      expect(telegramStopMoves(was: null, wanted: 0, redrawn: const {}), (
+        clear: null,
+        set: 0,
+      ));
+    });
+
+    test('an answer grown past one message moves Stop down to the new one and '
+        'takes it off the one above, so only ever one offers to stop', () {
+      expect(telegramStopMoves(was: 0, wanted: 1, redrawn: const {1}), (
+        clear: 0,
+        set: null,
+      ));
+    });
+
+    test('the landing takes the button off wherever it was — an answer that '
+        'has finished must not still offer to stop', () {
+      expect(telegramStopMoves(was: 1, wanted: null, redrawn: const {}), (
+        clear: 1,
+        set: null,
+      ));
+    });
+
+    test('a landing that redrew the message holding the button has already '
+        'taken it off there', () {
+      expect(telegramStopMoves(was: 1, wanted: null, redrawn: const {1}), (
+        clear: null,
+        set: null,
+      ));
+    });
+  });
+
   group('a draw Telegram refused', () {
     TelegramRefused tooFast(int seconds) => TelegramRefused(
       429,

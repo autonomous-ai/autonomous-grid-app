@@ -251,6 +251,22 @@ void main() {
       expect(first, startsWith(kTelegramChatPrefix));
     });
 
+    test('a Stop button says which answer it belongs to, and carries no chat — '
+        'which chat to stop is read off the tap, never the payload', () {
+      final data = telegramStopRows(7).single.single.data;
+
+      expect(parseTelegramStopData(data), 7);
+      expect(data, isNot(contains('900900')));
+    });
+
+    test('data the Stop button did not write is left for the menus and the '
+        'permission cards to read', () {
+      expect(parseTelegramStopData('mp:1:2'), isNull);
+      expect(parseTelegramStopData('perm:3:allowOnce'), isNull);
+      expect(parseTelegramStopData('stop:'), isNull);
+      expect(parseTelegramStopData('stop:1:2'), isNull);
+    });
+
     test('a button answers the question it was drawn for and nothing else', () {
       final data = telegramAnswerData(3, AgentPermissionChoice.allowOnce);
 

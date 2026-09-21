@@ -133,6 +133,17 @@ class _FakeApi implements TelegramBotApi {
     TelegramKeyboard rows = const [],
   }) async => edits.add((chat: chatId, text: text, rows: rows));
 
+  /// Which message ids carry buttons right now, and which rows — how the Stop
+  /// button is followed as it moves and comes off.
+  final Map<int, TelegramKeyboard> buttons = {};
+
+  @override
+  Future<void> editMessageButtons(
+    int chatId,
+    int messageId, {
+    TelegramKeyboard rows = const [],
+  }) async => buttons[messageId] = rows;
+
   @override
   Future<void> sendTyping(int chatId) async {}
 
@@ -443,6 +454,24 @@ void main() {
           .chatIdOf('a-desktop-chat-id'),
       _kChat,
     );
+  });
+
+  test('a Stop button tapped after its answer finished stops nothing and says '
+      'so, rather than stopping whatever is running now', () async {
+    final bot = _bot(const []);
+
+    await _connect(bot.container);
+    // A button left behind by a clear that never reached Telegram: it names a
+    // turn that is long over.
+    bot.api.deliver(_tap('stop:1', id: 5));
+    await _until(
+      () => bot.api.toasts.isNotEmpty,
+      api: bot.api,
+      what: 'an answer to the stale Stop button',
+    );
+
+    expect(bot.api.toasts.single, 'That answer has already finished.');
+    expect(bot.api.sent, isEmpty);
   });
 
   test('/stop while the turn is still fetching a picture says it stopped — a '

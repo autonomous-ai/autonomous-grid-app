@@ -109,6 +109,17 @@ class TelegramTurns {
   /// from an answer that simply ends.
   final Set<int> _stopped = {};
 
+  /// Counts the answers this bot has streamed, and which one each chat is
+  /// streaming now.
+  ///
+  /// The Stop button under an answer names the turn it belongs to, so a button
+  /// left behind — the edit that should have taken it off never reached
+  /// Telegram — stops nothing rather than stopping whatever is running when it
+  /// is finally tapped. Bumping [_generation] would not do: that drops the
+  /// chat's queue, which is exactly what an untapped button must not.
+  int _turns = 0;
+  final Map<int, int> _streaming = {};
+
   AppLog get _log => _ref.read(appLogProvider);
 
   /// Whether Telegram chat [chatId] has a message being answered or waiting.
@@ -290,12 +301,15 @@ class TelegramTurns {
     }
     final before = _answersIn(id).length;
     final typing = _typing(message.chatId);
-    // The answer goes out as it is written, not in one piece at the end.
+    final turn = _streaming[message.chatId] = ++_turns;
+    // The answer goes out as it is written, not in one piece at the end, with a
+    // Stop button under it for as long as there is something to stop.
     final stream = TelegramStream(
       _ref,
       _api,
       chatId: message.chatId,
       conversationId: id,
+      stopRows: telegramStopRows(turn),
       log: _log,
     )..listen();
     try {
@@ -322,11 +336,31 @@ class TelegramTurns {
       );
     } finally {
       typing.cancel();
+      if (_streaming[message.chatId] == turn) _streaming.remove(message.chatId);
       // Close again so an early return/throw still lands whatever was left.
       // Safe twice: after a land, `_latest` is empty and the second flush is a
       // no-op.
       await stream.close();
     }
+  }
+
+  /// Stop the answer from the Stop button drawn under it.
+  ///
+  /// Which chat to stop comes from the tap, never from the button's own data:
+  /// a listed user could otherwise craft one that stops an answer running in a
+  /// chat that is not theirs. [turn] only says *which* answer, and one that has
+  /// already finished is told so rather than stopping whatever replaced it.
+  Future<void> stopFromButton(TelegramButtonPress press, int turn) async {
+    if (_streaming[press.chatId] != turn) {
+      return _api.answerButton(
+        press.callbackId,
+        text: 'That answer has already finished.',
+      );
+    }
+    // Stopped first, acknowledged second: a tap Telegram has forgotten about
+    // fails the acknowledgement, and that must never be what skips the stop.
+    stop(press.chatId);
+    await _api.answerButton(press.callbackId, text: 'Stopping…');
   }
 
   /// The answer was asked and then stopped before it reached a model — say so,
