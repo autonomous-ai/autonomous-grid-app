@@ -262,6 +262,10 @@ class TelegramTurns {
         planFirst: false,
       );
       await chatSettled(_ref, id);
+      // Let the stream land (and count the answer as delivered) before working
+      // out what the report still owes the phone. Otherwise `delivered` lags
+      // the last flush and the report re-sends the final answer it just drew.
+      await stream.close();
       await _report(
         message.chatId,
         id,
@@ -270,6 +274,9 @@ class TelegramTurns {
       );
     } finally {
       typing.cancel();
+      // Close again so an early return/throw still lands whatever was left.
+      // Safe twice: after a land, `_latest` is empty and the second flush is a
+      // no-op.
       await stream.close();
     }
   }
