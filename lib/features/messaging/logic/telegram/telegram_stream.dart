@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../infrastructure/api/telegram_bot_api.dart';
+import '../../../../infrastructure/api/telegram_wire.dart';
 import '../../../../infrastructure/logging/app_log.dart';
 import '../../../chat/logic/chat_sessions_controller.dart';
 import '../../../playground/logic/chat_message.dart';
 import 'telegram_markup.dart';
+import 'telegram_rules.dart';
 
 /// How often the answer on the phone is brought up to date while it is being
 /// written.
@@ -15,6 +17,54 @@ import 'telegram_markup.dart';
 /// reflows on every word is unreadable on a phone. dev-quen-bots settled on the
 /// same one and a half seconds.
 const Duration kTelegramStreamEvery = Duration(milliseconds: 1500);
+
+/// The longest a rate-limited draw waits before giving up on itself.
+///
+/// Telegram answers a 429 with how long to hold off, and under a real flood
+/// that can be tens of seconds. Waiting it out blocks the chat's whole queue,
+/// and the text is not lost by declining to — the next flush carries it, and
+/// the landing draws the answer entire whatever the draws in between managed.
+const Duration kTelegramMaxRetryAfter = Duration(seconds: 5);
+
+/// How long a refused draw waits before its one retry, or null to give up on
+/// it and let the next flush carry the same text.
+///
+/// Only a 429 is worth waiting on at all, [retry] is false once a draw has had
+/// its turn, and a wait longer than [kTelegramMaxRetryAfter] is declined: every
+/// draw runs inside the chain the landing waits on, so a draw that sleeps holds
+/// up `close`, and with it everything queued behind this answer.
+///
+/// Pure, because the alternative is finding out on a phone during a flood.
+Duration? telegramRetryWait(TelegramRefused error, {required bool retry}) {
+  final asked = error.retryAfter;
+  if (!retry || asked == null) return null;
+  return asked > kTelegramMaxRetryAfter ? null : asked;
+}
+
+/// The button edits a draw still owes: take Stop off [clear], put it on [set].
+typedef TelegramStopMoves = ({int? clear, int? set});
+
+/// Which messages a draw must still touch to leave the Stop button on [wanted]
+/// and nowhere else, given it was on [was] and has just [redrawn] some.
+///
+/// A message redrawn this moment already carries whatever buttons that draw
+/// gave it, so touching it again is a second request for nothing — and one
+/// Telegram answers "not modified". In the ordinary case, an answer still
+/// growing inside its first message, that covers everything and this owes
+/// nothing at all.
+///
+/// Pure: which message holds the button is exactly the sort of thing that goes
+/// unnoticed until a long answer leaves two of them behind, or none.
+TelegramStopMoves telegramStopMoves({
+  required int? was,
+  required int? wanted,
+  required Set<int> redrawn,
+}) => (
+  clear: was != null && was != wanted && !redrawn.contains(was) ? was : null,
+  set: wanted != null && wanted != was && !redrawn.contains(wanted)
+      ? wanted
+      : null,
+);
 
 /// One message of the answer that has to be drawn or redrawn.
 typedef TelegramStreamEdit = ({int index, TelegramChunk chunk, bool fresh});
@@ -47,6 +97,7 @@ class TelegramStream {
     this._api, {
     required this.chatId,
     required this.conversationId,
+    required this.stopRows,
     required AppLog log,
   }) : _log = log;
 
@@ -59,11 +110,22 @@ class TelegramStream {
   /// The Grid chat being answered.
   final String conversationId;
 
+  /// The Stop button to keep under the answer while it is being written — see
+  /// [telegramStopRows]. It names this turn, so the button cannot outlive it.
+  final TelegramKeyboard stopRows;
+
   final AppLog _log;
 
   /// Telegram's ids for the messages this turn has sent, and what each says.
   final List<int> _sent = [];
   final List<String> _shown = [];
+
+  /// Which of [_sent] is currently showing the Stop button, if any.
+  ///
+  /// One message carries it at a time — the one being written — so it stays at
+  /// the bottom of the chat as a long answer grows past a message and into the
+  /// next. Null once the answer has landed and there is nothing left to stop.
+  int? _stopOn;
 
   /// How many of the chat's assistant messages this stream has delivered, so
   /// the reply that follows doesn't send them a second time.
@@ -97,14 +159,22 @@ class TelegramStream {
     );
   }
 
-  /// Stop following, after drawing whatever is left.
+  /// Stop following, after landing whatever is left.
+  ///
+  /// A turn that ended without the idle phase [_land] hangs off — stopped, or
+  /// failed — leaves a half-drawn answer on the phone and the whole of it in
+  /// the transcript. Landing it here rather than flushing [_latest] draws the
+  /// answer that was actually kept, and counts it: a draw nothing counts is one
+  /// the report that follows sends all over again.
+  ///
+  /// Safe to call twice — the second time there is nothing left to land.
   Future<void> close() async {
     _timer?.cancel();
     _timer = null;
     _phases?.close();
     _phases = null;
     await _landing;
-    if (_latest.isNotEmpty) await _flush();
+    if (_latest.isNotEmpty) await _land();
   }
 
   void _onPhase(SendPhase phase) {
@@ -143,8 +213,9 @@ class TelegramStream {
     final landed = _before + delivered;
     if (answers.length > landed) {
       _latest = answers[landed];
-      if (await _flush()) delivered++;
+      if (await _flush(live: false)) delivered++;
     }
+    await _dropStop();
     _sent.clear();
     _shown.clear();
     _latest = '';
@@ -152,18 +223,27 @@ class TelegramStream {
 
   /// Bring the phone up to date with [_latest], behind whatever draw is
   /// already running. Resolves whether that draw reached the phone whole.
-  Future<bool> _flush() {
-    _drawing = _drawing.then((_) => _drawLatest());
+  ///
+  /// [live] is false for the draw that lands the answer: that one carries no
+  /// Stop button, because by then there is nothing left to stop.
+  Future<bool> _flush({bool live = true}) {
+    _drawing = _drawing.then((_) => _drawLatest(live: live));
     return _drawing;
   }
 
-  Future<bool> _drawLatest() async {
+  Future<bool> _drawLatest({required bool live}) async {
     final text = _latest;
     if (text.trim().isEmpty) return true;
     try {
-      for (final edit in telegramStreamEdits(_shown, telegramChunks(text))) {
-        await _draw(edit);
+      final chunks = telegramChunks(text);
+      // The answer is growing into the last message, so that is where Stop has
+      // to be; the landing wants it nowhere.
+      final wanted = live ? chunks.length - 1 : null;
+      final edits = telegramStreamEdits(_shown, chunks);
+      for (final edit in edits) {
+        await _draw(edit, rows: edit.index == wanted ? stopRows : const []);
       }
+      await _keepStopOn(wanted, redrawn: {for (final e in edits) e.index});
       return true;
     } on Object catch (error) {
       _log.warn('telegram', "couldn't draw the answer as it arrived: $error");
@@ -171,29 +251,85 @@ class TelegramStream {
     }
   }
 
-  Future<void> _draw(TelegramStreamEdit edit) async {
+  /// Put the Stop button on [wanted] and take it off wherever it was — see
+  /// [telegramStopMoves] for which of those the draw has already done.
+  Future<void> _keepStopOn(int? wanted, {required Set<int> redrawn}) async {
+    final moves = telegramStopMoves(
+      was: _stopOn,
+      wanted: wanted,
+      redrawn: redrawn,
+    );
+    _stopOn = wanted;
+    final clear = moves.clear;
+    if (clear != null) await _api.editMessageButtons(chatId, _sent[clear]);
+    final set = moves.set;
+    if (set != null) {
+      await _api.editMessageButtons(chatId, _sent[set], rows: stopRows);
+    }
+  }
+
+  /// Take the Stop button off for good — the answer has landed.
+  ///
+  /// Quietly: a button left over because Telegram was unreachable for this one
+  /// request is worth a log, never a failed turn, and the tap it might get is
+  /// refused on the turn number it carries ([parseTelegramStopData]).
+  Future<void> _dropStop() async {
+    final on = _stopOn;
+    _stopOn = null;
+    if (on == null || on >= _sent.length) return;
+    try {
+      await _api.editMessageButtons(chatId, _sent[on]);
+    } on Object catch (error) {
+      _log.warn('telegram', "couldn't take the Stop button off: $error");
+    }
+  }
+
+  Future<void> _draw(
+    TelegramStreamEdit edit, {
+    required TelegramKeyboard rows,
+  }) async {
     final chunk = edit.chunk;
     if (edit.fresh) {
-      _sent.add(await _send(chunk));
+      _sent.add(await _send(chunk, rows));
       _shown.add(chunk.text);
       return;
     }
-    await _edit(_sent[edit.index], chunk);
+    await _edit(_sent[edit.index], chunk, rows);
     _shown[edit.index] = chunk.text;
   }
 
-  Future<int> _send(TelegramChunk chunk) async {
+  Future<int> _send(TelegramChunk chunk, TelegramKeyboard rows) async {
     try {
-      return await _api.sendMessage(chatId, chunk.text, html: chunk.html);
+      return await _api.sendMessage(
+        chatId,
+        chunk.text,
+        html: chunk.html,
+        rows: rows,
+      );
     } on TelegramRefused catch (error) {
       if (!chunk.html || !error.badMarkup) rethrow;
-      return _api.sendMessage(chatId, telegramPlainText(chunk.text));
+      return _api.sendMessage(
+        chatId,
+        telegramPlainText(chunk.text),
+        rows: rows,
+      );
     }
   }
 
-  Future<void> _edit(int messageId, TelegramChunk chunk) async {
+  Future<void> _edit(
+    int messageId,
+    TelegramChunk chunk,
+    TelegramKeyboard rows, {
+    bool retry = true,
+  }) async {
     try {
-      await _api.editMessage(chatId, messageId, chunk.text, html: chunk.html);
+      await _api.editMessage(
+        chatId,
+        messageId,
+        chunk.text,
+        html: chunk.html,
+        rows: rows,
+      );
     } on TelegramRefused catch (error) {
       if (error.notModified) return;
       if (chunk.html && error.badMarkup) {
@@ -201,16 +337,17 @@ class TelegramStream {
           chatId,
           messageId,
           telegramPlainText(chunk.text),
+          rows: rows,
         );
         return;
       }
       // Too fast for Telegram (429): wait out what it asked and try once more.
       // A draw that *sent* little is not "delivered", so a linger lost to the
       // blip is drawn again by the next flush rather than counted as shown.
-      final retryAfter = error.retryAfter;
-      if (retryAfter == null) rethrow;
-      await Future<void>.delayed(retryAfter);
-      await _edit(messageId, chunk);
+      final wait = telegramRetryWait(error, retry: retry);
+      if (wait == null) rethrow;
+      await Future<void>.delayed(wait);
+      await _edit(messageId, chunk, rows, retry: false);
     }
   }
 

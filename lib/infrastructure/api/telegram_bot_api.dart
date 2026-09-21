@@ -95,6 +95,18 @@ abstract interface class TelegramBotApi {
     TelegramKeyboard rows = const [],
   });
 
+  /// Change only the buttons under a message, leaving its words alone.
+  ///
+  /// How the Stop button comes off an answer that has landed: [editMessage]
+  /// would do it too, but only by re-sending the whole answer, and an answer
+  /// is the one thing here that can be long enough for that to cost anything.
+  /// No [rows] leaves the message with no buttons at all.
+  Future<void> editMessageButtons(
+    int chatId,
+    int messageId, {
+    TelegramKeyboard rows = const [],
+  });
+
   /// "typing…" under the bot's name, for about five seconds.
   Future<void> sendTyping(int chatId);
 
@@ -185,6 +197,17 @@ class HttpTelegramBotApi implements TelegramBotApi {
     'message_id': messageId,
     'text': text,
     ..._format(html: html, rows: rows),
+  });
+
+  @override
+  Future<void> editMessageButtons(
+    int chatId,
+    int messageId, {
+    TelegramKeyboard rows = const [],
+  }) => _call('editMessageReplyMarkup', {
+    'chat_id': chatId,
+    'message_id': messageId,
+    if (rows.isNotEmpty) 'reply_markup': telegramKeyboard(rows),
   });
 
   /// What a sent or edited message carries besides its words.

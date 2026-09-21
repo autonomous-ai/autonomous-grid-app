@@ -43,6 +43,7 @@ final class TelegramText extends TelegramUpdate {
     required this.text,
     required this.sentAt,
     this.pictureId,
+    this.pictureName,
   }) : super(updateId);
 
   final int chatId;
@@ -62,6 +63,13 @@ final class TelegramText extends TelegramUpdate {
   /// The picture sent with it, as the `file_id` Telegram fetches it by — see
   /// `TelegramBotApi.downloadFile`. Null for plain text.
   final String? pictureId;
+
+  /// What the sender's own machine called the picture, when it came as a file.
+  ///
+  /// Null for a photo, which Telegram has already re-encoded as JPEG and names
+  /// itself. It is the one hint at the format that arrives *before* the
+  /// download does — a 20 MB HEIC is worth turning away unread.
+  final String? pictureName;
 }
 
 /// A message with nothing Grid can hand the assistant: a voice note, a
@@ -151,11 +159,11 @@ TelegramUpdate _message(int updateId, Map<Object?, Object?> message) {
   final fromId = from['id'];
   if (chatId is! int || fromId is! int) return TelegramIgnored(updateId);
   final privateChat = chat['type'] == 'private';
-  final pictureId = _pictureIdOf(message);
+  final picture = _pictureOf(message);
   // A picture's words ride in `caption`; `text` is only set on plain text.
-  final typed = message[pictureId == null ? 'text' : 'caption'];
+  final typed = message[picture == null ? 'text' : 'caption'];
   final text = typed is String ? typed : '';
-  if (pictureId == null && text.trim().isEmpty) {
+  if (picture == null && text.trim().isEmpty) {
     return TelegramOtherMessage(
       updateId: updateId,
       chatId: chatId,
@@ -174,24 +182,32 @@ TelegramUpdate _message(int updateId, Map<Object?, Object?> message) {
     sentAt: date is int
         ? DateTime.fromMillisecondsSinceEpoch(date * 1000)
         : DateTime.now(),
-    pictureId: pictureId,
+    pictureId: picture?.id,
+    pictureName: picture?.name,
   );
 }
 
-/// The `file_id` of the picture on [message], or null when it carries none.
+/// The picture on [message], or null when it carries none.
 ///
 /// A photo arrives as the same picture at several sizes; the largest is the
-/// one worth reading. A picture sent *as a file* — how a screenshot keeps its
-/// full resolution — arrives as a document with an image type instead.
-String? _pictureIdOf(Map<Object?, Object?> message) {
+/// one worth reading, and Telegram has already made it a JPEG, so it has no
+/// name worth passing on. A picture sent *as a file* — how a screenshot keeps
+/// its full resolution — arrives as a document with an image type instead, and
+/// that one brings the sender's own filename with it.
+({String id, String? name})? _pictureOf(Map<Object?, Object?> message) {
   final sizes = message['photo'];
-  if (sizes is List) return _largestPhotoId(sizes);
+  if (sizes is List) {
+    final id = _largestPhotoId(sizes);
+    return id == null ? null : (id: id, name: null);
+  }
   final document = message['document'];
   if (document is! Map) return null;
   final type = document['mime_type'];
   final id = document['file_id'];
   if (type is! String || !type.startsWith('image/')) return null;
-  return id is String ? id : null;
+  if (id is! String) return null;
+  final name = document['file_name'];
+  return (id: id, name: name is String ? name : null);
 }
 
 /// The `file_id` of the biggest of a photo's [sizes], by pixel count.

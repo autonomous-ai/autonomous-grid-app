@@ -20,7 +20,8 @@ const String _kGreeting =
     "Hi! I'm Grid, answering from your computer. Send a message or a picture "
     'and the assistant there replies.\n\n'
     '/sessions picks a project or a chat · /new starts a new chat · /model '
-    'changes the model · /stop stops an answer.';
+    'changes the model · /stop stops an answer, as does the Stop button '
+    'under it.';
 
 /// The Telegram bot Grid answers as, in the app itself.
 sealed class TelegramBotState {
@@ -296,6 +297,12 @@ class TelegramBotController extends Notifier<TelegramBotState>
         _onText(update, allowed, turns, menus);
       case TelegramButtonPress(:final fromId, :final data):
         if (!allowed.contains('$fromId')) return;
+        // Stop is the one button that is read while a turn runs, so it is
+        // matched before the menus — everything else waits for an idle chat.
+        final stopping = parseTelegramStopData(data);
+        if (stopping != null) {
+          return _quietly(turns.stopFromButton(update, stopping));
+        }
         final tap = parseTelegramMenuTap(data);
         _quietly(
           tap == null ? relay.onPress(update) : menus.onTap(update, tap),

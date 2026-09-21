@@ -6,8 +6,13 @@ import 'package:grid_app/infrastructure/api/telegram_bot_api.dart';
 import 'package:grid_app/infrastructure/api/telegram_wire.dart';
 import 'package:grid_app/infrastructure/logging/app_log.dart';
 
-/// A message from Telegram, with [pictureId] when it carries a picture.
-TelegramText _message({String text = '', String? pictureId}) => TelegramText(
+/// A message from Telegram, with [pictureId] when it carries a picture and
+/// [pictureName] when that picture came as a file, under a name of its own.
+TelegramText _message({
+  String text = '',
+  String? pictureId,
+  String? pictureName,
+}) => TelegramText(
   updateId: 1,
   chatId: 42,
   privateChat: true,
@@ -16,6 +21,7 @@ TelegramText _message({String text = '', String? pictureId}) => TelegramText(
   text: text,
   sentAt: DateTime(2026, 9, 18),
   pictureId: pictureId,
+  pictureName: pictureName,
 );
 
 /// Telegram's file host, answered from memory: it hands over [file], or throws
@@ -116,6 +122,23 @@ void main() {
       expect(result.pictures, isEmpty);
       expect(result.problem, kTelegramPictureUnreadable);
     });
+
+    test(
+      'a file whose own name says Grid cannot read it is turned away '
+      'unfetched — an iPhone original is tens of megabytes of HEIC',
+      () async {
+        final files = _Files(file: _file('file_9.heic'));
+
+        final result = await telegramPicturesOf(
+          files,
+          _message(pictureId: 'p', pictureName: 'IMG_0001.HEIC'),
+          log: const NoopAppLog(),
+        );
+
+        expect(files.asked, isEmpty);
+        expect(result.problem, kTelegramPictureUnreadable);
+      },
+    );
 
     test('a picture Telegram would not hand over is explained to its sender '
         'instead of answered without it', () async {

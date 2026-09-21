@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../../../../infrastructure/api/telegram_wire.dart';
 import '../../../../infrastructure/cli/agent_event.dart';
 
 /// A message older than this when Grid first sees it was sent while Grid was
@@ -84,20 +85,13 @@ String telegramCommandArgument(String text) {
 
 /// The id of a new Grid chat carrying on Telegram chat [chatId].
 ///
-/// The Telegram chat is in the id so a permission request raised in the Grid
-/// chat can be sent back to the right phone without a lookup; the start time
-/// is what lets `/new` begin another one.
+/// The prefix marks it as the bot's rather than something opened in the window,
+/// and the start time is what lets `/new` begin another one. Which phone a chat
+/// belongs to is *not* read back out of this: `/sessions` points a Telegram chat
+/// at a desktop chat whose id carries no prefix at all, so the bot keeps the
+/// pairing itself and answers it with `TelegramThreads.chatIdOf`.
 String telegramConversationId(int chatId, DateTime startedAt) =>
     '$kTelegramChatPrefix$chatId-${startedAt.microsecondsSinceEpoch}';
-
-/// The Telegram chat a Grid chat id carries on, or null for any other chat.
-int? telegramChatOf(String conversationId) {
-  if (!conversationId.startsWith(kTelegramChatPrefix)) return null;
-  final rest = conversationId.substring(kTelegramChatPrefix.length);
-  final dash = rest.lastIndexOf('-');
-  if (dash <= 0) return null;
-  return int.tryParse(rest.substring(0, dash));
-}
 
 /// How much a Telegram chat lets the assistant do, given the app's own mode.
 ///
@@ -125,6 +119,29 @@ String telegramAnswerData(int ask, AgentPermissionChoice choice) =>
     if (choice.name == parts[2]) return (ask: ask, choice: choice);
   }
   return null;
+}
+
+/// The Stop button under an answer as it is being written.
+///
+/// One button, on the message the answer is currently growing into, so it is
+/// at the bottom of the chat where the answer is — reaching for `/stop` on a
+/// phone means leaving the answer to find the keyboard.
+TelegramKeyboard telegramStopRows(int turn) => [
+  [(label: '⏹ Stop', data: 'stop:$turn')],
+];
+
+/// Which answer a Stop button was drawn under, or null for other data.
+///
+/// The *chat* is deliberately not in here: it is read off the tap itself, so a
+/// listed user cannot hand-craft a tap that stops an answer running in someone
+/// else's chat. The turn number only says *which* answer, and a tap naming one
+/// that has since finished is refused rather than stopping whatever replaced it
+/// — a button left behind by a clear that never reached Telegram must not stop
+/// the next answer instead.
+int? parseTelegramStopData(String data) {
+  final parts = data.split(':');
+  if (parts.length != 2 || parts.first != 'stop') return null;
+  return int.tryParse(parts[1]);
 }
 
 /// How long to wait before polling again after [failures] failures in a row:
