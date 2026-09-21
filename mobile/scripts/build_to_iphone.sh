@@ -127,6 +127,13 @@ if ! xcrun devicectl device install app --device "$DEVICE" "$APP_PATH" >"$INSTAL
       echo "       -destination 'id=$DEVICE' -allowProvisioningDeviceRegistration build" >&2 ;;
     *"not paired"*|*"locked"*)
       echo "   → Mở khoá màn hình rồi bấm Tin cậy máy tính này." >&2 ;;
+    *"application-identifier"*)
+      # Gặp thật ngày 2026-09-21 khi đổi DEVELOPMENT_TEAM: iOS coi app đổi
+      # team là app KHÁC nên từ chối cài đè, dù bundle id y hệt. Gỡ rồi cài
+      # lại là hết — và đó là cách DUY NHẤT, không có đường nâng cấp tại chỗ.
+      echo "   → Đổi team ký thì phải gỡ app cũ trước (iOS không cho cài đè):" >&2
+      echo "     xcrun devicectl device uninstall app --device $DEVICE $BUNDLE_ID" >&2
+      echo "     Gỡ là mất dữ liệu trong app + phải ghép đôi lại với desktop." >&2 ;;
   esac
   echo "   (log đầy đủ: $INSTALL_LOG)" >&2
   exit 1
