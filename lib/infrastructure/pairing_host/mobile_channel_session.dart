@@ -33,7 +33,9 @@ class MobileChannelSession {
     required MobileRpcService rpc,
     required String relayHostId,
     required void Function(String message) onEvent,
+    Stream<dynamic>? incoming,
   }) : _socket = socket,
+       _incoming = incoming ?? socket,
        _hostKeyPair = hostKeyPair,
        _registry = registry,
        _rpc = rpc,
@@ -41,6 +43,15 @@ class MobileChannelSession {
        _onEvent = onEvent;
 
   final WebSocket _socket;
+
+  /// What to read the phone's frames from, which is the socket itself unless a
+  /// caller has already taken something off the front of it.
+  ///
+  /// The in-process cell reads the phone's `relay-auth` frame before this
+  /// session exists — a relay used to eat that frame, and the session has never
+  /// seen one. Handing the rest of the stream in keeps that true, rather than
+  /// teaching this class about a frame that only exists one layer down.
+  final Stream<dynamic> _incoming;
   final E2eeKeyPair _hostKeyPair;
   final DeviceRegistry _registry;
   final MobileRpcService _rpc;
@@ -54,7 +65,7 @@ class MobileChannelSession {
   /// Runs until the phone goes away or says something this side refuses.
   Future<void> serve() async {
     try {
-      await for (final message in _socket) {
+      await for (final message in _incoming) {
         if (message is! String) {
           // Binary before there is anything to decode it with. Nothing in this
           // protocol sends bytes in the clear.
