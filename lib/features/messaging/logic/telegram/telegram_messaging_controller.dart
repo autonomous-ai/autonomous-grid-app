@@ -51,8 +51,7 @@ class TelegramMessagingController extends AsyncNotifier<MessagingState> {
       .read(telegramBotProvider.notifier)
       .connect(
         token:
-            credentials[MessagingPlatform.telegram.credentials.first.key] ??
-            '',
+            credentials[MessagingPlatform.telegram.credentials.first.key] ?? '',
         userId: userId,
       );
 

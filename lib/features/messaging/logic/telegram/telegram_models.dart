@@ -4,7 +4,6 @@ import '../../../playground/logic/playground_models.dart';
 import '../../../playground/logic/playground_request.dart';
 import 'telegram_menus.dart';
 
-
 /// The rows `/model` offers: the text models on [options] that [agent] can
 /// actually answer with, the one in use ticked.
 ///

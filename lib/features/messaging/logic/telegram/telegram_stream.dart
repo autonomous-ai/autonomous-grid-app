@@ -16,6 +16,29 @@ import 'telegram_markup.dart';
 /// same one and a half seconds.
 const Duration kTelegramStreamEvery = Duration(milliseconds: 1500);
 
+/// The longest a rate-limited draw waits before giving up on itself.
+///
+/// Telegram answers a 429 with how long to hold off, and under a real flood
+/// that can be tens of seconds. Waiting it out blocks the chat's whole queue,
+/// and the text is not lost by declining to — the next flush carries it, and
+/// the landing draws the answer entire whatever the draws in between managed.
+const Duration kTelegramMaxRetryAfter = Duration(seconds: 5);
+
+/// How long a refused draw waits before its one retry, or null to give up on
+/// it and let the next flush carry the same text.
+///
+/// Only a 429 is worth waiting on at all, [retry] is false once a draw has had
+/// its turn, and a wait longer than [kTelegramMaxRetryAfter] is declined: every
+/// draw runs inside the chain the landing waits on, so a draw that sleeps holds
+/// up `close`, and with it everything queued behind this answer.
+///
+/// Pure, because the alternative is finding out on a phone during a flood.
+Duration? telegramRetryWait(TelegramRefused error, {required bool retry}) {
+  final asked = error.retryAfter;
+  if (!retry || asked == null) return null;
+  return asked > kTelegramMaxRetryAfter ? null : asked;
+}
+
 /// One message of the answer that has to be drawn or redrawn.
 typedef TelegramStreamEdit = ({int index, TelegramChunk chunk, bool fresh});
 
@@ -97,14 +120,22 @@ class TelegramStream {
     );
   }
 
-  /// Stop following, after drawing whatever is left.
+  /// Stop following, after landing whatever is left.
+  ///
+  /// A turn that ended without the idle phase [_land] hangs off — stopped, or
+  /// failed — leaves a half-drawn answer on the phone and the whole of it in
+  /// the transcript. Landing it here rather than flushing [_latest] draws the
+  /// answer that was actually kept, and counts it: a draw nothing counts is one
+  /// the report that follows sends all over again.
+  ///
+  /// Safe to call twice — the second time there is nothing left to land.
   Future<void> close() async {
     _timer?.cancel();
     _timer = null;
     _phases?.close();
     _phases = null;
     await _landing;
-    if (_latest.isNotEmpty) await _flush();
+    if (_latest.isNotEmpty) await _land();
   }
 
   void _onPhase(SendPhase phase) {
@@ -191,7 +222,11 @@ class TelegramStream {
     }
   }
 
-  Future<void> _edit(int messageId, TelegramChunk chunk) async {
+  Future<void> _edit(
+    int messageId,
+    TelegramChunk chunk, {
+    bool retry = true,
+  }) async {
     try {
       await _api.editMessage(chatId, messageId, chunk.text, html: chunk.html);
     } on TelegramRefused catch (error) {
@@ -207,10 +242,10 @@ class TelegramStream {
       // Too fast for Telegram (429): wait out what it asked and try once more.
       // A draw that *sent* little is not "delivered", so a linger lost to the
       // blip is drawn again by the next flush rather than counted as shown.
-      final retryAfter = error.retryAfter;
-      if (retryAfter == null) rethrow;
-      await Future<void>.delayed(retryAfter);
-      await _edit(messageId, chunk);
+      final wait = telegramRetryWait(error, retry: retry);
+      if (wait == null) rethrow;
+      await Future<void>.delayed(wait);
+      await _edit(messageId, chunk, retry: false);
     }
   }
 

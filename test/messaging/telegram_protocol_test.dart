@@ -108,6 +108,34 @@ void main() {
       expect(document('application/pdf'), isA<TelegramOtherMessage>());
     });
 
+    test("a file keeps the name the sender's own machine gave it, which says "
+        'whether it is worth downloading at all', () {
+      final update = parseTelegramUpdate(
+        _picture({
+          'document': {
+            'file_id': 'doc',
+            'mime_type': 'image/heic',
+            'file_name': 'IMG_0001.HEIC',
+          },
+        }),
+      );
+
+      expect((update! as TelegramText).pictureName, 'IMG_0001.HEIC');
+    });
+
+    test('a photo has no name of its own — Telegram re-encoded it, and the '
+        'name it is stored under is the only one there is', () {
+      final update = parseTelegramUpdate(
+        _picture({
+          'photo': [
+            {'file_id': 'small', 'width': 90, 'height': 60},
+          ],
+        }),
+      );
+
+      expect((update! as TelegramText).pictureName, isNull);
+    });
+
     test('a button tap carries the data the bot wrote and where it was', () {
       final update = parseTelegramUpdate({
         'update_id': 8,
@@ -214,13 +242,13 @@ void main() {
   });
 
   group('chats and answers', () {
-    test('a Grid chat id leads back to the Telegram chat it carries on, so a '
-        'permission request reaches the right phone', () {
-      final id = telegramConversationId(42, DateTime(2026, 9, 11));
+    test('two chats started in the same Telegram chat get ids of their own, so '
+        '/new never lands back in the chat it was meant to leave', () {
+      final first = telegramConversationId(42, DateTime(2026, 9, 11));
+      final second = telegramConversationId(42, DateTime(2026, 9, 12));
 
-      expect(telegramChatOf(id), 42);
-      expect(telegramChatOf('1726000000'), isNull);
-      expect(telegramChatOf('telegram-abc'), isNull);
+      expect(first, isNot(second));
+      expect(first, startsWith(kTelegramChatPrefix));
     });
 
     test('a button answers the question it was drawn for and nothing else', () {

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grid_app/features/messaging/logic/telegram/telegram_markup.dart';
+import 'package:grid_app/infrastructure/api/telegram_bot_api.dart';
 import 'package:grid_app/features/messaging/logic/telegram/telegram_stream.dart';
 
 void main() {
@@ -94,6 +95,46 @@ void main() {
       expect(
         telegramStreamEdits(const [], const [first, second]),
         hasLength(2),
+      );
+    });
+  });
+
+  group('a draw Telegram refused', () {
+    TelegramRefused tooFast(int seconds) => TelegramRefused(
+      429,
+      'Too Many Requests',
+      retryAfter: Duration(seconds: seconds),
+    );
+
+    test('a short rate limit is waited out, because the phone is mid-sentence '
+        'and the next flush is a second and a half away', () {
+      expect(
+        telegramRetryWait(tooFast(2), retry: true),
+        const Duration(seconds: 2),
+      );
+    });
+
+    test(
+      'a retry never retries again — a draw holds the chain the landing '
+      'waits on, so each refusal it sat out would delay every queued turn',
+      () {
+        expect(telegramRetryWait(tooFast(2), retry: false), isNull);
+      },
+    );
+
+    test('a rate limit longer than the app will hold a chat for is declined '
+        'rather than slept through: the text is not lost, the next flush '
+        'carries it', () {
+      expect(telegramRetryWait(tooFast(60), retry: true), isNull);
+    });
+
+    test('a refusal that is not a rate limit has nothing to wait for', () {
+      expect(
+        telegramRetryWait(
+          const TelegramRefused(400, 'Bad Request'),
+          retry: true,
+        ),
+        isNull,
       );
     });
   });

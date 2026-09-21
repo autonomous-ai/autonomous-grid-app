@@ -57,6 +57,14 @@ Future<TelegramPictures> telegramPicturesOf(
 }) async {
   final id = message.pictureId;
   if (id == null) return _none;
+  // Turned away before the download, not after it: a picture sent as a file is
+  // the full-resolution original, and an iPhone's is both the likeliest format
+  // Grid can't read and tens of megabytes of it.
+  final sent = message.pictureName;
+  if (sent != null && !isImageFilename(sent)) {
+    log.warn('telegram', "couldn't read a picture: $sent");
+    return _turnedAway(kTelegramPictureUnreadable);
+  }
   final TelegramFile file;
   try {
     file = await api.downloadFile(id);

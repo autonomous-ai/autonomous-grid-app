@@ -34,10 +34,23 @@ mixin _ChatQueue on _ChatSessions {
         turn.contexts.isNotEmpty) {
       return false;
     }
+    return steerInto(id, turn.text);
+  }
+
+  /// Hand [text] to the turn running in chat [id], wherever the agent driving
+  /// it takes one. False when there is no such turn, or it refused.
+  ///
+  /// Public and taking plain text because the window is not the only place a
+  /// message is typed mid-answer: the Telegram bot names the chat it is
+  /// answering ([ChatSessionsController.send]'s `into`), which is exactly the
+  /// case [_ChatSend.send]'s own busy check skips — so it asks here instead of
+  /// keeping a second copy of this.
+  @override
+  Future<bool> steerInto(String id, String text) async {
     if (!ref.read(agentSteeringProvider).contains(id)) return false;
     final taken = await ref
         .read(agentSteeringProvider.notifier)
-        .steer(id, turn.text);
+        .steer(id, text);
     if (!taken) return false;
 
     // Into the turn that is running, at the point it reached — after the
@@ -50,11 +63,7 @@ mixin _ChatQueue on _ChatSessions {
     final phase = state.phaseFor(id);
     ref
         .read(agentRunsProvider.notifier)
-        .interject(
-          id,
-          turn.text,
-          answer: phase is SendStreaming ? phase.text : '',
-        );
+        .interject(id, text, answer: phase is SendStreaming ? phase.text : '');
     return true;
   }
 
