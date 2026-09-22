@@ -1,10 +1,10 @@
 /// The public address a phone dials, opened by this computer and nobody else.
 ///
-/// A phone and a desktop both dial *out* to the pairing cell, because neither
-/// can accept a connection — so the cell needs an address that exists on the
-/// internet. Rather than asking somebody to run one, the desktop puts a
-/// Cloudflare quick tunnel in front of the cell it already runs on loopback:
-/// no account, no signup, nothing for a person to configure. See ADR 0045.
+/// A phone cannot dial a laptop behind a home router, so the laptop has to be
+/// given an address that exists on the internet. Rather than asking somebody to
+/// run a server for that, the desktop puts a Cloudflare quick tunnel in front of
+/// the one it serves on loopback: no account, no signup, nothing to configure.
+/// See ADR 0045.
 ///
 /// The address is **not stable**. A quick tunnel is a new hostname every time,
 /// and Cloudflare offers it with no uptime guarantee — which is why the design
@@ -47,13 +47,13 @@ final RegExp _quickTunnelUrl = RegExp(
   caseSensitive: false,
 );
 
-/// The `ws://`/`wss://` origin a desktop dials and a cell signs with, for an
-/// `https://` tunnel address.
+/// The `wss://` origin a phone dials, for an `https://` tunnel address.
 ///
-/// The cell bakes its origin into every host proof, so the two spellings have
-/// to agree exactly or every handshake fails with both sides blaming the other
-/// (`scripts/run_phone_link.sh` exists because of this). Deriving it here means
-/// there is one conversion and nowhere for the two to drift apart.
+/// Two spellings of one address: a person opens the `https://` one in a browser
+/// to see whether the tunnel is alive, and a phone dials the `wss://` one.
+/// Converting in one place means the record a phone reads and the address the
+/// screen shows cannot drift apart — the failure that would cause is a phone
+/// dialling a hostname that does not exist, reported as a computer asleep.
 String websocketOriginOf(String httpsUrl) =>
     httpsUrl.replaceFirst(RegExp('^http'), 'ws');
 
@@ -103,11 +103,22 @@ class CloudflaredTunnel {
     required String executable,
     required AppLog log,
     this.readyTimeout = kTunnelReadyTimeout,
+    void Function()? onClosed,
   }) : _executable = executable,
-       _log = log;
+       _log = log,
+       _onClosed = onClosed;
 
   final String _executable;
   final AppLog _log;
+
+  /// Told when a tunnel that *was* open ended by itself.
+  ///
+  /// Not an error anybody caused: Cloudflare documents quick tunnels as having
+  /// no uptime guarantee, so this is the expected end of one. Without it the
+  /// screen keeps showing an address that answers nothing, and the phone reads
+  /// a locator record pointing at a hostname that has been withdrawn — which on
+  /// the phone is indistinguishable from a computer that is asleep.
+  final void Function()? _onClosed;
 
   /// How long [open] waits for an address before calling it a failure.
   final Duration readyTimeout;
@@ -137,10 +148,18 @@ class CloudflaredTunnel {
       _err = _watch(process.stderr, address);
       unawaited(
         process.exitCode.then((code) {
-          if (address.isCompleted) return;
-          address.completeError(
-            'cloudflared stopped before it opened a tunnel (exit $code).',
-          );
+          if (!address.isCompleted) {
+            address.completeError(
+              'cloudflared stopped before it opened a tunnel (exit $code).',
+            );
+            return;
+          }
+          // It had an address and now the process is gone. [close] clears
+          // `_process` before it kills anything, so reaching here means nobody
+          // asked for this.
+          if (!identical(_process, process)) return;
+          _log.warn('phone', 'the quick tunnel closed on its own (exit $code)');
+          _onClosed?.call();
         }),
       );
       final url = await address.future.timeout(readyTimeout);

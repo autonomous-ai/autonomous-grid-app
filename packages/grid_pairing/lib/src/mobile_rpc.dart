@@ -51,8 +51,8 @@ const kMobileRpcMethods = <String>{
   // The one method here that makes this computer *do* something rather than
   // say what it has already done, and the only one gated by a second check: a
   // per-device switch that is off until somebody turns it on at the computer.
-  // A pairing code proves which phone is calling. It cannot prove who is
-  // holding it, which is the question this method actually raises.
+  // A code proves which phone is calling. It cannot prove who is holding it,
+  // which is the question this method actually raises.
   'chats.send',
   // What the composer's pickers are drawn from. A read, and the answer is
   // built by the computer rather than derived on the phone: which agent can
@@ -71,13 +71,6 @@ const kMobileRpcMethods = <String>{
   // both are behind the same switch as sending.
   'uploads.begin',
   'uploads.chunk',
-  // The phone's stand-in for a resume credential. An invite opens exactly one
-  // connection and is then spent, so without this a phone that is closed and
-  // reopened has to be paired by hand every time. Asking for the next one
-  // while the current channel is still up is the cheapest honest fix: it costs
-  // no new credential type, and it can only be called by a phone that has
-  // already authenticated on this one.
-  'pairing.renew',
 };
 
 /// One call from the phone.

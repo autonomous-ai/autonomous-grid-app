@@ -1,11 +1,11 @@
 /// What the two peers say to each other once the channel is sealed.
 ///
 /// The handshake proved the *desktop's* identity to the phone: the phone had
-/// already pinned that public key from the pairing code, so a relay in the
-/// middle cannot stand in for it. Nothing in the handshake proves the reverse
-/// — anyone who can reach the relay can complete one. [E2eeAuth] is the other
-/// half: a per-device token the desktop issued, which it can revoke for one
-/// phone without touching the rest.
+/// already pinned that public key, having read it out of a record only its own
+/// code could open, so whoever carries the bytes cannot stand in for it. Nothing
+/// in the handshake proves the reverse — anyone who can reach the address can
+/// complete one. [E2eeAuth] is the other half: the code that phone alone holds,
+/// which the desktop can revoke for one phone without touching the rest.
 ///
 /// It carries the transcript hash back as well. That costs nothing and closes
 /// the case where the two sides somehow derived different keys but a bug let

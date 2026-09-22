@@ -45,7 +45,7 @@ class PhoneTunnelController extends Notifier<TunnelState> {
   /// Open a tunnel onto the cell listening on [port].
   ///
   /// Does nothing when one is already open or opening: two tunnels would give
-  /// two addresses, and the pairing code can only carry one.
+  /// two addresses, and the record a phone reads can only name one.
   Future<void> open(int port) async {
     if (state is TunnelOpen || state is TunnelOpening) return;
     final executable = ref.read(cloudflaredPathProvider);
@@ -55,10 +55,24 @@ class PhoneTunnelController extends Notifier<TunnelState> {
       );
       return;
     }
+    // A tunnel that died leaves its object behind; letting go of it here rather
+    // than overwriting the field means its subscriptions go too.
+    await _release();
     state = const TunnelOpening();
-    final tunnel = _tunnel = CloudflaredTunnel(
+    late final CloudflaredTunnel tunnel;
+    tunnel = _tunnel = CloudflaredTunnel(
       executable: executable,
       log: ref.read(appLogProvider),
+      // Only for the tunnel that is current: an older one ending says nothing
+      // about the address this computer is offering now.
+      onClosed: () {
+        if (!identical(_tunnel, tunnel)) return;
+        _tunnel = null;
+        state = const TunnelFailed(
+          'The address for your phone closed. Cloudflare gives these out with '
+          'no promise to keep them.',
+        );
+      },
     );
     final opened = await tunnel.open(port);
     // Closed while it was opening: the address it just won belongs to nothing.

@@ -1,12 +1,15 @@
-/// One phone, from the moment the relay splices its socket to this computer.
+/// One phone, from the moment its socket reaches this computer.
 ///
 /// Three stages, and each refuses to skip ahead:
 ///
 /// 1. **Handshake.** The phone offers a key, this side answers, and both derive
-///    the session. The phone already pinned this computer's public key from the
-///    pairing code, so the relay cannot stand in the middle.
+///    the session. The phone already knows this computer's public key — it read
+///    it from the sealed locator record — so whoever carries the bytes cannot
+///    stand in the middle.
 /// 2. **Authentication.** The handshake proves *this computer* to the phone;
-///    nothing in it proves the phone. Its per-device token does that.
+///    nothing in it proves the phone. Its own connect code does that, and it is
+///    sent here rather than on the opening frame precisely because here it is
+///    unreadable to the tunnel.
 /// 3. **Calls.** Sealed requests, answered from the allowlist.
 ///
 /// **A frame that fails to open ends the session.** The counters are a strict
@@ -24,7 +27,7 @@ import 'mobile_rpc_service.dart';
 
 enum _Stage { awaitingHello, awaitingAuth, serving }
 
-/// Serves one spliced phone until its socket closes.
+/// Serves one phone until its socket closes.
 class MobileChannelSession {
   MobileChannelSession({
     required WebSocket socket,
@@ -47,10 +50,10 @@ class MobileChannelSession {
   /// What to read the phone's frames from, which is the socket itself unless a
   /// caller has already taken something off the front of it.
   ///
-  /// The in-process cell reads the phone's `relay-auth` frame before this
-  /// session exists — a relay used to eat that frame, and the session has never
-  /// seen one. Handing the rest of the stream in keeps that true, rather than
-  /// teaching this class about a frame that only exists one layer down.
+  /// The cell reads the phone's opening `relay-auth` frame before this session
+  /// exists, so the session has never seen one. Handing the rest of the stream
+  /// in keeps that true, rather than teaching this class about a frame that
+  /// only exists one layer down.
   final Stream<dynamic> _incoming;
   final E2eeKeyPair _hostKeyPair;
   final DeviceRegistry _registry;
@@ -162,7 +165,6 @@ class MobileChannelSession {
     _send(
       (await _rpc.handle(
         request,
-        deviceId: device.deviceId,
         mayAct: () => _mayActNow(device.deviceId),
       )).toJson(),
     );

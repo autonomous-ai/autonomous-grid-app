@@ -1,13 +1,23 @@
-/// The phone's end of the link: dial the relay, build the sealed channel, call
-/// the computer.
+/// The phone's end of the link: find the computer, build the sealed channel,
+/// call it.
+///
+/// Three steps, and the middle one is the only one with a secret in it:
+///
+/// 1. **Find it.** The code names a document on the locator and unlocks it; what
+///    is inside is where the computer is right now. Nothing is dialled until
+///    that has been read, because the address is different every time the
+///    computer starts.
+/// 2. **Seal the channel.** The record also carries the computer's public key,
+///    and [_requirePinnedKey] requires the other end of the socket to hold it.
+/// 3. **Say who this phone is**, inside the seal and never outside it.
 ///
 /// ## The one check everything rests on
 ///
-/// The relay can read and rewrite every byte of the handshake. What stops it
-/// standing in the middle is that the pairing code already told this phone the
-/// computer's public key, so [_requirePinnedKey] compares what arrived against
-/// what was promised. Take that comparison out and the rest of this file is
-/// theatre: a relay would offer its own key and both ends would encrypt to it.
+/// Whoever carries the bytes — the tunnel, and whatever is between it and here —
+/// can read and rewrite every byte of the handshake. What stops them standing in
+/// the middle is step 2: the key was in a record only this phone's code could
+/// open, so a key that arrives and does not match it is somebody else. Take that
+/// comparison out and the rest of this file is theatre.
 library;
 
 import 'dart:async';
@@ -59,26 +69,33 @@ class RelayPhoneClient {
   /// Whether this connection is still usable.
   bool get isOpen => !_closed;
 
-  /// Dials [offer]'s relay and returns once the channel is sealed and this
-  /// phone has proved which device it is.
+  /// Finds the computer [token] belongs to and returns once the channel is
+  /// sealed and this phone has proved which device it is.
   static Future<RelayPhoneClient> connect(
-    PairingOffer offer, {
+    PairToken token, {
+    required LocatorClient locator,
     void Function(String message)? onLog,
     void Function(String reason)? onLost,
   }) async {
     final log = onLog ?? (String _) {};
+    log('Finding your computer');
+    final record = await _find(token, locator);
+    log('Connecting to ${record.hostName}');
     final url =
-        '${offer.relay.cellUrl}/v1/connect/'
-        '${Uri.encodeComponent(offer.relay.relayHostId)}';
-    log('Dialling the relay');
+        '${record.cellUrl}/v1/connect/'
+        '${Uri.encodeComponent(record.relayHostId)}';
     final WebSocket socket;
     try {
       socket = await WebSocket.connect(
         url,
       ).timeout(const Duration(seconds: 10));
     } on Object {
+      // The address was published, so the computer meant to be reachable here.
+      // Either it has since gone, or this phone is the one that is offline; the
+      // two are indistinguishable from here, so say both.
       throw const RelayPhoneFailure(
-        "Couldn't reach the relay. Check you're online, then try again.",
+        "Couldn't reach your computer. Check you're online, and that Grid is "
+        'open on it.',
       );
     }
 
@@ -89,12 +106,35 @@ class RelayPhoneClient {
       onError: (Object _) => client._abandon('The connection dropped.'),
     );
     try {
-      await client._open(offer, log);
+      await client._open(token, record, log);
       return client;
     } on Object {
       await client.close();
       rethrow;
     }
+  }
+
+  /// Where the computer says it is, or why this phone cannot know.
+  static Future<LocatorRecord> _find(
+    PairToken token,
+    LocatorClient locator,
+  ) async {
+    final (record, failure) = await locator.read(token);
+    if (failure != null) {
+      // A code that does not open the record is the one failure retrying cannot
+      // fix; everything else is worth another go.
+      throw RelayPhoneFailure(
+        failure.message,
+        needsNewCode: failure is LocatorUnreadable,
+      );
+    }
+    if (record == null) {
+      throw const RelayPhoneFailure(
+        "Your computer isn't sharing right now. Open Grid on it — and if it is "
+        'already open, switch on Settings ▸ Phone.',
+      );
+    }
+    return record;
   }
 
   /// Calls [method] on the computer and returns what it sent back.
@@ -125,17 +165,16 @@ class RelayPhoneClient {
 
   // --- opening ---------------------------------------------------------------
 
-  Future<void> _open(PairingOffer offer, void Function(String) log) async {
-    _socket.add(
-      jsonEncode({
-        'type': 'relay-auth',
-        'v': 1,
-        'mode': 'connect',
-        'credential': offer.relay.inviteToken,
-      }),
-    );
+  Future<void> _open(
+    PairToken token,
+    LocatorRecord record,
+    void Function(String) log,
+  ) async {
+    // No credential in this frame, deliberately: whoever terminates TLS sees it,
+    // and this phone's code is not something to hand them on every reconnect.
+    // Who this phone is gets settled below, inside the seal.
+    _socket.add(jsonEncode({'type': 'relay-auth', 'v': 1, 'mode': 'connect'}));
     _readRelayHello(await _receivePlain());
-    log('The relay found your computer');
 
     final keys = await E2eeKeyPair.generate();
     final hello = E2eeHello(
@@ -144,7 +183,7 @@ class RelayPhoneClient {
       context: E2eeContext(
         protocol: E2eeSuite.grid.protocol,
         transport: E2eeTransport.relay,
-        relayHostId: offer.relay.relayHostId,
+        relayHostId: record.relayHostId,
       ),
     );
     _socket.add(jsonEncode(hello.toJson()));
@@ -153,7 +192,7 @@ class RelayPhoneClient {
     if (ready == null) {
       throw const RelayPhoneFailure('Your computer answered with nonsense.');
     }
-    _requirePinnedKey(offer, ready);
+    _requirePinnedKey(record, ready);
     final handshake = E2eeHandshake.validate(hello: hello, ready: ready);
     if (handshake == null) {
       throw const RelayPhoneFailure("That answer didn't match what we asked.");
@@ -171,7 +210,7 @@ class RelayPhoneClient {
 
     _sendSealed(
       E2eeAuth(
-        deviceToken: offer.deviceToken,
+        deviceToken: token.normalized,
         transcriptHashB64: base64.encode(session.schedule.transcriptHash),
       ).toJson(),
     );
@@ -185,12 +224,15 @@ class RelayPhoneClient {
     log('Connected to $_hostName');
   }
 
-  /// What arrived must be what the pairing code promised.
-  void _requirePinnedKey(PairingOffer offer, E2eeReady ready) {
-    if (constantTimeEquals(ready.desktopPublicKey, offer.hostPublicKey)) return;
+  /// What arrived must be what the sealed record promised.
+  void _requirePinnedKey(LocatorRecord record, E2eeReady ready) {
+    if (constantTimeEquals(ready.desktopPublicKey, record.hostPublicKey)) {
+      return;
+    }
     throw const RelayPhoneFailure(
-      "This isn't the computer you paired with. Pair again from Grid on the "
-      "computer — and if it keeps happening, don't, and tell someone.",
+      "This isn't your computer answering. Grid stopped before sending "
+      "anything — and if it keeps happening, don't try again, and tell "
+      'someone.',
     );
   }
 
@@ -199,27 +241,13 @@ class RelayPhoneClient {
       throw const RelayPhoneFailure('The relay answered with nonsense.');
     }
     if (value['ok'] == true) return;
-    final code = value['code'];
-    throw RelayPhoneFailure(
-      switch (code) {
-        // The two codes that name a cause somebody can act on.
-        // Two causes, one code, and the old wording only covered one of them:
-        // it said "open Grid on it" to somebody looking straight at an open
-        // Grid, because the *link* was off rather than the app. Which is right
-        // is something only the person standing at the computer can see, so
-        // this names both rather than guessing (§5).
-        4404 =>
-          "Grid on your computer isn't sharing with this phone. Open it — and "
-              "if it's already open, switch on Settings ▸ Phone.",
-        4408 => "Your computer is running but didn't pick up. Try again.",
-        4401 =>
-          'This pairing code was already used, or it expired. Create a new one '
-              'in Grid on your computer.',
-        _ => "The relay wouldn't connect you. Try again in a moment.",
-      },
-      // A spent credential is the one failure retrying cannot fix.
-      needsNewCode: code == 4401,
-    );
+    throw RelayPhoneFailure(switch (value['code']) {
+      // The address this phone read belongs to a different computer, which
+      // means the record it read was written by one and answered by another.
+      // Reconnecting re-reads it, so trying again is the whole fix.
+      4404 => 'Your computer moved since this phone last looked. Try again.',
+      _ => "Your computer didn't pick up. Try again in a moment.",
+    });
   }
 
   // --- frames ----------------------------------------------------------------

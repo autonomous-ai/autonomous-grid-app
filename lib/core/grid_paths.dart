@@ -109,7 +109,7 @@ class GridPaths {
   /// This computer's long-lived X25519 identity for the phone link
   /// (`~/.grid/app/pairing_identity.json`, `0o600`).
   ///
-  /// Every phone that has ever scanned a pairing code pinned the public half,
+  /// Every phone that has ever paired pinned the public half of it,
   /// so replacing this file un-pairs all of them at once. `HostIdentityStore`
   /// therefore refuses to regenerate it when a read *fails* — an unreadable
   /// file says nothing about its contents.

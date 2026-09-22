@@ -1,7 +1,8 @@
 /// This computer's long-lived identity on the phone link.
 ///
 /// One keypair, generated once and kept. Its public half goes into every
-/// pairing code, so every phone that has ever paired has pinned it — which
+/// sealed record each phone reads, so every phone that has ever paired has
+/// pinned it — which
 /// makes this file the single thing whose loss un-pairs the lot.
 library;
 

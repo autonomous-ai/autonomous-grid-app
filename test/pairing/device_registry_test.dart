@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 import 'package:grid_app/infrastructure/pairing_host/device_registry.dart';
 
 /// Per-device tokens are what make "revoke this phone" mean anything. With one
@@ -20,7 +21,7 @@ void main() {
   test(
     'a registered phone can authenticate and an unknown token cannot',
     () async {
-      final phone = await registry.register('My phone');
+      final phone = await registry.register('My phone', PairToken.generate());
 
       expect(
         (await registry.authenticate(phone.token))?.deviceId,
@@ -32,7 +33,7 @@ void main() {
   );
 
   test('the file holding the tokens is owner-readable only', () async {
-    await registry.register('My phone');
+    await registry.register('My phone', PairToken.generate());
     if (Platform.isWindows) return;
 
     final mode = File(
@@ -43,8 +44,8 @@ void main() {
 
   test('two phones get different tokens, so one being taken does not hand over '
       'the other', () async {
-    final first = await registry.register('Mine');
-    final second = await registry.register('Theirs');
+    final first = await registry.register('Mine', PairToken.generate());
+    final second = await registry.register('Theirs', PairToken.generate());
 
     expect(second.token, isNot(first.token));
     expect(second.deviceId, isNot(first.deviceId));
@@ -53,8 +54,8 @@ void main() {
 
   test('revoking one phone leaves every other one working — the whole reason '
       'the tokens are separate', () async {
-    final keep = await registry.register('Keep');
-    final lost = await registry.register('Lost');
+    final keep = await registry.register('Keep', PairToken.generate());
+    final lost = await registry.register('Lost', PairToken.generate());
 
     await registry.revoke(lost.deviceId);
 
@@ -66,8 +67,8 @@ void main() {
     'pairing the same phone twice leaves two credentials, because revoking '
     'the code someone read over your shoulder must not log you out',
     () async {
-      final older = await registry.register('My phone');
-      final newer = await registry.register('My phone');
+      final older = await registry.register('My phone', PairToken.generate());
+      final newer = await registry.register('My phone', PairToken.generate());
 
       await registry.revoke(older.deviceId);
 
@@ -78,7 +79,7 @@ void main() {
 
   test('a phone that has never connected is distinguishable from one that has, '
       'so the screen can say which code was never used', () async {
-    final phone = await registry.register('My phone');
+    final phone = await registry.register('My phone', PairToken.generate());
     expect(phone.everConnected, isFalse);
 
     await registry.markSeen(phone.deviceId);
@@ -92,7 +93,7 @@ void main() {
   test(
     'marking an unknown device changes nothing rather than inventing a row',
     () async {
-      await registry.register('My phone');
+      await registry.register('My phone', PairToken.generate());
       await registry.markSeen('no-such-device');
 
       expect(await registry.load(), hasLength(1));
@@ -108,14 +109,14 @@ void main() {
 
     // And it is still usable afterwards: the bad file is replaced on the next
     // write rather than wedging pairing forever.
-    final phone = await registry.register('My phone');
+    final phone = await registry.register('My phone', PairToken.generate());
     expect(await registry.authenticate(phone.token), isNotNull);
   });
 
   group('whether a phone may make this computer act', () {
     test('is off for a phone that has just paired, because a pairing code '
         'proves which device is calling and not who is holding it', () async {
-      final phone = await registry.register('My phone');
+      final phone = await registry.register('My phone', PairToken.generate());
 
       expect(phone.mayAct, isFalse);
       expect((await registry.load()).single.mayAct, isFalse);
@@ -123,7 +124,7 @@ void main() {
 
     test('survives being written and read back, so the grant is a decision '
         'made once rather than one that quietly lapses', () async {
-      final phone = await registry.register('My phone');
+      final phone = await registry.register('My phone', PairToken.generate());
 
       await registry.setMayAct(phone.deviceId, true);
       expect((await registry.load()).single.mayAct, isTrue);
@@ -154,8 +155,8 @@ void main() {
 
     test('granting one phone leaves the others alone, which is the reason '
         'each device has its own record at all', () async {
-      final first = await registry.register('Mine');
-      await registry.register('Someone else\'s');
+      final first = await registry.register('Mine', PairToken.generate());
+      await registry.register('Someone else\'s', PairToken.generate());
 
       await registry.setMayAct(first.deviceId, true);
 
@@ -173,7 +174,7 @@ void main() {
     test(
       'a revoked phone is not allowed to act, whatever its record said',
       () async {
-        final phone = await registry.register('My phone');
+        final phone = await registry.register('My phone', PairToken.generate());
         await registry.setMayAct(phone.deviceId, true);
 
         await registry.revoke(phone.deviceId);

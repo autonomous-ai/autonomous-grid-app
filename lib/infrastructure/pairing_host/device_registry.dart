@@ -1,25 +1,26 @@
 /// The phones paired with this computer.
 ///
-/// Each gets its own token rather than sharing one. That is the whole point:
-/// a phone that is lost, sold or stolen is revoked on its own, and the others
-/// keep working — with a shared secret the only remedy is to re-pair every
-/// device, which in practice means nobody revokes anything.
+/// Each gets its own connect code rather than sharing one. That is the whole
+/// point: a phone that is lost, sold or stolen is revoked on its own, and the
+/// others keep working — with one code for the computer the only remedy is to
+/// change it, which means re-entering it on every phone, which means nobody
+/// ever revokes anything.
+///
+/// The code doubles as the name of that phone's locator document, so revoking
+/// here has a second half: the record is erased too, and the phone finds
+/// nothing rather than an address it can no longer use.
 library;
 
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:grid_pairing/grid_pairing.dart';
+
 import '../../core/grid_paths.dart';
 import '../../core/owner_only_file.dart';
 
 const _fileVersion = 1;
-
-/// Bytes of entropy in a device token.
-///
-/// 24 bytes is 192 bits. The token is a bearer credential with no rate limit
-/// behind it once a phone is spliced, so it has to be guess-proof on its own.
-const _tokenBytes = 24;
 
 /// One paired phone.
 class PairedDevice {
@@ -38,7 +39,12 @@ class PairedDevice {
   /// What the person called it.
   final String name;
 
-  /// This device's bearer credential. Never logged, never shown twice.
+  /// The connect code this phone was given, normalised.
+  ///
+  /// It is a bearer credential for this computer and it is also the thing a
+  /// person reads off the screen, so it is shown deliberately rather than
+  /// never: losing it would otherwise mean revoking a phone that works. It is
+  /// still never logged.
   final String token;
 
   /// When it was paired.
@@ -54,8 +60,8 @@ class PairedDevice {
   /// one device, at the computer.** Reading a chat is a phone that knows what
   /// happened; sending one is a phone that starts an agent with this machine's
   /// filesystem and keys behind it. A phone is a thing somebody can pick up, so
-  /// that second power is not something a pairing code should hand out — the
-  /// code proves which device, not what the person holding it may do.
+  /// that second power is not something a code should hand out — a code proves
+  /// which device, not what the person holding it may do.
   final bool mayAct;
 
   /// Whether this device has ever completed a connection.
@@ -143,17 +149,18 @@ class DeviceRegistry {
     return [for (final entry in devices) ?PairedDevice.fromJson(entry)];
   }
 
-  /// A new device with a fresh token, already persisted.
+  /// A new device holding [token], already persisted.
   ///
-  /// The token is only returned here. It goes straight into a pairing code and
-  /// is never rendered again — a credential shown twice is a credential in a
-  /// screenshot.
-  Future<PairedDevice> register(String name) async {
+  /// The token is minted by the caller rather than here because it is not only
+  /// a credential: it also names the locator document this computer publishes
+  /// its address to, and the two have to be the same value or the phone reads
+  /// an address it cannot then authenticate against ([PairToken]).
+  Future<PairedDevice> register(String name, PairToken token) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final device = PairedDevice(
       deviceId: _hex(8),
       name: name,
-      token: _hex(_tokenBytes),
+      token: token.normalized,
       pairedAtMs: now,
       lastSeenAtMs: 0,
     );
@@ -220,7 +227,7 @@ class DeviceRegistry {
 /// Compares in time that does not depend on how far in the two differ.
 ///
 /// A token comparison that returns early leaks its prefix to anyone who can
-/// time it, and the relay lets an attacker try from anywhere.
+/// time it, and the address this computer answers on is a public one.
 bool _constantTimeEquals(String a, String b) {
   if (a.length != b.length) return false;
   var difference = 0;

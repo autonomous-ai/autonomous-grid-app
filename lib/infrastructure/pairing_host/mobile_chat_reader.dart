@@ -13,7 +13,7 @@
 ///  - **a message's `media`**. Attachments are bytes, and the reason the rest of
 ///    this file is paginated is that bytes are what breaks the channel.
 ///
-/// Flutter-free, like [MobileRpcService], so `tool/pairing_host.dart` can run
+/// Flutter-free, like [MobileRpcService], so a test can run
 /// the whole host outside the app.
 library;
 

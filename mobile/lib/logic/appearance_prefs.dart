@@ -1,6 +1,6 @@
 /// How the phone's copy of Grid looks, and where that choice is kept.
 ///
-/// Its own store rather than a corner of [PairedHostStore]: that one holds a
+/// Its own store rather than a corner of [PairTokenStore]: that one holds a
 /// bearer credential for somebody's computer and lives in the Keychain for
 /// exactly that reason, where an entry outlives an uninstall and goes wherever
 /// the Keychain is told to. How big the text is is a preference — it belongs in

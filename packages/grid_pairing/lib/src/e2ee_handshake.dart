@@ -4,7 +4,8 @@
 /// The phone sends [E2eeHello] in the clear, the desktop answers [E2eeReady]
 /// in the clear, and from that point everything is sealed. Neither message
 /// carries a secret: what makes the exchange safe is that the phone already
-/// pinned the desktop's public key when it scanned the pairing code, so an
+/// pinned the desktop's public key — it read it out of a record only its own
+/// code could open — so an
 /// attacker who rewrites `desktopPublicKeyB64` produces a key the phone will
 /// not accept.
 ///
@@ -89,7 +90,7 @@ class E2eeReady {
     required this.context,
   });
 
-  /// The desktop's long-lived X25519 public key — the one the pairing code
+  /// The desktop's long-lived X25519 public key — the one the sealed record
   /// pinned. It is echoed rather than introduced: a phone that gets a
   /// different key here is talking to something that is not its desktop.
   final Uint8List desktopPublicKey;

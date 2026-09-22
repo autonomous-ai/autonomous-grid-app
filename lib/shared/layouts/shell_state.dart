@@ -204,12 +204,12 @@ enum ShellSection {
   // own rows there instead.
   browser(LucideIcons.globe, 'Browser', thinIcon: LucideIcons.globe300),
   dataSync(LucideIcons.cloud, 'Sync & Backup', thinIcon: LucideIcons.cloud300),
-  // Pairing a phone with this computer.
+  // Sharing this computer with a phone.
   //
-  // Developer-only for the same reason [ShellMode.code] is: the screen works,
-  // but the relay it needs is `pairing_relay/` in the CLI repo, run by hand.
-  // Shipping the row would offer a setup flow whose first button asks for the
-  // address of a server no user has.
+  // Still developer-only, but no longer because it cannot work: it needs
+  // `cloudflared` on the machine and Grid does not install it yet, so the first
+  // thing some users would meet is a screen telling them to go and fetch a
+  // program. What it no longer needs is a server anybody runs (ADR 0045).
   phone(
     LucideIcons.smartphone,
     'Phone',

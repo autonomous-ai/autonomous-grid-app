@@ -1,4 +1,4 @@
-/// `grid://pair?code=...` arriving from outside the app.
+/// `grid://pair?token=...` arriving from outside the app.
 ///
 /// Two ways in, and both matter: the link can launch the app cold (the code
 /// is then the route the engine started with) or arrive while it is already

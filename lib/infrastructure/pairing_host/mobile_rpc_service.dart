@@ -8,8 +8,9 @@
 /// leak through a logging change or a careless `toJson`. So this reads the four
 /// fields a phone needs and stops.
 ///
-/// That also keeps this class free of Flutter, which is what lets
-/// `tool/pairing_host.dart` run it outside the app.
+/// That also keeps this class free of Flutter, which is what lets it be read,
+/// reasoned about and tested without a window behind it — everything it needs
+/// from the running app arrives as a closure (`phone_rpc_wiring.dart`).
 library;
 
 import 'dart:io';
@@ -38,7 +39,6 @@ class MobileRpcService {
     List<ChatHeader> Function()? readChats,
     List<ProjectSummary> Function()? readProjects,
     ChatPage? Function(String id, {int? limit, int? offset})? readChat,
-    Future<PairingRelayEndpoint> Function(String deviceId)? renewInvite,
     Future<String?> Function(
       String chatId,
       String text,
@@ -61,7 +61,6 @@ class MobileRpcService {
   }) : _readGrids = readGrids ?? readGridSummaries,
        _readEngines = readEngines ?? readGridEngines,
        _gridIsCurrent = gridIsCurrent,
-       _readOverview = readOverview,
        _chats = MobileChatRpc(
          readChats: readChats,
          readProjects: readProjects,
@@ -75,7 +74,7 @@ class MobileRpcService {
          createProject: createProject,
          uploads: uploads,
        ),
-       _renewInvite = renewInvite;
+       _readOverview = readOverview;
 
   /// What this computer calls itself on the phone's screen.
   final String hostName;
@@ -101,12 +100,13 @@ class MobileRpcService {
   /// what keeps a token it never holds out of anything it sends.
   final Future<Map<String, Object?>?> Function(String gridId)? _readOverview;
   final MobileChatRpc _chats;
-  final Future<PairingRelayEndpoint> Function(String deviceId)? _renewInvite;
 
-  /// The reply to [request], asked by the phone registered as [deviceId].
+  /// The reply to [request].
   ///
-  /// The identity comes from the channel, never from the request: a caller that
-  /// could name itself could name somebody else.
+  /// Which phone is asking comes from the channel, never from the request: a
+  /// caller that could name itself could name somebody else. Nothing here needs
+  /// that name any more — what it needs is the one thing the channel decides.
+  ///
   /// [mayAct] is asked only by the methods that make this computer do
   /// something, and asked *per call* rather than once per session: revoking a
   /// phone's permission at the computer has to reach a phone that is connected
@@ -116,7 +116,6 @@ class MobileRpcService {
   /// thought about the question has not granted anything.
   Future<MobileRpcResponse> handle(
     MobileRpcRequest request, {
-    required String deviceId,
     Future<bool> Function()? mayAct,
   }) async {
     // Checked before the method is looked at, so an unknown name and a
@@ -145,7 +144,6 @@ class MobileRpcService {
         'projects.create' => await _chats.newProject(request, mayAct),
         'uploads.begin' => await _chats.beginUpload(request, mayAct),
         'uploads.chunk' => await _chats.uploadChunk(request, mayAct),
-        'pairing.renew' => await _renew(request, deviceId),
         _ => MobileRpcFailed(
           request.id,
           code: 'bad_request',
@@ -162,23 +160,6 @@ class MobileRpcService {
         message: 'Grid on the computer could not answer that.',
       );
     }
-  }
-
-  Future<MobileRpcResponse> _renew(
-    MobileRpcRequest request,
-    String deviceId,
-  ) async {
-    final renew = _renewInvite;
-    if (renew == null) {
-      return MobileRpcFailed(
-        request.id,
-        code: 'unavailable',
-        message: 'This computer cannot issue a new pairing code right now.',
-      );
-    }
-    // Reuses the device's existing token: this renews the way *in*, not the
-    // phone's identity. Revoking the device still revokes it.
-    return MobileRpcOk(request.id, {'relay': (await renew(deviceId)).toJson()});
   }
 
   Map<String, Object?> _status() => {

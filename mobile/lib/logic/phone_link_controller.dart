@@ -7,9 +7,21 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_pairing/grid_pairing.dart';
+import 'package:grid_pairing/locator_http_io.dart';
 
-import 'paired_host_store.dart';
+import 'pair_token_store.dart';
 import 'relay_phone_client.dart';
+
+/// The locator this phone reads its computer's address from.
+///
+/// One pooled HTTP client for the life of the app: a phone reconnects whenever
+/// it comes back to the foreground, and a client per connection leaks sockets on
+/// iOS in exactly the way that is hard to see.
+final locatorClientProvider = Provider<LocatorClient>((ref) {
+  final http = LocatorHttp();
+  ref.onDispose(http.close);
+  return LocatorClient(send: http.send);
+});
 
 /// One grid, as much of it as the computer is willing to say.
 typedef GridRow = ({String id, String name, String type, String email});
@@ -72,7 +84,7 @@ final phoneLinkProvider = NotifierProvider<PhoneLinkController, PhoneLinkState>(
 
 /// Pairs, connects, and keeps what the computer said.
 class PhoneLinkController extends Notifier<PhoneLinkState> {
-  final _store = const PairedHostStore();
+  final _store = const PairTokenStore();
   RelayPhoneClient? _client;
 
   /// The re-dial in progress, shared by everyone who noticed the link was gone.
@@ -92,26 +104,29 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
 
   /// Reconnects to the stored computer, if there is one.
   Future<void> restore() async {
-    final offer = await _store.read();
-    if (offer == null) {
+    final paired = await _store.read();
+    if (paired == null) {
       state = const PhoneLinkUnpaired();
       return;
     }
-    await _connect(offer);
+    await _connect(paired.token, hostName: paired.hostName);
   }
 
-  /// Pairs with the computer [code] came from.
+  /// Pairs with the computer whose code is in [code].
+  ///
+  /// Takes the bare code or a `grid://pair` link, because a person either types
+  /// the one or taps the other and cannot be expected to know which this wants.
   Future<void> pair(String code) async {
-    final offer = PairingOffer.parse(code);
-    if (offer == null) {
+    final token = PairToken.tryParse(pairTokenTextOf(code));
+    if (token == null) {
       state = const PhoneLinkFailed(
-        "That doesn't look like a Grid pairing code. Copy the whole line from "
-        'Grid on your computer.',
+        'That is not a Grid code. It is 20 characters, in five groups of four, '
+        'shown in Settings ▸ Phone on your computer.',
         stillPaired: false,
       );
       return;
     }
-    await _connect(offer);
+    await _connect(token);
   }
 
   /// Tries the stored computer again.
@@ -119,8 +134,8 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
 
   /// Asks the computer again, over the connection that is already open.
   ///
-  /// Distinct from [reconnect] on purpose: re-dialling would spend a pairing
-  /// code to answer a question this phone can already ask.
+  /// Distinct from [reconnect] on purpose: re-dialling means a locator read and
+  /// a fresh handshake to answer a question this phone can already ask.
   Future<void> refresh() async {
     final client = _client;
     final current = state;
@@ -139,8 +154,9 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
     } on RelayPhoneFailure catch (failure) {
       state = PhoneLinkFailed(
         failure.message,
-        // A spent code leaves this phone paired on paper and useless in fact,
-        // so send it to the screen that can fix that rather than to Try again.
+        // A code that no longer opens the record leaves this phone paired on
+        // paper and useless in fact, so send it to the screen that can fix that
+        // rather than to Try again.
         stillPaired: !failure.needsNewCode && await _isPaired(),
       );
     }
@@ -162,10 +178,11 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
 
   /// The open connection, re-dialling once if the last one went away.
   ///
-  /// A phone is put down for an hour and the computer sleeps, or the relay is
-  /// restarted; either way the next thing the person taps must not simply fail.
-  /// The stored offer is renewed on every connection ([_storeRenewedOffer]), so
-  /// there is a way back in without anybody typing a code.
+  /// A phone is put down for an hour and the computer sleeps or moves to another
+  /// address; either way the next thing the person taps must not simply fail.
+  /// The code does not expire and the address is looked up again on every
+  /// connection, so there is always a way back in without anybody typing
+  /// anything.
   Future<RelayPhoneClient> _liveClient() async {
     final open = _client;
     if (open != null && open.isOpen) return open;
@@ -193,12 +210,15 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
     state = const PhoneLinkUnpaired();
   }
 
-  Future<void> _connect(PairingOffer offer) async {
+  Future<void> _connect(PairToken token, {String hostName = ''}) async {
     await _client?.close();
-    state = const PhoneLinkConnecting('Connecting');
+    state = PhoneLinkConnecting(
+      hostName.isEmpty ? 'Connecting' : 'Connecting to $hostName',
+    );
     try {
       final client = await RelayPhoneClient.connect(
-        offer,
+        token,
+        locator: ref.read(locatorClientProvider),
         onLost: (_) => _linkLost(),
         onLog: (step) {
           // Only while still connecting: a log line arriving after the link is
@@ -208,20 +228,11 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
       );
       _client = client;
 
-      // Remembered before anything else can go wrong. This offer's credential
-      // may well be spent — an invite opens one connection — but it also
-      // carries the computer's name, its public key and this phone's own device
-      // token, none of which expire. Writing it means a phone that fails to
-      // renew still *knows which computer it belongs to*, instead of coming
-      // back to a blank "paste a code" screen as though it had never paired.
-      await _store.write(offer);
-
-      // Then the way back in. An invite dies with the desktop's relay session,
-      // so this asks for a resume token instead: kept by the relay on the
-      // computer's host id, good across restarts, and only ever handed over
-      // inside this sealed channel.
-      state = const PhoneLinkConnecting('Saving this computer');
-      await _storeRenewedOffer(offer, client);
+      // Remembered before anything else can go wrong, and with the name this
+      // computer just gave: the code does not expire, so a phone that fails at
+      // the next step still knows which computer it belongs to instead of
+      // coming back to a blank "type a code" screen as though it never paired.
+      await _store.write(token: token, hostName: client.hostName);
 
       state = const PhoneLinkConnecting('Reading your computer');
       final status = await client.call('status.get');
@@ -259,29 +270,6 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
       'The link to your computer dropped.',
       stillPaired: true,
     );
-  }
-
-  Future<void> _storeRenewedOffer(
-    PairingOffer offer,
-    RelayPhoneClient client,
-  ) async {
-    try {
-      final renewed = await client.call('pairing.renew');
-      final relay = PairingRelayEndpoint.fromJson(renewed['relay']);
-      if (relay == null) return;
-      await _store.write(
-        PairingOffer(
-          deviceToken: offer.deviceToken,
-          hostPublicKey: offer.hostPublicKey,
-          hostName: client.hostName,
-          relay: relay,
-        ),
-      );
-    } on RelayPhoneFailure {
-      // An older computer has no `pairing.renew`. The link still works, and the
-      // offer written before this call means the computer is still remembered —
-      // this phone will just need a fresh code next time.
-    }
   }
 
   Future<bool> _isPaired() async => await _store.read() != null;

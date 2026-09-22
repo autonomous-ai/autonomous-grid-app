@@ -2,9 +2,9 @@
 /// a pair of them into a shared secret.
 ///
 /// Two keys with very different lifetimes meet here. The **desktop's** key is
-/// long-lived: its public half goes into the pairing code, so every phone that
-/// ever scanned one has pinned it, and regenerating it un-pairs all of them at
-/// once. The **phone's** key is ephemeral, fresh for each socket, which is what
+/// long-lived: its public half goes into the sealed record every phone reads to
+/// find this computer, so each of them has pinned it, and regenerating it
+/// un-pairs all of them at once. The **phone's** key is ephemeral, fresh for each socket, which is what
 /// gives the link forward secrecy — a desktop key recovered later opens nothing
 /// that was recorded earlier.
 ///
@@ -42,7 +42,7 @@ class E2eeKeyPair {
 
   final SimpleKeyPair _keyPair;
 
-  /// The half that goes in the pairing code.
+  /// The half that goes in the sealed record a phone reads.
   final Uint8List publicKey;
 
   /// The half that never leaves this machine. Held so a store can write it;

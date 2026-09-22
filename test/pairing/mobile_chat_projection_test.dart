@@ -235,7 +235,6 @@ void main() {
       Map<String, Object?> params = const {},
     ]) => service.handle(
       MobileRpcRequest(id: 'r1', method: method, params: params),
-      deviceId: 'device-1',
     );
 
     test('refuses a method that is not on the allowlist, which is the security '
@@ -358,7 +357,6 @@ void main() {
         method: 'chats.send',
         params: {'id': 'c1', 'text': text},
       ),
-      deviceId: 'device-1',
       mayAct: () async => allowed,
     );
 
@@ -380,7 +378,6 @@ void main() {
           method: 'chats.send',
           params: {'id': 'c1', 'text': 'do the thing'},
         ),
-        deviceId: 'device-1',
       );
 
       expect((answer as MobileRpcFailed).code, 'forbidden');
@@ -484,7 +481,6 @@ void main() {
       required bool allowed,
     }) => host().handle(
       MobileRpcRequest(id: 'r1', method: method, params: params),
-      deviceId: 'device-1',
       mayAct: () async => allowed,
     );
 
@@ -613,7 +609,6 @@ void main() {
       required bool allowed,
     }) => service.handle(
       MobileRpcRequest(id: 'r1', method: method, params: params),
-      deviceId: 'device-1',
       mayAct: () async => allowed,
     );
 
@@ -830,7 +825,6 @@ void main() {
     Future<Map<String, Object?>> head(MobileRpcService service) async {
       final answer = await service.handle(
         MobileRpcRequest(id: 'r1', method: 'chats.head', params: {'id': 'c1'}),
-        deviceId: 'device-1',
       );
       return (answer as MobileRpcOk).result;
     }
@@ -896,7 +890,6 @@ void main() {
             method: 'chats.set',
             params: {'id': 'c1', 'field': 'archived', 'value': value},
           ),
-          deviceId: 'device-1',
           mayAct: () async => allowed,
         );
 
@@ -958,7 +951,6 @@ void main() {
 
       final answer = await service.handle(
         MobileRpcRequest(id: 'r1', method: 'chats.list'),
-        deviceId: 'device-1',
       );
 
       final rows = (answer as MobileRpcOk).result['chats']! as List;
@@ -988,7 +980,6 @@ void main() {
     Future<MobileRpcResponse> open(String id, {bool current = false}) =>
         host(current: current).handle(
           MobileRpcRequest(id: 'r1', method: 'grids.get', params: {'id': id}),
-          deviceId: 'device-1',
         );
 
     test('is a read, so any paired phone may open a grid it can already see in '
@@ -1028,7 +1019,6 @@ void main() {
     test('says bad_request when no grid was named', () async {
       final answer = await host().handle(
         MobileRpcRequest(id: 'r1', method: 'grids.get'),
-        deviceId: 'device-1',
       );
 
       expect((answer as MobileRpcFailed).code, 'bad_request');
@@ -1053,7 +1043,6 @@ void main() {
       required bool allowed,
     }) => host().handle(
       MobileRpcRequest(id: 'r1', method: 'projects.create', params: params),
-      deviceId: 'device-1',
       mayAct: () async => allowed,
     );
 
@@ -1104,7 +1093,6 @@ void main() {
           method: 'projects.create',
           params: {'name': '###'},
         ),
-        deviceId: 'device-1',
         mayAct: () async => true,
       );
 

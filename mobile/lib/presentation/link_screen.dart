@@ -151,7 +151,7 @@ class _Stuck extends ConsumerWidget {
         TextButton(
           style: TextButton.styleFrom(minimumSize: const Size.fromHeight(44)),
           onPressed: () => ref.read(phoneLinkProvider.notifier).unpair(),
-          child: const Text('Use a different pairing code'),
+          child: const Text('Use a different code'),
         ),
       ],
     );

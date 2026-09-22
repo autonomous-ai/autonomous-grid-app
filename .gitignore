@@ -65,6 +65,7 @@ docs/*
 !docs/git-auto-install.md
 !docs/claude-rendering.md
 !docs/codex-rendering.md
+!docs/phone-link.md
 .playwright-mcp/*
 
 # ── The device firmware under device/ ────────────────────────────────────────
