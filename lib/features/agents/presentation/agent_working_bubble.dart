@@ -9,6 +9,7 @@ import '../../playground/logic/chat_message.dart';
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
 import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/agent_run_indicator.dart';
 import '../../playground/presentation/message_plan.dart';
 import '../../playground/presentation/message_sources.dart';
 import '../logic/agent_providers.dart';
@@ -367,7 +368,6 @@ class _ThinkingRowState extends State<_ThinkingRow> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final label = _seconds > 0 ? 'Thinking… ${_seconds}s' : 'Thinking…';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -376,20 +376,14 @@ class _ThinkingRowState extends State<_ThinkingRow> {
         // pushed whatever followed it to the far right edge.
         mainAxisSize: MainAxisSize.min,
         children: [
-          const AppSpinner(size: SpinnerSize.small),
-          const SizedBox(width: 8),
-          Icon(
-            Icons.psychology_outlined,
-            size: 14,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
+          // The turn runs *here*, drawn the way Claude Code's panel draws it: a
+          // green running dot, a pulsing ellipsis, and a label that breathes —
+          // the state the motion, and the words, in the extension's own order.
+          const AgentRunStatus(state: AgentRunState.running),
+          const SizedBox(width: 7),
+          const PendingGlyph(),
+          const SizedBox(width: 5),
+          AgentRunLabel(label),
         ],
       ),
     );

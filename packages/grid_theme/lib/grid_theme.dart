@@ -345,6 +345,22 @@ abstract final class AppPalette {
   static Color get offline =>
       AppTheme.pick(const Color(0xFFA3A29C), const Color(0xFF6E6E6E));
 
+  // A session's status dot, ported from Claude Code's VS Code panel
+  // (`--app-status-*`). The same value in both themes, as the extension keeps
+  // them: state is read off the dot's colour, not off its brightness.
+
+  /// The agent is working — Claude's busy green.
+  static const statusRunning = Color(0xFF89D185);
+
+  /// The agent is waiting on the user (a permission, an input).
+  static const statusWaiting = Color(0xFF3B82F6);
+
+  /// The turn has an unread result the user hasn't opened.
+  static const statusUnread = Color(0xFFD97757);
+
+  /// The turn failed.
+  static const statusFailed = Color(0xFFE5484D);
+
   // Grid brand lightning gold — the live/active ⚡ mark, matching the tray bolt.
   static Color get brandBolt =>
       AppTheme.pick(const Color(0xFFC98A00), const Color(0xFFE0A93B));

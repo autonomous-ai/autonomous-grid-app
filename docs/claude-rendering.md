@@ -1,7 +1,7 @@
 # Claude Code → chat: how the stream is read and drawn
 
-State: **2026-09-10**, Claude Code 2.1.x. Reference studied: Claude's own VS Code
-extension **2.1.266** (`~/.vscode/extensions/anthropic.claude-code-2.1.266-*`).
+State: **2026-09-28**, Claude Code 2.1.283. Reference studied: Claude's own VS
+Code extension **2.1.283** (`~/.vscode/extensions/anthropic.claude-code-2.1.283-*`).
 Tracked with the code, whose library docs carry the same map (`claude_tools.dart`,
 `claude_content.dart`, `claude_task_list.dart`) — change both together.
 
@@ -61,6 +61,7 @@ string that doesn't — grep it in `webview/index.js` (or `extension.js`).
 | User-text parser | `ide_selection` | tags in a user turn → chips; interrupt sentinels | `isClaudeInterruptNote`, `stripInjectedContext` (import) |
 | Message cap | `protectRecentFromToolPass` | 600 → 500 messages, finished tool pairs first | `storedParts` (120 steps), `kFoldedRun` |
 | Status dot | `dotProgress` | no result + not busy → failure | `settledParts` → **unknown** (deliberate) |
+| Agent running | `statusDotRunning`, `focusFoldPulse`, `pendingGlyph` | an agent working: an 8px green dot, a pulsing label (opacity 1→.55, 1.6s) and a pulsing mono ellipsis (1.2s), with waiting/idle/unread/failed variants | `agent_run_indicator.dart` (`AgentRunStatus` / `AgentRunLabel` / `PendingGlyph`), worn by the chat row's cue and the working bubble |
 | Markdown | `isPartialText` | withholds the in-flight paragraph | not copied — see §5 |
 
 ## 3. Tools (`claude_tools.dart`)

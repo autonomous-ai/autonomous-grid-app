@@ -9,7 +9,7 @@ import '../../../shared/layouts/widgets/sidebar_item.dart';
 import '../../../shared/layouts/widgets/sidebar_show_more.dart';
 import '../../../shared/layouts/widgets/sidebar_timeline.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/app_spinner.dart';
+import '../../../shared/widgets/agent_run_indicator.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../agents/logic/active_chat_agent.dart';
@@ -870,7 +870,12 @@ class _ChatActivityCue extends StatelessWidget {
     AppTheme.watch(context);
     return Align(
       alignment: Alignment.centerRight,
-      child: AppSpinner(size: SpinnerSize.small, color: AppPalette.textFaint),
+      // A chat with an agent running wears the same mark Claude Code's session
+      // list does — a green running dot — instead of the app's ring, so
+      // "an agent is running here" reads the way it does in the panel this list
+      // mirrors. Deliberately not pulsing: the dot is the state, and the motion
+      // that says something is live runs inside the turn's own label.
+      child: const AgentRunStatus(state: AgentRunState.running),
     );
   }
 }
