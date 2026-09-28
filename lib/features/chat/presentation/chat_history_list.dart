@@ -13,6 +13,7 @@ import '../../../shared/widgets/agent_run_indicator.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../agents/logic/active_chat_agent.dart';
+import '../../agents/logic/agent_run_status.dart';
 import '../../agents/presentation/agent_mark.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/logic/project_folder_status.dart';
@@ -552,13 +553,21 @@ class _ChatRow extends ConsumerWidget {
     final onScreen =
         section == ShellSection.chat || section == ShellSection.officeDocs;
     final selected = isOpen && onScreen;
-    // A reply is coming into this chat — shown on whichever chat is working,
-    // open or in the background, now that several can be in flight at once.
-    // Selecting on the bool (not the raw phase) keeps the row from rebuilding on
-    // every streamed token.
-    final working = ref.watch(
-      chatSessionsProvider.select((s) => s.sendingFor(chat.id)),
+    // What this chat reads as right now — the dot a row wears, on whichever chat
+    // is working, waiting on the user, or has failed, open or in the background.
+    // Selecting on the derived status (not the raw phase) keeps the row from
+    // rebuilding on every streamed token: [chatRunState] changes only at a
+    // turn boundary, not on each token.
+    final runStatus = ref.watch(
+      chatSessionsProvider.select((s) => chatRunState(s, chat.id)),
     );
+    // The cue wants the trailing slot — and so do the hover actions. Running and
+    // waiting are in-flight states where the cue wins; a *failed* turn is not in
+    // flight, so it wears a red dot in the badge and keeps its actions, rather
+    // than taking the pin and archive away from a chat the user may want to act
+    // on (an error is not cleared until they do).
+    final showCue =
+        runStatus == AgentRunState.running || runStatus == AgentRunState.waiting;
     // A scheduled task's chat with a result the user hasn't opened yet — the dot
     // stays until they read it. Selecting on the bool keeps the row from
     // rebuilding when some *other* task's badge changes.
@@ -615,7 +624,9 @@ class _ChatRow extends ConsumerWidget {
           // Then the pin, when there is nothing more urgent to say — otherwise
           // the top of the rail is a group with no explanation for why those
           // rows are there.
-          badge: unread
+          badge: runStatus == AgentRunState.failed
+              ? const AgentRunStatus(state: AgentRunState.failed, size: 7)
+              : unread
               ? const StatusDot(color: AppPalette.accent, size: 7)
               : chat.documentPath != null
               ? Icon(
@@ -644,10 +655,10 @@ class _ChatRow extends ConsumerWidget {
           //
           // The agent's mark is not here. It sits out in the gutter, on the
           // guide line, in the column the folder icons hold — see [_ChatBranch].
-          trailingWidth: working ? 24 : 50,
-          trailingAlwaysVisible: working,
-          trailing: working
-              ? const _ChatActivityCue()
+          trailingWidth: showCue ? 24 : 50,
+          trailingAlwaysVisible: showCue,
+          trailing: showCue
+              ? _ChatActivityCue(state: runStatus!)
               : Row(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -861,21 +872,22 @@ class _ChatBranchState extends State<_ChatBranch> {
 /// bright mark, and a second lit element in the list would blur which chat is on
 /// screen.
 class _ChatActivityCue extends StatelessWidget {
-  const _ChatActivityCue();
+  const _ChatActivityCue({required this.state});
+
+  /// The in-flight state the row is in — running or waiting, the two states that
+  /// take the trailing slot.
+  final AgentRunState state;
 
   @override
   Widget build(BuildContext context) {
-    // Reads AppPalette from inside a lazy list's child — watch here or the cue
-    // keeps the palette it was first painted with.
-    AppTheme.watch(context);
+    // A working/waiting chat wears the same mark Claude Code's session list does
+    // — a small status dot — instead of the app's ring, so "an agent is working
+    // on this / waiting on you" reads the way it does in the panel this list
+    // mirrors. Deliberately not pulsing: the dot is the state, and the motion
+    // that says something is live runs inside the turn's own label.
     return Align(
       alignment: Alignment.centerRight,
-      // A chat with an agent running wears the same mark Claude Code's session
-      // list does — a green running dot — instead of the app's ring, so
-      // "an agent is running here" reads the way it does in the panel this list
-      // mirrors. Deliberately not pulsing: the dot is the state, and the motion
-      // that says something is live runs inside the turn's own label.
-      child: const AgentRunStatus(state: AgentRunState.running),
+      child: AgentRunStatus(state: state),
     );
   }
 }

@@ -61,7 +61,7 @@ string that doesn't — grep it in `webview/index.js` (or `extension.js`).
 | User-text parser | `ide_selection` | tags in a user turn → chips; interrupt sentinels | `isClaudeInterruptNote`, `stripInjectedContext` (import) |
 | Message cap | `protectRecentFromToolPass` | 600 → 500 messages, finished tool pairs first | `storedParts` (120 steps), `kFoldedRun` |
 | Status dot | `dotProgress` | no result + not busy → failure | `settledParts` → **unknown** (deliberate) |
-| Agent running | `statusDotRunning`, `focusFoldPulse`, `pendingGlyph` | an agent working: an 8px green dot, a pulsing label (opacity 1→.55, 1.6s) and a pulsing mono ellipsis (1.2s), with waiting/idle/unread/failed variants | `agent_run_indicator.dart` (`AgentRunStatus` / `AgentRunLabel` / `PendingGlyph`), worn by the chat row's cue and the working bubble |
+| Agent running | `statusDotRunning`, `statusDotWaiting`, `statusDotFailed`, `focusFoldPulse`, `pendingGlyph` | an agent working: an 8px dot whose colour is the state (running green, waiting blue, failed red), a pulsing label (opacity 1→.55, 1.6s) and a pulsing mono ellipsis (1.2s) | `agent_run_status.dart` (`AgentRunState`, `chatRunState`) + `agent_run_indicator.dart` (`AgentRunStatus` / `AgentRunLabel` / `PendingGlyph`); the chat row's cue shows running/waiting, a failed turn wears the red dot as a badge, and the working bubble wears the running dot |
 | Markdown | `isPartialText` | withholds the in-flight paragraph | not copied — see §5 |
 
 ## 3. Tools (`claude_tools.dart`)

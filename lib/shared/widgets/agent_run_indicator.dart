@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../../features/agents/logic/agent_run_status.dart';
 
-/// The states Claude Code's VS Code panel draws a session in — a small dot
-/// beside the running agent. Ported from the extension's `statusDot` classes so
-/// a Grid run reads the way one does in Claude's panel.
-enum AgentRunState { running, waiting, idle, unread, failed }
+export '../../features/agents/logic/agent_run_status.dart' show AgentRunState;
 
 /// The 8px status dot Claude's panel uses for a session, in its five states.
 ///
