@@ -174,6 +174,7 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
         platform: '${status['platform'] ?? 'unknown'}',
         appVersion: '${status['appVersion'] ?? '?'}',
         grids: readGridRows(grids),
+        methods: readMethods(status),
       );
     } on RelayPhoneFailure catch (failure) {
       if (failure.needsNewCode) return _spent(failure);
@@ -298,6 +299,7 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
         appVersion: '${status['appVersion'] ?? '?'}',
         grids: readGridRows(grids),
         session: ++_session,
+        methods: readMethods(status),
       );
       return null;
     } on RelayPhoneFailure catch (failure) {
@@ -338,20 +340,4 @@ class PhoneLinkController extends Notifier<PhoneLinkState> {
       state = PhoneLinkFailed(failure.message, stillPaired: false);
 
   Future<bool> _isPaired() async => await _store.read() != null;
-}
-
-/// The grids in a `grids.list` answer.
-List<GridRow> readGridRows(Map<String, Object?> result) {
-  final rows = result['grids'];
-  if (rows is! List) return const [];
-  return [
-    for (final row in rows)
-      if (row is Map)
-        (
-          id: '${row['id'] ?? ''}',
-          name: '${row['name'] ?? ''}',
-          type: '${row['type'] ?? ''}',
-          email: '${row['email'] ?? ''}',
-        ),
-  ];
 }

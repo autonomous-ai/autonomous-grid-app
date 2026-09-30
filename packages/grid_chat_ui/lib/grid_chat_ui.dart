@@ -15,3 +15,6 @@ export 'src/markdown_code_block.dart';
 
 /// The stylesheet an answer's Markdown is drawn with.
 export 'src/markdown_style.dart';
+
+/// The words an agent's permission question is put in.
+export 'src/permission_words.dart';

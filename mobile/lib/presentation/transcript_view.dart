@@ -3,9 +3,9 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 import 'package:grid_theme/grid_theme.dart';
 
-import '../logic/chat_watch.dart';
 import '../logic/phone_chats.dart';
 import 'chat_bubble.dart';
 import 'live_turn_view.dart';
@@ -41,7 +41,7 @@ class TranscriptView extends StatefulWidget {
   /// What the computer is doing in this chat right now. Drawn below the
   /// transcript rather than inside it: it is not a saved turn yet, and it is
   /// replaced by the real one the moment the computer writes it down.
-  final LiveTurn live;
+  final MobileLiveTurn live;
 
   /// Walks one page further back, or null at the start of the chat.
   final VoidCallback? onEarlier;

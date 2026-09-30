@@ -35,27 +35,16 @@ class AgentPermissionCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final controller = ref.read(agentPermissionsProvider.notifier);
     final isEdit = request.kind == AgentPermissionKind.edit;
-    // Icon, question and subtitle in one place, so the three can't drift apart.
-    // `other` is a tool the app has no drawing for — it gets the agent's own
-    // title and the raw request below, rather than a description we'd be making
-    // up about something we couldn't read.
-    final (icon, title, subtitle) = switch (request.kind) {
-      AgentPermissionKind.command => (
-        Icons.terminal_rounded,
-        'Run this on your computer?',
-        request.summary,
-      ),
-      AgentPermissionKind.edit => (
-        Icons.edit_note_rounded,
-        'Change this file?',
-        request.path ?? '',
-      ),
-      AgentPermissionKind.other => (
-        Icons.extension_outlined,
-        'Let the assistant do this?',
-        request.summary,
-      ),
-    };
+    // Icon and question from the shared words, so the phone's card asks what
+    // this one asks. `other` is a tool the app has no drawing for — it gets the
+    // agent's own title and the raw request below, rather than a description
+    // we'd be making up about something we couldn't read.
+    final (:icon, question: title) = permissionHeading(switch (request.kind) {
+      AgentPermissionKind.command => PermissionAsk.command,
+      AgentPermissionKind.edit => PermissionAsk.edit,
+      AgentPermissionKind.other => PermissionAsk.other,
+    });
+    final subtitle = isEdit ? request.path ?? '' : request.summary;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -104,7 +93,7 @@ class AgentPermissionCard extends ConsumerWidget {
                 TextButton(
                   onPressed: () =>
                       controller.answer(chatId, AgentPermissionChoice.refuse),
-                  child: const Text("Don't allow"),
+                  child: const Text(PermissionAnswerLabels.refuse),
                 ),
                 if (request.canAllowForChat)
                   TextButton(
@@ -112,7 +101,7 @@ class AgentPermissionCard extends ConsumerWidget {
                       chatId,
                       AgentPermissionChoice.allowForChat,
                     ),
-                    child: const Text('Allow in this chat'),
+                    child: const Text(PermissionAnswerLabels.allowForChat),
                   ),
                 const SizedBox(width: 4),
                 FilledButton(
@@ -120,7 +109,7 @@ class AgentPermissionCard extends ConsumerWidget {
                     chatId,
                     AgentPermissionChoice.allowOnce,
                   ),
-                  child: const Text('Allow once'),
+                  child: const Text(PermissionAnswerLabels.allowOnce),
                 ),
               ],
             ),

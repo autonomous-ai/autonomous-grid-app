@@ -13,8 +13,10 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 import 'phone_chats.dart';
 import 'phone_link_controller.dart';
@@ -42,18 +44,13 @@ const Duration _askWhileWriting = Duration(milliseconds: 700);
 /// of the answer for up to [_askEvery].
 const Duration _graceAfterSend = Duration(seconds: 6);
 
-/// What one chat is doing right now.
-///
-/// A value rather than a void watcher: [streaming] is the answer as far as it
-/// has been written, and the screen draws it as the trailing bubble. That is
-/// what makes a reply appear as it is typed instead of all at once when the
-/// turn finally lands on disk. [busy] is whether the computer is still on it —
-/// what the composer's Stop and the working row read, so there is one poll
-/// saying so rather than a second one re-reading the whole page to find out.
-typedef LiveTurn = ({int total, bool busy, String streaming});
-
 /// A chat nobody is watching, or one with nothing happening in it.
-const LiveTurn kQuietTurn = (total: 0, busy: false, streaming: '');
+///
+/// The live state itself is [MobileLiveTurn], the shape the computer sends:
+/// the answer so far, the steps behind it, and the question the agent is
+/// waiting on. A value rather than a void watcher, so the screen draws the
+/// trailing turn from it and the composer reads `busy` from the same poll.
+const MobileLiveTurn kQuietTurn = MobileLiveTurn(total: 0, busy: false);
 
 /// Watches one chat while its screen is open.
 ///
@@ -65,10 +62,10 @@ const LiveTurn kQuietTurn = (total: 0, busy: false, streaming: '');
 /// opened kept its timer and went on asking the computer about itself every
 /// three seconds after its screen had closed.
 final chatWatchProvider = NotifierProvider.autoDispose
-    .family<ChatWatch, LiveTurn, String>(ChatWatch.new);
+    .family<ChatWatch, MobileLiveTurn, String>(ChatWatch.new);
 
 /// Polls one chat's head and re-reads the transcript when it moves.
-class ChatWatch extends Notifier<LiveTurn> {
+class ChatWatch extends Notifier<MobileLiveTurn> {
   ChatWatch(this.chatId);
 
   /// The conversation being watched — the family argument.
@@ -77,13 +74,14 @@ class ChatWatch extends Notifier<LiveTurn> {
   Timer? _timer;
   Duration? _rate;
   int? _lastTotal;
+  String? _lastHead;
   bool _asking = false;
 
   /// Until when to keep asking fast after a send, busy or not.
   DateTime _fastUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
-  LiveTurn build() {
+  MobileLiveTurn build() {
     _schedule(_askEvery);
     ref.onDispose(() => _timer?.cancel());
     return kQuietTurn;
@@ -123,21 +121,20 @@ class ChatWatch extends Notifier<LiveTurn> {
         'chats.head',
         {'id': chatId},
       );
-      final total = head['total'];
-      if (total is! int) return;
-      final busy = head['busy'] == true;
-      final streaming = '${head['streaming'] ?? ''}';
-      final eager = busy || DateTime.now().isBefore(_fastUntil);
+      final live = MobileLiveTurn.fromJson(head);
+      if (live == null) return;
+      final eager = live.busy || DateTime.now().isBefore(_fastUntil);
       _schedule(eager ? _askWhileWriting : _askEvery);
 
-      // The live reply first, and on its own: it changes on nearly every poll
-      // while a turn runs, and re-reading the page each time would fetch forty
-      // finished turns to redraw one growing bubble.
-      if (streaming != state.streaming ||
-          total != state.total ||
-          busy != state.busy) {
-        state = (total: total, busy: busy, streaming: streaming);
+      // Compared as the answer arrived, since the live turn is a tree of
+      // steps and a question: an unchanged head — the common case — must not
+      // redraw the transcript under somebody's thumb every 700ms.
+      final said = jsonEncode(head);
+      if (said != _lastHead) {
+        _lastHead = said;
+        state = live;
       }
+      final total = live.total;
       if (total == _lastTotal) return;
       _lastTotal = total;
       // The turn landed on disk. Now the page is worth re-reading — and the

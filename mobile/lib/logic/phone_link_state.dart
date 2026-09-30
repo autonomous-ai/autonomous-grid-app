@@ -37,6 +37,7 @@ final class PhoneLinkConnected extends PhoneLinkState {
     required this.appVersion,
     required this.grids,
     required this.session,
+    this.methods = const {},
   });
 
   /// What the computer calls itself.
@@ -51,6 +52,17 @@ final class PhoneLinkConnected extends PhoneLinkState {
   /// The grids it is signed in to.
   final List<GridRow> grids;
 
+  /// What the computer answers — the phone offers Stop and the permission
+  /// card only where they will work. Empty from a desktop too old to say,
+  /// which reads as "neither" rather than as buttons it would refuse.
+  final Set<String> methods;
+
+  /// Whether this computer can stop an answer from the phone.
+  bool get canStop => methods.contains('chats.stop');
+
+  /// Whether this computer takes the agent's questions answered from here.
+  bool get canAnswer => methods.contains('chats.answer');
+
   /// Which dial this is — one more on every fresh connection.
   ///
   /// What the lists re-ask on ([phoneLinkSessionProvider]). An answer that
@@ -63,12 +75,14 @@ final class PhoneLinkConnected extends PhoneLinkState {
     required String platform,
     required String appVersion,
     required List<GridRow> grids,
+    required Set<String> methods,
   }) => PhoneLinkConnected(
     hostName: hostName,
     platform: platform,
     appVersion: appVersion,
     grids: grids,
     session: session,
+    methods: methods,
   );
 }
 
@@ -107,4 +121,27 @@ PhoneLinkConnected? shownLink(PhoneLinkState state) => switch (state) {
   final PhoneLinkConnected live => live,
   PhoneLinkInterrupted(:final last) => last,
   _ => null,
+};
+
+/// The grids in a `grids.list` answer.
+List<GridRow> readGridRows(Map<String, Object?> result) {
+  final rows = result['grids'];
+  if (rows is! List) return const [];
+  return [
+    for (final row in rows)
+      if (row is Map)
+        (
+          id: '${row['id'] ?? ''}',
+          name: '${row['name'] ?? ''}',
+          type: '${row['type'] ?? ''}',
+          email: '${row['email'] ?? ''}',
+        ),
+  ];
+}
+
+/// The methods a `status.get` answer says the computer takes.
+Set<String> readMethods(Map<String, Object?> status) => {
+  for (final method
+      in status['methods'] is List ? status['methods']! as List : const [])
+    if (method is String) method,
 };

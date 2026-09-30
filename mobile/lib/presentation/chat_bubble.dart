@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../logic/phone_chats.dart';
 import '../logic/phone_media.dart';
+import 'step_fold.dart';
 
 /// A message bubble, rendered the way the assistant wrote it.
 ///
@@ -59,6 +60,10 @@ class ChatBubble extends StatelessWidget {
               : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Above the words, where the work happened: an agent reads and
+            // runs first and writes its answer last.
+            if (!mine && line.steps.isNotEmpty)
+              StepFold(steps: line.steps, count: line.stepCount, live: false),
             for (final (index, item) in line.media.indexed)
               _Attachment(
                 chatId: chatId,

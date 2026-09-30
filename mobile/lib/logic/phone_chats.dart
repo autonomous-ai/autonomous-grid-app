@@ -8,6 +8,7 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_pairing/grid_pairing.dart';
 
 import 'phone_link_controller.dart';
 
@@ -30,11 +31,16 @@ typedef ProjectRow = ({String id, String name, String model, String agent});
 /// [index] is the turn's place in the whole chat, which is how a picture on it
 /// is asked for. [media] describes attachments without carrying them: a photo
 /// is measured in megabytes and the channel cannot frame one.
+///
+/// [steps] are the newest of what an agent ran for this answer and
+/// [stepCount] how many it ran in all — empty on a plain reply.
 typedef ChatLine = ({
   String role,
   String text,
   int index,
   List<ChatMediaRef> media,
+  List<MobileStep> steps,
+  int stepCount,
 });
 
 /// A picture attached to a turn, named but not yet fetched.
@@ -154,6 +160,8 @@ final transcriptProvider =
                         name: '${item['name'] ?? ''}',
                       ),
                 ],
+                steps: mobileStepsFromJson(message['steps']),
+                stepCount: _asInt(message['stepCount']) ?? 0,
               ),
         ],
         total: _asInt(result['total']) ?? 0,
