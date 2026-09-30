@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_theme/grid_theme.dart';
@@ -72,9 +73,44 @@ class ChatBubble extends StatelessWidget {
                       selectable: true,
                       styleSheet: _sheet(theme),
                     ),
+            // Under a finished answer only: the one being written would copy
+            // half a reply, and the person's own words are theirs already.
+            if (!mine && line.index >= 0 && line.text.trim().isNotEmpty)
+              _CopyAnswer(line.text),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Copies an answer, whole — Markdown and all, so a code block pastes as one.
+///
+/// A button rather than relying on selection alone: selecting a long answer
+/// on a phone means dragging handles across several screens of it.
+class _CopyAnswer extends StatelessWidget {
+  const _CopyAnswer(this.text);
+
+  final String text;
+
+  Future<void> _copy(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Copied')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    return IconButton(
+      tooltip: 'Copy answer',
+      onPressed: () => _copy(context),
+      iconSize: 16,
+      color: AppPalette.textFaint,
+      style: IconButton.styleFrom(minimumSize: const Size.square(36)),
+      icon: const Icon(Icons.copy_rounded),
     );
   }
 }

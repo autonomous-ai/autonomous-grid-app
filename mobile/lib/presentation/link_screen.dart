@@ -24,9 +24,18 @@ class LinkScreen extends ConsumerStatefulWidget {
 }
 
 class _LinkScreenState extends ConsumerState<LinkScreen> {
+  /// Tells the link when the app leaves and comes back. Here rather than in the
+  /// controller because it is a platform event, and the controller stays a
+  /// plain notifier that decides what the event means.
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(
+      onPause: () => ref.read(phoneLinkProvider.notifier).paused(),
+      onResume: () => ref.read(phoneLinkProvider.notifier).resumed(),
+    );
     // Not in build(): reconnecting is a side effect, and build runs again for
     // reasons that have nothing to do with wanting a second connection.
     PairingLinks.listen(
@@ -46,13 +55,24 @@ class _LinkScreenState extends ConsumerState<LinkScreen> {
   }
 
   @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return switch (ref.watch(phoneLinkProvider)) {
       // Connected is the whole app, frame and all — four tabs, a bar, and a
       // title that changes with them — so it brings its own [Scaffold] rather
       // than being poured into the one the other three states share.
+      //
+      // A dropped link draws the same shell over the last thing the computer
+      // said: same widget in the same place, so the open tab survives the
+      // drop and the banner inside it says what is happening.
       final PhoneLinkConnected connected => HomeShell(connected),
+      PhoneLinkInterrupted(:final last) => HomeShell(last),
       PhoneLinkUnpaired() => _frame(const _Padded(PairForm())),
       PhoneLinkConnecting(:final step) => _frame(_Working(step)),
       PhoneLinkFailed(:final message, :final stillPaired) => _frame(

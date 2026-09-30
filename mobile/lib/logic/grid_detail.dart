@@ -38,9 +38,7 @@ final gridDetailProvider = FutureProvider.family<GridDetail, String>((
   ref,
   gridId,
 ) async {
-  final result = await ref.watch(phoneLinkProvider.notifier).call('grids.get', {
-    'id': gridId,
-  });
+  final result = await askComputer(ref, 'grids.get', {'id': gridId});
   final engines = result['engines'];
   return (
     id: '${result['id'] ?? gridId}',

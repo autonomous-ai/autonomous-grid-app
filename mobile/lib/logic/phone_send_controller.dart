@@ -1,36 +1,23 @@
-/// Sending a message from the phone, and waiting for the answer to land.
+/// Sending a message from the phone.
 ///
-/// Its own controller rather than state inside the chat screen, because it is
-/// not one call: the computer accepts the turn in milliseconds and then spends
-/// tens of seconds answering it, so "sent" and "answered" are different moments
-/// and the screen has to show both.
+/// Its own controller rather than state inside the chat screen, because a send
+/// is more than one call — the files go up first, a piece at a time, and that
+/// can take a minute over a phone connection.
 ///
-/// The waiting is polling, and deliberately so. The channel could push, but the
-/// desktop's reply frames are correlated to requests by id and teaching both
-/// ends to carry unsolicited frames is a protocol change; asking again every
-/// [_pollEvery] costs one small request and cannot desynchronise anything.
+/// It stops at "the computer has it". Whether an answer is being written is
+/// [ChatWatch]'s to say: it polls the chat's head anyway, and this used to run
+/// a second poll beside it that re-read the whole transcript every 1.5 seconds
+/// to learn the same one flag.
 library;
-
-import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'chat_watch.dart';
 import 'phone_attachments.dart';
 import 'phone_chats.dart';
-import 'phone_uploads.dart';
 import 'phone_link_controller.dart';
+import 'phone_uploads.dart';
 import 'relay_phone_client.dart';
-
-/// How often the phone re-reads a chat while an answer is being written.
-const Duration _pollEvery = Duration(milliseconds: 1500);
-
-/// When to stop waiting, however the computer is getting on.
-///
-/// An agent turn can legitimately run for minutes. This is not a timeout on the
-/// work — the computer carries on regardless — it is the point at which the
-/// phone stops holding a spinner and lets the person pull to refresh, because a
-/// spinner that never ends is indistinguishable from a broken app.
-const Duration _giveUpAfter = Duration(minutes: 5);
 
 /// Where a send has got to.
 sealed class PhoneSendState {
@@ -42,9 +29,9 @@ final class PhoneSendIdle extends PhoneSendState {
   const PhoneSendIdle();
 }
 
-/// On its way, or being answered.
-final class PhoneSendWorking extends PhoneSendState {
-  const PhoneSendWorking();
+/// On its way to the computer — files uploading, or the message itself.
+final class PhoneSendSending extends PhoneSendState {
+  const PhoneSendSending();
 }
 
 /// It did not go, and this says why in words the person can act on.
@@ -61,7 +48,7 @@ final phoneSendProvider =
       PhoneSendController.new,
     );
 
-/// Puts a message into a chat on the computer and watches for the answer.
+/// Puts a message into a chat on the computer.
 class PhoneSendController extends Notifier<PhoneSendState> {
   PhoneSendController(this.chatId);
 
@@ -69,15 +56,10 @@ class PhoneSendController extends Notifier<PhoneSendState> {
   /// chat's spinner off another chat's screen.
   final String chatId;
 
-  Timer? _poll;
-
   @override
-  PhoneSendState build() {
-    ref.onDispose(() => _poll?.cancel());
-    return const PhoneSendIdle();
-  }
+  PhoneSendState build() => const PhoneSendIdle();
 
-  /// Sends [text] with whatever is attached, then waits for the answer.
+  /// Sends [text] with whatever is attached.
   ///
   /// [uploadEach] does the actual putting-on-the-computer. It is passed in
   /// because it needs a [WidgetRef] and this is a notifier — and because it
@@ -89,7 +71,7 @@ class PhoneSendController extends Notifier<PhoneSendState> {
   }) async {
     final staged = ref.read(attachmentsProvider(chatId));
     if (text.trim().isEmpty && staged.isEmpty) return;
-    state = const PhoneSendWorking();
+    state = const PhoneSendSending();
     try {
       // Files first: the message names them, so a send that went before them
       // would arrive asking about pictures that are not there yet.
@@ -104,40 +86,11 @@ class PhoneSendController extends Notifier<PhoneSendState> {
       state = PhoneSendFailed(failure.message);
       return;
     }
-    // Show the question in the transcript straight away. It is already on the
-    // computer by now, so this is not optimism — it is the phone catching up.
-    _reread();
-    _watchForTheAnswer();
-  }
-
-  /// Stops waiting, leaving whatever has arrived on screen.
-  void stopWaiting() {
-    _poll?.cancel();
-    _poll = null;
     state = const PhoneSendIdle();
+    // Show the question in the transcript straight away — it is already on the
+    // computer, so this is not optimism, it is the phone catching up — and
+    // start watching for the answer at the fast rate.
+    ref.invalidate(transcriptProvider((id: chatId, offset: null)));
+    ref.read(chatWatchProvider(chatId).notifier).poke();
   }
-
-  void _watchForTheAnswer() {
-    _poll?.cancel();
-    final startedAt = DateTime.now();
-    _poll = Timer.periodic(_pollEvery, (timer) {
-      if (DateTime.now().difference(startedAt) > _giveUpAfter) {
-        stopWaiting();
-        return;
-      }
-      final page = ref
-          .read(transcriptProvider((id: chatId, offset: null)))
-          .value;
-      // Null while the re-read is in flight — that is a poll that has not
-      // answered yet, not an answer that has finished.
-      if (page != null && !page.busy) {
-        stopWaiting();
-        return;
-      }
-      _reread();
-    });
-  }
-
-  void _reread() =>
-      ref.invalidate(transcriptProvider((id: chatId, offset: null)));
 }

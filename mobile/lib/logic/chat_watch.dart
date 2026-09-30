@@ -34,21 +34,38 @@ const Duration _askEvery = Duration(seconds: 3);
 /// while the computer showed it flowing.
 const Duration _askWhileWriting = Duration(milliseconds: 700);
 
+/// How long a send keeps the fast rate before the computer says it is busy.
+///
+/// The computer accepts a message and *then* starts the turn — after any turn
+/// already running in that chat has finished — so the first answer or two can
+/// still say "not busy". Dropping to the slow rate on that would hide the start
+/// of the answer for up to [_askEvery].
+const Duration _graceAfterSend = Duration(seconds: 6);
+
 /// What one chat is doing right now.
 ///
 /// A value rather than a void watcher: [streaming] is the answer as far as it
 /// has been written, and the screen draws it as the trailing bubble. That is
 /// what makes a reply appear as it is typed instead of all at once when the
-/// turn finally lands on disk.
-typedef LiveTurn = ({int total, String streaming});
+/// turn finally lands on disk. [busy] is whether the computer is still on it —
+/// what the composer's Stop and the working row read, so there is one poll
+/// saying so rather than a second one re-reading the whole page to find out.
+typedef LiveTurn = ({int total, bool busy, String streaming});
+
+/// A chat nobody is watching, or one with nothing happening in it.
+const LiveTurn kQuietTurn = (total: 0, busy: false, streaming: '');
 
 /// Watches one chat while its screen is open.
 ///
 /// Holds the turn count it last saw. Only a *change* re-reads the page, so the
 /// common answer — nothing happened — costs one tiny request and no redraw.
-final chatWatchProvider = NotifierProvider.family<ChatWatch, LiveTurn, String>(
-  ChatWatch.new,
-);
+///
+/// `autoDispose`, and that is the "while its screen is open" above: Riverpod 3
+/// keeps a plain family alive for the life of the app, so every chat ever
+/// opened kept its timer and went on asking the computer about itself every
+/// three seconds after its screen had closed.
+final chatWatchProvider = NotifierProvider.autoDispose
+    .family<ChatWatch, LiveTurn, String>(ChatWatch.new);
 
 /// Polls one chat's head and re-reads the transcript when it moves.
 class ChatWatch extends Notifier<LiveTurn> {
@@ -62,11 +79,24 @@ class ChatWatch extends Notifier<LiveTurn> {
   int? _lastTotal;
   bool _asking = false;
 
+  /// Until when to keep asking fast after a send, busy or not.
+  DateTime _fastUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
   @override
   LiveTurn build() {
     _schedule(_askEvery);
     ref.onDispose(() => _timer?.cancel());
-    return (total: 0, streaming: '');
+    return kQuietTurn;
+  }
+
+  /// Something was just sent: look now, and keep looking fast.
+  ///
+  /// Without it the first sign of an answer waited for the slow timer — up to
+  /// three seconds of a composer that looked like nothing had happened.
+  void poke() {
+    _fastUntil = DateTime.now().add(_graceAfterSend);
+    _schedule(_askWhileWriting);
+    unawaited(_ask());
   }
 
   /// Re-arms the timer at [every], if it is not already running at that rate.
@@ -84,6 +114,9 @@ class ChatWatch extends Notifier<LiveTurn> {
     // One in flight at a time: a slow link would otherwise stack requests the
     // timer keeps adding to, and each is a frame through an AEAD channel.
     if (_asking) return;
+    // Nothing to ask through while the link is being put back: the banner
+    // already says so, and a poll here would only queue behind the redial.
+    if (ref.read(phoneLinkProvider) is! PhoneLinkConnected) return;
     _asking = true;
     try {
       final head = await ref.read(phoneLinkProvider.notifier).call(
@@ -94,13 +127,16 @@ class ChatWatch extends Notifier<LiveTurn> {
       if (total is! int) return;
       final busy = head['busy'] == true;
       final streaming = '${head['streaming'] ?? ''}';
-      _schedule(busy ? _askWhileWriting : _askEvery);
+      final eager = busy || DateTime.now().isBefore(_fastUntil);
+      _schedule(eager ? _askWhileWriting : _askEvery);
 
       // The live reply first, and on its own: it changes on nearly every poll
       // while a turn runs, and re-reading the page each time would fetch forty
       // finished turns to redraw one growing bubble.
-      if (streaming != state.streaming || total != state.total) {
-        state = (total: total, streaming: streaming);
+      if (streaming != state.streaming ||
+          total != state.total ||
+          busy != state.busy) {
+        state = (total: total, busy: busy, streaming: streaming);
       }
       if (total == _lastTotal) return;
       _lastTotal = total;

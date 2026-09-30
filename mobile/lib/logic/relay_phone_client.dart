@@ -26,6 +26,9 @@ import 'dart:io';
 
 import 'package:grid_pairing/grid_pairing.dart';
 
+/// How long an answer may take before the computer counts as gone.
+const Duration _kAnswerWithin = Duration(seconds: 20);
+
 /// Why a connection did not happen, in words a person can act on.
 class RelayPhoneFailure implements Exception {
   const RelayPhoneFailure(this.message, {this.needsNewCode = false});
@@ -138,16 +141,22 @@ class RelayPhoneClient {
   }
 
   /// Calls [method] on the computer and returns what it sent back.
+  ///
+  /// [timeout] is how long to wait for the answer. The default suits a real
+  /// question; a probe of whether the socket survived the phone being put
+  /// down asks for less, because the person is looking at the screen while it
+  /// waits.
   Future<Map<String, Object?>> call(
     String method, [
     Map<String, Object?> params = const {},
+    Duration timeout = _kAnswerWithin,
   ]) async {
     if (_closed) throw const RelayPhoneFailure('Not connected.');
     final id = 'm${DateTime.now().microsecondsSinceEpoch}';
     _sendSealed(
       MobileRpcRequest(id: id, method: method, params: params).toJson(),
     );
-    final response = MobileRpcResponse.fromJson(await _receiveSealed());
+    final response = MobileRpcResponse.fromJson(await _receiveSealed(timeout));
     return switch (response) {
       MobileRpcOk(:final result) => result,
       MobileRpcFailed(:final message) => throw RelayPhoneFailure(message),
@@ -255,8 +264,8 @@ class RelayPhoneClient {
   void _sendSealed(Map<String, Object?> message) =>
       _socket.add(_session!.sealText(jsonEncode(message)));
 
-  Future<Object?> _receiveSealed() async {
-    final frame = await _receive();
+  Future<Object?> _receiveSealed([Duration timeout = _kAnswerWithin]) async {
+    final frame = await _receive(timeout);
     if (frame is! String) {
       throw const RelayPhoneFailure('Your computer sent an unreadable reply.');
     }
@@ -288,12 +297,12 @@ class RelayPhoneClient {
     }
   }
 
-  Future<Object?> _receive() {
+  Future<Object?> _receive([Duration timeout = _kAnswerWithin]) {
     if (_inbox.isNotEmpty) return Future.value(_inbox.removeAt(0));
     final completer = Completer<Object?>();
     _waiting.add(completer);
     return completer.future.timeout(
-      const Duration(seconds: 20),
+      timeout,
       onTimeout: () => throw const RelayPhoneFailure(
         'Your computer stopped answering. Try again.',
       ),

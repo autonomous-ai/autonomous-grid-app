@@ -75,7 +75,7 @@ typedef TranscriptRequest = ({String id, int? offset});
 /// times — and a failure here is usually the channel being down, so retrying
 /// is ten more requests into a socket that is not answering.
 final chatListProvider = FutureProvider<List<ChatRow>>((ref) async {
-  final result = await ref.watch(phoneLinkProvider.notifier).call('chats.list');
+  final result = await askComputer(ref, 'chats.list');
   final rows = result['chats'];
   if (rows is! List) return const [];
   return [
@@ -108,9 +108,7 @@ List<ChatRow> archivedChats(List<ChatRow> all) => [
 /// The computer's projects, keyed by id, so a chat row can name the project it
 /// belongs to instead of showing a number.
 final projectsProvider = FutureProvider<Map<String, ProjectRow>>((ref) async {
-  final result = await ref
-      .watch(phoneLinkProvider.notifier)
-      .call('projects.list');
+  final result = await askComputer(ref, 'projects.list');
   final rows = result['projects'];
   if (rows is! List) return const {};
   return {
@@ -131,13 +129,10 @@ final transcriptProvider =
       ref,
       request,
     ) async {
-      final result = await ref.watch(phoneLinkProvider.notifier).call(
-        'chats.get',
-        {
-          'id': request.id,
-          if (request.offset != null) 'offset': request.offset,
-        },
-      );
+      final result = await askComputer(ref, 'chats.get', {
+        'id': request.id,
+        if (request.offset != null) 'offset': request.offset,
+      });
       final messages = result['messages'];
       return (
         id: request.id,

@@ -7,10 +7,8 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_theme/grid_theme.dart';
 
-import '../logic/phone_chats.dart';
 import '../logic/phone_link_controller.dart';
 import 'chat_list_screen.dart';
 import 'grid_app_bar.dart';
@@ -22,48 +20,28 @@ import 'projects_tab.dart';
 import 'settings_tab.dart';
 
 /// The connected app.
-class HomeShell extends ConsumerStatefulWidget {
+class HomeShell extends StatefulWidget {
   const HomeShell(this.link, {super.key});
 
   /// What the computer told us, and what it is signed in to.
   final PhoneLinkConnected link;
 
   @override
-  ConsumerState<HomeShell> createState() => _HomeShellState();
+  State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends ConsumerState<HomeShell> {
+class _HomeShellState extends State<HomeShell> {
   HomeTab _tab = HomeTab.chats;
-
-  /// Re-asks the computer everything the open tab shows.
-  ///
-  /// The chats and projects are their own providers rather than part of the
-  /// link's state, so refreshing the link alone would leave the list on screen
-  /// exactly as stale as it was — the one thing a refresh button must not do.
-  /// Invalidating is what re-asks them; it happens here rather than in the
-  /// controller because those providers read *it*, and a controller reaching
-  /// back into them would be a cycle.
-  void _refresh() {
-    ref.read(phoneLinkProvider.notifier).refresh();
-    ref.invalidate(chatListProvider);
-    ref.invalidate(projectsProvider);
-  }
 
   @override
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     return Scaffold(
       backgroundColor: AppPalette.windowBg,
-      appBar: GridAppBar(
-        title: _tab.label,
-        actions: [
-          GridBarButton(
-            tooltip: 'Refresh',
-            icon: Icons.refresh_rounded,
-            onPressed: _refresh,
-          ),
-        ],
-      ),
+      // No refresh button: each list asks again when pulled down, the way
+      // every list on a phone does, and all of them ask again by themselves
+      // when a dropped link comes back.
+      appBar: GridAppBar(title: _tab.label),
       // Stacked rather than rebuilt, so each tab keeps where it was scrolled to
       // and a half-read conversation isn't thrown away by a tap on the bar.
       //

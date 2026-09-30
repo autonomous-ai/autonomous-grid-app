@@ -9,6 +9,7 @@ import '../logic/phone_chats.dart';
 import 'chat_screen.dart';
 import 'chat_tile.dart';
 import 'grid_app_bar.dart';
+import 'load_states.dart';
 import 'parts.dart';
 import 'new_chat_screen.dart';
 
@@ -89,14 +90,25 @@ class ChatListBody extends ConsumerWidget {
     AppTheme.watch(context);
     final chats = ref.watch(chatListProvider);
     final projects = ref.watch(projectsProvider).value ?? const {};
-    return chats.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => _ListProblem(
-        message: '$error',
-        onRetry: () => ref.invalidate(chatListProvider),
+    return PullToRefresh(
+      onRefresh: () => _reload(ref),
+      scrollable: chats.value?.isNotEmpty ?? false,
+      child: chats.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, _) => LoadProblem(
+          message: '$error',
+          onRetry: () => ref.invalidate(chatListProvider),
+        ),
+        data: (all) => _body(context, _visible(all), projects),
       ),
-      data: (all) => _body(context, _visible(all), projects),
     );
+  }
+
+  /// Asks for the chats and the project names beside them, and holds the
+  /// pull's spinner until the chats are back.
+  Future<void> _reload(WidgetRef ref) {
+    ref.invalidate(projectsProvider);
+    return ref.refresh(chatListProvider.future);
   }
 
   List<ChatRow> _visible(List<ChatRow> all) {
@@ -113,7 +125,10 @@ class ChatListBody extends ConsumerWidget {
     List<ChatRow> rows,
     Map<String, ProjectRow> projects,
   ) => rows.isEmpty
-      ? const _NoChats()
+      ? const EmptyNote(
+          'No chats on your computer yet. Start one in Grid over there and it '
+          'will show up here.',
+        )
       // Long and unbounded — this is the whole history, which is 251
       // conversations on the machine this was built against.
       : ListView.builder(
@@ -140,54 +155,6 @@ class NewChatButton extends StatelessWidget {
     onPressed: () => Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => NewChatScreen(projectId: projectId),
-      ),
-    ),
-  );
-}
-
-/// Nothing to list, and what to do about it.
-class _NoChats extends StatelessWidget {
-  const _NoChats();
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Text(
-        'No chats on your computer yet. Start one in Grid over there and it '
-        'will show up here.',
-        textAlign: TextAlign.center,
-        style: Theme.of(
-          context,
-        ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
-      ),
-    ),
-  );
-}
-
-class _ListProblem extends StatelessWidget {
-  const _ListProblem({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppPalette.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(onPressed: onRetry, child: const Text('Try again')),
-        ],
       ),
     ),
   );

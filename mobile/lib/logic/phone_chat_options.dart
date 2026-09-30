@@ -33,10 +33,7 @@ final chatOptionsProvider = FutureProvider.family<ChatOptions, String>((
   ref,
   chatId,
 ) async {
-  final result = await ref.watch(phoneLinkProvider.notifier).call(
-    'chats.options',
-    {'id': chatId},
-  );
+  final result = await askComputer(ref, 'chats.options', {'id': chatId});
   return (
     model: _picker(result['model']),
     agent: _picker(result['agent']),

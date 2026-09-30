@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_theme/grid_theme.dart';
 
 import 'logic/appearance_prefs.dart';
+import 'presentation/link_banner.dart';
 import 'presentation/link_screen.dart';
 
 void main() => runApp(const ProviderScope(child: GridMobileApp()));
@@ -76,7 +77,9 @@ class GridMobileApp extends ConsumerWidget {
               data.textScaler.scale(1) * look.uiScale,
             ),
           ),
-          child: _BrightnessSync(child: child ?? const SizedBox.shrink()),
+          child: _BrightnessSync(
+            child: LinkBannerFrame(child: child ?? const SizedBox.shrink()),
+          ),
         );
       },
       home: const LinkScreen(),

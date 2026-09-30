@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:grid_theme/grid_theme.dart';
 
+import '../logic/chat_watch.dart';
 import '../logic/phone_attachments.dart';
 import '../logic/phone_chat_options.dart';
 import '../logic/phone_send_controller.dart';
@@ -61,6 +62,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
     AppTheme.watch(context);
     final theme = Theme.of(context);
     final send = ref.watch(phoneSendProvider(widget.chatId));
+    final busy = ref.watch(
+      chatWatchProvider(widget.chatId).select((live) => live.busy),
+    );
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       decoration: BoxDecoration(
@@ -136,11 +140,8 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                 ),
                 const SizedBox(width: 8),
                 _SendButton(
-                  working: send is PhoneSendWorking,
+                  working: send is PhoneSendSending || busy,
                   onSend: _send,
-                  onStopWaiting: () => ref
-                      .read(phoneSendProvider(widget.chatId).notifier)
-                      .stopWaiting(),
                 ),
               ],
             ),
@@ -151,21 +152,12 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
   }
 }
 
-/// Send, or — while the computer is answering — a way to stop waiting.
-///
-/// Stop waiting, not stop the answer: the turn is running on the computer and
-/// this button cannot reach it, so a "Stop" here would be a lie about what
-/// happens next (§5).
+/// Send, or — while the message goes or the computer answers — a spinner.
 class _SendButton extends StatelessWidget {
-  const _SendButton({
-    required this.working,
-    required this.onSend,
-    required this.onStopWaiting,
-  });
+  const _SendButton({required this.working, required this.onSend});
 
   final bool working;
   final VoidCallback onSend;
-  final VoidCallback onStopWaiting;
 
   @override
   Widget build(BuildContext context) {
@@ -184,8 +176,8 @@ class _SendButton extends StatelessWidget {
       );
     }
     return IconButton(
-      tooltip: 'Stop waiting for the answer',
-      onPressed: onStopWaiting,
+      tooltip: 'Working on it',
+      onPressed: null,
       style: IconButton.styleFrom(minimumSize: const Size.square(40)),
       icon: SizedBox(
         height: 18,
