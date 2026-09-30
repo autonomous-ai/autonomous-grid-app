@@ -17,6 +17,7 @@ export 'src/e2ee_wire.dart';
 export 'src/host_id.dart';
 export 'src/locator_client.dart';
 export 'src/locator_project.dart';
+export 'src/mobile_chat_wire.dart';
 export 'src/mobile_rpc.dart';
 export 'src/pair_token.dart';
 export 'src/phone_locator.dart';

@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'package:grid_pairing/grid_pairing.dart';
 
 import 'mobile_chat_reader.dart';
+import 'mobile_turn_controls.dart';
 import 'mobile_upload_store.dart';
 
 part 'mobile_chat_write_rpc.dart';
@@ -33,8 +34,7 @@ class MobileChatRpc {
     })?
     readMedia,
     this.sendToChat,
-    this.chatIsBusy,
-    this.chatStreaming,
+    this.turns,
     this.readOptions,
     this.setOption,
     this.createChat,
@@ -61,15 +61,15 @@ class MobileChatRpc {
   )?
   sendToChat;
 
-  /// Whether an answer is still being written in a chat, so the phone knows
-  /// whether to keep looking.
-  final bool Function(String chatId)? chatIsBusy;
-
-  /// The answer being written right now, as far as it has got — empty when
-  /// none is. The transcript on disk does not have it: a turn lands there when
-  /// it finishes, so without this the phone shows a spinner for the whole
-  /// minute the computer is working and then the answer all at once.
-  final String Function(String chatId)? chatStreaming;
+  /// The turn each chat has in flight — whether one is being written, how far
+  /// it has got, what the agent has run and what it is waiting on — and the
+  /// way to stop it or answer it. Null on a host with no window behind it,
+  /// which reads as nothing ever running.
+  ///
+  /// The transcript on disk has none of this: a turn lands there when it
+  /// finishes, so without it the phone shows a spinner for the whole minute
+  /// the computer is working and then the answer all at once.
+  final MobileTurnControls? turns;
 
   /// The picks the phone's composer offers for a chat, worked out here.
   final Future<Map<String, Object?>> Function(String chatId)? readOptions;
@@ -135,11 +135,13 @@ class MobileChatRpc {
     ],
   };
 
-  /// Whether a chat has moved, in as few bytes as that can be said.
+  /// Whether a chat has moved, and what its running turn is doing.
   ///
-  /// `total` and `busy`, and nothing else. A phone polls this while a chat is
-  /// open; answering with the page instead would send forty turns over the
-  /// channel every few seconds to report a number that usually has not changed.
+  /// The turn count, whether an answer is being written, the answer so far,
+  /// the newest steps and the question the agent is waiting on — never the
+  /// page. A phone polls this while a chat is open; answering with the page
+  /// instead would send forty turns over the channel every second to report a
+  /// number that usually has not changed.
   MobileRpcResponse head(MobileRpcRequest request) {
     final id = request.params['id'];
     if (id is! String || id.isEmpty) {
@@ -151,15 +153,23 @@ class MobileChatRpc {
     }
     final page = _readChat(id, limit: 1);
     if (page == null) return _gone(request);
-    final streaming = chatStreaming?.call(id) ?? '';
-    return MobileRpcOk(request.id, {
-      'id': id,
-      'total': page.total,
-      'busy': chatIsBusy?.call(id) ?? false,
-      // Only when there is something: an empty key on every poll is bytes spent
-      // to say nothing, and this one is asked for every second or so.
-      if (streaming.isNotEmpty) 'streaming': streaming,
-    });
+    return MobileRpcOk(request.id, _live(id, page.total).toJson(id));
+  }
+
+  MobileLiveTurn _live(String id, int total) {
+    final turns = this.turns;
+    if (turns == null || !turns.isBusy(id)) {
+      return MobileLiveTurn(total: total, busy: false);
+    }
+    final (:steps, :count) = turns.steps(id, newest: kMobileLiveSteps);
+    return MobileLiveTurn(
+      total: total,
+      busy: true,
+      streaming: turns.streaming(id),
+      steps: steps,
+      stepCount: count,
+      permission: turns.permission(id),
+    );
   }
 
   /// One page of a transcript. `offset` and `limit` page *backwards*: the
@@ -188,7 +198,7 @@ class MobileChatRpc {
       'offset': page.offset,
       // Whether an answer is still being written. The phone polls this page
       // while a turn runs, and without it there is no moment it can stop.
-      'busy': chatIsBusy?.call(id) ?? false,
+      'busy': turns?.isBusy(id) ?? false,
       'messages': [
         for (final line in page.lines)
           {
@@ -203,6 +213,10 @@ class MobileChatRpc {
                 for (final item in line.media)
                   {'kind': item.kind, 'name': item.name},
               ],
+            if (line.steps.isNotEmpty) ...{
+              'steps': [for (final step in line.steps) step.toJson()],
+              'stepCount': line.stepCount,
+            },
           },
       ],
     });

@@ -62,6 +62,18 @@ const kMobileRpcMethods = <String>{
   // Changing a chat's model, assistant or access. Gated exactly like sending:
   // the rule is read freely, change nothing, unless the switch is on.
   'chats.set',
+  // Stopping the answer a chat is writing. Behind the same switch as sending:
+  // it ends work somebody may have started at the computer, and a phone that
+  // may only read has no business ending it. Without it the phone's only
+  // honest button was "stop waiting", while the agent carried on.
+  'chats.stop',
+  // Answering the question an agent stopped to ask — run this command, change
+  // this file. The strongest thing on this list: a yes lets the agent act on
+  // this computer. It is gated like sending, and it names the question it
+  // answers, so a tap on a card that has since changed answers nothing.
+  // Without it a turn sent from the phone under "ask first" waited on a card
+  // only the computer showed, and ended in a no nobody chose.
+  'chats.answer',
   // Starting a conversation, message and all. Without it a phone can only
   // continue something that was begun at the computer.
   'chats.create',

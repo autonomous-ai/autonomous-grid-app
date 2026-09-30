@@ -112,31 +112,6 @@ String _titleFrom(String text) {
   return line.length <= 60 ? line : '${line.substring(0, 57)}…';
 }
 
-/// Whether an answer is still being written in [chatId].
-///
-/// Synchronous because the phone asks for it with every page of the transcript,
-/// and it is one field of state the window already keeps.
-bool phoneChatIsBusy(Ref ref, String chatId) =>
-    ref.read(chatSessionsProvider).sendingFor(chatId);
-
-/// The answer being written in [chatId] right now, as far as it has got.
-///
-/// **This is why the phone showed a spinner and nothing else while the computer
-/// worked.** A turn is not written to disk until it finishes, and the phone
-/// reads the transcript from disk — so for the thirty seconds an agent spends
-/// on a question there was, from the phone's side, nothing to read. The window
-/// was not reading a file: it holds the reply so far in [SendStreaming].
-///
-/// Empty when nothing is streaming, which the phone shows as no bubble rather
-/// than an empty one.
-String phoneChatStreaming(Ref ref, String chatId) =>
-    switch (ref.read(chatSessionsProvider).phaseFor(chatId)) {
-      SendStreaming(:final text) => text,
-      // A turn that has started but produced no token yet. The phone already
-      // has `busy` for that, and an empty bubble says less than a spinner.
-      _ => '',
-    };
-
 Future<void> _run(
   Ref ref, {
   required String chatId,

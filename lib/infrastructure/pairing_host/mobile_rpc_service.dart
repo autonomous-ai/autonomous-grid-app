@@ -22,6 +22,7 @@ import '../../core/grid_paths.dart';
 import 'mobile_chat_reader.dart';
 import 'mobile_chat_rpc.dart';
 import 'mobile_grid_reader.dart';
+import 'mobile_turn_controls.dart';
 import 'mobile_upload_store.dart';
 
 /// One grid, as much of it as a phone is shown.
@@ -45,8 +46,7 @@ class MobileRpcService {
       List<PhoneAttachment> files,
     )?
     sendToChat,
-    bool Function(String chatId)? chatIsBusy,
-    String Function(String chatId)? chatStreaming,
+    MobileTurnControls? turns,
     Future<Map<String, Object?>> Function(String chatId)? readOptions,
     Future<String?> Function(String chatId, String field, String value)?
     setOption,
@@ -66,8 +66,7 @@ class MobileRpcService {
          readProjects: readProjects,
          readChat: readChat,
          sendToChat: sendToChat,
-         chatIsBusy: chatIsBusy,
-         chatStreaming: chatStreaming,
+         turns: turns,
          readOptions: readOptions,
          setOption: setOption,
          createChat: createChat,
@@ -140,6 +139,8 @@ class MobileRpcService {
         'chats.send' => await _chats.send(request, mayAct),
         'chats.options' => await _chats.options(request),
         'chats.set' => await _chats.set(request, mayAct),
+        'chats.stop' => await _chats.stop(request, mayAct),
+        'chats.answer' => await _chats.answer(request, mayAct),
         'chats.create' => await _chats.create(request, mayAct),
         'projects.create' => await _chats.newProject(request, mayAct),
         'uploads.begin' => await _chats.beginUpload(request, mayAct),
@@ -167,6 +168,10 @@ class MobileRpcService {
     'platform': Platform.operatingSystem,
     'appVersion': appVersion,
     'gridCount': _readGrids().length,
+    // What this computer answers, so a phone offers Stop and the permission
+    // card only where they work. An older desktop sends no list, and the phone
+    // reads that as "neither" rather than drawing a button that is refused.
+    'methods': kMobileRpcMethods.toList(),
   };
 
   /// One grid, and what this computer is doing on it.

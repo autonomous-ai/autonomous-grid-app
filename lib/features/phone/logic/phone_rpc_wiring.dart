@@ -19,6 +19,7 @@ import '../../auth/logic/session_controller.dart';
 import 'phone_chat_options.dart';
 import 'phone_grid_overview.dart';
 import 'phone_projects.dart';
+import 'phone_turn_controls.dart';
 import 'phone_turns.dart';
 
 /// The service that answers a paired phone, wired to this app.
@@ -34,8 +35,7 @@ MobileRpcService buildPhoneRpcService(Ref ref, {required String appVersion}) =>
       readOverview: (gridId) => phoneGridOverview(ref, gridId),
       sendToChat: (chatId, text, files) =>
           startPhoneTurn(ref, chatId: chatId, text: text, files: files),
-      chatIsBusy: (chatId) => phoneChatIsBusy(ref, chatId),
-      chatStreaming: (chatId) => phoneChatStreaming(ref, chatId),
+      turns: PhoneTurnControls(ref),
       readOptions: (chatId) => phoneChatOptions(ref, chatId),
       setOption: (chatId, field, value) =>
           setPhoneChatOption(ref, chatId: chatId, field: field, value: value),

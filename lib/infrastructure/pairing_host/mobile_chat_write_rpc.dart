@@ -66,6 +66,61 @@ extension MobileChatWrites on MobileChatRpc {
         : MobileRpcFailed(request.id, code: 'unavailable', message: refused);
   }
 
+  /// Stops the answer a chat is writing.
+  ///
+  /// Behind the switch: it ends work that may have been started at the
+  /// computer. Nothing running is not an error — the answer finished between
+  /// the tap and the call — and is said so, so the phone can say it too.
+  Future<MobileRpcResponse> stop(
+    MobileRpcRequest request,
+    Future<bool> Function()? mayAct,
+  ) async {
+    final running = turns;
+    if (running == null) return _noApp(request);
+    if (mayAct == null || !await mayAct()) {
+      return _notAllowed(request, 'stop answers');
+    }
+    final id = request.params['id'];
+    if (id is! String || id.isEmpty) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'Which chat?',
+      );
+    }
+    return MobileRpcOk(request.id, {'stopped': running.stop(id)});
+  }
+
+  /// Answers the question an agent stopped to ask.
+  ///
+  /// Names the question as well as the chat: the agent asks one thing after
+  /// another, and a tap on a card the phone drew a second ago must not become
+  /// a yes to the question that has since replaced it.
+  Future<MobileRpcResponse> answer(
+    MobileRpcRequest request,
+    Future<bool> Function()? mayAct,
+  ) async {
+    final running = turns;
+    if (running == null) return _noApp(request);
+    if (mayAct == null || !await mayAct()) {
+      return _notAllowed(request, 'answer the assistant');
+    }
+    final id = request.params['id'];
+    final question = request.params['question'];
+    final choice = _choiceOf(request.params['choice']);
+    if (id is! String || question is! String || choice == null) {
+      return MobileRpcFailed(
+        request.id,
+        code: 'bad_request',
+        message: 'That answer is missing something.',
+      );
+    }
+    final refused = running.answer(id, question, choice);
+    return refused == null
+        ? MobileRpcOk(request.id, const {'ok': true})
+        : MobileRpcFailed(request.id, code: 'unavailable', message: refused);
+  }
+
   /// Starts a project.
   ///
   /// Behind the switch like every other write. A name is all that crosses: see
@@ -295,4 +350,13 @@ extension MobileChatWrites on MobileChatRpc {
     }
     return MobileRpcOk(request.id, {'accepted': true});
   }
+}
+
+/// The choice [value] names, or null when it names none — never a default, so
+/// a garbled answer cannot turn into a yes.
+MobilePermissionChoice? _choiceOf(Object? value) {
+  for (final choice in MobilePermissionChoice.values) {
+    if (choice.name == value) return choice;
+  }
+  return null;
 }

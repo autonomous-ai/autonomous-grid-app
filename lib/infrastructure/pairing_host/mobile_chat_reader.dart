@@ -20,6 +20,8 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:grid_pairing/grid_pairing.dart';
+
 import '../../core/grid_paths.dart';
 
 /// One conversation's header — never its messages.
@@ -41,11 +43,17 @@ typedef ProjectSummary = ({String id, String name, String model, String agent});
 /// [index] is the turn's position in the whole conversation, not in the page —
 /// it is how the phone asks for a picture attached to *this* turn, and a page
 /// number would name a different turn on the next page.
+///
+/// [steps] are the newest of what an agent ran while answering, and
+/// [stepCount] how many it ran in all — the fold a finished answer carries on
+/// the computer, as rows a phone can draw.
 typedef ChatLine = ({
   String role,
   String text,
   int index,
   List<ChatMedia> media,
+  List<MobileStep> steps,
+  int stepCount,
 });
 
 /// A picture or file attached to a turn, described but not carried.
@@ -137,6 +145,9 @@ ChatPage? readChatPage(
     final line = _lineOf(messages[index], index);
     if (line == null) continue;
     bytes += line.text.length;
+    for (final step in line.steps) {
+      bytes += step.label.length;
+    }
     // Checked *after* the first line is taken: a page that stops before it
     // holds anything is a screen the phone can never fill, however long the
     // turn is. One oversized turn is sent alone instead.
@@ -203,8 +214,43 @@ ChatLine? _lineOf(Object? value, int index) {
   if (role is! String) return null;
   final media = _mediaOf(value['media']);
   final body = text is String ? text : '';
-  if (body.trim().isEmpty && media.isEmpty) return null;
-  return (role: role, text: body, index: index, media: media);
+  final steps = _stepsOf(value['parts']);
+  if (body.trim().isEmpty && media.isEmpty && steps.isEmpty) return null;
+  return (
+    role: role,
+    text: body,
+    index: index,
+    media: media,
+    steps: newestOf(steps, kMobileStepsPerTurn),
+    stepCount: steps.length,
+  );
+}
+
+/// The steps in a stored turn's `parts`, in the order they ran.
+///
+/// Read straight off the on-disk shape (`turnPartToJson`) rather than through
+/// the app's own parser: this folder stays free of the app, and the phone is
+/// sent the label and the outcome — never the request or the result, which are
+/// the files the agent read and the output it got back.
+List<MobileStep> _stepsOf(Object? parts) => [
+  for (final part in parts is List ? parts : const [])
+    if (part is Map && part['kind'] == 'step') ?_stepOf(part),
+];
+
+MobileStep? _stepOf(Map<Object?, Object?> part) {
+  final id = part['id'];
+  final label = part['label'];
+  if (id is! String || label is! String) return null;
+  final name = part['name'];
+  // `tool` is the step's *kind* on disk — see turnPartToJson for why.
+  return MobileStep.fromJson({
+    'id': id,
+    'kind': part['tool'],
+    'label': label,
+    'status': part['status'],
+    if (name is String) 'tool': name,
+    if (part['parent'] != null) 'nested': true,
+  });
 }
 
 /// What a turn carries, named but not read.

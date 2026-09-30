@@ -10,6 +10,8 @@ import 'package:grid_app/features/phone/logic/phone_chat_options.dart';
 import 'package:grid_app/infrastructure/cli/agent_event.dart';
 import 'package:grid_pairing/grid_pairing.dart';
 
+import 'mobile_turn_fakes.dart';
+
 /// What the phone is served when it asks about chats and projects.
 ///
 /// This is a wire format, not a screen: the projection is what a separately
@@ -263,7 +265,16 @@ void main() {
         'phone knows there is more history to ask for', () async {
       final service = serviceOver(
         page: (
-          lines: [(role: 'user', text: 'hello', index: 0, media: const [])],
+          lines: [
+            (
+              role: 'user',
+              text: 'hello',
+              index: 0,
+              media: const [],
+              steps: const [],
+              stepCount: 0,
+            ),
+          ],
           total: 500,
           offset: 460,
         ),
@@ -330,7 +341,16 @@ void main() {
 
   group('the gate on sending', () {
     final page = (
-      lines: <ChatLine>[(role: 'user', text: 'hi', index: 0, media: const [])],
+      lines: <ChatLine>[
+        (
+          role: 'user',
+          text: 'hi',
+          index: 0,
+          media: const [],
+          steps: const [],
+          stepCount: 0,
+        ),
+      ],
       total: 1,
       offset: 0,
     );
@@ -818,8 +838,7 @@ void main() {
           readGrids: () => const [],
           readChat: (id, {int? limit, int? offset}) =>
               (lines: const <ChatLine>[], total: 4, offset: 0),
-          chatIsBusy: (id) => busy,
-          chatStreaming: (id) => streaming,
+          turns: FakeTurns(busy: busy, writing: streaming),
         );
 
     Future<Map<String, Object?>> head(MobileRpcService service) async {
