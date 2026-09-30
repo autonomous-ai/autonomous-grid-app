@@ -7,13 +7,31 @@ import 'codex_agent_service.dart';
 import 'codex_app_server_items.dart' show codexItemStatus, codexPayloadText;
 import 'tool_subject.dart';
 
-/// The five things Codex does to a helper agent, in the user's words.
+/// What Codex does to a helper agent, in the user's words — every
+/// `CollabAgentTool` the app-server names (0.155). The panel files
+/// `sendMessage` and `followupTask` under the same "Messaged" as `sendInput`,
+/// so they share its words here.
 const Map<String, String> kCodexCollabLabels = {
   'spawnAgent': 'Started a helper agent',
   'sendInput': 'Sent a message to a helper agent',
+  'sendMessage': 'Sent a message to a helper agent',
+  'followupTask': 'Sent a message to a helper agent',
   'resumeAgent': 'Resumed a helper agent',
   'wait': 'Waited for helper agents',
+  'interruptAgent': 'Interrupted a helper agent',
+  'listAgents': 'Listed helper agents',
   'closeAgent': 'Closed a helper agent',
+};
+
+/// A helper's `CollabAgentStatus`, in the words the rest of the feed uses.
+const Map<String, String> _kCollabAgentStates = {
+  'pendingInit': 'starting',
+  'running': 'running',
+  'interrupted': 'interrupted',
+  'completed': 'finished',
+  'errored': 'hit an error',
+  'shutdown': 'closed',
+  'notFound': 'not found',
 };
 
 /// A `collabAgentToolCall`: one row per call, titled by what it did, with the
@@ -40,7 +58,6 @@ CodexEvent codexCollabRow(
       }
     }
   }
-  final states = item['agentsStates'];
   return CodexActivityEvent(
     AgentActivity(
       id: id,
@@ -49,17 +66,33 @@ CodexEvent codexCollabRow(
       status: status,
       tool: 'Helper agent',
       request: clipToolPayload(codexPayloadText(item['prompt'])),
-      result: clipToolPayload(
-        states is Map && states.isNotEmpty
-            ? [
-                for (final entry in states.entries)
-                  '${entry.key}: ${entry.value}',
-              ].join('\n')
-            : null,
-      ),
+      result: clipToolPayload(codexCollabStatesText(item['agentsStates'])),
       parent: parent,
     ),
   );
+}
+
+/// Where each helper a call touched stands — "019a…: finished", then the
+/// message it left, if any — or null when the call reported none.
+///
+/// Each state is a `CollabAgentState` map, `{status, message}`. Interpolated
+/// whole it printed as Dart's own `{status: completed, message: …}`, the same
+/// trap [codexPayloadText] was written to close for every other payload.
+String? codexCollabStatesText(Object? states) {
+  if (states is! Map || states.isEmpty) return null;
+  return [
+    for (final MapEntry(:key, :value) in states.entries)
+      _collabStateLine('$key', value),
+  ].join('\n\n');
+}
+
+String _collabStateLine(String agent, Object? state) {
+  if (state is! Map) return '$agent: ${codexPayloadText(state) ?? ''}'.trim();
+  final raw = '${state['status'] ?? ''}';
+  final words = _kCollabAgentStates[raw] ?? raw;
+  final message = '${state['message'] ?? ''}'.trim();
+  final line = '$agent: $words';
+  return message.isEmpty ? line : '$line\n$message';
 }
 
 /// One passage the model wrote to itself — a thought, a plan, a helper's

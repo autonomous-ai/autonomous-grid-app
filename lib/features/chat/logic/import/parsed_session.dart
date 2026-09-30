@@ -153,6 +153,9 @@ const _kInjectedTags = {
   'command-name',
   'command-message',
   'command-args',
+  // A background task or helper agent reporting back — 293 in a month here,
+  // 87 of them in this app's own lane. Imported, each was a user bubble.
+  'task-notification',
   // Codex
   'app-context',
   'apps_instructions',

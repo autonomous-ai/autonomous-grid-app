@@ -1,7 +1,9 @@
 # Claude Code → chat: how the stream is read and drawn
 
-State: **2026-09-28**, Claude Code 2.1.283. Reference studied: Claude's own VS
-Code extension **2.1.283** (`~/.vscode/extensions/anthropic.claude-code-2.1.283-*`).
+State: **2026-09-30**, Claude Code 2.1.285. Reference studied: Claude's own VS
+Code extension **2.1.285** — installed through Cursor on this machine, so it is
+under `~/.cursor/extensions/anthropic.claude-code-2.1.285-*`; `~/.vscode` stops
+at 2.1.283. Look in both.
 Tracked with the code, whose library docs carry the same map (`claude_tools.dart`,
 `claude_content.dart`, `claude_task_list.dart`) — change both together.
 
@@ -56,12 +58,12 @@ string that doesn't — grep it in `webview/index.js` (or `extension.js`).
 | Content block wrapper | `toolResultSignal` | block + result + progress + start/end time | `AgentActivity` (+ `startedAt`) |
 | Content-type dispatch | `Unsupported content type` | text / image / document / tool_use / tool_result / thinking / tool_reference | `_readAssistantBlock`, `_readUserBlock`, `claude_content._blockText` |
 | Base tool renderer | `toOutputContent` | `header` · `renderInput` · `renderOutput` · `permissionRequest` · `hidden` | `ClaudeTool`: `label` · `request` · `showsResult` · `editsFiles` |
-| Registry | `name==="Task"?"Agent"` | find by name → Chrome MCP → any MCP → generic | `claudeTool(name)` |
+| Registry | `"Task"?"Agent":` | find by name → Chrome MCP → any MCP → generic | `claudeTool(name)` |
 | One class per tool | `name="Bash"`, `name="WebFetch"`… | per-tool header/body | entries in `_kTools` |
 | User-text parser | `ide_selection` | tags in a user turn → chips; interrupt sentinels | `isClaudeInterruptNote`, `stripInjectedContext` (import) |
-| Message cap | `protectRecentFromToolPass` | 600 → 500 messages, finished tool pairs first | `storedParts` (120 steps), `kFoldedRun` |
+| Message cap | `protectRecent:` | 600 → 500 messages (`Ru=600`, `M91=100`), finished tool pairs first | `storedParts` (120 steps), `kFoldedRun` |
 | Status dot | `dotProgress` | no result + not busy → failure | `settledParts` → **unknown** (deliberate) |
-| Agent running | `statusDotRunning`, `statusDotWaiting`, `statusDotFailed`, `focusFoldPulse`, `pendingGlyph` | an agent working: an 8px dot whose colour is the state (running green, waiting blue, failed red), a pulsing label (opacity 1→.55, 1.6s) and a pulsing mono ellipsis (1.2s) | `agent_run_status.dart` (`AgentRunState`, `chatRunState`) + `agent_run_indicator.dart` (`AgentRunStatus` / `AgentRunLabel` / `PendingGlyph`); the chat row's cue shows running/waiting, a failed turn wears the red dot as a badge, and the working bubble wears the running dot |
+| Agent running | `statusDotRunning`, `statusDotWaiting`, `statusDotFailed`, `focusFoldPulse`, `pendingGlyph` | an agent working: an 8px dot whose colour is the state (running green, waiting blue, failed red), a pulsing label (opacity 1→.55, 1.6s) and a pulsing mono ellipsis (1.2s) | `shared/agent_run_state.dart` (`AgentRunState`) + `chat/logic/chat_run_state.dart` (`chatRunState`) + `agent_run_indicator.dart` (`AgentRunStatus` / `AgentRunLabel` / `PendingGlyph`); the chat row's cue shows running/waiting, a failed turn wears the red dot as a badge, and the working bubble wears the running dot |
 | Markdown | `isPartialText` | withholds the in-flight paragraph | not copied — see §5 |
 
 ## 3. Tools (`claude_tools.dart`)
@@ -80,6 +82,8 @@ string that doesn't — grep it in `webview/index.js` (or `extension.js`).
 | `Skill` | tool | `· <skill>` | JSON | shown | |
 | `CronCreate` | tool | `· <cron>` | JSON | shown | |
 | `ScheduleWakeup` | tool | `· in 60s · reason` / `· stop` | JSON | shown | |
+| `Monitor` | tool | `· <description>` (29/29 calls carry one) | JSON | shown | |
+| `SendMessage` | tool | `· <summary>` — not `to`, an agent id | JSON | shown | |
 | `ToolSearch` | tool | `· gitnexus impact, Monitor` | JSON | tool names | |
 | `EnterPlanMode` | tool | "Planning before changing anything" | JSON | **hidden** | |
 | `ExitPlanMode` | tool | "Finished the plan" | the plan (markdown) | **hidden** | |
@@ -90,7 +94,7 @@ string that doesn't — grep it in `webview/index.js` (or `extension.js`).
 | `TaskCreate` / `TaskUpdate` (the `-p` lane's plan: 256 / 334 calls a month, 0 `TodoWrite`) | — | not a row → the parser keeps the list (`_tasks`, numbered by the `Task #N created` result), seeded from the CLI's store on a resumed turn, and sends it whole on every change; `deleted` removes; sub-agents write into the same list | | | |
 | `TaskList`, `TaskGet` | — | not a row (plan bookkeeping) | | | |
 | `TaskOutput`, `TaskStop` | tool | ordinary rows — background work, not the plan | | | |
-| `AskUserQuestion` | — | not a row → `ClaudeQuestionsEvent` (card) | | | |
+| `AskUserQuestion` | — | not a row → `ClaudeQuestionsEvent` (card) — see §5 | | | |
 
 The extension has no answer for the task tools (its lane still sends
 `TodoWrite`), so their handling is Grid's own, built from the measured shapes:
@@ -142,6 +146,7 @@ sessions (820 transcripts):
 | reminder-only result | (Read of empty file) | the reminder's words |
 | "The user doesn't want to proceed with this tool use…" | 12 | "You said no to this." / "You said no: <reason>" |
 | `[Request interrupted by user]` (+ `for tool use`) in the user turn | 52 | dropped from the import |
+| `<task-notification>` (a background task / helper reporting back) in the user turn | 293 (87 from this app) | dropped from the import — it was a user bubble |
 
 ## 5. Deliberate differences — don't "fix" them back
 
@@ -160,10 +165,27 @@ sessions (820 transcripts):
   `diff` grammar; `DiffView` stays for permission cards and the changes bar.
 - **Subject keys are measured here**, not the extension's (`message`,
   `channel`, `path` were never sent by a connector on this machine).
+- **`AskUserQuestion` stays a card.** Since 2.1.285 the extension draws it as a
+  row reading *Answered* / *No answer* / *Declined* / *Session ended before an
+  answer* (anchor `noAnswer:"No answer"`). Under `-p` the CLI answers for the
+  user: 10 of 10 calls in this app's lane came back "The user did not answer
+  the questions." (the other 4 failed validation). Copied, the row would say
+  "No answer" every time — true of the CLI, false of a person who never saw
+  the question. The card is what lets them answer.
+
+## 5a. Open — needs a real turn before changing
+
+- **Turn end from the CLI itself.** 2.1.285's SDK learns a turn is over from
+  `system/session_state_changed`, switched on by the env
+  `CLAUDE_CODE_SDK_READS_SESSION_STATE=1` (anchors in `extension.js`). Grid
+  still infers it (task list empty / a second `init` / a 20s quiet). Switch
+  only after a `-p` run shows the event actually arrives on this lane.
+- `system/session_title_changed` is new too; the app titles chats itself.
 
 ## 6. When Claude Code updates — checklist
 
-1. Newest bundle: `ls -d ~/.vscode/extensions/anthropic.claude-code-*`.
+1. Newest bundle — both editors, the newest is not always in the same one:
+   `ls -d ~/.vscode/extensions/anthropic.claude-code-* ~/.cursor/extensions/anthropic.claude-code-*`.
 2. Its tool list:
    ```sh
    grep -oE 'extends [A-Za-z_$0-9]+\{(static toolName=[^;]+;)?name=("[^"]+"|[A-Za-z_$0-9]+)' webview/index.js | sort -u

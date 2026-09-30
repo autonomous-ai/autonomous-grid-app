@@ -38,6 +38,31 @@ void main() {
       );
     });
 
+    test('a background task reporting back is not a message from the person '
+        '— the CLI writes it into their turn', () {
+      final session = parseClaudeSession(
+        sessionId: 's1',
+        lines: [
+          _line('user', 'Run the build in the background'),
+          _line('assistant', [
+            {'type': 'text', 'text': 'Started.'},
+          ]),
+          _line(
+            'user',
+            '<task-notification>\n<task-id>bs5146lrl</task-id>\n'
+                '<status>completed</status>\n</task-notification>',
+          ),
+        ],
+      );
+      expect(
+        [
+          for (final message in session!.messages)
+            if (message.role == ChatRole.user) message.text,
+        ],
+        ['Run the build in the background'],
+      );
+    });
+
     test('a step keeps what its tool said, without the tags the CLI wraps '
         'round it — the same reader the live feed uses', () {
       final session = parseClaudeSession(

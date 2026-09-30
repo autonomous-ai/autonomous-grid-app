@@ -680,6 +680,8 @@ class _StepRowState extends State<_StepRow> {
       // family, so the two still read as the same thing.
       AgentToolFamily.skill => LucideIcons.sparkle300,
       AgentToolFamily.think => LucideIcons.brain300,
+      AgentToolFamily.schedule => LucideIcons.clock300,
+      AgentToolFamily.image => LucideIcons.image300,
       AgentToolFamily.other => LucideIcons.wrench300,
     };
     // A thought's whole text *is* its payload — it has no arguments, and the

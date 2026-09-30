@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import '../../features/agents/logic/agent_run_status.dart';
+import '../agent_run_state.dart';
 
-export '../../features/agents/logic/agent_run_status.dart' show AgentRunState;
+export '../agent_run_state.dart';
 
 /// The 8px status dot Claude's panel uses for a session, in its five states.
 ///

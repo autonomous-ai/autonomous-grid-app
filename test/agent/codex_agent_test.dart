@@ -238,7 +238,9 @@ void main() {
             'status': 'completed',
             'prompt': 'Reply with only the word ok',
             'receiverThreadIds': ['helper-1'],
-            'agentsStates': {'helper-1': 'running'},
+            'agentsStates': {
+              'helper-1': {'status': 'running', 'message': null},
+            },
           },
         },
         messages: messages,
@@ -1095,6 +1097,78 @@ void main() {
       );
       expect(searching.label, 'flutter riverpod');
       expect(searching.status, AgentActivityStatus.running);
+    });
+
+    test('the helper-agent calls 0.155 added read in words, not as '
+        '"Helper agent: sendMessage"', () {
+      String said(String tool) => row(
+        read('item/completed', {
+          'type': 'collabAgentToolCall',
+          'id': 'c-$tool',
+          'tool': tool,
+          'status': 'completed',
+        }),
+      ).label;
+      expect(said('sendMessage'), 'Sent a message to a helper agent');
+      expect(said('followupTask'), 'Sent a message to a helper agent');
+      expect(said('interruptAgent'), 'Interrupted a helper agent');
+      expect(said('listAgents'), 'Listed helper agents');
+    });
+
+    test('an interrupted helper call stops spinning — it settles as unknown, '
+        'the mark a step the user stopped gets', () {
+      final call = row(
+        read('item/completed', {
+          'type': 'collabAgentToolCall',
+          'id': 'c1',
+          'tool': 'wait',
+          'status': 'interrupted',
+        }),
+      );
+      expect(call.status, AgentActivityStatus.unknown);
+    });
+
+    test("where each helper stands reads as words and the helper's own "
+        'message, not as a printed Dart map', () {
+      final call = row(
+        read('item/completed', {
+          'type': 'collabAgentToolCall',
+          'id': 'c1',
+          'tool': 'wait',
+          'status': 'completed',
+          'agentsStates': {
+            'h1': {'status': 'completed', 'message': 'All 12 tests pass.'},
+            'h2': {'status': 'errored', 'message': null},
+          },
+        }),
+      );
+      expect(
+        call.result,
+        'h1: finished\nAll 12 tests pass.\n\nh2: hit an error',
+      );
+    });
+
+    test('a deleted file opens as the diff that removes it, the way the panel '
+        'draws one — its row had an empty fold', () {
+      final deleted = row(
+        read('item/completed', {
+          'type': 'fileChange',
+          'id': 'p3',
+          'status': 'completed',
+          'changes': [
+            {
+              'path': '/r/old.dart',
+              'kind': {'type': 'delete'},
+              'diff': 'a\nb\n',
+            },
+          ],
+        }).whereType<CodexActivityEvent>().toList(),
+      );
+      expect(deleted.label, 'Delete · old.dart');
+      expect(
+        deleted.request,
+        '--- /r/old.dart\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-a\n-b',
+      );
     });
   });
 }

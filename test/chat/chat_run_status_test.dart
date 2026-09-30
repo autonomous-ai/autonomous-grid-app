@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:grid_app/features/agents/logic/agent_run_status.dart';
+import 'package:grid_app/features/chat/logic/chat_run_state.dart';
 import 'package:grid_app/features/chat/logic/chat_sessions_state.dart';
+import 'package:grid_app/shared/agent_run_state.dart';
 import 'package:grid_app/features/chat/logic/conversation.dart';
 
 final _t0 = DateTime.utc(2026, 8, 17, 9);

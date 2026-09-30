@@ -13,7 +13,6 @@ import '../../../shared/widgets/agent_run_indicator.dart';
 import '../../../shared/widgets/status_dot.dart';
 import '../../../shared/widgets/toast.dart';
 import '../../agents/logic/active_chat_agent.dart';
-import '../../agents/logic/agent_run_status.dart';
 import '../../agents/presentation/agent_mark.dart';
 import '../../projects/logic/project.dart';
 import '../../projects/logic/project_folder_status.dart';
@@ -21,6 +20,7 @@ import '../../projects/presentation/create_project_dialog.dart';
 import '../../projects/presentation/project_menu.dart';
 import '../../scheduled/logic/task_conversation_id.dart';
 import '../../scheduled/logic/task_unread_store.dart';
+import '../logic/chat_run_state.dart';
 import '../logic/chat_sessions_controller.dart';
 import '../logic/conversation.dart';
 import 'chat_header.dart';
@@ -567,7 +567,8 @@ class _ChatRow extends ConsumerWidget {
     // than taking the pin and archive away from a chat the user may want to act
     // on (an error is not cleared until they do).
     final showCue =
-        runStatus == AgentRunState.running || runStatus == AgentRunState.waiting;
+        runStatus == AgentRunState.running ||
+        runStatus == AgentRunState.waiting;
     // A scheduled task's chat with a result the user hasn't opened yet — the dot
     // stays until they read it. Selecting on the bool keeps the row from
     // rebuilding when some *other* task's badge changes.

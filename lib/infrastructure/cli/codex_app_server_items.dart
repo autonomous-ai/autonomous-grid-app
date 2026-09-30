@@ -174,9 +174,14 @@ List<CodexEvent> parseCodexAppServerItem(
 /// This protocol spells its lifecycle in camelCase (`inProgress`, `completed`,
 /// `failed`, `declined`) where the old one used snake_case — a rename that would
 /// otherwise show every finished command as still running.
+///
+/// `interrupted` (a helper-agent call, 0.155) is a step stopped before it said
+/// how it went — [AgentActivityStatus.unknown], the same mark a step the user
+/// pressed Stop on gets. Read as running, it spun for the rest of the turn.
 AgentActivityStatus codexItemStatus(Object? raw) => switch (raw) {
   'completed' => AgentActivityStatus.done,
   'failed' || 'declined' => AgentActivityStatus.failed,
+  'interrupted' => AgentActivityStatus.unknown,
   _ => AgentActivityStatus.running,
 };
 

@@ -98,7 +98,7 @@ AgentActivity _row(
   final (tool, request) = switch (file.kind) {
     CodexFileChangeKind.add => ('Write', file.diff),
     CodexFileChangeKind.update => ('Edit', _unifiedDiff(file)),
-    CodexFileChangeKind.delete => ('Delete', null),
+    CodexFileChangeKind.delete => ('Delete', codexDeletedDiff(file)),
   };
   final moved = file.movedTo;
   final name = folderName(file.path);
@@ -122,4 +122,28 @@ String _unifiedDiff(CodexPatchFile file) {
   final body = file.diff.trimLeft();
   if (body.startsWith('--- ') || body.startsWith('diff --git ')) return body;
   return '--- ${file.path}\n+++ ${file.movedTo ?? file.path}\n$body';
+}
+
+/// A deleted file as the diff that removes it — every line it held marked
+/// `-`, headed `--- path` / `+++ /dev/null` — the way the panel draws one
+/// (anchor `deleted file mode`). The row had a fold with nothing in it; null
+/// when the file held nothing either.
+///
+/// A delete's `diff` is the file's last contents — codex's
+/// `FileChange::Delete { content }`, which the extension reads the same way —
+/// but no delete has been seen on the wire here yet, so one that already
+/// arrives as a diff is passed through rather than wrapped twice.
+String? codexDeletedDiff(CodexPatchFile file) {
+  final text = file.diff.replaceAll('\r\n', '\n');
+  if (text.trim().isEmpty) return null;
+  if (RegExp(r'^(--- |diff --git |@@ )').hasMatch(text)) return text;
+  final lines = text.endsWith('\n')
+      ? text.substring(0, text.length - 1).split('\n')
+      : text.split('\n');
+  return [
+    '--- ${file.path}',
+    '+++ /dev/null',
+    '@@ -1,${lines.length} +0,0 @@',
+    for (final line in lines) '-$line',
+  ].join('\n');
 }

@@ -1141,6 +1141,25 @@ void main() {
       );
     });
 
+    test('a monitor names what it watches and a message its gist — not the '
+        'tail pipeline, not an agent id', () {
+      expect(
+        claudeTool('Monitor').label(const {
+          'description': 'Flutter build progress',
+          'command': 'tail -f /tmp/x.output | grep -E --line-buffered done',
+        }),
+        'Monitor · Flutter build progress',
+      );
+      expect(
+        claudeTool('SendMessage').label(const {
+          'to': 'ada26cdd0164eba08',
+          'summary': 'Ask D3 to commit its split',
+          'message': 'Commit the split you finished.',
+        }),
+        'SendMessage · Ask D3 to commit its split',
+      );
+    });
+
     test('a tool nobody has told the app about still gets a row, titled by '
         'the file it touched', () {
       final tool = claudeTool('SomethingNew');

@@ -123,6 +123,12 @@ const List<ClaudeTool> _kTools = [
   _KeyedTool('Skill', 'skill'),
   _KeyedTool('CronCreate', 'cron'),
   _ScheduleWakeupTool(),
+  // What is being watched — 29 of 29 calls here carried a `description`, and
+  // the `command` it runs is a `tail -f … | grep` pipeline nobody reads.
+  _KeyedTool('Monitor', 'description'),
+  // The one-line gist, not `to`: that is an agent id (`ada26cdd…`) or a
+  // socket path, and all 10 calls here carried a `summary`.
+  _KeyedTool('SendMessage', 'summary'),
   _ToolSearchTool(),
   _PlanModeTool('EnterPlanMode', 'Planning before changing anything'),
   _ExitPlanModeTool(),

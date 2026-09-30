@@ -203,6 +203,13 @@ enum AgentToolFamily {
   /// and it was drawing the fallback wrench.
   skill,
 
+  /// Waiting on the clock, or arranging to: Claude's crons and wake-ups
+  /// (22 calls in the app's lane over a month) and Codex's `sleep` item.
+  schedule,
+
+  /// Looking at or making a picture — Codex's `imageView`/`imageGeneration`.
+  image,
+
   /// A tool no agent here has claimed. Kept rather than guessed at: a name we
   /// don't know still ran and still deserves a row, and a glyph picked by
   /// resemblance would state something about it that nobody checked.
@@ -265,6 +272,11 @@ const Map<String, AgentToolFamily> _kToolFamilies = {
   'bash': AgentToolFamily.shell,
   'bashoutput': AgentToolFamily.shell,
   'killshell': AgentToolFamily.shell,
+  // Claude's successors to the two above, and its watcher on a background
+  // command. `TaskStop` stopped a shell 30 times of 30 here; `TaskOutput`
+  // read a helper agent 5 times of 6, so it goes with the agents below.
+  'taskstop': AgentToolFamily.shell,
+  'monitor': AgentToolFamily.shell,
   'shell': AgentToolFamily.shell,
   'terminal': AgentToolFamily.shell,
   'command_execution': AgentToolFamily.shell,
@@ -277,6 +289,18 @@ const Map<String, AgentToolFamily> _kToolFamilies = {
   'browser': AgentToolFamily.fetch,
   'task': AgentToolFamily.subAgent,
   'agent': AgentToolFamily.subAgent,
+  'taskoutput': AgentToolFamily.subAgent,
+  'sendmessage': AgentToolFamily.subAgent,
+  'listagents': AgentToolFamily.subAgent,
+  // Codex's collab calls, as `codex_app_server_rows.dart` names their rows.
+  'helper agent': AgentToolFamily.subAgent,
+  'croncreate': AgentToolFamily.schedule,
+  'cronlist': AgentToolFamily.schedule,
+  'crondelete': AgentToolFamily.schedule,
+  'schedulewakeup': AgentToolFamily.schedule,
+  // Codex's `sleep` item, as `codex_app_server_items.dart` names its row.
+  'wait': AgentToolFamily.schedule,
+  'image': AgentToolFamily.image,
   'todowrite': AgentToolFamily.todo,
   'todo': AgentToolFamily.todo,
   'todo_list': AgentToolFamily.todo,
@@ -341,6 +365,8 @@ String describeStepRun(List<AgentActivity> steps) {
           AgentToolFamily.subAgent ||
           AgentToolFamily.todo ||
           AgentToolFamily.mcp ||
+          AgentToolFamily.schedule ||
+          AgentToolFamily.image ||
           AgentToolFamily.other:
         others++;
     }

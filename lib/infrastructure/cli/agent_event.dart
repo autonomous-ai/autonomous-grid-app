@@ -14,9 +14,9 @@ enum AgentActivityStatus {
   /// It exists because the alternatives both lie. A tick claims the step
   /// succeeded; a red mark claims it failed — and a saved transcript full of red
   /// marks says an agent's work went wrong when all that is known is that the
-  /// app stopped hearing about it. Reached two ways: the user pressed Stop
-  /// mid-tool, and a transport that simply doesn't always send a closing update
-  /// (Hermes over ACP).
+  /// app stopped hearing about it. Reached three ways: the user pressed Stop
+  /// mid-tool, a transport that simply doesn't always send a closing update
+  /// (Hermes over ACP), and a Codex helper-agent call reported `interrupted`.
   unknown,
 }
 

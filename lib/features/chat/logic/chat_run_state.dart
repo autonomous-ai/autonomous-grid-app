@@ -1,11 +1,5 @@
-import '../../chat/logic/chat_sessions_state.dart';
-
-/// The states a chat's agent run is in, drawn the way Claude Code's VS Code
-/// panel draws a session: a small dot whose colour says whether the agent is
-/// working, waiting on the user, or has failed. [agent_run_indicator.dart] holds
-/// the dot; this holds the *state*, so what a chat reads as can be decided (and
-/// tested) without a widget.
-enum AgentRunState { running, waiting, idle, unread, failed }
+import '../../../shared/agent_run_state.dart';
+import 'chat_sessions_state.dart';
 
 /// What [chatId] currently reads as, or null when it is idle — nothing at all.
 ///

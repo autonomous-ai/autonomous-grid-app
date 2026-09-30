@@ -111,6 +111,46 @@ void main() {
         'Working',
       );
     });
+
+    test('the tools each lane really calls take a glyph, not the wrench kept '
+        'for tools nobody has claimed', () {
+      AgentToolFamily of(String tool) => agentToolFamily(
+        AgentActivity(
+          id: tool,
+          kind: AgentActivityKind.tool,
+          label: tool,
+          status: AgentActivityStatus.done,
+          tool: tool,
+        ),
+      );
+      expect(
+        {
+          for (final tool in [
+            'Monitor',
+            'TaskStop',
+            'TaskOutput',
+            'SendMessage',
+            'Helper agent',
+            'CronList',
+            'ScheduleWakeup',
+            'Wait',
+            'Image',
+          ])
+            tool: of(tool),
+        },
+        {
+          'Monitor': AgentToolFamily.shell,
+          'TaskStop': AgentToolFamily.shell,
+          'TaskOutput': AgentToolFamily.subAgent,
+          'SendMessage': AgentToolFamily.subAgent,
+          'Helper agent': AgentToolFamily.subAgent,
+          'CronList': AgentToolFamily.schedule,
+          'ScheduleWakeup': AgentToolFamily.schedule,
+          'Wait': AgentToolFamily.schedule,
+          'Image': AgentToolFamily.image,
+        },
+      );
+    });
   });
 
   group('stepRequestLanguage', () {
