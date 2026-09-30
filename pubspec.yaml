@@ -42,6 +42,10 @@ dependencies:
   # apart on a colour or a corner radius.
   grid_theme:
     path: packages/grid_theme
+  # How an answer is drawn — its Markdown, code blocks and syntax colour —
+  # shared with the phone app for the same reason.
+  grid_chat_ui:
+    path: packages/grid_chat_ui
   flutter_svg: ^2.3.0
   lucide_icons_flutter: ^3.1.15
   markdown: ^7.3.1

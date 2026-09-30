@@ -29,10 +29,14 @@ dependencies:
   # secret. The Keychain outlives an uninstall and syncs where it is told to,
   # which is right for a credential and wrong for "this person likes dark".
   shared_preferences: ^2.3.3
-  # The same renderer the desktop uses for agent output, pinned to the same
-  # major. Two apps showing one assistant's words must not disagree about what
-  # a fenced code block or a table looks like.
-  flutter_markdown_plus: ^1.0.12
+  # The desktop's own answer drawing — Markdown sheet, code blocks with a
+  # language label, copy, fold and syntax colour. The phone had its own copy
+  # of the renderer and it read as a lesser app; one package means the two
+  # cannot disagree about what a fenced block or a table looks like.
+  grid_chat_ui:
+    path: ../packages/grid_chat_ui
+  # A link in an answer opens in the phone's browser.
+  url_launcher: ^6.3.2
   # Photos and documents, the two ways a phone has of picking a file. Both are
   # the platform's own sheets: an app that browsed the filesystem itself would
   # need permissions iOS does not hand out, and these ask for none.

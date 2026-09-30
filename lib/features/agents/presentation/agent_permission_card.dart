@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/code_text_scope.dart';
 import '../logic/agent_permissions.dart';
 import '../../../core/edit_diff.dart';
 import 'diff_view.dart';

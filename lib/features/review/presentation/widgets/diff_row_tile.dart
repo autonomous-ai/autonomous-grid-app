@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
-import '../../../../shared/code/code_highlight.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../logic/unified_diff.dart';
 

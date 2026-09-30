@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../../../infrastructure/cli/agent_event.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
-import '../../../shared/code/code_highlight.dart';
 import '../../../shared/copy/plural.dart';
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/code_text_scope.dart';
 import '../../../shared/widgets/pulse.dart';
 import '../../../shared/widgets/timeline_guide.dart';
 import '../../playground/presentation/message_content.dart';

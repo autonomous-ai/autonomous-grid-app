@@ -6,16 +6,13 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 import 'package:markdown/markdown.dart' as md;
 
-import '../../../../shared/code/code_highlight.dart';
 import '../../../../shared/link_open.dart';
-import '../../../../shared/markdown/markdown_code_block.dart';
-import '../../../../shared/markdown/markdown_style.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
-import '../../../../shared/widgets/code_text_scope.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../logic/file_kind.dart';
 import '../../logic/file_preview.dart';

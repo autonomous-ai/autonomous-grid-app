@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../theme/app_theme.dart';
-import 'code_text_scope.dart';
 
 /// A scrolling, monospace log pane that sticks to the newest line. Used for
 /// streamed CLI output (install/provider logs).

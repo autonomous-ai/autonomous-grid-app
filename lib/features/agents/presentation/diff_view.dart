@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/code_text_scope.dart';
 import '../../../core/edit_diff.dart';
 
 /// A monospace, `+`/`-` rendering of an edit's [DiffLine]s.

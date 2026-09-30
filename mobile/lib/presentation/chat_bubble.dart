@@ -3,9 +3,10 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 import 'package:grid_theme/grid_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../logic/phone_chats.dart';
 import '../logic/phone_media.dart';
@@ -68,10 +69,13 @@ class ChatBubble extends StatelessWidget {
             if (line.text.trim().isNotEmpty)
               mine
                   ? SelectableText(line.text, style: theme.textTheme.bodyMedium)
-                  : MarkdownBody(
-                      data: line.text,
+                  : ChatMarkdown(
+                      text: line.text,
+                      color: AppPalette.textPrimary,
+                      // No SelectionArea around a phone transcript, so the
+                      // text selects on its own.
                       selectable: true,
-                      styleSheet: _sheet(theme),
+                      onTapLink: _open,
                     ),
             // Under a finished answer only: the one being written would copy
             // half a reply, and the person's own words are theirs already.
@@ -115,41 +119,12 @@ class _CopyAnswer extends StatelessWidget {
   }
 }
 
-/// Markdown styled to this app rather than to the package's defaults.
-///
-/// Two things matter on a phone and are wrong out of the box: code has to be
-/// able to scroll sideways instead of forcing the whole page wide, and the
-/// block quote and code backgrounds have to come from the theme or they are
-/// invisible in dark mode.
-MarkdownStyleSheet _sheet(ThemeData theme) {
-  // The app's own mono stack, not a hardcoded 'Menlo': the style guide is
-  // explicit that the family name decides whether this reaches real SF Mono or
-  // silently falls through.
-  final mono = theme.textTheme.bodySmall?.copyWith(
-    fontFamily: AppFont.mono,
-    fontFamilyFallback: AppFont.monoFallback,
-    // The chosen code size, and only it: see [AppFont.codeSizeDescaled] for why
-    // it is divided here rather than opted out of the scaler.
-    fontSize: AppFont.codeSizeDescaled,
-  );
-  return MarkdownStyleSheet.fromTheme(theme).copyWith(
-    p: theme.textTheme.bodyMedium,
-    code: mono,
-    codeblockPadding: const EdgeInsets.all(12),
-    codeblockDecoration: BoxDecoration(
-      color: AppCard.inset,
-      borderRadius: BorderRadius.circular(AppCard.insetRadius),
-      border: Border.all(color: AppCard.insetHair),
-    ),
-    blockquoteDecoration: BoxDecoration(
-      color: AppCard.inset,
-      borderRadius: BorderRadius.circular(AppCard.insetRadius),
-    ),
-    blockquotePadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-    horizontalRuleDecoration: BoxDecoration(
-      border: Border(top: BorderSide(color: AppPalette.divider)),
-    ),
-  );
+/// Opens a link from an answer in the phone's browser, never inside the app:
+/// an answer's link is somewhere the person chose to go.
+void _open(String href) {
+  final uri = Uri.tryParse(href);
+  if (uri == null) return;
+  launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 /// One picture on a turn, fetched when it is first drawn.

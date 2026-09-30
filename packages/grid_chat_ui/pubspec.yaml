@@ -1,0 +1,33 @@
+name: grid_chat_ui
+description: >-
+  How a conversation is drawn in Grid — the Markdown an answer is written in,
+  its code blocks, and the syntax colour inside them — shared by Grid on a
+  computer and Grid on a phone.
+version: 0.1.0
+publish_to: 'none'
+
+# Flutter, but no plugins — the rule that makes `grid_theme` shareable.
+#
+# The phone app used to draw answers with its own copy: a stock Markdown sheet,
+# code blocks with no language label, no copy button, no colour, no fold. The
+# desktop's were better and could not be reached — they sat in an app whose
+# window, tray and updater plugins do not build for iOS. One copy here means an
+# answer reads the same on both, and a fix to a code block lands on both.
+environment:
+  sdk: ^3.10.0
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_markdown_plus: ^1.0.12
+  grid_theme:
+    path: ../grid_theme
+  lucide_icons_flutter: ^3.1.15
+  markdown: ^7.3.1
+  re_highlight: ^0.0.3
+
+dev_dependencies:
+  # Only so the repo-root analysis_options.yaml resolves when this package is
+  # analysed on its own. Same rules as the app, no second opinion about style.
+  flutter_lints: ^6.0.0

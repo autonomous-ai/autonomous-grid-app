@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:grid_theme/grid_theme.dart';
+import 'package:grid_theme/plural.dart';
 import 'package:markdown/markdown.dart' as md;
 
-import '../code/code_highlight.dart';
-import '../copy/plural.dart';
-import '../theme/app_theme.dart';
-import '../widgets/code_text_scope.dart';
+import 'code_highlight.dart';
+import 'code_text_scope.dart';
 
 /// The fenced code block the app draws wherever markdown is rendered — a chat
 /// turn, a skill's README, a `.md` open in the Files panel.
@@ -366,10 +366,17 @@ class _CopyButtonState extends State<_CopyButton> {
 
 /// Renders every fenced block in a document as a [MarkdownCodeBlock].
 ///
-/// The plain case, for markdown that is already whole — a file on disk, a
-/// skill's README. A transcript subclasses the parsing here and adds what only
-/// a stream has: a fence that hasn't closed yet, and the `chart` language.
+/// The plain case is markdown that is already whole — a file on disk, a
+/// skill's README. A transcript passes [closed] for the fence still arriving,
+/// and the desktop subclasses this to draw the `chart` language.
 class MarkdownCodeBlockBuilder extends MarkdownElementBuilder {
+  MarkdownCodeBlockBuilder({this.closed = true});
+
+  /// Whether the document's last fence has closed — false while an answer is
+  /// still streaming into it (see `markdownFenceIsOpen`). Applies to the last
+  /// block only in practice: every earlier fence closed before it began.
+  final bool closed;
+
   @override
   bool isBlockElement() => true;
 
@@ -381,7 +388,7 @@ class MarkdownCodeBlockBuilder extends MarkdownElementBuilder {
     TextStyle? parentStyle,
   ) {
     final (language, code) = fenceOf(element);
-    return MarkdownCodeBlock(language: language, code: code, closed: true);
+    return MarkdownCodeBlock(language: language, code: code, closed: closed);
   }
 
   /// The language and the text of a `<pre><code class="language-x">` element —

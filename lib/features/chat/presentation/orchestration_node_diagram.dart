@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../../../shared/theme/app_theme.dart';
-import '../../../shared/widgets/code_text_scope.dart';
 
 /// How far along a node's turn has gotten. 'You' and 'Answer' never carry
 /// one — they are the request and the reply, not a step that runs.

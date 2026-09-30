@@ -1,5 +1,5 @@
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 import '../../../infrastructure/cli/agent_event.dart';
-import '../../../shared/code/code_highlight.dart';
 import '../../../shared/copy/plural.dart';
 
 /// How one step in the activity feed reads at the chosen level of detail.

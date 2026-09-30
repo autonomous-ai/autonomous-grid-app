@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:markdown/markdown.dart' as md;
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../logic/chat_message.dart';
 import '../logic/message_media.dart';
 import 'markdown_builders.dart';
-import '../../../shared/markdown/markdown_style.dart';
 import 'media/inline_audio.dart';
 import 'media/inline_image.dart';
 import 'media/inline_video.dart';
@@ -169,30 +168,17 @@ class _MarkdownRun extends ConsumerWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => MarkdownBody(
-    data: text,
-    // GitHub Flavored Markdown is what models actually write: tables,
-    // strikethrough, task lists, and — the reason a pile of hand-rolled
-    // link code could be deleted — autolinks. It handles the cases that
-    // used to need patching here: a bare URL becomes a link, while one
-    // inside a fence or a `code span` is left exactly as written.
-    extensionSet: md.ExtensionSet.gitHubFlavored,
-    // CommonMark folds a single newline into a space. Models don't write
-    // that way — they use one newline as a line break, and without this a
-    // verse or an address collapses into a paragraph.
-    softLineBreak: true,
+  Widget build(BuildContext context, WidgetRef ref) => ChatMarkdown(
+    text: text,
+    color: color,
     // Plain paragraphs — the enclosing SelectionArea is what makes them
     // selectable. See the note in [MessageContent.build] for what
     // `selectable: true` costs.
-    selectable: false,
-    styleSheet: buildMarkdownStyleSheet(context, textColor: color),
     // Where a link opens is the user's choice — their own browser, or a
     // Browser tab beside the conversation. See [openContentLink].
-    onTapLink: (_, href, _) {
-      if (href != null) openContentLink(ref, href);
-    },
-    // The default `pre` is Material chrome with no copy action; see
-    // `markdown_builders.dart`.
-    builders: {'pre': CodeBlockBuilder(openFence: markdownFenceIsOpen(text))},
+    onTapLink: (href) => openContentLink(ref, href),
+    // The shared code block, plus the one fence only the desktop draws: a
+    // ```chart becomes a chart. See `markdown_builders.dart`.
+    codeBlocks: CodeBlockBuilder(closed: !markdownFenceIsOpen(text)),
   );
 }

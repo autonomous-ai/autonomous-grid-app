@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
-import '../../../../shared/code/code_highlight.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../logic/split_diff.dart';
 import '../../logic/unified_diff.dart';

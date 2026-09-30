@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
 import '../../../../shared/widgets/app_spinner.dart';
-import '../../../../shared/widgets/code_text_scope.dart';
 import '../../logic/skill_files.dart';
 
 /// What's inside a skill: its files down the left, the one you're reading on

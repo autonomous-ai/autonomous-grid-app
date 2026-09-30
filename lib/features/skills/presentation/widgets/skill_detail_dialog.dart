@@ -1,11 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_icon_button.dart';
-import '../../../../shared/widgets/code_text_scope.dart';
 import '../../../agents/logic/agent_skill.dart';
 import '../../logic/skill_files.dart';
 import 'skill_folder_view.dart';

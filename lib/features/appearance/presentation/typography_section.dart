@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:grid_chat_ui/grid_chat_ui.dart';
 
 import '../../../infrastructure/platform/system_fonts.dart';
 import '../../../infrastructure/state/chat_prefs_store.dart';
@@ -12,7 +13,6 @@ import '../../../shared/widgets/labeled_field.dart';
 // screen should re-type at 13pt, which is what it did before.
 import '../../network/presentation/grid_overview_widgets.dart';
 // The chat's own code block, reused rather than imitated — see _TypePreview.
-import '../../../shared/markdown/markdown_code_block.dart';
 
 /// The type settings: which faces the app is set in, and at what size.
 ///
